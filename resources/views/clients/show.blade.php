@@ -1,0 +1,8 @@
+@extends('layouts.app')
+@section('content')
+<div class="mb-5 flex justify-between gap-3"><div><h1 class="text-2xl font-semibold">{{ $client->full_name }}</h1><p class="text-sm text-slate-500">{{ $client->client_number }} · {{ $client->branch->name }}</p></div><a href="{{ route('clients.edit', $client) }}" class="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Edit</a></div>
+<div class="grid gap-5 xl:grid-cols-3">
+    <section class="rounded border bg-white p-5 xl:col-span-1"><h2 class="font-semibold">Biodata</h2><dl class="mt-4 grid gap-3 text-sm"><div><dt class="text-slate-500">Phone</dt><dd>{{ $client->phone }}</dd></div><div><dt class="text-slate-500">Email</dt><dd>{{ $client->email ?: 'N/A' }}</dd></div><div><dt class="text-slate-500">National ID</dt><dd>{{ $client->national_id ?: 'N/A' }}</dd></div><div><dt class="text-slate-500">KYC</dt><dd>{{ ucfirst($client->kyc_status) }}</dd></div></dl></section>
+    <section class="rounded border bg-white p-5 xl:col-span-2"><div class="flex justify-between"><h2 class="font-semibold">Accounts</h2><a class="text-sm text-blue-700" href="{{ route('accounts.create', ['client_id' => $client->id]) }}">Open account</a></div><div class="mt-4 grid gap-3">@forelse($client->accounts as $account)<a class="rounded border p-3 text-sm hover:bg-slate-50" href="{{ route('accounts.show', $account) }}"><span class="font-semibold">{{ $account->account_number }}</span><span class="ml-2 text-slate-500">{{ $account->accountType->name }}</span><span class="float-right">{{ number_format($account->balance, 2) }} UGX</span></a>@empty<p class="text-sm text-slate-500">No accounts yet.</p>@endforelse</div></section>
+</div>
+@endsection

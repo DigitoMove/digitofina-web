@@ -1,0 +1,46 @@
+<?php
+
+use App\Http\Controllers\AccountController;
+use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\ClientController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\LoanController;
+use App\Http\Controllers\LoanProductController;
+use App\Http\Controllers\MemberPortalController;
+use App\Http\Controllers\ReceiptController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\TellerDrawerController;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/', function () {
+    return auth()->check() ? redirect()->route('dashboard') : redirect()->route('login');
+});
+
+Route::get('/health', fn () => response()->json([
+    'status' => 'ok',
+    'app' => config('app.name'),
+    'time' => now()->toIso8601String(),
+]))->name('health');
+
+Route::middleware('guest')->group(function () {
+    Route::get('/login', [LoginController::class, 'create'])->name('login');
+    Route::post('/login', [LoginController::class, 'store']);
+});
+
+Route::middleware('auth')->group(function () {
+    Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
+    Route::get('/dashboard', DashboardController::class)->name('dashboard');
+    Route::get('/member', MemberPortalController::class)->name('member.dashboard');
+    Route::resource('clients', ClientController::class)->except('destroy');
+    Route::resource('accounts', AccountController::class)->only(['index', 'create', 'store', 'show']);
+    Route::resource('loan-products', LoanProductController::class)->only(['index', 'create', 'store']);
+    Route::resource('loans', LoanController::class)->only(['index', 'create', 'store', 'show']);
+    Route::post('/loans/{loan}/approve', [LoanController::class, 'approve'])->name('loans.approve');
+    Route::post('/loans/{loan}/disburse', [LoanController::class, 'disburse'])->name('loans.disburse');
+    Route::get('/teller-drawer', [TellerDrawerController::class, 'index'])->name('teller.index');
+    Route::post('/teller-drawer/open', [TellerDrawerController::class, 'open'])->name('teller.open');
+    Route::post('/teller-drawer/post', [TellerDrawerController::class, 'post'])->name('teller.post');
+    Route::post('/teller-drawer/close', [TellerDrawerController::class, 'close'])->name('teller.close');
+    Route::get('/receipts/{transaction}', [ReceiptController::class, 'show'])->name('receipts.show');
+    Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+});

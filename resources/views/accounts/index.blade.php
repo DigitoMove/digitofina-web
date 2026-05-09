@@ -1,0 +1,5 @@
+@extends('layouts.app')
+@section('content')
+<div class="mb-5 flex justify-between"><h1 class="text-2xl font-semibold">Accounts</h1><a href="{{ route('accounts.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Open Account</a></div>
+<div class="overflow-hidden rounded border bg-white"><table class="w-full text-left text-sm"><thead class="bg-slate-50"><tr><th class="p-3">Account</th><th>Client</th><th>Type</th><th>Balance</th><th>Status</th></tr></thead><tbody>@foreach($accounts as $account)<tr class="border-t"><td class="p-3"><a class="font-semibold text-blue-700" href="{{ route('accounts.show', $account) }}">{{ $account->account_number }}</a><div class="text-slate-500">{{ $account->account_name }}</div></td><td>{{ $account->client->full_name }}</td><td>{{ $account->accountType->name }}</td><td>{{ number_format($account->balance, 2) }} UGX</td><td>{{ ucfirst($account->status) }}</td></tr>@endforeach</tbody></table></div><div class="mt-4">{{ $accounts->links() }}</div>
+@endsection
