@@ -1,10 +1,16 @@
 <!doctype html>
 <html lang="en">
 <head>
+    @php
+        $seo = \App\Support\SeoMetadata::forRequest(request(), array_filter([
+            'title' => $title ?? null,
+            'description' => $description ?? null,
+        ], fn ($value) => filled($value)));
+    @endphp
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $title ?? 'DigitoFina' }}</title>
+    <x-seo-meta :seo="$seo" />
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="bg-slate-100 text-slate-900 antialiased">

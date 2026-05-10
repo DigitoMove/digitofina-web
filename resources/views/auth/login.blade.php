@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="en">
 <head>
+    @php($seo = \App\Support\SeoMetadata::forRequest(request()))
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Login | DigitoFina</title>
+    <x-seo-meta :seo="$seo" />
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen bg-slate-100">

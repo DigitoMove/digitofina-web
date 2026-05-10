@@ -4,6 +4,7 @@ use App\Http\Controllers\AccountController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\LinkPreviewController;
 use App\Http\Controllers\LoanController;
 use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\MemberPortalController;
@@ -21,6 +22,8 @@ Route::get('/health', fn () => response()->json([
     'app' => config('app.name'),
     'time' => now()->toIso8601String(),
 ]))->name('health');
+
+Route::get('/link-preview.svg', LinkPreviewController::class)->name('link-preview');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [LoginController::class, 'create'])->name('login');
