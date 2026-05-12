@@ -46,6 +46,7 @@ class LoanController extends Controller
         $savings = Account::where('client_id', $client->id)->whereHas('accountType', fn ($query) => $query->where('category', 'savings'))->first();
 
         $loan = Loan::create($data + [
+            'organization_id' => auth()->user()->organization_id,
             'branch_id' => $client->branch_id,
             'officer_id' => auth()->id(),
             'savings_account_id' => $savings?->id,

@@ -32,7 +32,7 @@ class LoanProductController extends Controller
             'repayment_frequency' => ['required', 'in:daily,weekly,monthly'],
             'default_term_months' => ['required', 'integer', 'min:1'],
             'grace_period_days' => ['nullable', 'integer', 'min:0'],
-        ]) + ['is_active' => true]);
+        ]) + ['organization_id' => auth()->user()->organization_id, 'is_active' => true]);
 
         $auditLogger->record('loan_product.created', $product, $product->toArray());
 

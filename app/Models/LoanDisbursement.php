@@ -1,0 +1,26 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class LoanDisbursement extends Model
+{
+    protected $guarded = [];
+
+    protected function casts(): array
+    {
+        return [
+            'disbursed_amount' => 'decimal:2',
+            'fees_deducted' => 'decimal:2',
+            'net_amount' => 'decimal:2',
+            'disbursement_date' => 'date',
+        ];
+    }
+
+    public function loan(): BelongsTo
+    {
+        return $this->belongsTo(Loan::class);
+    }
+}

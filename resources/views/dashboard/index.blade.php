@@ -19,6 +19,9 @@
         ["Today's withdrawals", number_format($todayWithdrawals, 2).' UGX'],
         ['Teller drawer balance', number_format($drawerBalance, 2).' UGX'],
         ['Pending approvals', $pendingApprovals],
+        ['Branches', $branchCount],
+        ['Active staff', $staffCount],
+        ['Audit events today', $auditEventsToday],
     ];
 @endphp
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

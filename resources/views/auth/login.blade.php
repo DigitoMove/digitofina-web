@@ -19,11 +19,14 @@
                 </div>
             </div>
             @if ($errors->any()) <div class="mb-4 rounded bg-red-50 p-3 text-sm text-red-700">{{ $errors->first() }}</div> @endif
-            <label class="block text-sm font-medium text-slate-700">Email</label>
-            <input name="email" value="{{ old('email') }}" class="mt-1 h-11 w-full rounded border border-slate-300 px-3 focus:border-blue-600 focus:ring-blue-600" required autofocus>
+            <label class="block text-sm font-medium text-slate-700">Email or phone</label>
+            <input name="login" value="{{ old('login') }}" class="mt-1 h-11 w-full rounded border border-slate-300 px-3 focus:border-blue-600 focus:ring-blue-600" required autofocus>
             <label class="mt-4 block text-sm font-medium text-slate-700">Password</label>
             <input name="password" type="password" class="mt-1 h-11 w-full rounded border border-slate-300 px-3 focus:border-blue-600 focus:ring-blue-600" required>
-            <label class="mt-4 flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="remember" class="rounded border-slate-300"> Remember this workstation</label>
+            <div class="mt-4 flex items-center justify-between gap-3 text-sm">
+                <label class="flex items-center gap-2 text-slate-600"><input type="checkbox" name="remember" class="rounded border-slate-300"> Remember this workstation</label>
+                <a href="{{ route('password.request') }}" class="font-medium text-blue-700 hover:text-blue-900">Reset password</a>
+            </div>
             <button class="mt-6 h-11 w-full rounded bg-blue-700 font-semibold text-white hover:bg-blue-800">Login</button>
             <p class="mt-5 text-center text-xs text-slate-500">Demo: admin@digitofina.test / password</p>
         </form>

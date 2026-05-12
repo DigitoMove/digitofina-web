@@ -44,6 +44,7 @@ class AccountController extends Controller
         $type = AccountType::findOrFail($data['account_type_id']);
 
         $account = Account::create($data + [
+            'organization_id' => auth()->user()->organization_id,
             'account_number' => $numbers->accountNumber($branch, $type),
             'opened_at' => now()->toDateString(),
         ]);
