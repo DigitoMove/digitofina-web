@@ -18,4 +18,9 @@ class LoanApproval extends Model
     {
         return $this->belongsTo(Loan::class);
     }
+
+    public function approver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approver_id');
+    }
 }

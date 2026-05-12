@@ -20,9 +20,14 @@ class Loan extends Model
             'fees_balance' => 'decimal:2',
             'penalty_balance' => 'decimal:2',
             'interest_rate' => 'decimal:4',
+            'risk_score' => 'decimal:2',
+            'credit_score' => 'decimal:2',
+            'savings_balance_at_application' => 'decimal:2',
+            'required_savings_amount' => 'decimal:2',
             'guarantors' => 'array',
             'documents' => 'array',
             'appraisal' => 'array',
+            'application_date' => 'date',
             'submitted_at' => 'date',
             'approved_at' => 'date',
             'disbursed_at' => 'date',
@@ -47,6 +52,21 @@ class Loan extends Model
     public function loanAccount(): BelongsTo
     {
         return $this->belongsTo(Account::class, 'loan_account_id');
+    }
+
+    public function officer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'officer_id');
+    }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function approver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by');
     }
 
     public function schedules(): HasMany

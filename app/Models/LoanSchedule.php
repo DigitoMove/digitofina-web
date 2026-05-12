@@ -18,8 +18,15 @@ class LoanSchedule extends Model
             'fees_due' => 'decimal:2',
             'penalty_due' => 'decimal:2',
             'total_due' => 'decimal:2',
+            'principal_paid' => 'decimal:2',
+            'interest_paid' => 'decimal:2',
+            'fees_paid' => 'decimal:2',
+            'penalty_paid' => 'decimal:2',
+            'total_paid' => 'decimal:2',
             'amount_paid' => 'decimal:2',
             'outstanding_amount' => 'decimal:2',
+            'balance_due' => 'decimal:2',
+            'days_overdue' => 'integer',
         ];
     }
 

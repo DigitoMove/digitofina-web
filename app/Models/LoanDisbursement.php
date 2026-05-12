@@ -23,4 +23,14 @@ class LoanDisbursement extends Model
     {
         return $this->belongsTo(Loan::class);
     }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function disbursedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'disbursed_by');
+    }
 }

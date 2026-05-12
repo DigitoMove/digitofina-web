@@ -27,6 +27,11 @@ class SavingsAccount extends Model
         return $this->belongsTo(Branch::class);
     }
 
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class);
+    }
+
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);

@@ -1,0 +1,21 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Services\LoanService;
+use Illuminate\Console\Attributes\Description;
+use Illuminate\Console\Attributes\Signature;
+use Illuminate\Console\Command;
+
+#[Signature('loans:apply-penalties')]
+#[Description('Mark overdue loan schedules and apply configured penalties')]
+class ApplyLoanPenalties extends Command
+{
+    public function handle(LoanService $loanService): int
+    {
+        $count = $loanService->applyOverduePenalties();
+        $this->info("Checked {$count} overdue installment(s).");
+
+        return self::SUCCESS;
+    }
+}

@@ -35,8 +35,12 @@
                             ['Clients', 'clients.index', 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0'],
                             ['Client Groups', 'client-groups.index', 'M7 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M17 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M3 21a6 6 0 0 1 8-5.7 M13 15.3A6 6 0 0 1 21 21'],
                             ['Accounts', 'accounts.index', 'M3 7h18v12H3z M7 7V5h10v2'],
+                            ['Savings Products', 'savings-products.index', 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
+                            ['Savings Accounts', 'savings-accounts.index', 'M4 7h16v10H4z M7 11h10 M7 15h6'],
+                            ['Savings Transfer', 'savings-transfers.create', 'M7 7h12m0 0-4-4m4 4-4 4 M17 17H5m0 0 4-4m-4 4 4 4'],
                             ['Loan Products', 'loan-products.index', 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
                             ['Loans', 'loans.index', 'M4 6h16v12H4z M8 10h8 M8 14h5'],
+                            ['Arrears', 'arrears.index', 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
                             ['Teller Drawer', 'teller.index', 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10'],
                             ['Reports', 'reports.index', 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h4'],
                         ];

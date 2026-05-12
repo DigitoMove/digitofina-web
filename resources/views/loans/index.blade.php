@@ -1,5 +1,33 @@
 @extends('layouts.app')
 @section('content')
-<div class="mb-5 flex justify-between"><h1 class="text-2xl font-semibold">Loans</h1><a href="{{ route('loans.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">New Application</a></div>
-<div class="overflow-hidden rounded border bg-white"><table class="w-full text-left text-sm"><thead class="bg-slate-50"><tr><th class="p-3">Loan</th><th>Client</th><th>Product</th><th>Amount</th><th>Status</th></tr></thead><tbody>@foreach($loans as $loan)<tr class="border-t"><td class="p-3"><a class="font-semibold text-blue-700" href="{{ route('loans.show', $loan) }}">{{ $loan->loan_number }}</a></td><td>{{ $loan->client->full_name }}</td><td>{{ $loan->product->name }}</td><td>{{ number_format($loan->requested_amount, 2) }}</td><td>{{ str($loan->status)->headline() }}</td></tr>@endforeach</tbody></table></div><div class="mt-4">{{ $loans->links() }}</div>
+<div class="mb-5 flex flex-wrap justify-between gap-3">
+    <h1 class="text-2xl font-semibold">Loans</h1>
+    <div class="flex gap-2"><a href="{{ route('arrears.index') }}" class="rounded border px-4 py-2 text-sm font-semibold">Arrears</a><a href="{{ route('loans.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">New Application</a></div>
+</div>
+<form class="mb-4 grid gap-3 rounded border bg-white p-4 md:grid-cols-[1fr_180px_220px_auto]">
+    <input name="search" value="{{ request('search') }}" placeholder="Search loan or client" class="rounded border-slate-300">
+    <select name="status" class="rounded border-slate-300"><option value="">All statuses</option>@foreach(['submitted','pending_guarantor_approval','approved','active','in_arrears','fully_paid','rejected'] as $status)<option value="{{ $status }}" @selected(request('status') === $status)>{{ str($status)->headline() }}</option>@endforeach</select>
+    <select name="loan_product_id" class="rounded border-slate-300"><option value="">All products</option>@foreach($products as $product)<option value="{{ $product->id }}" @selected((int) request('loan_product_id') === $product->id)>{{ $product->name }}</option>@endforeach</select>
+    <button class="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Filter</button>
+</form>
+<div class="overflow-hidden rounded border bg-white">
+    <table class="w-full text-left text-sm">
+        <thead class="bg-slate-50"><tr><th class="p-3">Loan</th><th>Client</th><th>Product</th><th>Requested</th><th>Outstanding</th><th>Status</th></tr></thead>
+        <tbody>
+            @forelse($loans as $loan)
+                <tr class="border-t">
+                    <td class="p-3"><a class="font-semibold text-blue-700" href="{{ route('loans.show', $loan) }}">{{ $loan->loan_number }}</a><div class="text-slate-500">{{ optional($loan->officer)->name }}</div></td>
+                    <td>{{ $loan->client->full_name }}</td>
+                    <td>{{ $loan->product->name }}</td>
+                    <td>UGX {{ number_format($loan->requested_amount, 2) }}</td>
+                    <td>UGX {{ number_format($loan->principal_balance + $loan->interest_balance + $loan->fees_balance + $loan->penalty_balance, 2) }}</td>
+                    <td><span class="rounded bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">{{ str($loan->status)->headline() }}</span></td>
+                </tr>
+            @empty
+                <tr><td colspan="6" class="p-6 text-center text-slate-500">No loans found.</td></tr>
+            @endforelse
+        </tbody>
+    </table>
+</div>
+<div class="mt-4">{{ $loans->links() }}</div>
 @endsection

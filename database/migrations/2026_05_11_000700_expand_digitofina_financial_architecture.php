@@ -8,26 +8,28 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('organizations', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->string('slug')->unique();
-            $table->string('registration_number')->nullable();
-            $table->string('tax_identification_number')->nullable();
-            $table->string('logo_path')->nullable();
-            $table->string('phone', 40)->nullable();
-            $table->string('email')->nullable();
-            $table->text('address')->nullable();
-            $table->string('currency', 10)->default('UGX');
-            $table->string('financial_year_start_month', 20)->default('january');
-            $table->json('working_days')->nullable();
-            $table->json('interest_settings')->nullable();
-            $table->json('sms_settings')->nullable();
-            $table->json('mobile_money_settings')->nullable();
-            $table->string('status', 30)->default('active')->index();
-            $table->timestamps();
-            $table->softDeletes();
-        });
+        if (! Schema::hasTable('organizations')) {
+            Schema::create('organizations', function (Blueprint $table) {
+                $table->id();
+                $table->string('name');
+                $table->string('slug')->unique();
+                $table->string('registration_number')->nullable();
+                $table->string('tax_identification_number')->nullable();
+                $table->string('logo_path')->nullable();
+                $table->string('phone', 40)->nullable();
+                $table->string('email')->nullable();
+                $table->text('address')->nullable();
+                $table->string('currency', 10)->default('UGX');
+                $table->string('financial_year_start_month', 20)->default('january');
+                $table->json('working_days')->nullable();
+                $table->json('interest_settings')->nullable();
+                $table->json('sms_settings')->nullable();
+                $table->json('mobile_money_settings')->nullable();
+                $table->string('status', 30)->default('active')->index();
+                $table->timestamps();
+                $table->softDeletes();
+            });
+        }
 
         $this->addTenantColumns();
         $this->addClientProfileColumns();

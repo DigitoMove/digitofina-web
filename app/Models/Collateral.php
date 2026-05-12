@@ -30,4 +30,14 @@ class Collateral extends Model
     {
         return $this->belongsTo(Loan::class);
     }
+
+    public function valuedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'valued_by');
+    }
+
+    public function verifiedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
+    }
 }

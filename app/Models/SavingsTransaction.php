@@ -25,4 +25,19 @@ class SavingsTransaction extends Model
     {
         return $this->belongsTo(SavingsAccount::class, 'savings_account_id');
     }
+
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(Client::class);
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function teller(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'teller_id');
+    }
 }
