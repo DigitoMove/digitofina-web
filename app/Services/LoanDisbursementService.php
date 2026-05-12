@@ -9,8 +9,8 @@ class LoanDisbursementService
 {
     public function __construct(private LoanService $loans) {}
 
-    public function disburseToSavings(Loan $loan, User $user): Loan
+    public function disburseToSavings(Loan $loan, User $user, string $paymentMethod = 'transfer_to_savings'): Loan
     {
-        return $this->loans->disburseToSavings($loan, $user);
+        return $this->loans->disburseToSavings($loan, $user, $paymentMethod);
     }
 }

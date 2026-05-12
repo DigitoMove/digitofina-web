@@ -5,20 +5,20 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreLoanRepaymentRequest;
 use App\Models\Loan;
 use App\Models\LoanRepayment;
-use App\Services\LoanService;
+use App\Services\LoanRepaymentService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\View\View;
 
 class LoanRepaymentController extends Controller
 {
-    public function store(StoreLoanRepaymentRequest $request, Loan $loan, LoanService $service): RedirectResponse
+    public function store(StoreLoanRepaymentRequest $request, Loan $loan, LoanRepaymentService $repayments): RedirectResponse
     {
         $data = $request->validated();
-        $repayment = $service->repay(
+        $repayment = $repayments->repay(
             $loan,
             (float) $data['amount'],
-            auth()->user(),
+            $request->user(),
             null,
             $data['payment_method'],
             $data['reference'] ?? null,

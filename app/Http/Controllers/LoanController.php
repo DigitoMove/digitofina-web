@@ -4,12 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ApproveLoanRequest;
 use App\Http\Requests\StoreLoanApplicationRequest;
-use App\Models\Account;
 use App\Models\Client;
 use App\Models\Loan;
 use App\Models\LoanProduct;
-use App\Services\AccountNumberGenerator;
-use App\Services\AuditLogger;
+use App\Services\LoanApplicationService;
+use App\Services\LoanApprovalService;
+use App\Services\LoanDisbursementService;
 use App\Services\LoanService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -49,46 +49,9 @@ class LoanController extends Controller
         ]);
     }
 
-    public function store(StoreLoanApplicationRequest $request, AccountNumberGenerator $numbers, AuditLogger $auditLogger): RedirectResponse
+    public function store(StoreLoanApplicationRequest $request, LoanApplicationService $applications): RedirectResponse
     {
-        $data = $request->validated();
-        $client = Client::with('branch')->findOrFail($data['client_id']);
-        $product = LoanProduct::findOrFail($data['loan_product_id']);
-        $savings = Account::where('client_id', $client->id)->whereHas('accountType', fn ($query) => $query->where('category', 'savings'))->first();
-        $requestedAmount = (float) $data['requested_amount'];
-
-        if ($requestedAmount < (float) $product->min_amount || $requestedAmount > (float) $product->max_amount) {
-            return back()->withErrors(['requested_amount' => 'Requested amount is outside the selected product limits.'])->withInput();
-        }
-
-        if ((int) $data['term_periods'] < (int) $product->min_term || (int) $data['term_periods'] > (int) $product->max_term) {
-            return back()->withErrors(['term_periods' => 'Loan term is outside the selected product limits.'])->withInput();
-        }
-
-        $savingsBalance = (float) ($savings?->balance ?? 0);
-        $requiredSavings = round($requestedAmount * ((float) $product->required_savings_percentage / 100), 2);
-
-        $status = match (true) {
-            $product->require_guarantors => 'pending_guarantor_approval',
-            $product->require_collateral => 'pending_collateral_verification',
-            default => 'submitted',
-        };
-
-        $loan = Loan::create($data + [
-            'organization_id' => auth()->user()->organization_id,
-            'branch_id' => $client->branch_id,
-            'officer_id' => auth()->id(),
-            'savings_account_id' => $savings?->id,
-            'loan_number' => $numbers->loanNumber($client->branch),
-            'interest_rate' => $product->annual_interest_rate,
-            'savings_balance_at_application' => $savingsBalance,
-            'required_savings_amount' => $requiredSavings,
-            'application_date' => now()->toDateString(),
-            'status' => $status,
-            'submitted_at' => now()->toDateString(),
-        ]);
-
-        $auditLogger->record('loan.submitted', $loan, $loan->toArray());
+        $loan = $applications->submit($request->validated(), $request->user());
 
         return redirect()->route('loans.show', $loan)->with('status', 'Loan application submitted.');
     }
@@ -110,11 +73,11 @@ class LoanController extends Controller
         ]);
     }
 
-    public function approve(ApproveLoanRequest $request, Loan $loan, LoanService $service): RedirectResponse
+    public function approve(ApproveLoanRequest $request, Loan $loan, LoanApprovalService $approvals): RedirectResponse
     {
         $data = $request->validated();
 
-        $service->approve($loan, auth()->user(), (float) $data['approved_amount'], $data['comments'] ?? null);
+        $approvals->approve($loan, $request->user(), (float) $data['approved_amount'], $data['comments'] ?? null);
 
         return back()->with('status', 'Loan approved.');
     }
@@ -129,7 +92,7 @@ class LoanController extends Controller
         return back()->with('status', 'Loan rejected.');
     }
 
-    public function disburse(Request $request, Loan $loan, LoanService $service): RedirectResponse
+    public function disburse(Request $request, Loan $loan, LoanDisbursementService $disbursements): RedirectResponse
     {
         abort_unless(auth()->user()->canPerform('disburse-loans') || auth()->user()->canPerform('manage-loans'), 403);
 
@@ -137,7 +100,7 @@ class LoanController extends Controller
             'payment_method' => ['required', 'in:cash,mobile_money,bank_transfer,transfer_to_savings,cheque'],
         ]);
 
-        $service->disburseToSavings($loan, auth()->user(), $data['payment_method']);
+        $disbursements->disburseToSavings($loan, $request->user(), $data['payment_method']);
 
         return back()->with('status', 'Loan disbursed into client savings account.');
     }

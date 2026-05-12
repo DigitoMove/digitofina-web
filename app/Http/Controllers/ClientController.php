@@ -6,15 +6,11 @@ use App\Http\Requests\StoreClientRequest;
 use App\Http\Requests\UpdateClientRequest;
 use App\Models\Branch;
 use App\Models\Client;
-use App\Models\Role;
 use App\Models\User;
-use App\Services\AccountNumberGenerator;
-use App\Services\AuditLogger;
+use App\Services\ClientService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class ClientController extends Controller
@@ -48,36 +44,11 @@ class ClientController extends Controller
         return view('clients.create', ['client' => new Client(['status' => 'active', 'kyc_status' => 'pending', 'client_type' => 'individual']), 'branches' => Branch::where('is_active', true)->get()]);
     }
 
-    public function store(StoreClientRequest $request, AccountNumberGenerator $numbers, AuditLogger $auditLogger): RedirectResponse
+    public function store(StoreClientRequest $request, ClientService $clients): RedirectResponse
     {
         Gate::authorize('create', Client::class);
 
-        $data = $this->clientPayload($request);
-
-        $branch = Branch::findOrFail($data['branch_id']);
-        $memberUser = ($data['email'] ?? null)
-            ? User::firstOrCreate(['email' => $data['email']], [
-                'organization_id' => auth()->user()->organization_id,
-                'branch_id' => $branch->id,
-                'role_id' => Role::where('slug', 'member')->value('id'),
-                'name' => trim($data['first_name'].' '.$data['last_name']),
-                'phone' => $data['phone'],
-                'position' => 'Member',
-                'status' => 'active',
-                'password' => Hash::make(Str::password(12)),
-            ])
-            : null;
-
-        $client = Client::create($data + [
-            'organization_id' => auth()->user()->organization_id,
-            'officer_id' => auth()->id(),
-            'user_id' => $memberUser?->id,
-            'client_number' => $numbers->clientNumber($branch),
-            'registered_at' => now()->toDateString(),
-        ]);
-
-        $this->storeProfilePhoto($request, $client);
-        $auditLogger->record('client.created', $client, $client->toArray());
+        $client = $clients->register($this->clientPayload($request), $request->user(), $request->file('profile_photo'));
 
         return redirect()->route('clients.show', $client)->with('status', 'Client registered.');
     }
@@ -98,14 +69,11 @@ class ClientController extends Controller
         return view('clients.edit', ['client' => $client, 'branches' => Branch::where('is_active', true)->get()]);
     }
 
-    public function update(UpdateClientRequest $request, Client $client, AuditLogger $auditLogger): RedirectResponse
+    public function update(UpdateClientRequest $request, Client $client, ClientService $clients): RedirectResponse
     {
         Gate::authorize('update', $client);
 
-        $old = $client->toArray();
-        $client->update($this->clientPayload($request));
-        $this->storeProfilePhoto($request, $client);
-        $auditLogger->record('client.updated', $client, $client->fresh()->toArray(), $old);
+        $clients->update($client, $this->clientPayload($request), $request->user(), $request->file('profile_photo'));
 
         return redirect()->route('clients.show', $client)->with('status', 'Client updated.');
     }
@@ -118,16 +86,5 @@ class ClientController extends Controller
             ->all();
 
         return $data + ['kyc_documents' => $checklist];
-    }
-
-    private function storeProfilePhoto(StoreClientRequest|UpdateClientRequest $request, Client $client): void
-    {
-        if (! $request->hasFile('profile_photo')) {
-            return;
-        }
-
-        $client->update([
-            'photo_path' => $request->file('profile_photo')->store("clients/{$client->id}/profile", 'local'),
-        ]);
     }
 }
