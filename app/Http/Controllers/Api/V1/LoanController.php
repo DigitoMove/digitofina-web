@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreLoanApplicationRequest;
 use App\Http\Resources\LoanResource;
+use App\Http\Resources\LoanScheduleResource;
 use App\Models\Loan;
 use App\Services\LoanApplicationService;
 use Illuminate\Http\Request;
@@ -44,6 +45,13 @@ class LoanController extends Controller
         abort_unless(request()->user()->canPerform('manage-loans') || $loan->client_id === request()->user()->client?->id, 403);
 
         return new LoanResource($loan->load(['client', 'product', 'schedules', 'repayments.receivedBy']));
+    }
+
+    public function schedule(Loan $loan): AnonymousResourceCollection
+    {
+        abort_unless(request()->user()->canPerform('manage-loans') || $loan->client_id === request()->user()->client?->id, 403);
+
+        return LoanScheduleResource::collection($loan->schedules()->orderBy('installment_number')->paginate(request()->integer('per_page', 50)));
     }
 
     public function update(Request $request, Loan $loan): Response
