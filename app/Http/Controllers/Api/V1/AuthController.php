@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ChangePasswordRequest;
 use App\Http\Resources\ClientResource;
 use App\Services\ApiTokenService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 
 class AuthController extends Controller
 {
@@ -50,6 +53,43 @@ class AuthController extends Controller
             'organization' => $user->organization,
             'client' => $user->client ? new ClientResource($user->client) : null,
         ]);
+    }
+
+    public function permissions(Request $request): JsonResponse
+    {
+        $permissions = $request->user()->role?->permissions()->orderBy('slug')->pluck('slug') ?? collect();
+
+        return response()->json(['permissions' => $permissions->values()]);
+    }
+
+    public function refresh(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $request->user()->currentAccessToken()?->delete();
+        $issued = $user->createToken($request->string('device_name')->toString() ?: 'api-client', ['*'], now()->addDays(30));
+
+        return response()->json([
+            'token_type' => 'Bearer',
+            'access_token' => $issued->plainTextToken,
+        ]);
+    }
+
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $data = $request->validate(['email' => ['required', 'email']]);
+        $status = Password::sendResetLink($data);
+
+        return response()->json([
+            'status' => $status === Password::RESET_LINK_SENT ? 'sent' : 'failed',
+            'message' => __($status),
+        ], $status === Password::RESET_LINK_SENT ? 200 : 422);
+    }
+
+    public function changePassword(ChangePasswordRequest $request): JsonResponse
+    {
+        $request->user()->update(['password' => Hash::make($request->validated('password'))]);
+
+        return response()->json(['message' => 'Password changed.']);
     }
 
     public function logout(Request $request): JsonResponse

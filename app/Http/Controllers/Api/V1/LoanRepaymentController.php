@@ -3,9 +3,27 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
+use App\Http\Requests\StoreLoanRepaymentRequest;
+use App\Http\Resources\LoanRepaymentResource;
+use App\Models\Loan;
+use App\Services\LoanRepaymentService;
+use Illuminate\Support\Carbon;
 
 class LoanRepaymentController extends Controller
 {
-    //
+    public function store(StoreLoanRepaymentRequest $request, Loan $loan, LoanRepaymentService $repayments): LoanRepaymentResource
+    {
+        $data = $request->validated();
+        $repayment = $repayments->repay(
+            $loan,
+            (float) $data['amount'],
+            $request->user(),
+            null,
+            $data['payment_method'],
+            $data['reference'] ?? null,
+            Carbon::parse($data['paid_at'])
+        );
+
+        return new LoanRepaymentResource($repayment->load('receivedBy'));
+    }
 }

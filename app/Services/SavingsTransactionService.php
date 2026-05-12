@@ -26,6 +26,41 @@ class SavingsTransactionService
         return $this->post($account, $amount, $teller, 'withdrawal', $paymentMethod, $narration);
     }
 
+    public function reverse(SavingsTransaction $transaction, User $user, string $reason): SavingsTransaction
+    {
+        if (! $user->canPerform('post-transactions')) {
+            throw new InvalidArgumentException('You do not have permission to reverse savings transactions.');
+        }
+
+        if ($transaction->status !== 'successful') {
+            throw new InvalidArgumentException('Only successful transactions can be reversed.');
+        }
+
+        if (! in_array($transaction->type, ['deposit', 'withdrawal'], true)) {
+            throw new InvalidArgumentException('Only deposits and withdrawals can be reversed automatically.');
+        }
+
+        return DB::transaction(function () use ($transaction, $user, $reason): SavingsTransaction {
+            $transaction = SavingsTransaction::query()->whereKey($transaction->id)->lockForUpdate()->firstOrFail();
+            $account = SavingsAccount::query()->whereKey($transaction->savings_account_id)->lockForUpdate()->firstOrFail();
+
+            $account->update([
+                'current_balance' => $transaction->balance_before,
+                'available_balance' => $transaction->balance_before,
+            ]);
+
+            $transaction->update([
+                'status' => 'reversed',
+                'reversed_by' => $user->id,
+                'reversal_reason' => $reason,
+            ]);
+
+            $this->auditLogger->record('savings.transaction_reversed', $transaction, ['reason' => $reason]);
+
+            return $transaction->refresh();
+        });
+    }
+
     /**
      * @return array{out:SavingsTransaction,in:SavingsTransaction}
      */
