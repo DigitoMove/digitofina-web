@@ -9,13 +9,14 @@ use App\Http\Resources\SavingsTransactionResource;
 use App\Models\SavingsAccount;
 use App\Models\SavingsTransaction;
 use App\Services\SavingsTransactionService;
+use App\Support\ApiResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\JsonResource;
 use InvalidArgumentException;
 
 class SavingsTransactionController extends Controller
 {
-    public function deposit(StoreSavingsTransactionRequest $request, SavingsAccount $savingsAccount, SavingsTransactionService $transactions): SavingsTransactionResource
+    public function deposit(StoreSavingsTransactionRequest $request, SavingsAccount $savingsAccount, SavingsTransactionService $transactions): JsonResponse
     {
         try {
             $transaction = $transactions->deposit($savingsAccount, (float) $request->validated('amount'), $request->user(), $request->validated('payment_method'), $request->validated('narration'));
@@ -23,10 +24,10 @@ class SavingsTransactionController extends Controller
             abort(422, $exception->getMessage());
         }
 
-        return new SavingsTransactionResource($transaction->load(['account', 'teller']));
+        return ApiResponse::resource(new SavingsTransactionResource($transaction->load(['account', 'teller'])), 'Deposit posted successfully.', 201);
     }
 
-    public function withdraw(StoreSavingsTransactionRequest $request, SavingsAccount $savingsAccount, SavingsTransactionService $transactions): SavingsTransactionResource
+    public function withdraw(StoreSavingsTransactionRequest $request, SavingsAccount $savingsAccount, SavingsTransactionService $transactions): JsonResponse
     {
         try {
             $transaction = $transactions->withdraw($savingsAccount, (float) $request->validated('amount'), $request->user(), $request->validated('payment_method'), $request->validated('narration'));
@@ -34,10 +35,10 @@ class SavingsTransactionController extends Controller
             abort(422, $exception->getMessage());
         }
 
-        return new SavingsTransactionResource($transaction->load(['account', 'teller']));
+        return ApiResponse::resource(new SavingsTransactionResource($transaction->load(['account', 'teller'])), 'Withdrawal posted successfully.', 201);
     }
 
-    public function transfer(StoreSavingsTransferRequest $request, SavingsTransactionService $transactions): JsonResource
+    public function transfer(StoreSavingsTransferRequest $request, SavingsTransactionService $transactions): JsonResponse
     {
         try {
             $posted = $transactions->transfer(
@@ -51,13 +52,13 @@ class SavingsTransactionController extends Controller
             abort(422, $exception->getMessage());
         }
 
-        return new JsonResource([
-            'out' => new SavingsTransactionResource($posted['out']->load(['account', 'teller'])),
-            'in' => new SavingsTransactionResource($posted['in']->load(['account', 'teller'])),
-        ]);
+        return ApiResponse::data([
+            'out' => (new SavingsTransactionResource($posted['out']->load(['account', 'teller'])))->resolve($request),
+            'in' => (new SavingsTransactionResource($posted['in']->load(['account', 'teller'])))->resolve($request),
+        ], 'Transfer posted successfully.', 201);
     }
 
-    public function reverse(Request $request, SavingsTransaction $savingsTransaction, SavingsTransactionService $transactions): SavingsTransactionResource
+    public function reverse(Request $request, SavingsTransaction $savingsTransaction, SavingsTransactionService $transactions): JsonResponse
     {
         $data = $request->validate(['reason' => ['required', 'string', 'max:1000']]);
 
@@ -67,6 +68,6 @@ class SavingsTransactionController extends Controller
             abort(422, $exception->getMessage());
         }
 
-        return new SavingsTransactionResource($transaction->load(['account', 'teller']));
+        return ApiResponse::resource(new SavingsTransactionResource($transaction->load(['account', 'teller'])), 'Transaction reversed successfully.');
     }
 }

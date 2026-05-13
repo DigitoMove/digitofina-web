@@ -8,21 +8,23 @@ use App\Http\Resources\ClientDocumentResource;
 use App\Models\Client;
 use App\Models\ClientDocument;
 use App\Services\AuditLogger;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use App\Support\ApiResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Storage;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ClientDocumentController extends Controller
 {
-    public function index(Client $client): AnonymousResourceCollection
+    public function index(Client $client): JsonResponse
     {
         Gate::authorize('view', $client);
 
-        return ClientDocumentResource::collection($client->documents()->with(['uploadedBy', 'verifiedBy'])->latest()->paginate(request()->integer('per_page', 20)));
+        return ApiResponse::collection(
+            ClientDocumentResource::collection($client->documents()->with(['uploadedBy', 'verifiedBy'])->latest()->paginate(request()->integer('per_page', 20))),
+            'Client documents retrieved.'
+        );
     }
 
-    public function store(StoreClientDocumentRequest $request, Client $client, AuditLogger $auditLogger): ClientDocumentResource
+    public function store(StoreClientDocumentRequest $request, Client $client, AuditLogger $auditLogger): JsonResponse
     {
         Gate::authorize('uploadDocument', $client);
 
@@ -44,14 +46,14 @@ class ClientDocumentController extends Controller
 
         $auditLogger->record('client.document_uploaded', $document, $document->toArray());
 
-        return new ClientDocumentResource($document->load(['uploadedBy', 'verifiedBy']));
+        return ApiResponse::resource(new ClientDocumentResource($document->load(['uploadedBy', 'verifiedBy'])), 'Client document uploaded successfully.', 201);
     }
 
-    public function download(Client $client, ClientDocument $document): StreamedResponse
+    public function download(Client $client, ClientDocument $document): JsonResponse
     {
         Gate::authorize('view', $client);
         abort_unless($document->client_id === $client->id, 404);
 
-        return Storage::disk($document->disk)->download($document->path, str($document->title)->slug().'.'.pathinfo($document->path, PATHINFO_EXTENSION));
+        return ApiResponse::resource(new ClientDocumentResource($document->load(['uploadedBy', 'verifiedBy'])), 'Client document retrieved.');
     }
 }

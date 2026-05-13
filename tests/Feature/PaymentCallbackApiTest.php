@@ -30,7 +30,8 @@ it('records unmatched mobile money callbacks without attaching them to an arbitr
         'amount' => 25000,
         'phone' => '256700000000',
     ])->assertSuccessful()
-        ->assertJsonPath('status', 'received');
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('data.status', 'received');
 
     expect(PaymentCallback::first())
         ->payment_request_id

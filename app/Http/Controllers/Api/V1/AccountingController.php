@@ -3,13 +3,14 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\ChartAccountResource;
 use App\Http\Resources\JournalEntryResource;
 use App\Models\ChartAccount;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
+use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 
 class AccountingController extends Controller
@@ -18,15 +19,16 @@ class AccountingController extends Controller
     {
         abort_unless($request->user()->canPerform('manage-accounting') || $request->user()->canPerform('view-reports'), 403);
 
-        return response()->json(['data' => ChartAccount::query()->orderBy('code')->get()]);
+        return ApiResponse::collection(ChartAccountResource::collection(ChartAccount::query()->orderBy('code')->get()), 'Chart of accounts retrieved.');
     }
 
-    public function journalEntries(Request $request): AnonymousResourceCollection
+    public function journalEntries(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-accounting') || $request->user()->canPerform('view-reports'), 403);
 
-        return JournalEntryResource::collection(
-            JournalEntry::query()->with('lines.chartAccount')->latest('journal_date')->paginate($request->integer('per_page', 30))
+        return ApiResponse::collection(
+            JournalEntryResource::collection(JournalEntry::query()->with('lines.chartAccount')->latest('journal_date')->paginate($request->integer('per_page', 30))),
+            'Journal entries retrieved.'
         );
     }
 
@@ -41,13 +43,19 @@ class AccountingController extends Controller
             ->orderBy('chart_accounts.code')
             ->get();
 
-        return response()->json([
-            'data' => $rows,
+        return ApiResponse::data([
+            'rows' => $rows->map(fn ($row): array => [
+                'code' => $row->code,
+                'name' => $row->name,
+                'type' => $row->type,
+                'debit' => (float) $row->debit,
+                'credit' => (float) $row->credit,
+            ]),
             'totals' => [
                 'debit' => (float) $rows->sum('debit'),
                 'credit' => (float) $rows->sum('credit'),
             ],
-        ]);
+        ], 'Trial balance retrieved.');
     }
 
     public function generalLedger(Request $request): JsonResponse
@@ -60,17 +68,18 @@ class AccountingController extends Controller
             ->latest()
             ->paginate($request->integer('per_page', 50));
 
-        return response()->json([
-            'data' => collect($lines->items())->map(fn (JournalLine $line) => [
+        return ApiResponse::data([
+            'lines' => collect($lines->items())->map(fn (JournalLine $line) => [
                 'id' => $line->id,
                 'journal_number' => $line->journalEntry?->journal_number,
                 'journal_date' => $line->journalEntry?->journal_date?->toDateString(),
-                'account' => $line->chartAccount,
+                'account' => $line->chartAccount ? (new ChartAccountResource($line->chartAccount))->resolve($request) : null,
                 'debit' => (float) $line->debit,
                 'credit' => (float) $line->credit,
                 'narration' => $line->narration,
             ]),
-            'meta' => [
+        ], 'General ledger retrieved.', meta: [
+            'pagination' => [
                 'current_page' => $lines->currentPage(),
                 'last_page' => $lines->lastPage(),
                 'total' => $lines->total(),
@@ -82,14 +91,14 @@ class AccountingController extends Controller
     {
         abort_unless($request->user()->canPerform('view-reports') || $request->user()->canPerform('manage-accounting'), 403);
 
-        return response()->json(['data' => $this->statementRows(['income', 'expenses', 'expense'])]);
+        return ApiResponse::data($this->statementRows(['income', 'expenses', 'expense']), 'Income statement retrieved.');
     }
 
     public function balanceSheet(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports') || $request->user()->canPerform('manage-accounting'), 403);
 
-        return response()->json(['data' => $this->statementRows(['assets', 'asset', 'liabilities', 'liability', 'equity'])]);
+        return ApiResponse::data($this->statementRows(['assets', 'asset', 'liabilities', 'liability', 'equity']), 'Balance sheet retrieved.');
     }
 
     /**

@@ -30,12 +30,26 @@ it('issues a sanctum token and returns the authenticated user profile', function
         'device_name' => 'Pest',
     ])
         ->assertSuccessful()
-        ->assertJsonPath('token_type', 'Bearer')
-        ->json('access_token');
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('data.token_type', 'Bearer')
+        ->json('data.access_token');
 
     $this->withToken($token)
         ->getJson('/api/v1/auth/me')
         ->assertSuccessful()
-        ->assertJsonPath('email', 'api@digitofina.test')
-        ->assertJsonPath('permissions.0', 'manage-clients');
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('data.email', 'api@digitofina.test')
+        ->assertJsonPath('data.permissions.0', 'manage-clients');
+});
+
+it('returns standardized validation errors for api requests', function () {
+    $this->postJson('/api/v1/auth/login', [])
+        ->assertUnprocessable()
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('message', 'Validation failed')
+        ->assertJsonStructure([
+            'success',
+            'message',
+            'errors' => ['login', 'password'],
+        ]);
 });

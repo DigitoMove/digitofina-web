@@ -3,17 +3,18 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\InAppNotificationResource;
 use App\Http\Resources\SmsLogResource;
 use App\Models\SmsLog;
 use App\Services\SmsService;
+use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Notifications\DatabaseNotification;
 
 class NotificationController extends Controller
 {
-    public function sendSms(Request $request, SmsService $sms): SmsLogResource
+    public function sendSms(Request $request, SmsService $sms): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-settings') || $request->user()->canPerform('manage-clients'), 403);
 
@@ -23,21 +24,19 @@ class NotificationController extends Controller
             'type' => ['required', 'string', 'max:80'],
         ]);
 
-        return new SmsLogResource($sms->queue($data['recipient'], $data['message'], $data['type'], $request->user())->load('provider'));
+        return ApiResponse::resource(new SmsLogResource($sms->queue($data['recipient'], $data['message'], $data['type'], $request->user())->load('provider')), 'SMS queued successfully.', 201);
     }
 
-    public function smsLogs(Request $request): AnonymousResourceCollection
+    public function smsLogs(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports') || $request->user()->canPerform('manage-settings'), 403);
 
-        return SmsLogResource::collection(SmsLog::query()->with('provider')->latest()->paginate($request->integer('per_page', 30)));
+        return ApiResponse::collection(SmsLogResource::collection(SmsLog::query()->with('provider')->latest()->paginate($request->integer('per_page', 30))), 'SMS logs retrieved.');
     }
 
     public function notifications(Request $request): JsonResponse
     {
-        return response()->json([
-            'data' => $request->user()->notifications()->latest()->paginate($request->integer('per_page', 30)),
-        ]);
+        return ApiResponse::collection(InAppNotificationResource::collection($request->user()->notifications()->latest()->paginate($request->integer('per_page', 30))), 'Notifications retrieved.');
     }
 
     public function markRead(Request $request, string $notification): JsonResponse
@@ -50,6 +49,6 @@ class NotificationController extends Controller
 
         $record->markAsRead();
 
-        return response()->json(['message' => 'Notification marked as read.']);
+        return ApiResponse::resource(new InAppNotificationResource($record), 'Notification marked as read.');
     }
 }

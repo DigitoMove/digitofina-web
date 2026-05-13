@@ -3,6 +3,10 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\BranchPerformanceResource;
+use App\Http\Resources\DrawerMovementResource;
+use App\Http\Resources\LoanScheduleResource;
+use App\Http\Resources\ReportExportResource;
 use App\Models\Branch;
 use App\Models\Client;
 use App\Models\DrawerMovement;
@@ -11,6 +15,7 @@ use App\Models\LoanSchedule;
 use App\Models\ReportExport;
 use App\Models\SavingsAccount;
 use App\Models\SavingsTransaction;
+use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -20,7 +25,7 @@ class ReportController extends Controller
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
-        return response()->json(['data' => [
+        return ApiResponse::data([
             'clients' => Client::count(),
             'active_clients' => Client::where('status', 'active')->count(),
             'total_savings' => (float) SavingsAccount::sum('current_balance'),
@@ -29,53 +34,93 @@ class ReportController extends Controller
             'deposits_today' => (float) SavingsTransaction::where('type', 'deposit')->whereDate('transaction_date', today())->sum('amount'),
             'withdrawals_today' => (float) SavingsTransaction::where('type', 'withdrawal')->whereDate('transaction_date', today())->sum('amount'),
             'branches' => Branch::count(),
-        ]]);
+        ], 'Dashboard summary retrieved.');
     }
 
     public function clients(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
-        return response()->json(['data' => Client::query()->selectRaw('status, count(*) as total')->groupBy('status')->get()]);
+        $rows = Client::query()
+            ->selectRaw('status, count(*) as total')
+            ->groupBy('status')
+            ->get()
+            ->map(fn (Client $client): array => ['status' => $client->status, 'total' => (int) $client->total]);
+
+        return ApiResponse::data($rows, 'Client report retrieved.');
     }
 
     public function savings(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
-        return response()->json(['data' => [
+        $accountsByStatus = SavingsAccount::query()
+            ->selectRaw('status, count(*) as total')
+            ->groupBy('status')
+            ->get()
+            ->map(fn (SavingsAccount $account): array => ['status' => $account->status, 'total' => (int) $account->total]);
+        $transactionsByType = SavingsTransaction::query()
+            ->selectRaw('type, count(*) as total, sum(amount) as amount')
+            ->groupBy('type')
+            ->get()
+            ->map(fn (SavingsTransaction $transaction): array => [
+                'type' => $transaction->type,
+                'total' => (int) $transaction->total,
+                'amount' => (float) $transaction->amount,
+            ]);
+
+        return ApiResponse::data([
             'balances' => (float) SavingsAccount::sum('current_balance'),
-            'accounts_by_status' => SavingsAccount::query()->selectRaw('status, count(*) as total')->groupBy('status')->get(),
-            'transactions_by_type' => SavingsTransaction::query()->selectRaw('type, count(*) as total, sum(amount) as amount')->groupBy('type')->get(),
-        ]]);
+            'accounts_by_status' => $accountsByStatus,
+            'transactions_by_type' => $transactionsByType,
+        ], 'Savings report retrieved.');
     }
 
     public function loans(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
-        return response()->json(['data' => Loan::query()->selectRaw('status, count(*) as total, sum(principal_balance) as principal')->groupBy('status')->get()]);
+        $rows = Loan::query()
+            ->selectRaw('status, count(*) as total, sum(principal_balance) as principal')
+            ->groupBy('status')
+            ->get()
+            ->map(fn (Loan $loan): array => [
+                'status' => $loan->status,
+                'total' => (int) $loan->total,
+                'principal' => (float) $loan->principal,
+            ]);
+
+        return ApiResponse::data($rows, 'Loan report retrieved.');
     }
 
     public function arrears(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
-        return response()->json(['data' => LoanSchedule::query()->with('loan.client')->where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->paginate($request->integer('per_page', 30))]);
+        return ApiResponse::collection(
+            LoanScheduleResource::collection(LoanSchedule::query()->with('loan.client')->where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->paginate($request->integer('per_page', 30))),
+            'Arrears report retrieved.'
+        );
     }
 
     public function tellers(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
-        return response()->json(['data' => DrawerMovement::query()->with(['session.drawer', 'user'])->latest()->paginate($request->integer('per_page', 30))]);
+        return ApiResponse::collection(
+            DrawerMovementResource::collection(DrawerMovement::query()->with(['session.drawer', 'session.user'])->latest()->paginate($request->integer('per_page', 30))),
+            'Teller report retrieved.'
+        );
     }
 
     public function branchPerformance(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
-        return response()->json(['data' => Branch::query()->withCount(['clients'])->withSum('savingsAccounts', 'current_balance')->paginate($request->integer('per_page', 20))]);
+        return ApiResponse::collection(
+            BranchPerformanceResource::collection(Branch::query()->withCount(['clients'])->withSum('savingsAccounts', 'current_balance')->paginate($request->integer('per_page', 20))),
+            'Branch performance retrieved.'
+        );
     }
 
     public function export(Request $request): JsonResponse
@@ -98,6 +143,6 @@ class ReportController extends Controller
             'status' => 'queued',
         ]);
 
-        return response()->json(['data' => $export], 202);
+        return ApiResponse::resource(new ReportExportResource($export), 'Report export queued.', 202);
     }
 }

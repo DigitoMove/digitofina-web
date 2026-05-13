@@ -8,13 +8,14 @@ use App\Http\Resources\LoanResource;
 use App\Http\Resources\LoanScheduleResource;
 use App\Models\Loan;
 use App\Services\LoanApplicationService;
+use App\Support\ApiResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 
 class LoanController extends Controller
 {
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-loans') || $request->user()->canPerform('view-own-accounts'), 403);
 
@@ -30,28 +31,35 @@ class LoanController extends Controller
             ->latest()
             ->paginate($request->integer('per_page', 15));
 
-        return LoanResource::collection($loans);
+        return ApiResponse::collection(LoanResource::collection($loans), 'Loans retrieved.');
     }
 
-    public function store(StoreLoanApplicationRequest $request, LoanApplicationService $applications): LoanResource
+    public function store(StoreLoanApplicationRequest $request, LoanApplicationService $applications): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-loans'), 403);
 
-        return new LoanResource($applications->submit($request->validated(), $request->user())->load(['client', 'product']));
+        return ApiResponse::resource(
+            new LoanResource($applications->submit($request->validated(), $request->user())->load(['client', 'product'])),
+            'Loan application created successfully.',
+            201
+        );
     }
 
-    public function show(Loan $loan): LoanResource
+    public function show(Loan $loan): JsonResponse
     {
         abort_unless(request()->user()->canPerform('manage-loans') || $loan->client_id === request()->user()->client?->id, 403);
 
-        return new LoanResource($loan->load(['client', 'product', 'schedules', 'repayments.receivedBy']));
+        return ApiResponse::resource(new LoanResource($loan->load(['client', 'product', 'schedules', 'repayments.receivedBy'])), 'Loan retrieved.');
     }
 
-    public function schedule(Loan $loan): AnonymousResourceCollection
+    public function schedule(Loan $loan): JsonResponse
     {
         abort_unless(request()->user()->canPerform('manage-loans') || $loan->client_id === request()->user()->client?->id, 403);
 
-        return LoanScheduleResource::collection($loan->schedules()->orderBy('installment_number')->paginate(request()->integer('per_page', 50)));
+        return ApiResponse::collection(
+            LoanScheduleResource::collection($loan->schedules()->orderBy('installment_number')->paginate(request()->integer('per_page', 50))),
+            'Loan repayment schedule retrieved.'
+        );
     }
 
     public function update(Request $request, Loan $loan): Response

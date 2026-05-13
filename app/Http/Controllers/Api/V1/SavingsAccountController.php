@@ -8,13 +8,14 @@ use App\Http\Resources\SavingsAccountResource;
 use App\Http\Resources\SavingsTransactionResource;
 use App\Models\SavingsAccount;
 use App\Services\SavingsAccountService;
+use App\Support\ApiResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 
 class SavingsAccountController extends Controller
 {
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-accounts') || $request->user()->canPerform('view-own-accounts'), 403);
 
@@ -31,24 +32,28 @@ class SavingsAccountController extends Controller
             ->latest()
             ->paginate($request->integer('per_page', 15));
 
-        return SavingsAccountResource::collection($accounts);
+        return ApiResponse::collection(SavingsAccountResource::collection($accounts), 'Savings accounts retrieved.');
     }
 
-    public function store(StoreSavingsAccountRequest $request, SavingsAccountService $accounts): SavingsAccountResource
+    public function store(StoreSavingsAccountRequest $request, SavingsAccountService $accounts): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-accounts'), 403);
 
-        return new SavingsAccountResource($accounts->open($request->validated(), $request->user())->load(['client', 'branch', 'product']));
+        return ApiResponse::resource(
+            new SavingsAccountResource($accounts->open($request->validated(), $request->user())->load(['client', 'branch', 'product'])),
+            'Savings account opened successfully.',
+            201
+        );
     }
 
-    public function show(SavingsAccount $savingsAccount): SavingsAccountResource
+    public function show(SavingsAccount $savingsAccount): JsonResponse
     {
         abort_unless(request()->user()->canPerform('manage-accounts') || $savingsAccount->client_id === request()->user()->client?->id, 403);
 
-        return new SavingsAccountResource($savingsAccount->load(['client', 'branch', 'product']));
+        return ApiResponse::resource(new SavingsAccountResource($savingsAccount->load(['client', 'branch', 'product'])), 'Savings account retrieved.');
     }
 
-    public function statement(Request $request, SavingsAccount $savingsAccount): AnonymousResourceCollection
+    public function statement(Request $request, SavingsAccount $savingsAccount): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-accounts') || $savingsAccount->client_id === $request->user()->client?->id, 403);
 
@@ -59,7 +64,7 @@ class SavingsAccountController extends Controller
             ->latest('transaction_date')
             ->paginate($request->integer('per_page', 30));
 
-        return SavingsTransactionResource::collection($transactions);
+        return ApiResponse::collection(SavingsTransactionResource::collection($transactions), 'Savings statement retrieved.');
     }
 
     public function update(Request $request, SavingsAccount $savingsAccount): Response

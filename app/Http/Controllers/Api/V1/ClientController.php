@@ -11,14 +11,15 @@ use App\Http\Resources\SavingsAccountResource;
 use App\Http\Resources\SavingsTransactionResource;
 use App\Models\Client;
 use App\Services\ClientService;
+use App\Support\ApiResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 
 class ClientController extends Controller
 {
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(Request $request): JsonResponse
     {
         Gate::authorize('viewAny', Client::class);
 
@@ -30,45 +31,58 @@ class ClientController extends Controller
             ->latest()
             ->paginate($request->integer('per_page', 15));
 
-        return ClientResource::collection($clients);
+        return ApiResponse::collection(ClientResource::collection($clients), 'Clients retrieved.');
     }
 
-    public function store(StoreClientRequest $request, ClientService $clients): ClientResource
+    public function store(StoreClientRequest $request, ClientService $clients): JsonResponse
     {
         Gate::authorize('create', Client::class);
 
-        return new ClientResource($clients->register($this->payload($request), $request->user(), $request->file('profile_photo'))->load(['branch', 'officer']));
+        return ApiResponse::resource(
+            new ClientResource($clients->register($this->payload($request), $request->user(), $request->file('profile_photo'))->load(['branch', 'officer'])),
+            'Client registered successfully.',
+            201
+        );
     }
 
-    public function show(Client $client): ClientResource
+    public function show(Client $client): JsonResponse
     {
         Gate::authorize('view', $client);
 
-        return new ClientResource($client->load(['branch', 'officer']));
+        return ApiResponse::resource(new ClientResource($client->load(['branch', 'officer'])), 'Client profile retrieved.');
     }
 
-    public function update(UpdateClientRequest $request, Client $client, ClientService $clients): ClientResource
+    public function update(UpdateClientRequest $request, Client $client, ClientService $clients): JsonResponse
     {
         Gate::authorize('update', $client);
 
-        return new ClientResource($clients->update($client, $this->payload($request), $request->user(), $request->file('profile_photo'))->load(['branch', 'officer']));
+        return ApiResponse::resource(
+            new ClientResource($clients->update($client, $this->payload($request), $request->user(), $request->file('profile_photo'))->load(['branch', 'officer'])),
+            'Client updated successfully.'
+        );
     }
 
-    public function accounts(Client $client): AnonymousResourceCollection
+    public function accounts(Client $client): JsonResponse
     {
         Gate::authorize('view', $client);
 
-        return SavingsAccountResource::collection($client->savingsAccounts()->with(['client', 'branch', 'product'])->paginate(request()->integer('per_page', 20)));
+        return ApiResponse::collection(
+            SavingsAccountResource::collection($client->savingsAccounts()->with(['client', 'branch', 'product'])->paginate(request()->integer('per_page', 20))),
+            'Client savings accounts retrieved.'
+        );
     }
 
-    public function loans(Client $client): AnonymousResourceCollection
+    public function loans(Client $client): JsonResponse
     {
         Gate::authorize('view', $client);
 
-        return LoanResource::collection($client->loans()->with(['client', 'product'])->paginate(request()->integer('per_page', 20)));
+        return ApiResponse::collection(
+            LoanResource::collection($client->loans()->with(['client', 'product'])->paginate(request()->integer('per_page', 20))),
+            'Client loans retrieved.'
+        );
     }
 
-    public function statements(Client $client): AnonymousResourceCollection
+    public function statements(Client $client): JsonResponse
     {
         Gate::authorize('view', $client);
 
@@ -80,7 +94,7 @@ class ClientController extends Controller
             ->sortByDesc('transaction_date')
             ->values();
 
-        return SavingsTransactionResource::collection($transactions);
+        return ApiResponse::collection(SavingsTransactionResource::collection($transactions), 'Client statements retrieved.');
     }
 
     public function destroy(Client $client): Response

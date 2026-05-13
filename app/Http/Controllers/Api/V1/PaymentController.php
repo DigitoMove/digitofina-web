@@ -12,13 +12,14 @@ use App\Models\PaymentRequest;
 use App\Models\SavingsAccount;
 use App\Services\MobileMoneyReconciliationService;
 use App\Services\PaymentGatewayService;
+use App\Support\ApiResponse;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class PaymentController extends Controller
 {
-    public function initiateCollection(Request $request, PaymentGatewayService $payments): PaymentRequestResource
+    public function initiateCollection(Request $request, PaymentGatewayService $payments): JsonResponse
     {
         abort_unless($request->user()->canPerform('post-transactions') || $request->user()->canPerform('manage-accounts'), 403);
 
@@ -37,7 +38,11 @@ class PaymentController extends Controller
 
         $payable = $this->payable($data['payable_type'], (int) $data['payable_id']);
 
-        return new PaymentRequestResource($payments->initiateCollection($provider, $payable, (float) $data['amount'], $data['phone'], $data['metadata'] ?? [])->load('provider'));
+        return ApiResponse::resource(
+            new PaymentRequestResource($payments->initiateCollection($provider, $payable, (float) $data['amount'], $data['phone'], $data['metadata'] ?? [])->load('provider')),
+            'Mobile money collection initiated.',
+            201
+        );
     }
 
     public function callback(Request $request): JsonResponse
@@ -93,20 +98,20 @@ class PaymentController extends Controller
             ]);
         }
 
-        return response()->json(['status' => 'received', 'callback_id' => $callback->id]);
+        return ApiResponse::data(['status' => 'received', 'callback_id' => $callback->id], 'Mobile money callback received.');
     }
 
-    public function verify(PaymentRequest $paymentRequest): PaymentRequestResource
+    public function verify(PaymentRequest $paymentRequest): JsonResponse
     {
-        return new PaymentRequestResource($paymentRequest->load('provider'));
+        return ApiResponse::resource(new PaymentRequestResource($paymentRequest->load('provider')), 'Payment verification retrieved.');
     }
 
     public function reconcile(MobileMoneyReconciliationService $reconciliation): JsonResponse
     {
-        return response()->json(['status' => 'queued', 'message' => 'Reconciliation endpoint is ready for provider adapters.']);
+        return ApiResponse::data(['status' => 'queued'], 'Reconciliation endpoint is ready for provider adapters.', 202);
     }
 
-    public function matchPayment(Request $request, PaymentRequest $paymentRequest): PaymentRequestResource
+    public function matchPayment(Request $request, PaymentRequest $paymentRequest): JsonResponse
     {
         $data = $request->validate([
             'payable_type' => ['required', 'in:savings_account,loan'],
@@ -120,7 +125,7 @@ class PaymentController extends Controller
             'status' => 'matched',
         ]);
 
-        return new PaymentRequestResource($paymentRequest->fresh()->load('provider'));
+        return ApiResponse::resource(new PaymentRequestResource($paymentRequest->fresh()->load('provider')), 'Payment matched successfully.');
     }
 
     private function payable(string $type, int $id): Model

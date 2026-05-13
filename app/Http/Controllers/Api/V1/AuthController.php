@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ChangePasswordRequest;
 use App\Http\Resources\ClientResource;
 use App\Services\ApiTokenService;
+use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -23,7 +24,7 @@ class AuthController extends Controller
 
         $issued = $tokens->issue($data['login'], $data['password'], $data['device_name'] ?? 'api-client');
 
-        return response()->json([
+        return ApiResponse::data([
             'token_type' => 'Bearer',
             'access_token' => $issued['token'],
             'user' => [
@@ -35,31 +36,38 @@ class AuthController extends Controller
                 'branch_id' => $issued['user']->branch_id,
                 'organization_id' => $issued['user']->organization_id,
             ],
-        ]);
+        ], 'Login successful.');
     }
 
     public function me(Request $request): JsonResponse
     {
         $user = $request->user()->load(['role.permissions', 'branch', 'organization', 'client']);
 
-        return response()->json([
+        return ApiResponse::data([
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
             'phone' => $user->phone,
             'role' => $user->role?->slug,
             'permissions' => $user->role?->permissions->pluck('slug')->values() ?? [],
-            'branch' => $user->branch,
-            'organization' => $user->organization,
-            'client' => $user->client ? new ClientResource($user->client) : null,
-        ]);
+            'branch' => $user->branch ? [
+                'id' => $user->branch->id,
+                'name' => $user->branch->name,
+                'code' => $user->branch->code,
+            ] : null,
+            'organization' => $user->organization ? [
+                'id' => $user->organization->id,
+                'name' => $user->organization->name,
+            ] : null,
+            'client' => $user->client ? (new ClientResource($user->client))->resolve($request) : null,
+        ], 'User profile retrieved.');
     }
 
     public function permissions(Request $request): JsonResponse
     {
         $permissions = $request->user()->role?->permissions()->orderBy('slug')->pluck('slug') ?? collect();
 
-        return response()->json(['permissions' => $permissions->values()]);
+        return ApiResponse::data(['permissions' => $permissions->values()], 'User permissions retrieved.');
     }
 
     public function refresh(Request $request): JsonResponse
@@ -68,10 +76,10 @@ class AuthController extends Controller
         $request->user()->currentAccessToken()?->delete();
         $issued = $user->createToken($request->string('device_name')->toString() ?: 'api-client', ['*'], now()->addDays(30));
 
-        return response()->json([
+        return ApiResponse::data([
             'token_type' => 'Bearer',
             'access_token' => $issued->plainTextToken,
-        ]);
+        ], 'Token refreshed.');
     }
 
     public function forgotPassword(Request $request): JsonResponse
@@ -79,23 +87,24 @@ class AuthController extends Controller
         $data = $request->validate(['email' => ['required', 'email']]);
         $status = Password::sendResetLink($data);
 
-        return response()->json([
-            'status' => $status === Password::RESET_LINK_SENT ? 'sent' : 'failed',
-            'message' => __($status),
-        ], $status === Password::RESET_LINK_SENT ? 200 : 422);
+        if ($status !== Password::RESET_LINK_SENT) {
+            return ApiResponse::error(__($status), ['email' => [__($status)]], 422);
+        }
+
+        return ApiResponse::data(['status' => 'sent'], __($status));
     }
 
     public function changePassword(ChangePasswordRequest $request): JsonResponse
     {
         $request->user()->update(['password' => Hash::make($request->validated('password'))]);
 
-        return response()->json(['message' => 'Password changed.']);
+        return ApiResponse::data(message: 'Password changed.');
     }
 
     public function logout(Request $request): JsonResponse
     {
         $request->user()->currentAccessToken()?->delete();
 
-        return response()->json(['message' => 'Logged out.']);
+        return ApiResponse::data(message: 'Logged out.');
     }
 }
