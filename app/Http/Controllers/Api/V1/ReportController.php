@@ -7,6 +7,7 @@ use App\Http\Resources\BranchPerformanceResource;
 use App\Http\Resources\DrawerMovementResource;
 use App\Http\Resources\LoanScheduleResource;
 use App\Http\Resources\ReportExportResource;
+use App\Jobs\GenerateReportExport;
 use App\Models\Branch;
 use App\Models\Client;
 use App\Models\DrawerMovement;
@@ -143,6 +144,8 @@ class ReportController extends Controller
             'filters' => $data['filters'] ?? [],
             'status' => 'queued',
         ]);
+
+        GenerateReportExport::dispatch($export)->afterCommit();
 
         return ApiResponse::resource(new ReportExportResource($export), 'Report export queued.', 202);
     }

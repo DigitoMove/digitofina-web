@@ -9,6 +9,7 @@ This directory contains OpenAPI 3.1 documentation for DigitoFina v1 APIs.
 - Standard error envelope: `{ "success": false, "message": "...", "errors": {} }`
 - Mobile list endpoints support `page`, `per_page`, `search`, `filter[...]`, `sort`, and `updated_since` where applicable.
 - Financial operations require an `Idempotency-Key` header when marked in the OpenAPI operation parameters.
+- Webhook endpoints store raw deliveries, verify configured provider signatures, prevent duplicate processing, and support failed-event retries.
 
 Import `docs/api/openapi.json` into Swagger UI, Stoplight, Postman, Insomnia, or a Flutter/OpenAPI client generator.
 
@@ -99,3 +100,5 @@ Import `docs/api/openapi.json` into Swagger UI, Stoplight, Postman, Insomnia, or
 | GET | `/api/v1/notifications/devices` | Notifications | authenticated |
 | POST | `/api/v1/notifications/devices` | Notifications | authenticated |
 | DELETE | `/api/v1/notifications/devices/{deviceToken}` | Notifications | authenticated |
+| POST | `/api/v1/webhooks/{source}/{provider}` | Webhooks | public |
+| POST | `/api/v1/webhooks/events/{webhookEvent}/retry` | Webhooks | manage-settings OR manage-accounting |

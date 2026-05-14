@@ -20,7 +20,7 @@ class ReportExportResource extends JsonResource
             'format' => $this->format,
             'filters' => $this->filters,
             'status' => $this->status,
-            'file_path' => $this->file_path,
+            'file_path' => $this->path,
             'completed_at' => $this->completed_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
         ];

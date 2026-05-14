@@ -37,7 +37,7 @@ class LoanWorkflowController extends Controller
     public function addGuarantor(StoreLoanGuarantorRequest $request, Loan $loan): JsonResponse
     {
         ApiSecurity::assertTenantAccess($request->user(), $loan);
-        $loan->guarantors()->create($request->validated() + ['organization_id' => $loan->organization_id]);
+        $loan->loanGuarantors()->create($request->validated() + ['organization_id' => $loan->organization_id]);
 
         return ApiResponse::resource(new LoanResource($loan->fresh()->load(['client', 'product'])), 'Loan guarantor added successfully.', 201);
     }

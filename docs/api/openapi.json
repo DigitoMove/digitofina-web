@@ -42,6 +42,9 @@
     },
     {
       "name": "Notifications"
+    },
+    {
+      "name": "Webhooks"
     }
   ],
   "paths": {
@@ -11682,6 +11685,330 @@
                         "revoked_at": "2026-05-14T19:05:00+03:00",
                         "created_at": "2026-05-14T19:00:00+03:00",
                         "updated_at": "2026-05-14T19:00:00+03:00"
+                      },
+                      "meta": {}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/webhooks/{source}/{provider}": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Receive provider webhook",
+        "operationId": "webhooks_store_post",
+        "description": "Public incoming webhook endpoint for mobile money providers, SMS providers, bank payment providers, and external partner systems. Stores raw payload and headers, verifies signatures for configured providers, detects duplicates, and queues processing.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "source",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "mobile-money",
+                "sms",
+                "bank",
+                "partner"
+              ]
+            }
+          },
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Provider code such as mtn-webhooks, airtel-money, twilio, or partner-api."
+          },
+          {
+            "name": "X-Signature",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "HMAC signature when the provider is configured to require signatures. Header name is provider configurable."
+          },
+          {
+            "name": "X-Event-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Provider event id used for duplicate detection when supplied."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              },
+              "examples": {
+                "mobile_money": {
+                  "value": {
+                    "event_id": "evt-001",
+                    "reference": "PAY-001",
+                    "external_reference": "MM-123",
+                    "status": "successful",
+                    "amount": 25000,
+                    "phone": "256700000000"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-route-name": "api.v1.webhooks.store",
+        "x-required-permissions": [
+          "public"
+        ],
+        "x-validation-rules": {
+          "source": "required|in:mobile-money,mobile_money,sms,bank,partner",
+          "provider": "required|string|max:80",
+          "headers": "provider-specific signature header when configured",
+          "body": "raw JSON/XML/form payload from provider"
+        },
+        "x-request-body-example": {
+          "event_id": "evt-001",
+          "reference": "PAY-001",
+          "status": "successful",
+          "amount": 25000
+        },
+        "x-response-example": {
+          "success": true,
+          "message": "Operation completed successfully",
+          "data": {
+            "id": 1,
+            "source_type": "mobile_money",
+            "provider_name": "MTN Webhooks",
+            "provider_code": "mtn-webhooks",
+            "event_id": "evt-001",
+            "duplicate_of_id": null,
+            "payload_hash": "sha256-hash",
+            "signature_valid": true,
+            "status": "received",
+            "attempts": 0,
+            "next_retry_at": null,
+            "processed_at": null,
+            "error_message": null,
+            "processing_result": null,
+            "created_at": "2026-05-14T20:00:00+03:00",
+            "updated_at": "2026-05-14T20:00:00+03:00"
+          },
+          "meta": {}
+        },
+        "x-error-response-example": {
+          "success": false,
+          "message": "Webhook signature verification failed.",
+          "errors": {
+            "signature": [
+              "The webhook signature is invalid."
+            ]
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Duplicate webhook received and not reprocessed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccessEnvelope"
+                },
+                "examples": {
+                  "duplicate": {
+                    "value": {
+                      "success": true,
+                      "message": "Operation completed successfully",
+                      "data": {
+                        "id": 1,
+                        "source_type": "mobile_money",
+                        "provider_name": "MTN Webhooks",
+                        "provider_code": "mtn-webhooks",
+                        "event_id": "evt-001",
+                        "duplicate_of_id": 1,
+                        "payload_hash": "sha256-hash",
+                        "signature_valid": true,
+                        "status": "duplicate",
+                        "attempts": 0,
+                        "next_retry_at": null,
+                        "processed_at": null,
+                        "error_message": null,
+                        "processing_result": null,
+                        "created_at": "2026-05-14T20:00:00+03:00",
+                        "updated_at": "2026-05-14T20:00:00+03:00"
+                      },
+                      "meta": {}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Webhook accepted for processing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccessEnvelope"
+                },
+                "examples": {
+                  "accepted": {
+                    "value": {
+                      "success": true,
+                      "message": "Operation completed successfully",
+                      "data": {
+                        "id": 1,
+                        "source_type": "mobile_money",
+                        "provider_name": "MTN Webhooks",
+                        "provider_code": "mtn-webhooks",
+                        "event_id": "evt-001",
+                        "duplicate_of_id": null,
+                        "payload_hash": "sha256-hash",
+                        "signature_valid": true,
+                        "status": "received",
+                        "attempts": 0,
+                        "next_retry_at": null,
+                        "processed_at": null,
+                        "error_message": null,
+                        "processing_result": null,
+                        "created_at": "2026-05-14T20:00:00+03:00",
+                        "updated_at": "2026-05-14T20:00:00+03:00"
+                      },
+                      "meta": {}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid signature.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/webhooks/events/{webhookEvent}/retry": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Retry failed webhook processing",
+        "operationId": "webhooks_events_retry_post",
+        "description": "Queues a failed webhook event for another processing attempt. Requires Sanctum token and manage-settings or manage-accounting permission.",
+        "security": [
+          {
+            "sanctum": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "webhookEvent",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "x-route-name": "api.v1.webhooks.events.retry",
+        "x-required-permissions": [
+          "manage-settings",
+          "manage-accounting"
+        ],
+        "x-validation-rules": {},
+        "x-request-body-example": null,
+        "x-response-example": {
+          "success": true,
+          "message": "Operation completed successfully",
+          "data": {
+            "id": 1,
+            "source_type": "mobile_money",
+            "provider_name": "MTN Webhooks",
+            "provider_code": "mtn-webhooks",
+            "event_id": "evt-001",
+            "duplicate_of_id": null,
+            "payload_hash": "sha256-hash",
+            "signature_valid": true,
+            "status": "received",
+            "attempts": 1,
+            "next_retry_at": null,
+            "processed_at": null,
+            "error_message": null,
+            "processing_result": null,
+            "created_at": "2026-05-14T20:00:00+03:00",
+            "updated_at": "2026-05-14T20:00:00+03:00"
+          },
+          "meta": {}
+        },
+        "x-error-response-example": {
+          "success": false,
+          "message": "Only failed webhook events can be retried.",
+          "errors": {}
+        },
+        "responses": {
+          "202": {
+            "description": "Webhook retry queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccessEnvelope"
+                },
+                "examples": {
+                  "queued": {
+                    "value": {
+                      "success": true,
+                      "message": "Operation completed successfully",
+                      "data": {
+                        "id": 1,
+                        "source_type": "mobile_money",
+                        "provider_name": "MTN Webhooks",
+                        "provider_code": "mtn-webhooks",
+                        "event_id": "evt-001",
+                        "duplicate_of_id": null,
+                        "payload_hash": "sha256-hash",
+                        "signature_valid": true,
+                        "status": "received",
+                        "attempts": 0,
+                        "next_retry_at": null,
+                        "processed_at": null,
+                        "error_message": null,
+                        "processing_result": null,
+                        "created_at": "2026-05-14T20:00:00+03:00",
+                        "updated_at": "2026-05-14T20:00:00+03:00"
                       },
                       "meta": {}
                     }

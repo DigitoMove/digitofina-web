@@ -191,7 +191,35 @@ it('allocates repayments and releases loan guarantees when fully paid', function
     expect($loan->status)->toBe('fully_paid')
         ->and((float) $loan->principal_balance)->toBe(0.0)
         ->and((float) $loan->interest_balance)->toBe(0.0)
-        ->and($loan->guarantors()->first()->status)->toBe('released');
+        ->and($loan->loanGuarantors()->first()->status)->toBe('released');
+});
+
+it('shows a loan when the legacy guarantors payload is empty', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '1001-LN-0000003',
+        'requested_amount' => 500_000,
+        'principal_balance' => 0,
+        'interest_rate' => 24,
+        'term_periods' => 2,
+        'repayment_frequency' => 'monthly',
+        'purpose' => 'Input purchase',
+        'status' => 'submitted',
+        'guarantors' => null,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('loans.show', $loan))
+        ->assertSuccessful()
+        ->assertSee($loan->loan_number)
+        ->assertSee('No guarantors recorded.');
 });
 
 it('marks overdue schedules and applies configured penalties', function () {

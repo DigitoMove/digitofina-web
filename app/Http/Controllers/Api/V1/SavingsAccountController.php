@@ -4,8 +4,11 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreSavingsAccountRequest;
+use App\Http\Resources\ReportExportResource;
 use App\Http\Resources\SavingsAccountResource;
 use App\Http\Resources\SavingsTransactionResource;
+use App\Jobs\GenerateStatement;
+use App\Models\ReportExport;
 use App\Models\SavingsAccount;
 use App\Services\SavingsAccountService;
 use App\Support\ApiQuery;
@@ -86,6 +89,36 @@ class SavingsAccountController extends Controller
         )->paginate(ApiQuery::perPage($request, 30));
 
         return ApiResponse::collection(SavingsTransactionResource::collection($transactions), 'Savings statement retrieved.', meta: ApiQuery::meta($request));
+    }
+
+    public function generateStatement(Request $request, SavingsAccount $savingsAccount): JsonResponse
+    {
+        ApiSecurity::assertTenantAccess($request->user(), $savingsAccount);
+        abort_unless($request->user()->canPerform('manage-accounts') || $savingsAccount->client_id === $request->user()->client?->id, 403);
+
+        $data = $request->validate([
+            'format' => ['nullable', 'in:pdf,xlsx,csv'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ]);
+
+        $export = ReportExport::create([
+            'organization_id' => $savingsAccount->organization_id,
+            'branch_id' => $savingsAccount->branch_id,
+            'requested_by' => $request->user()->id,
+            'report_type' => 'savings_statement',
+            'format' => $data['format'] ?? 'pdf',
+            'filters' => [
+                'savings_account_id' => $savingsAccount->id,
+                'date_from' => $data['date_from'] ?? null,
+                'date_to' => $data['date_to'] ?? null,
+            ],
+            'status' => 'queued',
+        ]);
+
+        GenerateStatement::dispatch($export, $savingsAccount->id)->afterCommit();
+
+        return ApiResponse::resource(new ReportExportResource($export), 'Statement generation queued.', 202);
     }
 
     public function update(Request $request, SavingsAccount $savingsAccount): Response

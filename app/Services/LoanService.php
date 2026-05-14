@@ -37,7 +37,7 @@ class LoanService
         }
 
         return DB::transaction(function () use ($loan, $approver, $approvedAmount, $comments) {
-            $loan = Loan::query()->with(['product', 'guarantors', 'collaterals'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+            $loan = Loan::query()->with(['product', 'loanGuarantors', 'collaterals'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
 
             if (! in_array($loan->status, ['submitted', 'under_review', 'pending_guarantor_approval', 'pending_collateral_verification'], true)) {
                 throw new InvalidArgumentException('Only submitted loans can be approved.');
@@ -47,7 +47,7 @@ class LoanService
                 throw new InvalidArgumentException('Approved amount is outside the product amount limits.');
             }
 
-            if ($loan->product->require_guarantors && $loan->guarantors()->where('status', 'accepted')->count() < (int) $loan->product->minimum_guarantors) {
+            if ($loan->product->require_guarantors && $loan->loanGuarantors()->where('status', 'accepted')->count() < (int) $loan->product->minimum_guarantors) {
                 throw new InvalidArgumentException('This product requires accepted guarantors before approval.');
             }
 
@@ -311,7 +311,7 @@ class LoanService
             }
 
             if ($isSettled) {
-                $loan->guarantors()->where('status', '!=', 'released')->update(['status' => 'released']);
+                $loan->loanGuarantors()->where('status', '!=', 'released')->update(['status' => 'released']);
                 $loan->collaterals()->where('status', '!=', 'released')->update(['status' => 'released']);
             }
 

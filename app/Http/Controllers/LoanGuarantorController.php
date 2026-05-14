@@ -11,7 +11,7 @@ class LoanGuarantorController extends Controller
 {
     public function store(StoreLoanGuarantorRequest $request, Loan $loan, AuditLogger $auditLogger): RedirectResponse
     {
-        $guarantor = $loan->guarantors()->create($request->validated() + [
+        $guarantor = $loan->loanGuarantors()->create($request->validated() + [
             'organization_id' => $loan->organization_id,
         ]);
 
@@ -29,7 +29,7 @@ class LoanGuarantorController extends Controller
         abort_unless(auth()->user()->canPerform('manage-loans'), 403);
 
         $data = request()->validate(['status' => ['required', 'in:pending,accepted,rejected,released']]);
-        $record = $loan->guarantors()->whereKey($guarantor)->firstOrFail();
+        $record = $loan->loanGuarantors()->whereKey($guarantor)->firstOrFail();
         $old = $record->toArray();
         $record->update($data);
         $auditLogger->record('loan.guarantor_status_updated', $record, $record->fresh()->toArray(), $old);

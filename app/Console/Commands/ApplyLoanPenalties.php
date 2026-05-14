@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\LoanService;
+use App\Jobs\PostBulkPenalties;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -11,10 +11,10 @@ use Illuminate\Console\Command;
 #[Description('Mark overdue loan schedules and apply configured penalties')]
 class ApplyLoanPenalties extends Command
 {
-    public function handle(LoanService $loanService): int
+    public function handle(): int
     {
-        $count = $loanService->applyOverduePenalties();
-        $this->info("Checked {$count} overdue installment(s).");
+        PostBulkPenalties::dispatch();
+        $this->info('Queued overdue loan penalty posting.');
 
         return self::SUCCESS;
     }

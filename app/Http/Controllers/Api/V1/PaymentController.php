@@ -4,9 +4,8 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\PaymentRequestResource;
+use App\Jobs\ProcessMobileMoneyCallback;
 use App\Models\Loan;
-use App\Models\MobileMoneyTransaction;
-use App\Models\PaymentCallback;
 use App\Models\PaymentProvider;
 use App\Models\PaymentRequest;
 use App\Models\SavingsAccount;
@@ -77,55 +76,12 @@ class PaymentController extends Controller
             ], 'Duplicate mobile money callback received; original event will not be reprocessed.');
         }
 
-        $provider = PaymentProvider::query()->when($data['provider_code'] ?? null, fn ($query, string $code) => $query->where('code', $code))->first();
-        $paymentRequest = null;
+        ProcessMobileMoneyCallback::dispatch($webhookEvent)->afterCommit();
 
-        if (($data['reference'] ?? null) || ($data['external_reference'] ?? null)) {
-            $paymentRequest = PaymentRequest::query()
-                ->where(function ($query) use ($data): void {
-                    $query
-                        ->when($data['reference'] ?? null, fn ($query, string $reference) => $query->where('reference', $reference))
-                        ->when($data['external_reference'] ?? null, fn ($query, string $reference) => $query->orWhere('external_reference', $reference));
-                })
-                ->first();
-        }
-
-        $callback = PaymentCallback::create([
-            'payment_provider_id' => $provider?->id,
-            'payment_request_id' => $paymentRequest?->id,
-            'external_reference' => $data['external_reference'] ?? null,
-            'payload' => $request->all(),
-            'signature' => $request->header('X-Signature'),
+        return ApiResponse::data([
             'status' => 'received',
-        ]);
-
-        if ($paymentRequest && isset($data['status'])) {
-            $paymentRequest->update(['status' => $data['status'], 'external_reference' => $data['external_reference'] ?? $paymentRequest->external_reference]);
-        }
-
-        if ($paymentRequest) {
-            MobileMoneyTransaction::create([
-                'organization_id' => $paymentRequest->organization_id,
-                'payment_provider_id' => $provider?->id ?? $paymentRequest->payment_provider_id,
-                'payment_request_id' => $paymentRequest->id,
-                'allocatable_type' => $paymentRequest->payable_type,
-                'allocatable_id' => $paymentRequest->payable_id,
-                'provider_transaction_id' => $data['external_reference'] ?? null,
-                'phone_number' => $data['phone'] ?? $paymentRequest->payer_phone,
-                'amount' => $data['amount'] ?? $paymentRequest->amount,
-                'currency' => $paymentRequest->currency,
-                'status' => $data['status'] ?? 'pending',
-                'raw_response' => $request->all(),
-            ]);
-        }
-
-        $webhooks->markProcessed($webhookEvent, [
-            'handler' => 'legacy_mobile_money_callback',
-            'payment_callback_id' => $callback->id,
-            'payment_request_id' => $paymentRequest?->id,
-        ]);
-
-        return ApiResponse::data(['status' => 'received', 'callback_id' => $callback->id], 'Mobile money callback received.');
+            'webhook_event_id' => $webhookEvent->id,
+        ], 'Mobile money callback received for queued processing.', 202);
     }
 
     public function verify(PaymentRequest $paymentRequest): JsonResponse

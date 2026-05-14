@@ -63,7 +63,7 @@ class LoanController extends Controller
                 'client.accounts.accountType',
                 'product',
                 'schedules',
-                'guarantors.guarantorClient',
+                'loanGuarantors.guarantorClient',
                 'collaterals',
                 'approvals.approver',
                 'disbursements.disbursedBy',
