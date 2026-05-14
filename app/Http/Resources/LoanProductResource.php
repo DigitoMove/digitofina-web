@@ -34,6 +34,8 @@ class LoanProductResource extends JsonResource
             'minimum_guarantors' => $this->minimum_guarantors,
             'require_collateral' => (bool) $this->require_collateral,
             'status' => $this->status,
+            'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
         ];
     }
 }

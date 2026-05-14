@@ -29,6 +29,8 @@ class LoanRepaymentResource extends JsonResource
                 'id' => $this->receivedBy?->id,
                 'name' => $this->receivedBy?->name,
             ]),
+            'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
         ];
     }
 }

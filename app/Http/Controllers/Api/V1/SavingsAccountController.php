@@ -8,7 +8,9 @@ use App\Http\Resources\SavingsAccountResource;
 use App\Http\Resources\SavingsTransactionResource;
 use App\Models\SavingsAccount;
 use App\Services\SavingsAccountService;
+use App\Support\ApiQuery;
 use App\Support\ApiResponse;
+use App\Support\ApiSecurity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -19,25 +21,34 @@ class SavingsAccountController extends Controller
     {
         abort_unless($request->user()->canPerform('manage-accounts') || $request->user()->canPerform('view-own-accounts'), 403);
 
-        $accounts = SavingsAccount::query()
+        $accountsQuery = ApiSecurity::scopeTenant(SavingsAccount::query(), $request->user())
             ->with(['client', 'branch', 'product'])
             ->when($request->user()->isMember(), fn ($query) => $query->where('client_id', $request->user()->client?->id))
             ->when($request->string('search')->toString(), function ($query, string $search): void {
-                $query->where('account_number', 'like', "%{$search}%")
-                    ->orWhereHas('client', fn ($query) => $query->whereAny(['client_number', 'first_name', 'last_name', 'phone'], 'like', "%{$search}%"));
+                $query->where(function ($query) use ($search): void {
+                    $query->where('account_number', 'like', "%{$search}%")
+                        ->orWhereHas('client', fn ($query) => $query->whereAny(['client_number', 'first_name', 'last_name', 'phone'], 'like', "%{$search}%"));
+                });
             })
-            ->when($request->integer('branch_id'), fn ($query, int $branchId) => $query->where('branch_id', $branchId))
-            ->when($request->integer('savings_product_id'), fn ($query, int $productId) => $query->where('savings_product_id', $productId))
-            ->when($request->string('status')->toString(), fn ($query, string $status) => $query->where('status', $status))
-            ->latest()
-            ->paginate($request->integer('per_page', 15));
+            ->when($request->integer('branch_id'), function ($query, int $branchId) use ($request): void {
+                ApiSecurity::assertClientBranchAccess($request->user(), $branchId);
+            });
 
-        return ApiResponse::collection(SavingsAccountResource::collection($accounts), 'Savings accounts retrieved.');
+        $accounts = ApiQuery::apply(
+            $accountsQuery,
+            $request,
+            [],
+            ['branch_id', 'status', 'savings_product_id', 'client_id'],
+            ['id', 'account_number', 'current_balance', 'status', 'opening_date', 'created_at', 'updated_at'],
+        )->paginate(ApiQuery::perPage($request, 15));
+
+        return ApiResponse::collection(SavingsAccountResource::collection($accounts), 'Savings accounts retrieved.', meta: ApiQuery::meta($request));
     }
 
     public function store(StoreSavingsAccountRequest $request, SavingsAccountService $accounts): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-accounts'), 403);
+        ApiSecurity::assertClientBranchAccess($request->user(), (int) $request->validated('branch_id'));
 
         return ApiResponse::resource(
             new SavingsAccountResource($accounts->open($request->validated(), $request->user())->load(['client', 'branch', 'product'])),
@@ -48,6 +59,7 @@ class SavingsAccountController extends Controller
 
     public function show(SavingsAccount $savingsAccount): JsonResponse
     {
+        ApiSecurity::assertTenantAccess(request()->user(), $savingsAccount);
         abort_unless(request()->user()->canPerform('manage-accounts') || $savingsAccount->client_id === request()->user()->client?->id, 403);
 
         return ApiResponse::resource(new SavingsAccountResource($savingsAccount->load(['client', 'branch', 'product'])), 'Savings account retrieved.');
@@ -55,16 +67,25 @@ class SavingsAccountController extends Controller
 
     public function statement(Request $request, SavingsAccount $savingsAccount): JsonResponse
     {
+        ApiSecurity::assertTenantAccess($request->user(), $savingsAccount);
         abort_unless($request->user()->canPerform('manage-accounts') || $savingsAccount->client_id === $request->user()->client?->id, 403);
 
-        $transactions = $savingsAccount->transactions()
+        $transactionsQuery = $savingsAccount->transactions()
+            ->getQuery()
             ->with(['account', 'teller'])
             ->when($request->date_from, fn ($query, string $date) => $query->whereDate('transaction_date', '>=', $date))
-            ->when($request->date_to, fn ($query, string $date) => $query->whereDate('transaction_date', '<=', $date))
-            ->latest('transaction_date')
-            ->paginate($request->integer('per_page', 30));
+            ->when($request->date_to, fn ($query, string $date) => $query->whereDate('transaction_date', '<=', $date));
 
-        return ApiResponse::collection(SavingsTransactionResource::collection($transactions), 'Savings statement retrieved.');
+        $transactions = ApiQuery::apply(
+            $transactionsQuery,
+            $request,
+            ['reference', 'narration'],
+            ['type', 'status', 'payment_method'],
+            ['id', 'reference', 'type', 'amount', 'transaction_date', 'created_at', 'updated_at'],
+            'transaction_date',
+        )->paginate(ApiQuery::perPage($request, 30));
+
+        return ApiResponse::collection(SavingsTransactionResource::collection($transactions), 'Savings statement retrieved.', meta: ApiQuery::meta($request));
     }
 
     public function update(Request $request, SavingsAccount $savingsAccount): Response

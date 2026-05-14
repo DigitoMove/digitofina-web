@@ -14,7 +14,11 @@ class ClientDocument extends Model
 
     protected function casts(): array
     {
-        return ['verified_at' => 'datetime'];
+        return [
+            'compression_metadata' => 'array',
+            'captured_at' => 'datetime',
+            'verified_at' => 'datetime',
+        ];
     }
 
     public function client(): BelongsTo

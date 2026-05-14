@@ -3,6 +3,8 @@
 <title>{{ $seo->title }}</title>
 <meta name="description" content="{{ $seo->description }}">
 <meta name="robots" content="{{ $seo->robots }}">
+<link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+<link rel="shortcut icon" href="{{ asset('favicon.svg') }}">
 <link rel="canonical" href="{{ $seo->url }}">
 <meta property="og:site_name" content="{{ $seo->siteName }}">
 <meta property="og:title" content="{{ $seo->title }}">

@@ -29,6 +29,7 @@ class SmsLogResource extends JsonResource
                 'code' => $this->provider?->code,
             ]),
             'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
         ];
     }
 }

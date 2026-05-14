@@ -52,6 +52,8 @@ class ApiResponse
      */
     public static function success(mixed $data = null, string $message = 'Operation completed successfully', int $status = 200, array $meta = []): JsonResponse
     {
+        $meta = self::baseMeta() + $meta;
+
         return response()->json([
             'success' => true,
             'message' => $message,
@@ -66,6 +68,8 @@ class ApiResponse
      */
     public static function error(string $message, array $errors = [], int $status = 400, array $meta = []): JsonResponse
     {
+        $meta = self::baseMeta() + $meta;
+
         $payload = [
             'success' => false,
             'message' => $message,
@@ -77,5 +81,16 @@ class ApiResponse
         }
 
         return response()->json($payload, $status);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function baseMeta(): array
+    {
+        return [
+            'server_time' => now()->toIso8601String(),
+            'api_version' => 'v1',
+        ];
     }
 }

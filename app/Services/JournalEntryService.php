@@ -26,6 +26,7 @@ class JournalEntryService
 
         return DB::transaction(function () use ($lines, $description, $user, $branchId): JournalEntry {
             $journal = JournalEntry::create([
+                'organization_id' => $user?->organization_id,
                 'branch_id' => $branchId,
                 'created_by' => $user?->id,
                 'posted_by' => $user?->id,

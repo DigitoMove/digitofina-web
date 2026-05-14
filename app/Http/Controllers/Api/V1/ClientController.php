@@ -10,8 +10,11 @@ use App\Http\Resources\LoanResource;
 use App\Http\Resources\SavingsAccountResource;
 use App\Http\Resources\SavingsTransactionResource;
 use App\Models\Client;
+use App\Models\SavingsTransaction;
 use App\Services\ClientService;
+use App\Support\ApiQuery;
 use App\Support\ApiResponse;
+use App\Support\ApiSecurity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -23,20 +26,27 @@ class ClientController extends Controller
     {
         Gate::authorize('viewAny', Client::class);
 
-        $clients = Client::query()
+        $clientsQuery = ApiSecurity::scopeTenant(Client::query(), $request->user())
             ->with(['branch', 'officer'])
-            ->when($request->string('search')->toString(), fn ($query, string $search) => $query->whereAny(['client_number', 'first_name', 'last_name', 'phone', 'national_id'], 'like', "%{$search}%"))
-            ->when($request->integer('branch_id'), fn ($query, int $branchId) => $query->where('branch_id', $branchId))
-            ->when($request->string('status')->toString(), fn ($query, string $status) => $query->where('status', $status))
-            ->latest()
-            ->paginate($request->integer('per_page', 15));
+            ->when($request->integer('branch_id'), function ($query, int $branchId) use ($request): void {
+                ApiSecurity::assertClientBranchAccess($request->user(), $branchId);
+            });
 
-        return ApiResponse::collection(ClientResource::collection($clients), 'Clients retrieved.');
+        $clients = ApiQuery::apply(
+            $clientsQuery,
+            $request,
+            ['client_number', 'first_name', 'last_name', 'phone', 'national_id'],
+            ['branch_id', 'status', 'client_type', 'kyc_status', 'risk_rating', 'officer_id'],
+            ['id', 'client_number', 'first_name', 'last_name', 'status', 'registered_at', 'created_at', 'updated_at'],
+        )->paginate(ApiQuery::perPage($request, 15));
+
+        return ApiResponse::collection(ClientResource::collection($clients), 'Clients retrieved.', meta: ApiQuery::meta($request));
     }
 
     public function store(StoreClientRequest $request, ClientService $clients): JsonResponse
     {
         Gate::authorize('create', Client::class);
+        ApiSecurity::assertClientBranchAccess($request->user(), (int) $request->validated('branch_id'));
 
         return ApiResponse::resource(
             new ClientResource($clients->register($this->payload($request), $request->user(), $request->file('profile_photo'))->load(['branch', 'officer'])),
@@ -47,6 +57,7 @@ class ClientController extends Controller
 
     public function show(Client $client): JsonResponse
     {
+        ApiSecurity::assertTenantAccess(request()->user(), $client);
         Gate::authorize('view', $client);
 
         return ApiResponse::resource(new ClientResource($client->load(['branch', 'officer'])), 'Client profile retrieved.');
@@ -54,7 +65,9 @@ class ClientController extends Controller
 
     public function update(UpdateClientRequest $request, Client $client, ClientService $clients): JsonResponse
     {
+        ApiSecurity::assertTenantAccess($request->user(), $client);
         Gate::authorize('update', $client);
+        ApiSecurity::assertClientBranchAccess($request->user(), (int) $request->validated('branch_id'));
 
         return ApiResponse::resource(
             new ClientResource($clients->update($client, $this->payload($request), $request->user(), $request->file('profile_photo'))->load(['branch', 'officer'])),
@@ -67,8 +80,15 @@ class ClientController extends Controller
         Gate::authorize('view', $client);
 
         return ApiResponse::collection(
-            SavingsAccountResource::collection($client->savingsAccounts()->with(['client', 'branch', 'product'])->paginate(request()->integer('per_page', 20))),
-            'Client savings accounts retrieved.'
+            SavingsAccountResource::collection(ApiQuery::apply(
+                $client->savingsAccounts()->getQuery()->with(['client', 'branch', 'product']),
+                request(),
+                ['account_number'],
+                ['status', 'savings_product_id'],
+                ['id', 'account_number', 'status', 'opening_date', 'created_at', 'updated_at'],
+            )->paginate(ApiQuery::perPage(request(), 20))),
+            'Client savings accounts retrieved.',
+            meta: ApiQuery::meta(request())
         );
     }
 
@@ -77,8 +97,15 @@ class ClientController extends Controller
         Gate::authorize('view', $client);
 
         return ApiResponse::collection(
-            LoanResource::collection($client->loans()->with(['client', 'product'])->paginate(request()->integer('per_page', 20))),
-            'Client loans retrieved.'
+            LoanResource::collection(ApiQuery::apply(
+                $client->loans()->getQuery()->with(['client', 'product']),
+                request(),
+                ['loan_number', 'purpose'],
+                ['status', 'loan_product_id'],
+                ['id', 'loan_number', 'status', 'application_date', 'created_at', 'updated_at'],
+            )->paginate(ApiQuery::perPage(request(), 20))),
+            'Client loans retrieved.',
+            meta: ApiQuery::meta(request())
         );
     }
 
@@ -86,15 +113,18 @@ class ClientController extends Controller
     {
         Gate::authorize('view', $client);
 
-        $transactions = $client->savingsAccounts()
-            ->with('transactions.account')
-            ->get()
-            ->pluck('transactions')
-            ->flatten()
-            ->sortByDesc('transaction_date')
-            ->values();
+        $transactions = ApiQuery::apply(
+            SavingsTransaction::query()
+                ->with('account')
+                ->where('client_id', $client->id),
+            request(),
+            ['reference', 'narration'],
+            ['type', 'status', 'payment_method'],
+            ['id', 'reference', 'type', 'amount', 'transaction_date', 'created_at', 'updated_at'],
+            'transaction_date',
+        )->paginate(ApiQuery::perPage(request(), 30));
 
-        return ApiResponse::collection(SavingsTransactionResource::collection($transactions), 'Client statements retrieved.');
+        return ApiResponse::collection(SavingsTransactionResource::collection($transactions), 'Client statements retrieved.', meta: ApiQuery::meta(request()));
     }
 
     public function destroy(Client $client): Response

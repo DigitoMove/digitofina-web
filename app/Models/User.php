@@ -33,6 +33,8 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'two_factor_enabled' => 'boolean',
+            'two_factor_confirmed_at' => 'datetime',
             'last_login_at' => 'datetime',
         ];
     }
@@ -57,6 +59,11 @@ class User extends Authenticatable
         return $this->hasMany(DrawerSession::class);
     }
 
+    public function deviceTokens(): HasMany
+    {
+        return $this->hasMany(DeviceToken::class);
+    }
+
     public function client(): HasOne
     {
         return $this->hasOne(Client::class);
@@ -74,6 +81,16 @@ class User extends Authenticatable
 
     public function canPerform(string $permission): bool
     {
-        return $this->role?->permissions()->where('slug', $permission)->exists() ?? false;
+        $hasRolePermission = $this->role?->permissions()->where('slug', $permission)->exists() ?? false;
+
+        if (! $hasRolePermission) {
+            return false;
+        }
+
+        if (request()?->is('api/*') && $this->currentAccessToken()) {
+            return $this->tokenCan($permission) || $this->tokenCan('*');
+        }
+
+        return true;
     }
 }

@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\AuditApiMutation;
+use App\Http\Middleware\EnsureIdempotentFinancialRequest;
 use App\Support\ApiResponse;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -32,7 +34,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->alias([
+            'audit.api' => AuditApiMutation::class,
+            'idempotent.financial' => EnsureIdempotentFinancialRequest::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(fn (Request $request, Throwable $exception): bool => $request->is('api/*') || $request->expectsJson());

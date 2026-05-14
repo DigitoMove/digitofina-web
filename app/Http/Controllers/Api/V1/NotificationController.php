@@ -7,7 +7,9 @@ use App\Http\Resources\InAppNotificationResource;
 use App\Http\Resources\SmsLogResource;
 use App\Models\SmsLog;
 use App\Services\SmsService;
+use App\Support\ApiQuery;
 use App\Support\ApiResponse;
+use App\Support\ApiSecurity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
@@ -31,12 +33,30 @@ class NotificationController extends Controller
     {
         abort_unless($request->user()->canPerform('view-reports') || $request->user()->canPerform('manage-settings'), 403);
 
-        return ApiResponse::collection(SmsLogResource::collection(SmsLog::query()->with('provider')->latest()->paginate($request->integer('per_page', 30))), 'SMS logs retrieved.');
+        $logs = ApiQuery::apply(
+            ApiSecurity::scopeTenant(SmsLog::query(), $request->user())->with('provider'),
+            $request,
+            ['recipient', 'message', 'type'],
+            ['type', 'status'],
+            ['id', 'recipient', 'type', 'status', 'sent_at', 'created_at', 'updated_at'],
+            'created_at',
+        )->paginate(ApiQuery::perPage($request, 30));
+
+        return ApiResponse::collection(SmsLogResource::collection($logs), 'SMS logs retrieved.', meta: ApiQuery::meta($request));
     }
 
     public function notifications(Request $request): JsonResponse
     {
-        return ApiResponse::collection(InAppNotificationResource::collection($request->user()->notifications()->latest()->paginate($request->integer('per_page', 30))), 'Notifications retrieved.');
+        $notifications = ApiQuery::apply(
+            $request->user()->notifications()->getQuery(),
+            $request,
+            ['type'],
+            ['type'],
+            ['id', 'type', 'read_at', 'created_at', 'updated_at'],
+            'created_at',
+        )->paginate(ApiQuery::perPage($request, 30));
+
+        return ApiResponse::collection(InAppNotificationResource::collection($notifications), 'Notifications retrieved.', meta: ApiQuery::meta($request));
     }
 
     public function markRead(Request $request, string $notification): JsonResponse

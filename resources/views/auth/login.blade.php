@@ -7,29 +7,83 @@
     <x-seo-meta :seo="$seo" />
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="min-h-screen bg-slate-100">
-    <main class="grid min-h-screen place-items-center p-6">
-        <form method="POST" action="{{ route('login') }}" class="w-full max-w-md rounded bg-white p-8 shadow-sm ring-1 ring-slate-200">
-            @csrf
-            <div class="mb-8 flex items-center gap-3">
-                <div class="grid h-12 w-12 place-items-center rounded bg-blue-700 text-lg font-bold text-white">DF</div>
-                <div>
-                    <h1 class="text-xl font-semibold text-slate-950">DigitoFina</h1>
-                    <p class="text-sm text-slate-500">Secure financial operations portal</p>
+<body class="min-h-screen bg-[linear-gradient(135deg,#ecfeff_0%,#f8fafc_44%,#ecfdf5_100%)]">
+    <main class="grid min-h-screen p-4 lg:grid-cols-[1.05fr_0.95fr] lg:p-6">
+        <section class="hidden min-h-[calc(100vh-3rem)] overflow-hidden rounded-[2rem] bg-slate-950 p-8 text-white shadow-panel lg:flex lg:flex-col lg:justify-between">
+            <div>
+                <img src="{{ asset('brand/digitofina-logo.svg') }}" alt="DigitoFina" class="h-20 w-auto rounded-3xl bg-white p-2 shadow-lg shadow-cyan-950/20">
+                <div class="mt-12 max-w-xl">
+                    <p class="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200">Core banking operations</p>
+                    <h1 class="mt-4 text-4xl font-semibold leading-tight text-white">A clearer command center for every branch decision.</h1>
+                    <p class="mt-4 text-base leading-7 text-slate-300">Monitor clients, savings, loans, teller cash, approvals, and audit activity from one cohesive workspace.</p>
                 </div>
             </div>
-            @if ($errors->any()) <div class="mb-4 rounded bg-red-50 p-3 text-sm text-red-700">{{ $errors->first() }}</div> @endif
-            <label class="block text-sm font-medium text-slate-700">Email or phone</label>
-            <input name="login" value="{{ old('login') }}" class="mt-1 h-11 w-full rounded border border-slate-300 px-3 focus:border-blue-600 focus:ring-blue-600" required autofocus>
-            <label class="mt-4 block text-sm font-medium text-slate-700">Password</label>
-            <input name="password" type="password" class="mt-1 h-11 w-full rounded border border-slate-300 px-3 focus:border-blue-600 focus:ring-blue-600" required>
-            <div class="mt-4 flex items-center justify-between gap-3 text-sm">
-                <label class="flex items-center gap-2 text-slate-600"><input type="checkbox" name="remember" class="rounded border-slate-300"> Remember this workstation</label>
-                <a href="{{ route('password.request') }}" class="font-medium text-blue-700 hover:text-blue-900">Reset password</a>
+
+            <div class="grid gap-3">
+                <div class="rounded-3xl border border-white/10 bg-white/10 p-4">
+                    <div class="flex items-center justify-between gap-4">
+                        <div>
+                            <p class="text-sm text-slate-300">Today&apos;s focus</p>
+                            <p class="mt-1 text-xl font-semibold">Cash flow, approvals, arrears</p>
+                        </div>
+                        <div class="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-300 text-slate-950">
+                            <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M5 19V5m0 14h14M9 16v-5m4 5V8m4 8v-7"/></svg>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="rounded-2xl bg-cyan-400/15 p-4">
+                        <p class="text-xs text-cyan-100">Portfolio</p>
+                        <p class="mt-2 text-lg font-semibold">Live</p>
+                    </div>
+                    <div class="rounded-2xl bg-emerald-400/15 p-4">
+                        <p class="text-xs text-emerald-100">Audit</p>
+                        <p class="mt-2 text-lg font-semibold">Traceable</p>
+                    </div>
+                    <div class="rounded-2xl bg-amber-300/15 p-4">
+                        <p class="text-xs text-amber-100">Teller</p>
+                        <p class="mt-2 text-lg font-semibold">Ready</p>
+                    </div>
+                </div>
             </div>
-            <button class="mt-6 h-11 w-full rounded bg-blue-700 font-semibold text-white hover:bg-blue-800">Login</button>
-            <p class="mt-5 text-center text-xs text-slate-500">Demo: admin@digitofina.test / password</p>
-        </form>
+        </section>
+
+        <section class="grid min-h-[calc(100vh-2rem)] place-items-center p-4 sm:p-8">
+            <form method="POST" action="{{ route('login') }}" class="w-full max-w-md rounded-[2rem] bg-white/95 p-6 shadow-panel ring-1 ring-slate-200/80 sm:p-8">
+                @csrf
+                <div class="mb-8">
+                    <img src="{{ asset('brand/digitofina-logo.svg') }}" alt="DigitoFina" class="h-16 w-auto">
+                    <div class="mt-6">
+                        <h1 class="text-2xl font-semibold text-slate-950">Welcome back</h1>
+                        <p class="mt-1 text-sm text-slate-500">Sign in to continue managing branch operations.</p>
+                    </div>
+                </div>
+
+                @if ($errors->any())
+                    <div class="mb-4 rounded-2xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">{{ $errors->first() }}</div>
+                @endif
+
+                <label class="block text-sm font-semibold text-slate-700">Email or phone</label>
+                <input name="login" value="{{ old('login') }}" class="mt-1 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50/70 px-4 focus:border-cyan-500 focus:bg-white focus:ring-cyan-100" required autofocus autocomplete="username">
+
+                <label class="mt-4 block text-sm font-semibold text-slate-700">Password</label>
+                <input name="password" type="password" class="mt-1 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50/70 px-4 focus:border-cyan-500 focus:bg-white focus:ring-cyan-100" required autocomplete="current-password">
+
+                <div class="mt-4 flex items-center justify-between gap-3 text-sm">
+                    <label class="flex items-center gap-2 text-slate-600"><input type="checkbox" name="remember" class="rounded border-slate-300 text-cyan-600"> Remember me</label>
+                    <a href="{{ route('password.request') }}" class="font-semibold text-cyan-700 hover:text-cyan-900">Reset password</a>
+                </div>
+
+                <button class="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 font-semibold text-white shadow-lg shadow-slate-200 hover:bg-slate-800">
+                    Login
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+                </button>
+
+                <div class="mt-6 rounded-2xl border border-cyan-100 bg-cyan-50 p-3 text-center text-xs text-cyan-800">
+                    Demo access: admin@digitofina.test / password
+                </div>
+            </form>
+        </section>
     </main>
 </body>
 </html>

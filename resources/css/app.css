@@ -8,13 +8,38 @@
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
+    --color-brand-50: #ecfeff;
+    --color-brand-100: #cffafe;
+    --color-brand-200: #a5f3fc;
+    --color-brand-500: #06b6d4;
+    --color-brand-600: #0891b2;
+    --color-brand-700: #0e7490;
+    --color-forest-50: #ecfdf5;
+    --color-forest-500: #10b981;
+    --color-forest-700: #047857;
+    --color-sun-50: #fffbeb;
+    --color-sun-400: #fbbf24;
+    --color-sun-600: #d97706;
+    --color-coral-50: #fff1f2;
+    --color-coral-500: #f43f5e;
+    --color-coral-700: #be123c;
+    --radius-card: 1.35rem;
+    --shadow-panel: 0 18px 50px rgb(15 23 42 / 0.08);
 }
 
 @layer base {
+    html {
+        @apply bg-slate-50;
+    }
+
+    body {
+        @apply bg-slate-50 text-slate-900 antialiased;
+    }
+
     input:not([type='checkbox']):not([type='radio']):not([type='hidden']),
     select,
     textarea {
-        @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500;
+        @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500;
     }
 
     input:not([type='checkbox']):not([type='radio']):not([type='hidden']),
@@ -27,6 +52,74 @@
     }
 
     input[type='file'] {
-        @apply cursor-pointer py-2 file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-700 hover:file:bg-slate-200;
+        @apply cursor-pointer py-2 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100;
     }
+
+    button,
+    [type='button'],
+    [type='submit'],
+    a {
+        @apply transition;
+    }
+}
+
+@layer components {
+    .df-panel {
+        @apply rounded-card border border-slate-200/80 bg-white/95 shadow-panel;
+    }
+
+    .df-soft-panel {
+        @apply rounded-card border border-white/70 bg-white/80 shadow-panel;
+    }
+
+    .df-action-primary {
+        @apply rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800;
+    }
+
+    .df-action-secondary {
+        @apply rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700;
+    }
+}
+
+.rounded {
+    border-radius: 0.9rem;
+}
+
+.rounded-md {
+    border-radius: 1rem;
+}
+
+.rounded-lg {
+    border-radius: 1.15rem;
+}
+
+main section.rounded,
+main form.rounded,
+main div.overflow-hidden.rounded,
+main [class*='border-slate-200'][class*='bg-white'] {
+    border-color: rgb(203 213 225 / 0.78);
+    box-shadow: var(--shadow-panel);
+}
+
+main table thead[class*='bg-slate-50'] {
+    background: #f7fbff;
+    color: #475569;
+}
+
+main table tbody tr {
+    transition: background-color 160ms ease, color 160ms ease;
+}
+
+main table tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+main a.text-blue-700,
+main a.text-blue-800 {
+    color: #0e7490;
+}
+
+main a.text-blue-700:hover,
+main a.text-blue-800:hover {
+    color: #155e75;
 }

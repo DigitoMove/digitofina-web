@@ -8,7 +8,7 @@ class StoreSavingsTransferRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->canPerform('post-transactions') || $this->user()?->canPerform('manage-accounts');
+        return $this->user()?->canPerform('post-transactions') ?? false;
     }
 
     /**

@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AccountingController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\ClientController;
 use App\Http\Controllers\Api\V1\ClientDocumentController;
+use App\Http\Controllers\Api\V1\DeviceTokenController;
 use App\Http\Controllers\Api\V1\LoanController;
 use App\Http\Controllers\Api\V1\LoanProductController;
 use App\Http\Controllers\Api\V1\LoanRepaymentController;
@@ -14,13 +15,16 @@ use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\SavingsAccountController;
 use App\Http\Controllers\Api\V1\SavingsProductController;
 use App\Http\Controllers\Api\V1\SavingsTransactionController;
+use App\Http\Controllers\Api\V1\SettingController;
+use App\Http\Controllers\Api\V1\WebhookController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:api')->name('auth.login');
 Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:api')->name('auth.forgot-password');
-Route::post('/payments/mobile-money/callback', [PaymentController::class, 'callback'])->middleware('throttle:api')->name('payments.callback');
+Route::post('/payments/mobile-money/callback', [PaymentController::class, 'callback'])->middleware(['throttle:api', 'idempotent.financial'])->name('payments.callback');
+Route::post('/webhooks/{source}/{provider}', [WebhookController::class, 'store'])->middleware('throttle:api')->name('webhooks.store');
 
-Route::middleware('auth:sanctum')->group(function (): void {
+Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::get('/auth/me', [AuthController::class, 'me'])->name('auth.me');
     Route::get('/auth/permissions', [AuthController::class, 'permissions'])->name('auth.permissions');
     Route::post('/auth/refresh', [AuthController::class, 'refresh'])->name('auth.refresh');
@@ -41,19 +45,19 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/savings/accounts/{savingsAccount}', [SavingsAccountController::class, 'show'])->name('savings.accounts.show');
     Route::get('/savings/accounts/{savingsAccount}/statement', [SavingsAccountController::class, 'statement'])->name('savings.accounts.statement');
     Route::get('/savings/accounts/{savingsAccount}/statement/download', [SavingsAccountController::class, 'statement'])->name('savings.accounts.statement.download');
-    Route::post('/savings/accounts/{savingsAccount}/deposit', [SavingsTransactionController::class, 'deposit'])->name('savings.accounts.deposit');
-    Route::post('/savings/accounts/{savingsAccount}/withdraw', [SavingsTransactionController::class, 'withdraw'])->name('savings.accounts.withdraw');
-    Route::post('/savings/transfers', [SavingsTransactionController::class, 'transfer'])->name('savings.transfers.store');
-    Route::post('/savings/transactions/{savingsTransaction}/reverse', [SavingsTransactionController::class, 'reverse'])->name('savings.transactions.reverse');
+    Route::post('/savings/accounts/{savingsAccount}/deposit', [SavingsTransactionController::class, 'deposit'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings.accounts.deposit');
+    Route::post('/savings/accounts/{savingsAccount}/withdraw', [SavingsTransactionController::class, 'withdraw'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings.accounts.withdraw');
+    Route::post('/savings/transfers', [SavingsTransactionController::class, 'transfer'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings.transfers.store');
+    Route::post('/savings/transactions/{savingsTransaction}/reverse', [SavingsTransactionController::class, 'reverse'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings.transactions.reverse');
 
     Route::get('/savings-products', [SavingsProductController::class, 'index'])->name('savings-products.index');
     Route::apiResource('savings-accounts', SavingsAccountController::class)->only(['index', 'store', 'show']);
     Route::get('/savings-accounts/{savingsAccount}/statement', [SavingsAccountController::class, 'statement'])->name('savings-accounts.statement');
     Route::get('/savings-accounts/{savingsAccount}/statement/download', [SavingsAccountController::class, 'statement'])->name('savings-accounts.statement.download');
-    Route::post('/savings-accounts/{savingsAccount}/deposit', [SavingsTransactionController::class, 'deposit'])->name('savings-accounts.deposit');
-    Route::post('/savings-accounts/{savingsAccount}/withdraw', [SavingsTransactionController::class, 'withdraw'])->name('savings-accounts.withdraw');
-    Route::post('/savings-transfers', [SavingsTransactionController::class, 'transfer'])->name('savings-transfers.store');
-    Route::post('/savings-transactions/{savingsTransaction}/reverse', [SavingsTransactionController::class, 'reverse'])->name('savings-transactions.reverse');
+    Route::post('/savings-accounts/{savingsAccount}/deposit', [SavingsTransactionController::class, 'deposit'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings-accounts.deposit');
+    Route::post('/savings-accounts/{savingsAccount}/withdraw', [SavingsTransactionController::class, 'withdraw'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings-accounts.withdraw');
+    Route::post('/savings-transfers', [SavingsTransactionController::class, 'transfer'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings-transfers.store');
+    Route::post('/savings-transactions/{savingsTransaction}/reverse', [SavingsTransactionController::class, 'reverse'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings-transactions.reverse');
 
     Route::get('/loan-products', [LoanProductController::class, 'index'])->name('loan-products.index');
     Route::apiResource('loans', LoanController::class)->only(['index', 'store', 'show']);
@@ -61,16 +65,18 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/loans/{loan}/guarantors', [LoanWorkflowController::class, 'addGuarantor'])->name('loans.guarantors.store');
     Route::post('/loans/{loan}/collaterals', [LoanWorkflowController::class, 'addCollateral'])->name('loans.collaterals.store');
     Route::post('/loans/schedule-preview', [LoanWorkflowController::class, 'schedulePreview'])->name('loans.schedule-preview');
-    Route::post('/loans/{loan}/approve', [LoanWorkflowController::class, 'approve'])->name('loans.approve');
+    Route::post('/loans/{loan}/approve', [LoanWorkflowController::class, 'approve'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('loans.approve');
     Route::post('/loans/{loan}/reject', [LoanWorkflowController::class, 'reject'])->name('loans.reject');
-    Route::post('/loans/{loan}/disburse', [LoanWorkflowController::class, 'disburse'])->name('loans.disburse');
-    Route::post('/loans/{loan}/repayments', [LoanRepaymentController::class, 'store'])->name('loans.repayments.store');
+    Route::post('/loans/{loan}/disburse', [LoanWorkflowController::class, 'disburse'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('loans.disburse');
+    Route::post('/loans/{loan}/repayments', [LoanRepaymentController::class, 'store'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('loans.repayments.store');
     Route::get('/loans/{loan}/schedule', [LoanController::class, 'schedule'])->name('loans.schedule');
     Route::get('/loans/arrears/list', [LoanWorkflowController::class, 'arrears'])->name('loans.arrears');
-    Route::post('/loans/{loan}/close', [LoanWorkflowController::class, 'close'])->name('loans.close');
+    Route::post('/loans/{loan}/close', [LoanWorkflowController::class, 'close'])->middleware('idempotent.financial')->name('loans.close');
+    Route::post('/loans/{loan}/write-off', [LoanWorkflowController::class, 'writeOff'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('loans.write-off');
 
     Route::get('/accounting/chart-of-accounts', [AccountingController::class, 'chartOfAccounts'])->name('accounting.chart-of-accounts');
     Route::get('/accounting/journal-entries', [AccountingController::class, 'journalEntries'])->name('accounting.journal-entries');
+    Route::post('/accounting/journal-entries', [AccountingController::class, 'storeJournalEntry'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('accounting.journal-entries.store');
     Route::get('/accounting/trial-balance', [AccountingController::class, 'trialBalance'])->name('accounting.trial-balance');
     Route::get('/accounting/general-ledger', [AccountingController::class, 'generalLedger'])->name('accounting.general-ledger');
     Route::get('/accounting/income-statement', [AccountingController::class, 'incomeStatement'])->name('accounting.income-statement');
@@ -83,9 +89,12 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/reports/arrears', [ReportController::class, 'arrears'])->name('reports.arrears');
     Route::get('/reports/tellers', [ReportController::class, 'tellers'])->name('reports.tellers');
     Route::get('/reports/branch-performance', [ReportController::class, 'branchPerformance'])->name('reports.branch-performance');
-    Route::post('/reports/exports', [ReportController::class, 'export'])->name('reports.exports.store');
+    Route::post('/reports/exports', [ReportController::class, 'export'])->middleware('throttle:api-sensitive')->name('reports.exports.store');
 
-    Route::post('/payments/mobile-money/collections', [PaymentController::class, 'initiateCollection'])->name('payments.collections.store');
+    Route::get('/settings', [SettingController::class, 'index'])->name('settings.index');
+    Route::put('/settings', [SettingController::class, 'update'])->middleware('throttle:api-sensitive')->name('settings.update');
+
+    Route::post('/payments/mobile-money/collections', [PaymentController::class, 'initiateCollection'])->middleware('idempotent.financial')->name('payments.collections.store');
     Route::get('/payments/{paymentRequest}/verify', [PaymentController::class, 'verify'])->name('payments.verify');
     Route::post('/payments/reconcile', [PaymentController::class, 'reconcile'])->name('payments.reconcile');
     Route::post('/payments/{paymentRequest}/match', [PaymentController::class, 'matchPayment'])->name('payments.match');
@@ -94,4 +103,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/notifications/sms-logs', [NotificationController::class, 'smsLogs'])->name('notifications.sms-logs');
     Route::get('/notifications', [NotificationController::class, 'notifications'])->name('notifications.index');
     Route::post('/notifications/{notification}/read', [NotificationController::class, 'markRead'])->name('notifications.read');
+
+    Route::get('/notifications/devices', [DeviceTokenController::class, 'index'])->name('notifications.devices.index');
+    Route::post('/notifications/devices', [DeviceTokenController::class, 'store'])->name('notifications.devices.store');
+    Route::delete('/notifications/devices/{deviceToken}', [DeviceTokenController::class, 'destroy'])->name('notifications.devices.destroy');
+
+    Route::post('/webhooks/events/{webhookEvent}/retry', [WebhookController::class, 'retry'])->middleware('throttle:api-sensitive')->name('webhooks.events.retry');
 });

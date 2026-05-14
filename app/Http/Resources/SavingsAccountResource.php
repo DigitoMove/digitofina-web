@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\ApiQuery;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -14,7 +15,7 @@ class SavingsAccountResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        return [
+        $data = [
             'id' => $this->id,
             'account_number' => $this->account_number,
             'current_balance' => (float) $this->current_balance,
@@ -37,6 +38,18 @@ class SavingsAccountResource extends JsonResource
                 'code' => $this->branch->code,
             ]),
             'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
+        ];
+
+        if (! ApiQuery::wantsDetailedResource($request)) {
+            return $data;
+        }
+
+        return $data + [
+            'client_id' => $this->client_id,
+            'branch_id' => $this->branch_id,
+            'savings_product_id' => $this->savings_product_id,
+            'created_by' => $this->created_by,
         ];
     }
 }

@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ChangePasswordRequest;
 use App\Http\Resources\ClientResource;
 use App\Services\ApiTokenService;
+use App\Services\AuditLogger;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 
@@ -22,7 +24,7 @@ class AuthController extends Controller
             'device_name' => ['nullable', 'string', 'max:120'],
         ]);
 
-        $issued = $tokens->issue($data['login'], $data['password'], $data['device_name'] ?? 'api-client');
+        $issued = $tokens->issue($data['login'], $data['password'], $data['device_name'] ?? 'api-client', $request);
 
         return ApiResponse::data([
             'token_type' => 'Bearer',
@@ -74,7 +76,17 @@ class AuthController extends Controller
     {
         $user = $request->user();
         $request->user()->currentAccessToken()?->delete();
-        $issued = $user->createToken($request->string('device_name')->toString() ?: 'api-client', ['*'], now()->addDays(30));
+        $abilities = $user->role?->permissions()->pluck('slug')->all() ?: ['view-own-accounts'];
+        $issued = $user->createToken($request->string('device_name')->toString() ?: 'api-client', $abilities, now()->addDays(30));
+
+        DB::table('personal_access_tokens')
+            ->where('id', $issued->accessToken->getKey())
+            ->update([
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'device_id' => $request->header('X-Device-Id') ?: $request->server('HTTP_X_DEVICE_ID') ?: ($request->string('device_name')->toString() ?: 'api-client'),
+                'last_refreshed_at' => now(),
+            ]);
 
         return ApiResponse::data([
             'token_type' => 'Bearer',
@@ -94,15 +106,23 @@ class AuthController extends Controller
         return ApiResponse::data(['status' => 'sent'], __($status));
     }
 
-    public function changePassword(ChangePasswordRequest $request): JsonResponse
+    public function changePassword(ChangePasswordRequest $request, AuditLogger $auditLogger): JsonResponse
     {
         $request->user()->update(['password' => Hash::make($request->validated('password'))]);
+        $auditLogger->record('api.password_changed', $request->user(), [
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
 
         return ApiResponse::data(message: 'Password changed.');
     }
 
-    public function logout(Request $request): JsonResponse
+    public function logout(Request $request, AuditLogger $auditLogger): JsonResponse
     {
+        $auditLogger->record('api.logout', $request->user(), [
+            'token_id' => $request->user()->currentAccessToken()?->getKey(),
+            'ip_address' => $request->ip(),
+        ]);
         $request->user()->currentAccessToken()?->delete();
 
         return ApiResponse::data(message: 'Logged out.');

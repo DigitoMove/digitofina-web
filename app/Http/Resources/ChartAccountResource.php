@@ -24,6 +24,7 @@ class ChartAccountResource extends JsonResource
             'is_system' => (bool) $this->is_system,
             'is_active' => (bool) $this->is_active,
             'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
         ];
     }
 }

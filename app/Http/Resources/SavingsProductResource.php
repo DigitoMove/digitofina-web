@@ -28,6 +28,8 @@ class SavingsProductResource extends JsonResource
             'account_number_prefix' => $this->account_number_prefix,
             'allows_overdraft' => (bool) $this->allows_overdraft,
             'status' => $this->status,
+            'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
         ];
     }
 }

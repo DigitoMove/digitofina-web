@@ -10,11 +10,14 @@ use App\Http\Resources\LoanResource;
 use App\Http\Resources\LoanScheduleResource;
 use App\Models\Loan;
 use App\Models\LoanSchedule;
+use App\Services\AuditLogger;
 use App\Services\LoanApprovalService;
 use App\Services\LoanCalculatorService;
 use App\Services\LoanDisbursementService;
 use App\Services\LoanService;
+use App\Support\ApiQuery;
 use App\Support\ApiResponse;
+use App\Support\ApiSecurity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,6 +25,7 @@ class LoanWorkflowController extends Controller
 {
     public function submit(Request $request, Loan $loan): JsonResponse
     {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
         abort_unless($request->user()->canPerform('manage-loans'), 403);
         abort_unless(in_array($loan->status, ['draft', 'pending_guarantor_approval', 'pending_collateral_verification'], true), 422);
 
@@ -32,6 +36,7 @@ class LoanWorkflowController extends Controller
 
     public function addGuarantor(StoreLoanGuarantorRequest $request, Loan $loan): JsonResponse
     {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
         $loan->guarantors()->create($request->validated() + ['organization_id' => $loan->organization_id]);
 
         return ApiResponse::resource(new LoanResource($loan->fresh()->load(['client', 'product'])), 'Loan guarantor added successfully.', 201);
@@ -39,6 +44,7 @@ class LoanWorkflowController extends Controller
 
     public function addCollateral(StoreLoanCollateralRequest $request, Loan $loan): JsonResponse
     {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
         $data = $request->validated();
         $loan->collaterals()->create($data + [
             'organization_id' => $loan->organization_id,
@@ -88,6 +94,8 @@ class LoanWorkflowController extends Controller
 
     public function approve(ApproveLoanRequest $request, Loan $loan, LoanApprovalService $approvals): JsonResponse
     {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
+
         return ApiResponse::resource(
             new LoanResource($approvals->approve($loan, $request->user(), (float) $request->validated('approved_amount'), $request->validated('comments'))->load(['client', 'product', 'schedules'])),
             'Loan approved successfully.'
@@ -96,6 +104,7 @@ class LoanWorkflowController extends Controller
 
     public function reject(Request $request, Loan $loan, LoanService $loans): JsonResponse
     {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
         abort_unless($request->user()->canPerform('approve-loans'), 403);
 
         $data = $request->validate(['reason' => ['required', 'string']]);
@@ -105,6 +114,7 @@ class LoanWorkflowController extends Controller
 
     public function disburse(Request $request, Loan $loan, LoanDisbursementService $disbursements): JsonResponse
     {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
         abort_unless($request->user()->canPerform('disburse-loans') || $request->user()->canPerform('manage-loans'), 403);
 
         $data = $request->validate([
@@ -121,26 +131,56 @@ class LoanWorkflowController extends Controller
     {
         abort_unless($request->user()->canPerform('manage-loans') || $request->user()->canPerform('view-reports'), 403);
 
-        return ApiResponse::collection(
-            LoanScheduleResource::collection(
-                LoanSchedule::query()
-                    ->with('loan')
-                    ->where('outstanding_amount', '>', 0)
-                    ->where(fn ($query) => $query->where('status', 'overdue')->orWhereDate('due_date', '<', now()->toDateString()))
-                    ->orderBy('due_date')
-                    ->paginate($request->integer('per_page', 30))
-            ),
-            'Loan arrears retrieved.'
-        );
+        $arrearsQuery = LoanSchedule::query()
+            ->with('loan')
+            ->whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))
+            ->where('outstanding_amount', '>', 0)
+            ->where(fn ($query) => $query->where('status', 'overdue')->orWhereDate('due_date', '<', now()->toDateString()));
+
+        $arrears = ApiQuery::apply(
+            $arrearsQuery,
+            $request,
+            [],
+            ['status'],
+            ['id', 'due_date', 'outstanding_amount', 'days_overdue', 'status', 'created_at', 'updated_at'],
+            'due_date',
+            'asc',
+        )->paginate(ApiQuery::perPage($request, 30));
+
+        return ApiResponse::collection(LoanScheduleResource::collection($arrears), 'Loan arrears retrieved.', meta: ApiQuery::meta($request));
     }
 
     public function close(Request $request, Loan $loan): JsonResponse
     {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
         abort_unless($request->user()->canPerform('manage-loans'), 403);
         abort_unless(((float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance) <= 0, 422);
 
         $loan->update(['status' => 'closed']);
 
         return ApiResponse::resource(new LoanResource($loan->fresh()->load(['client', 'product'])), 'Loan closed successfully.');
+    }
+
+    public function writeOff(Request $request, Loan $loan, AuditLogger $auditLogger): JsonResponse
+    {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        ApiSecurity::assertPermission($request->user(), 'write-off-loans');
+
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        abort_unless(in_array($loan->status, ['active', 'in_arrears', 'restructured'], true), 422);
+
+        $old = $loan->only(['status', 'principal_balance', 'interest_balance', 'fees_balance', 'penalty_balance']);
+        $loan->update(['status' => 'written_off']);
+
+        $auditLogger->record('loan.written_off_api', $loan, [
+            'reason' => $data['reason'],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ], $old);
+
+        return ApiResponse::resource(new LoanResource($loan->fresh()->load(['client', 'product'])), 'Loan written off successfully.');
     }
 }

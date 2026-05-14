@@ -31,6 +31,8 @@ class LoanScheduleResource extends JsonResource
             'outstanding_amount' => (float) $this->outstanding_amount,
             'days_overdue' => $this->days_overdue,
             'status' => $this->status,
+            'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
         ];
     }
 }

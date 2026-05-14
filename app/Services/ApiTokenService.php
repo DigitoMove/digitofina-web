@@ -3,17 +3,22 @@
 namespace App\Services;
 
 use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 class ApiTokenService
 {
+    public function __construct(private AuditLogger $auditLogger) {}
+
     /**
      * @return array{user:User,token:string}
      */
-    public function issue(string $login, string $password, string $deviceName = 'api-client'): array
+    public function issue(string $login, string $password, string $deviceName = 'api-client', ?Request $request = null): array
     {
         $user = User::query()
+            ->with('role.permissions')
             ->where('email', $login)
             ->orWhere('phone', $login)
             ->first();
@@ -26,8 +31,31 @@ class ApiTokenService
             throw ValidationException::withMessages(['login' => 'This user account is not active.']);
         }
 
-        $token = $user->createToken($deviceName, ['*'], now()->addDays(30))->plainTextToken;
+        $abilities = $user->role?->permissions->pluck('slug')->values()->all() ?: ['view-own-accounts'];
+        $newToken = $user->createToken($deviceName, $abilities, now()->addDays(30));
 
-        return ['user' => $user, 'token' => $token];
+        $deviceId = $request?->header('X-Device-Id') ?: $request?->server('HTTP_X_DEVICE_ID') ?: $deviceName;
+
+        DB::table('personal_access_tokens')
+            ->where('id', $newToken->accessToken->getKey())
+            ->update([
+                'ip_address' => $request?->ip(),
+                'user_agent' => $request?->userAgent(),
+                'device_id' => $deviceId,
+            ]);
+
+        $user->forceFill([
+            'last_login_at' => now(),
+            'last_login_ip' => $request?->ip(),
+            'last_login_user_agent' => $request?->userAgent(),
+        ])->save();
+
+        $this->auditLogger->record('api.login', $user, [
+            'device_name' => $deviceName,
+            'device_id' => $deviceId,
+            'ip_address' => $request?->ip(),
+        ], actor: $user);
+
+        return ['user' => $user, 'token' => $newToken->plainTextToken];
     }
 }

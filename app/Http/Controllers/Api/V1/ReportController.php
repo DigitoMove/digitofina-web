@@ -16,6 +16,7 @@ use App\Models\ReportExport;
 use App\Models\SavingsAccount;
 use App\Models\SavingsTransaction;
 use App\Support\ApiResponse;
+use App\Support\ApiSecurity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -26,14 +27,14 @@ class ReportController extends Controller
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
         return ApiResponse::data([
-            'clients' => Client::count(),
-            'active_clients' => Client::where('status', 'active')->count(),
-            'total_savings' => (float) SavingsAccount::sum('current_balance'),
-            'loan_portfolio' => (float) Loan::whereIn('status', ['approved', 'active', 'in_arrears'])->sum('principal_balance'),
-            'arrears' => (float) LoanSchedule::where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->sum('outstanding_amount'),
-            'deposits_today' => (float) SavingsTransaction::where('type', 'deposit')->whereDate('transaction_date', today())->sum('amount'),
-            'withdrawals_today' => (float) SavingsTransaction::where('type', 'withdrawal')->whereDate('transaction_date', today())->sum('amount'),
-            'branches' => Branch::count(),
+            'clients' => ApiSecurity::scopeTenant(Client::query(), $request->user())->count(),
+            'active_clients' => ApiSecurity::scopeTenant(Client::query(), $request->user())->where('status', 'active')->count(),
+            'total_savings' => (float) ApiSecurity::scopeTenant(SavingsAccount::query(), $request->user())->sum('current_balance'),
+            'loan_portfolio' => (float) ApiSecurity::scopeTenant(Loan::query(), $request->user())->whereIn('status', ['approved', 'active', 'in_arrears'])->sum('principal_balance'),
+            'arrears' => (float) LoanSchedule::whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->sum('outstanding_amount'),
+            'deposits_today' => (float) ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user())->where('type', 'deposit')->whereDate('transaction_date', today())->sum('amount'),
+            'withdrawals_today' => (float) ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user())->where('type', 'withdrawal')->whereDate('transaction_date', today())->sum('amount'),
+            'branches' => ApiSecurity::scopeTenant(Branch::query(), $request->user())->count(),
         ], 'Dashboard summary retrieved.');
     }
 
@@ -41,7 +42,7 @@ class ReportController extends Controller
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
-        $rows = Client::query()
+        $rows = ApiSecurity::scopeTenant(Client::query(), $request->user())
             ->selectRaw('status, count(*) as total')
             ->groupBy('status')
             ->get()
@@ -54,12 +55,12 @@ class ReportController extends Controller
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
-        $accountsByStatus = SavingsAccount::query()
+        $accountsByStatus = ApiSecurity::scopeTenant(SavingsAccount::query(), $request->user())
             ->selectRaw('status, count(*) as total')
             ->groupBy('status')
             ->get()
             ->map(fn (SavingsAccount $account): array => ['status' => $account->status, 'total' => (int) $account->total]);
-        $transactionsByType = SavingsTransaction::query()
+        $transactionsByType = ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user())
             ->selectRaw('type, count(*) as total, sum(amount) as amount')
             ->groupBy('type')
             ->get()
@@ -70,7 +71,7 @@ class ReportController extends Controller
             ]);
 
         return ApiResponse::data([
-            'balances' => (float) SavingsAccount::sum('current_balance'),
+            'balances' => (float) ApiSecurity::scopeTenant(SavingsAccount::query(), $request->user())->sum('current_balance'),
             'accounts_by_status' => $accountsByStatus,
             'transactions_by_type' => $transactionsByType,
         ], 'Savings report retrieved.');
@@ -80,7 +81,7 @@ class ReportController extends Controller
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
-        $rows = Loan::query()
+        $rows = ApiSecurity::scopeTenant(Loan::query(), $request->user())
             ->selectRaw('status, count(*) as total, sum(principal_balance) as principal')
             ->groupBy('status')
             ->get()
@@ -98,7 +99,7 @@ class ReportController extends Controller
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
         return ApiResponse::collection(
-            LoanScheduleResource::collection(LoanSchedule::query()->with('loan.client')->where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->paginate($request->integer('per_page', 30))),
+            LoanScheduleResource::collection(LoanSchedule::query()->with('loan.client')->whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->paginate($request->integer('per_page', 30))),
             'Arrears report retrieved.'
         );
     }
@@ -108,7 +109,7 @@ class ReportController extends Controller
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
         return ApiResponse::collection(
-            DrawerMovementResource::collection(DrawerMovement::query()->with(['session.drawer', 'session.user'])->latest()->paginate($request->integer('per_page', 30))),
+            DrawerMovementResource::collection(DrawerMovement::query()->with(['session.drawer', 'session.user'])->whereHas('session.drawer', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->latest()->paginate($request->integer('per_page', 30))),
             'Teller report retrieved.'
         );
     }
@@ -118,7 +119,7 @@ class ReportController extends Controller
         abort_unless($request->user()->canPerform('view-reports'), 403);
 
         return ApiResponse::collection(
-            BranchPerformanceResource::collection(Branch::query()->withCount(['clients'])->withSum('savingsAccounts', 'current_balance')->paginate($request->integer('per_page', 20))),
+            BranchPerformanceResource::collection(ApiSecurity::scopeTenant(Branch::query(), $request->user())->withCount(['clients'])->withSum('savingsAccounts', 'current_balance')->paginate($request->integer('per_page', 20))),
             'Branch performance retrieved.'
         );
     }

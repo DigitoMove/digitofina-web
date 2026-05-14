@@ -20,6 +20,7 @@ class InAppNotificationResource extends JsonResource
             'data' => $this->data,
             'read_at' => $this->read_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
         ];
     }
 }
