@@ -8,9 +8,11 @@ use App\Http\Requests\StoreLoanCollateralRequest;
 use App\Http\Requests\StoreLoanGuarantorRequest;
 use App\Http\Resources\LoanResource;
 use App\Http\Resources\LoanScheduleResource;
+use App\Http\Resources\MakerCheckerRequestResource;
 use App\Models\Loan;
 use App\Models\LoanSchedule;
 use App\Services\AuditLogger;
+use App\Services\FinancialControlService;
 use App\Services\LoanApprovalService;
 use App\Services\LoanCalculatorService;
 use App\Services\LoanDisbursementService;
@@ -20,6 +22,7 @@ use App\Support\ApiResponse;
 use App\Support\ApiSecurity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use InvalidArgumentException;
 
 class LoanWorkflowController extends Controller
 {
@@ -92,12 +95,37 @@ class LoanWorkflowController extends Controller
         );
     }
 
-    public function approve(ApproveLoanRequest $request, Loan $loan, LoanApprovalService $approvals): JsonResponse
+    public function approve(ApproveLoanRequest $request, Loan $loan, LoanApprovalService $approvals, FinancialControlService $controls): JsonResponse
     {
         ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $amount = (float) $request->validated('approved_amount');
+
+        if ($controls->requiresMakerChecker($request->user(), 'loan_approval', $amount)) {
+            $approval = $controls->requestAction(
+                maker: $request->user(),
+                action: 'loan_approval',
+                subject: $loan,
+                payload: [
+                    'approved_amount' => $amount,
+                    'comments' => $request->validated('comments'),
+                ],
+                amount: $amount,
+                requiredPermission: 'approve-loans',
+                reason: $request->validated('comments'),
+                oldValues: $loan->only(['status', 'approved_amount', 'principal_balance']),
+            );
+
+            return ApiResponse::resource(new MakerCheckerRequestResource($approval->load(['requestedBy', 'branch'])), 'Loan approval submitted for maker-checker review.', 202);
+        }
+
+        try {
+            $approvedLoan = $approvals->approve($loan, $request->user(), $amount, $request->validated('comments'));
+        } catch (InvalidArgumentException $exception) {
+            abort(422, $exception->getMessage());
+        }
 
         return ApiResponse::resource(
-            new LoanResource($approvals->approve($loan, $request->user(), (float) $request->validated('approved_amount'), $request->validated('comments'))->load(['client', 'product', 'schedules'])),
+            new LoanResource($approvedLoan->load(['client', 'product', 'schedules'])),
             'Loan approved successfully.'
         );
     }
@@ -109,10 +137,16 @@ class LoanWorkflowController extends Controller
 
         $data = $request->validate(['reason' => ['required', 'string']]);
 
-        return ApiResponse::resource(new LoanResource($loans->reject($loan, $request->user(), $data['reason'])->load(['client', 'product'])), 'Loan rejected successfully.');
+        try {
+            $rejectedLoan = $loans->reject($loan, $request->user(), $data['reason']);
+        } catch (InvalidArgumentException $exception) {
+            abort(422, $exception->getMessage());
+        }
+
+        return ApiResponse::resource(new LoanResource($rejectedLoan->load(['client', 'product'])), 'Loan rejected successfully.');
     }
 
-    public function disburse(Request $request, Loan $loan, LoanDisbursementService $disbursements): JsonResponse
+    public function disburse(Request $request, Loan $loan, LoanDisbursementService $disbursements, FinancialControlService $controls): JsonResponse
     {
         ApiSecurity::assertTenantAccess($request->user(), $loan);
         abort_unless($request->user()->canPerform('disburse-loans') || $request->user()->canPerform('manage-loans'), 403);
@@ -121,8 +155,29 @@ class LoanWorkflowController extends Controller
             'payment_method' => ['required', 'in:cash,mobile_money,bank_transfer,transfer_to_savings,cheque'],
         ]);
 
+        if ($controls->requiresMakerChecker($request->user(), 'loan_disbursement', (float) $loan->approved_amount)) {
+            $approval = $controls->requestAction(
+                maker: $request->user(),
+                action: 'loan_disbursement',
+                subject: $loan,
+                payload: $data,
+                amount: (float) $loan->approved_amount,
+                requiredPermission: 'disburse-loans',
+                reason: 'Loan disbursement requires checker approval.',
+                oldValues: $loan->only(['status', 'disbursed_at', 'principal_balance']),
+            );
+
+            return ApiResponse::resource(new MakerCheckerRequestResource($approval->load(['requestedBy', 'branch'])), 'Loan disbursement submitted for maker-checker review.', 202);
+        }
+
+        try {
+            $disbursedLoan = $disbursements->disburseToSavings($loan, $request->user(), $data['payment_method']);
+        } catch (InvalidArgumentException $exception) {
+            abort(422, $exception->getMessage());
+        }
+
         return ApiResponse::resource(
-            new LoanResource($disbursements->disburseToSavings($loan, $request->user(), $data['payment_method'])->load(['client', 'product', 'schedules'])),
+            new LoanResource($disbursedLoan->load(['client', 'product', 'schedules'])),
             'Loan disbursed successfully.'
         );
     }
@@ -161,7 +216,7 @@ class LoanWorkflowController extends Controller
         return ApiResponse::resource(new LoanResource($loan->fresh()->load(['client', 'product'])), 'Loan closed successfully.');
     }
 
-    public function writeOff(Request $request, Loan $loan, AuditLogger $auditLogger): JsonResponse
+    public function writeOff(Request $request, Loan $loan, AuditLogger $auditLogger, FinancialControlService $controls): JsonResponse
     {
         ApiSecurity::assertTenantAccess($request->user(), $loan);
         ApiSecurity::assertPermission($request->user(), 'write-off-loans');
@@ -171,6 +226,21 @@ class LoanWorkflowController extends Controller
         ]);
 
         abort_unless(in_array($loan->status, ['active', 'in_arrears', 'restructured'], true), 422);
+
+        if ($controls->requiresMakerChecker($request->user(), 'loan_write_off', (float) $loan->principal_balance)) {
+            $approval = $controls->requestAction(
+                maker: $request->user(),
+                action: 'loan_write_off',
+                subject: $loan,
+                payload: $data,
+                amount: (float) $loan->principal_balance,
+                requiredPermission: 'write-off-loans',
+                reason: $data['reason'],
+                oldValues: $loan->only(['status', 'principal_balance', 'interest_balance', 'fees_balance', 'penalty_balance']),
+            );
+
+            return ApiResponse::resource(new MakerCheckerRequestResource($approval->load(['requestedBy', 'branch'])), 'Loan write-off submitted for maker-checker review.', 202);
+        }
 
         $old = $loan->only(['status', 'principal_balance', 'interest_balance', 'fees_balance', 'penalty_balance']);
         $loan->update(['status' => 'written_off']);
@@ -182,5 +252,31 @@ class LoanWorkflowController extends Controller
         ], $old);
 
         return ApiResponse::resource(new LoanResource($loan->fresh()->load(['client', 'product'])), 'Loan written off successfully.');
+    }
+
+    public function waivePenalty(Request $request, Loan $loan, FinancialControlService $controls): JsonResponse
+    {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        ApiSecurity::assertPermission($request->user(), 'waive-penalties');
+
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'min:1'],
+            'reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        abort_unless((float) $loan->penalty_balance > 0, 422);
+
+        $approval = $controls->requestAction(
+            maker: $request->user(),
+            action: 'penalty_waiver',
+            subject: $loan,
+            payload: $data,
+            amount: (float) $data['amount'],
+            requiredPermission: 'waive-penalties',
+            reason: $data['reason'],
+            oldValues: $loan->only(['penalty_balance']),
+        );
+
+        return ApiResponse::resource(new MakerCheckerRequestResource($approval->load(['requestedBy', 'branch'])), 'Penalty waiver submitted for maker-checker review.', 202);
     }
 }

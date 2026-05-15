@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateApiSystemSettingsRequest;
+use App\Http\Resources\MakerCheckerRequestResource;
 use App\Http\Resources\SystemSettingResource;
 use App\Models\SystemSetting;
 use App\Services\AuditLogger;
+use App\Services\FinancialControlService;
 use App\Support\ApiResponse;
 use App\Support\ApiSecurity;
 use Illuminate\Http\JsonResponse;
@@ -23,8 +25,28 @@ class SettingController extends Controller
         );
     }
 
-    public function update(UpdateApiSystemSettingsRequest $request, AuditLogger $auditLogger): JsonResponse
+    public function update(UpdateApiSystemSettingsRequest $request, AuditLogger $auditLogger, FinancialControlService $controls): JsonResponse
     {
+        if ($controls->requiresMakerChecker($request->user(), 'settings_update')) {
+            $oldValues = ApiSecurity::scopeTenant(SystemSetting::query(), $request->user())
+                ->whereIn('key', array_keys($request->validated('settings', [])))
+                ->pluck('value', 'key')
+                ->all();
+
+            $approval = $controls->requestAction(
+                maker: $request->user(),
+                action: 'settings_update',
+                subject: null,
+                payload: ['settings' => $request->validated('settings', [])],
+                amount: null,
+                requiredPermission: 'manage-settings',
+                reason: 'System settings change requires checker approval.',
+                oldValues: $oldValues,
+            );
+
+            return ApiResponse::resource(new MakerCheckerRequestResource($approval->load(['requestedBy', 'branch'])), 'Settings update submitted for maker-checker review.', 202);
+        }
+
         $updated = collect();
 
         foreach ($request->validated('settings', []) as $key => $value) {

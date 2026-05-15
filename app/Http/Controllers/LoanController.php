@@ -14,6 +14,7 @@ use App\Services\LoanService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use InvalidArgumentException;
 
 class LoanController extends Controller
 {
@@ -77,7 +78,11 @@ class LoanController extends Controller
     {
         $data = $request->validated();
 
-        $approvals->approve($loan, $request->user(), (float) $data['approved_amount'], $data['comments'] ?? null);
+        try {
+            $approvals->approve($loan, $request->user(), (float) $data['approved_amount'], $data['comments'] ?? null);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['approved_amount' => $exception->getMessage()])->withInput();
+        }
 
         return back()->with('status', 'Loan approved.');
     }
@@ -87,7 +92,11 @@ class LoanController extends Controller
         abort_unless(auth()->user()->canPerform('approve-loans'), 403);
 
         $data = $request->validate(['reason' => ['required', 'string']]);
-        $service->reject($loan, auth()->user(), $data['reason']);
+        try {
+            $service->reject($loan, auth()->user(), $data['reason']);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['reason' => $exception->getMessage()])->withInput();
+        }
 
         return back()->with('status', 'Loan rejected.');
     }
@@ -100,7 +109,11 @@ class LoanController extends Controller
             'payment_method' => ['required', 'in:cash,mobile_money,bank_transfer,transfer_to_savings,cheque'],
         ]);
 
-        $disbursements->disburseToSavings($loan, $request->user(), $data['payment_method']);
+        try {
+            $disbursements->disburseToSavings($loan, $request->user(), $data['payment_method']);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['payment_method' => $exception->getMessage()])->withInput();
+        }
 
         return back()->with('status', 'Loan disbursed into client savings account.');
     }

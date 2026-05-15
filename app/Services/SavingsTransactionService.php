@@ -14,6 +14,7 @@ class SavingsTransactionService
     public function __construct(
         private AuditLogger $auditLogger,
         private JournalEntryService $journalEntryService,
+        private FinancialControlService $financialControls,
     ) {}
 
     public function deposit(SavingsAccount $account, float $amount, User $teller, string $paymentMethod = 'cash', ?string $narration = null): SavingsTransaction
@@ -131,6 +132,12 @@ class SavingsTransactionService
 
         return DB::transaction(function () use ($account, $amount, $teller, $type, $paymentMethod, $narration): SavingsTransaction {
             $account = SavingsAccount::query()->with('product')->whereKey($account->id)->lockForUpdate()->firstOrFail();
+            $businessDate = $this->financialControls->ensureFinancialDayOpen($teller, (int) $account->branch_id);
+            $this->financialControls->enforceTransactionLimit($teller, $amount, $businessDate);
+
+            if ($type === 'withdrawal' && $this->financialControls->requiresMakerChecker($teller, 'savings_withdrawal', $amount)) {
+                throw new InvalidArgumentException('Large withdrawals require maker-checker approval before posting.');
+            }
 
             if ($account->status !== 'active') {
                 throw new InvalidArgumentException('Savings account is not active.');
@@ -178,6 +185,7 @@ class SavingsTransactionService
                 'amount' => $amount,
                 'charges' => $charge,
             ]);
+            $this->financialControls->recordSuspiciousTransaction($teller, $transaction, $amount, "savings_{$type}", $account->branch_id);
 
             return $transaction;
         });

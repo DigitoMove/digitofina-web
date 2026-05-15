@@ -222,6 +222,38 @@ it('shows a loan when the legacy guarantors payload is empty', function () {
         ->assertSee('No guarantors recorded.');
 });
 
+it('returns a form error when approving a loan without required accepted guarantors', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct();
+
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '1001-LN-0000004',
+        'requested_amount' => 500_000,
+        'principal_balance' => 0,
+        'interest_rate' => 24,
+        'term_periods' => 2,
+        'repayment_frequency' => 'monthly',
+        'purpose' => 'Input purchase',
+        'status' => 'submitted',
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('loans.show', $loan))
+        ->post(route('loans.approve', $loan), [
+            'approved_amount' => 500_000,
+            'comments' => 'Ready for approval.',
+        ])
+        ->assertRedirect(route('loans.show', $loan))
+        ->assertSessionHasErrors(['approved_amount' => 'This product requires accepted guarantors before approval.']);
+
+    expect($loan->fresh()->status)->toBe('submitted');
+});
+
 it('marks overdue schedules and applies configured penalties', function () {
     $user = loanWorkflowUser();
     $client = loanWorkflowClient($user);

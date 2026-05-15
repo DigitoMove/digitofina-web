@@ -6,11 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreJournalEntryRequest;
 use App\Http\Resources\ChartAccountResource;
 use App\Http\Resources\JournalEntryResource;
+use App\Http\Resources\MakerCheckerRequestResource;
 use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
 use App\Services\AuditLogger;
+use App\Services\FinancialControlService;
 use App\Services\JournalEntryService;
 use App\Support\ApiQuery;
 use App\Support\ApiResponse;
@@ -54,13 +56,33 @@ class AccountingController extends Controller
         return ApiResponse::collection(JournalEntryResource::collection($journals), 'Journal entries retrieved.', meta: ApiQuery::meta($request));
     }
 
-    public function storeJournalEntry(StoreJournalEntryRequest $request, JournalEntryService $journals, AuditLogger $auditLogger): JsonResponse
+    public function storeJournalEntry(StoreJournalEntryRequest $request, JournalEntryService $journals, AuditLogger $auditLogger, FinancialControlService $controls): JsonResponse
     {
         $branchId = $request->integer('branch_id') ?: $request->user()->branch_id;
 
         if ($branchId) {
             $branch = Branch::findOrFail($branchId);
             ApiSecurity::assertTenantAccess($request->user(), $branch);
+        }
+
+        $amount = collect($request->validated('lines'))->sum(fn (array $line): float => (float) ($line['debit'] ?? 0));
+
+        if ($controls->requiresMakerChecker($request->user(), 'journal_posting', $amount)) {
+            $approval = $controls->requestAction(
+                maker: $request->user(),
+                action: 'journal_posting',
+                subject: null,
+                payload: [
+                    'description' => $request->validated('description'),
+                    'branch_id' => $branchId,
+                    'lines' => $request->validated('lines'),
+                ],
+                amount: $amount,
+                requiredPermission: 'post-journal-entries',
+                reason: $request->validated('description'),
+            );
+
+            return ApiResponse::resource(new MakerCheckerRequestResource($approval->load(['requestedBy', 'branch'])), 'Journal entry submitted for maker-checker review.', 202);
         }
 
         $journal = $journals->post($request->validated('lines'), $request->validated('description'), $request->user(), $branchId);
