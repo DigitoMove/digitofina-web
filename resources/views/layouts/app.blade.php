@@ -13,17 +13,17 @@
     <x-seo-meta :seo="$seo" />
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="bg-brand-50 text-slate-900 antialiased">
-    <div class="min-h-screen bg-[radial-gradient(circle_at_top_left,#f3e8ff_0,#faf5ff_22rem,transparent_38rem),linear-gradient(180deg,#fdf4ff_0%,#f8fafc_34rem,#f8fafc_100%)] lg:flex">
-        <aside class="border-r border-brand-100/80 bg-white/90 shadow-xl shadow-brand-200/40 backdrop-blur lg:fixed lg:inset-y-0 lg:w-64">
-            <div class="flex h-16 items-center border-b border-brand-100/80 px-5">
-                <img src="{{ asset('brand/digitofina-mark.svg') }}" alt="DigitoFina" class="h-11 w-11 rounded-2xl shadow-sm ring-4 ring-brand-100">
+<body class="bg-slate-100 text-slate-900 antialiased">
+    <div class="min-h-screen bg-slate-100 lg:flex">
+        <aside class="border-r border-slate-200 bg-white shadow-sm lg:fixed lg:inset-y-0 lg:w-72">
+            <div class="flex h-16 items-center border-b border-slate-200 px-5">
+                <img src="{{ asset('brand/digitofina-mark.svg') }}" alt="DigitoFina" class="h-10 w-10 rounded-lg shadow-sm ring-1 ring-slate-200">
                 <div class="ml-3">
-                    <div class="font-semibold text-slate-950">DigitoFina</div>
-                    <div class="text-xs text-brand-700">Financial Management Core</div>
+                    <div class="font-semibold tracking-tight text-slate-950">DigitoFina</div>
+                    <div class="text-xs text-slate-500">Microfinance operating core</div>
                 </div>
             </div>
-            <nav class="grid gap-1 p-3 text-sm">
+            <nav class="grid max-h-[calc(100vh-8rem)] gap-1 overflow-y-auto p-3 text-sm">
                 @php
                     $user = auth()->user();
                     $items = $user->isMember()
@@ -54,19 +54,19 @@
                     ];
                 @endphp
                 @foreach ($items as [$label, $route, $icon])
-                    <a href="{{ route($route) }}" class="flex items-center gap-3 rounded-2xl px-3 py-2.5 font-medium transition {{ request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*') ? 'bg-brand-50 text-brand-800 ring-1 ring-brand-100 shadow-sm' : 'text-slate-600 hover:bg-brand-50 hover:text-brand-900' }}">
-                        <span class="grid h-8 w-8 place-items-center rounded-xl {{ request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*') ? 'bg-gradient-to-br from-brand-700 to-orchid-500 text-white' : 'bg-brand-50 text-brand-500' }}">
+                    <a href="{{ route($route) }}" class="group flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition {{ request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*') ? 'bg-brand-50 text-brand-900 ring-1 ring-brand-200 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-brand-900' }}">
+                        <span class="grid h-8 w-8 place-items-center rounded-lg transition group-hover:scale-105 {{ request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*') ? 'bg-brand-700 text-white' : 'bg-slate-100 text-brand-700' }}">
                             <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="{{ $icon }}"/></svg>
                         </span>
                         {{ $label }}
                     </a>
                 @endforeach
                 @unless($user->isMember())
-                    <div class="mt-3 border-t border-brand-100/80 pt-3 text-xs font-semibold uppercase tracking-wide text-brand-300">Administration</div>
+                    <div class="mt-3 border-t border-slate-200 pt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Administration</div>
                     @foreach ($adminItems as [$label, $route, $parameter, $permission, $icon])
                         @if ($user->canPerform($permission) && ($route !== 'organization.edit' || $parameter))
-                            <a href="{{ $parameter ? route($route, $parameter) : route($route) }}" class="flex items-center gap-3 rounded-2xl px-3 py-2.5 font-medium transition {{ request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*') ? 'bg-orchid-50 text-orchid-700 ring-1 ring-brand-100 shadow-sm' : 'text-slate-600 hover:bg-orchid-50 hover:text-orchid-700' }}">
-                                <span class="grid h-8 w-8 place-items-center rounded-xl {{ request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*') ? 'bg-gradient-to-br from-orchid-500 to-brand-700 text-white' : 'bg-orchid-50 text-orchid-500' }}">
+                            <a href="{{ $parameter ? route($route, $parameter) : route($route) }}" class="group flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition {{ request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*') ? 'bg-sun-50 text-sun-600 ring-1 ring-amber-100 shadow-sm' : 'text-slate-600 hover:bg-sun-50 hover:text-sun-600' }}">
+                                <span class="grid h-8 w-8 place-items-center rounded-lg transition group-hover:scale-105 {{ request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*') ? 'bg-sun-400 text-slate-950' : 'bg-sun-50 text-sun-600' }}">
                                     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="{{ $icon }}"/></svg>
                                 </span>
                                 {{ $label }}
@@ -75,31 +75,31 @@
                     @endforeach
                 @endunless
             </nav>
-            <div class="mx-3 mt-2 rounded-3xl border border-brand-100 bg-gradient-to-br from-brand-50 to-orchid-50 p-3 text-xs text-brand-900">
+            <div class="mx-3 mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
                 <div class="font-semibold text-slate-800">Operational mode</div>
                 <div class="mt-1">{{ auth()->user()->role?->name ?? 'User' }} · {{ now()->format('d M Y') }}</div>
             </div>
         </aside>
 
-        <div class="flex min-h-screen flex-1 flex-col lg:pl-64">
-            <header class="sticky top-0 z-20 border-b border-brand-950 bg-brand-950 text-white shadow-sm">
+        <div class="flex min-h-screen flex-1 flex-col lg:pl-72">
+            <header class="sticky top-0 z-20 border-b border-slate-200 bg-white/95 text-slate-900 shadow-sm backdrop-blur">
                 <div class="flex h-16 items-center justify-between gap-4 px-4 sm:px-6">
                     @unless(auth()->user()->isMember())
                         <form action="{{ route('clients.index') }}" class="hidden flex-1 sm:block">
-                            <input name="search" class="h-10 w-full max-w-xl rounded-2xl border-0 bg-white/95 px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-4 focus:ring-brand-300/40" placeholder="Search client, phone, account or national ID">
+                            <input name="search" class="h-11 w-full max-w-xl rounded-xl border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-4 focus:ring-brand-100" placeholder="Search client, phone, account or national ID">
                         </form>
                     @else
-                        <div class="hidden flex-1 text-sm font-medium text-brand-100 sm:block">Member self-service portal</div>
+                        <div class="hidden flex-1 text-sm font-medium text-slate-500 sm:block">Member self-service portal</div>
                     @endunless
                     <div class="flex items-center gap-3 text-sm">
-                        <span class="hidden text-brand-100 md:inline">{{ auth()->user()->branch?->name }}</span>
-                        <a href="{{ route('profile.edit') }}" class="rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 hover:bg-white/15">{{ auth()->user()->name }}</a>
-                        <form method="POST" action="{{ route('logout') }}">@csrf<button class="rounded-xl bg-orchid-400 px-3 py-1.5 font-semibold text-white hover:bg-orchid-500">Logout</button></form>
+                        <span class="hidden text-slate-500 md:inline">{{ auth()->user()->branch?->name }}</span>
+                        <a href="{{ route('profile.edit') }}" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 hover:bg-brand-50">{{ auth()->user()->name }}</a>
+                        <form method="POST" action="{{ route('logout') }}">@csrf<button class="rounded-lg bg-slate-900 px-3 py-1.5 font-semibold text-white hover:bg-brand-800">Logout</button></form>
                     </div>
                 </div>
             </header>
 
-            <main class="flex-1 p-4 sm:p-6">
+            <main class="df-page flex-1 p-4 sm:p-6">
                 @if (session('status'))
                     <div class="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 shadow-sm">{{ session('status') }}</div>
                 @endif

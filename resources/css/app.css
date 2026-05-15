@@ -8,142 +8,206 @@
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
-    --color-brand-50: #faf5ff;
-    --color-brand-100: #f3e8ff;
-    --color-brand-200: #e9d5ff;
-    --color-brand-300: #d8b4fe;
-    --color-brand-400: #c084fc;
-    --color-brand-500: #a855f7;
-    --color-brand-600: #9333ea;
-    --color-brand-700: #7e22ce;
-    --color-brand-800: #6b21a8;
-    --color-brand-900: #581c87;
-    --color-brand-950: #3b0764;
-    --color-orchid-50: #fdf4ff;
-    --color-orchid-500: #d946ef;
-    --color-orchid-700: #a21caf;
+    --color-brand-50: #eefdf8;
+    --color-brand-100: #ccfbef;
+    --color-brand-200: #99f6e1;
+    --color-brand-300: #5eead0;
+    --color-brand-400: #2dd4bf;
+    --color-brand-500: #14b8a6;
+    --color-brand-600: #0d9488;
+    --color-brand-700: #0f766e;
+    --color-brand-800: #115e59;
+    --color-brand-900: #134e4a;
+    --color-brand-950: #0b2f2c;
+    --color-orchid-50: #fff7ed;
+    --color-orchid-500: #f97316;
+    --color-orchid-700: #c2410c;
     --color-forest-50: #ecfdf5;
     --color-forest-500: #10b981;
     --color-forest-700: #047857;
     --color-sun-50: #fffbeb;
-    --color-sun-400: #fbbf24;
-    --color-sun-600: #d97706;
+    --color-sun-400: #f59e0b;
+    --color-sun-600: #b45309;
     --color-coral-50: #fff1f2;
-    --color-coral-500: #f43f5e;
+    --color-coral-500: #e11d48;
     --color-coral-700: #be123c;
-    --radius-card: 1.35rem;
-    --shadow-panel: 0 20px 55px rgb(88 28 135 / 0.12);
+    --radius-card: 0.5rem;
+    --shadow-panel: 0 14px 34px rgb(15 23 42 / 0.08);
 }
 
 @layer base {
     html {
-        @apply bg-brand-50;
+        @apply bg-slate-100 scroll-smooth;
     }
 
     body {
-        @apply bg-brand-50 text-slate-900 antialiased;
+        @apply bg-slate-100 text-slate-900 antialiased;
     }
 
     input:not([type='checkbox']):not([type='radio']):not([type='hidden']),
     select,
     textarea {
-        @apply w-full rounded-2xl border border-brand-100 bg-white/90 px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500;
+        @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition duration-200 placeholder:text-slate-400 hover:border-brand-300 focus:border-brand-500 focus:ring-4 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500;
     }
 
     input:not([type='checkbox']):not([type='radio']):not([type='hidden']),
     select {
-        @apply min-h-11;
+        @apply min-h-12;
     }
 
     textarea {
         @apply min-h-28;
     }
 
+    input[type='checkbox'],
+    input[type='radio'] {
+        @apply border-slate-300 text-brand-700 focus:ring-brand-200;
+    }
+
     input[type='file'] {
-        @apply cursor-pointer py-2 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100;
+        @apply cursor-pointer py-2 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-brand-800 hover:file:bg-brand-100;
     }
 
     button,
     [type='button'],
     [type='submit'],
     a {
-        @apply transition;
+        @apply transition duration-200;
+    }
+
+    button,
+    [type='button'],
+    [type='submit'] {
+        @apply cursor-pointer;
     }
 }
 
 @layer components {
+    .df-page {
+        @apply mx-auto max-w-[1600px];
+    }
+
     .df-panel {
-        @apply rounded-card border border-brand-100/90 bg-white/95 shadow-panel;
+        @apply rounded-card border border-slate-200/90 bg-white shadow-panel;
     }
 
     .df-soft-panel {
-        @apply rounded-card border border-white/80 bg-white/85 shadow-panel;
+        @apply rounded-card border border-slate-200 bg-slate-50/90 shadow-sm;
     }
 
     .df-action-primary {
-        @apply rounded-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-orchid-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-200/70 hover:from-brand-800 hover:to-orchid-700;
+        @apply inline-flex min-h-11 items-center justify-center rounded-xl bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:-translate-y-0.5 hover:bg-brand-800 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-brand-100 active:translate-y-0;
     }
 
     .df-action-secondary {
-        @apply rounded-2xl border border-brand-100 bg-white px-4 py-2 text-sm font-semibold text-brand-800 shadow-sm hover:border-brand-200 hover:bg-brand-50 hover:text-brand-900;
+        @apply inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:-translate-y-0.5 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-900 focus:outline-none focus:ring-4 focus:ring-brand-100 active:translate-y-0;
+    }
+
+    .df-action-danger {
+        @apply inline-flex min-h-11 items-center justify-center rounded-xl bg-coral-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:-translate-y-0.5 hover:bg-coral-500 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-coral-50 active:translate-y-0;
+    }
+
+    .df-title {
+        @apply text-2xl font-semibold tracking-normal text-slate-950;
+    }
+
+    .df-muted {
+        @apply text-sm text-slate-500;
+    }
+
+    .df-badge {
+        @apply inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm;
+    }
+
+    .df-tablist {
+        @apply flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-100 p-1;
+    }
+
+    .df-tab {
+        @apply inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-white hover:text-brand-800;
+    }
+
+    .df-tab.is-active {
+        @apply bg-white text-brand-900 shadow-sm ring-1 ring-slate-200;
+    }
+
+    .df-step {
+        @apply flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm;
+    }
+
+    .df-step.is-active {
+        @apply border-brand-300 bg-brand-50 text-brand-900;
+    }
+
+    .df-step.is-complete {
+        @apply border-forest-500/30 bg-forest-50 text-forest-700;
+    }
+
+    .df-hover-lift {
+        @apply transition duration-200 hover:-translate-y-0.5 hover:shadow-md;
     }
 }
 
-.rounded {
-    border-radius: 0.9rem;
-}
-
-.rounded-md {
-    border-radius: 1rem;
-}
-
-.rounded-lg {
-    border-radius: 1.15rem;
+.rounded,
+.rounded-md,
+.rounded-lg,
+.rounded-xl,
+.rounded-2xl,
+.rounded-3xl,
+.rounded-\[2rem\],
+main section.rounded,
+main form.rounded,
+main div.overflow-hidden.rounded {
+    border-radius: 0.5rem;
 }
 
 main section.rounded,
 main form.rounded,
 main div.overflow-hidden.rounded,
 main [class*='border-slate-200'][class*='bg-white'] {
-    border-color: rgb(233 213 255 / 0.95);
-    background:
-        linear-gradient(180deg, rgb(255 255 255 / 0.98), rgb(255 255 255 / 0.92)),
-        radial-gradient(circle at top left, rgb(216 180 254 / 0.22), transparent 34%);
+    border-color: rgb(226 232 240 / 0.95);
+    background: rgb(255 255 255 / 0.98);
     box-shadow: var(--shadow-panel);
 }
 
-main section.rounded,
-main form.rounded,
-main div.overflow-hidden.rounded {
-    border-radius: 1.5rem;
+main section,
+main form,
+main table,
+main .df-panel,
+main [class*='bg-white'] {
+    animation: df-enter 260ms ease both;
 }
 
-main .rounded-3xl,
-main .rounded-\[2rem\] {
-    box-shadow: var(--shadow-panel);
+main table {
+    border-collapse: separate;
+    border-spacing: 0;
 }
 
 main table thead[class*='bg-slate-50'] {
-    background: linear-gradient(90deg, #faf5ff, #fdf4ff);
-    color: #6b21a8;
+    background: #f8fafc;
+    color: #334155;
+}
+
+main table th {
+    @apply text-xs font-semibold uppercase tracking-wide;
 }
 
 main table tbody tr {
-    transition: background-color 160ms ease, color 160ms ease;
+    transition: background-color 160ms ease, transform 160ms ease, color 160ms ease;
 }
 
 main table tbody tr:hover {
-    background-color: #faf5ff;
+    background-color: #f0fdfa;
 }
 
 main a.text-blue-700,
 main a.text-blue-800 {
-    color: #7e22ce;
+    color: #0f766e;
 }
 
 main a.text-blue-700:hover,
 main a.text-blue-800:hover {
-    color: #581c87;
+    color: #134e4a;
 }
 
 main .bg-blue-700,
@@ -151,59 +215,121 @@ main button.bg-blue-700,
 main a.bg-blue-700,
 main .bg-slate-800,
 main .bg-slate-900 {
-    background-image: linear-gradient(135deg, #7e22ce, #c026d3);
-    box-shadow: 0 12px 28px rgb(168 85 247 / 0.24);
+    background: #0f766e;
+    box-shadow: 0 12px 24px rgb(15 118 110 / 0.18);
 }
 
 main .hover\:bg-blue-800:hover {
-    background-image: linear-gradient(135deg, #6b21a8, #a21caf);
+    background: #115e59;
 }
 
-main .bg-blue-50 {
-    background-color: #f3e8ff;
+main .bg-blue-50,
+main .bg-cyan-50,
+main .bg-sky-50,
+main .bg-violet-50 {
+    background-color: #ecfeff;
 }
 
 main .text-blue-800,
 main .text-cyan-700,
-main .text-cyan-800 {
-    color: #6b21a8;
-}
-
-main .bg-cyan-50,
-main .bg-sky-50,
-main .bg-violet-50 {
-    background-color: #f5f3ff;
+main .text-cyan-800,
+main .text-violet-700 {
+    color: #0f766e;
 }
 
 main .bg-cyan-500,
 main .bg-cyan-600,
 main .bg-sky-500,
 main .bg-blue-500 {
-    background-color: #8b5cf6;
+    background-color: #14b8a6;
 }
 
 main .from-cyan-500,
 main .from-sky-500,
-main .from-blue-500 {
-    --tw-gradient-from: #8b5cf6 var(--tw-gradient-from-position);
-    --tw-gradient-to: rgb(139 92 246 / 0) var(--tw-gradient-to-position);
+main .from-blue-500,
+main .from-indigo-500,
+main .from-violet-500 {
+    --tw-gradient-from: #0d9488 var(--tw-gradient-from-position);
+    --tw-gradient-to: rgb(13 148 136 / 0) var(--tw-gradient-to-position);
     --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 }
 
 main .to-cyan-500,
 main .to-cyan-600,
 main .to-sky-500,
-main .to-blue-500 {
-    --tw-gradient-to: #d946ef var(--tw-gradient-to-position);
-}
-
-main span.rounded,
-main span.rounded-full,
-main span.rounded-xl {
-    border-color: rgb(233 213 255 / 0.7);
+main .to-blue-500,
+main .to-fuchsia-500 {
+    --tw-gradient-to: #f59e0b var(--tw-gradient-to-position);
 }
 
 main pre.bg-slate-950 {
-    background: #3b0764;
-    border: 1px solid rgb(216 180 254 / 0.3);
+    background: #0f172a;
+    border: 1px solid rgb(148 163 184 / 0.28);
+}
+
+[data-df-tab-panel][hidden],
+[data-df-step-panel][hidden] {
+    display: none !important;
+}
+
+[data-df-tab-panel],
+[data-df-step-panel] {
+    animation: df-panel-in 180ms ease both;
+}
+
+.df-ripple {
+    position: relative;
+    overflow: hidden;
+}
+
+.df-ripple::after {
+    content: '';
+    position: absolute;
+    inset: var(--df-ripple-y, 50%) auto auto var(--df-ripple-x, 50%);
+    width: 0;
+    height: 0;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.32);
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.df-ripple.is-rippling::after {
+    animation: df-ripple 520ms ease-out;
+}
+
+@keyframes df-enter {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes df-panel-in {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes df-ripple {
+    0% {
+        width: 0;
+        height: 0;
+        opacity: 0.8;
+    }
+    100% {
+        width: 22rem;
+        height: 22rem;
+        opacity: 0;
+    }
 }

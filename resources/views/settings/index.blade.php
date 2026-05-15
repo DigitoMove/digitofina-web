@@ -6,11 +6,18 @@
     <p class="text-sm text-slate-500">Core operating defaults for currency, numbering, approvals, repayments, SMS, and mobile money.</p>
 </div>
 
-<form method="POST" action="{{ route('settings.update') }}" class="grid gap-5">
+<form method="POST" action="{{ route('settings.update') }}" class="grid gap-5" data-df-tabs>
     @csrf
     @method('PUT')
+    <div class="df-tablist" role="tablist">
+        @foreach ($settings as $group => $items)
+            @php($tabId = str($group)->slug()->toString())
+            <button type="button" class="df-tab" data-df-tab-target="{{ $tabId }}">{{ str($group)->headline() }}</button>
+        @endforeach
+    </div>
     @foreach ($settings as $group => $items)
-        <section class="rounded border border-slate-200 bg-white p-5 shadow-sm">
+        @php($tabId = str($group)->slug()->toString())
+        <section class="rounded border border-slate-200 bg-white p-5 shadow-sm" data-df-tab-panel="{{ $tabId }}">
             <h2 class="text-lg font-semibold text-slate-950">{{ str($group)->headline() }}</h2>
             <div class="mt-4 grid gap-4 md:grid-cols-2">
                 @foreach ($items as $setting)
@@ -24,6 +31,6 @@
             </div>
         </section>
     @endforeach
-    <div class="flex justify-end"><button class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Save Settings</button></div>
+    <div class="flex justify-end"><button class="df-action-primary">Save Settings</button></div>
 </form>
 @endsection

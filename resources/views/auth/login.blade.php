@@ -7,7 +7,7 @@
     <x-seo-meta :seo="$seo" />
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="min-h-screen bg-[radial-gradient(circle_at_top_left,#f3e8ff_0,#faf5ff_24rem,transparent_40rem),linear-gradient(135deg,#fdf4ff_0%,#f8fafc_48%,#f5f3ff_100%)]">
+<body class="min-h-screen bg-[linear-gradient(135deg,#ecfdf5_0%,#f8fafc_42%,#fff7ed_100%)]">
     <main class="grid min-h-screen p-4 lg:grid-cols-[1.05fr_0.95fr] lg:p-6">
         <section class="hidden min-h-[calc(100vh-3rem)] overflow-hidden rounded-[2rem] bg-brand-950 p-8 text-white shadow-panel lg:flex lg:flex-col lg:justify-between">
             <div>
@@ -26,7 +26,7 @@
                             <p class="text-sm text-brand-100">Today&apos;s focus</p>
                             <p class="mt-1 text-xl font-semibold">Cash flow, approvals, arrears</p>
                         </div>
-                        <div class="grid h-12 w-12 place-items-center rounded-2xl bg-orchid-300 text-brand-950">
+                        <div class="grid h-12 w-12 place-items-center rounded-lg bg-sun-400 text-brand-950">
                             <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M5 19V5m0 14h14M9 16v-5m4 5V8m4 8v-7"/></svg>
                         </div>
                     </div>
@@ -36,8 +36,8 @@
                         <p class="text-xs text-brand-100">Portfolio</p>
                         <p class="mt-2 text-lg font-semibold">Live</p>
                     </div>
-                    <div class="rounded-2xl bg-orchid-400/20 p-4">
-                        <p class="text-xs text-orchid-50">Audit</p>
+                    <div class="rounded-lg bg-sun-400/20 p-4">
+                        <p class="text-xs text-sun-50">Audit</p>
                         <p class="mt-2 text-lg font-semibold">Traceable</p>
                     </div>
                     <div class="rounded-2xl bg-amber-300/15 p-4">
@@ -49,7 +49,7 @@
         </section>
 
         <section class="grid min-h-[calc(100vh-2rem)] place-items-center p-4 sm:p-8">
-            <form method="POST" action="{{ route('login') }}" class="w-full max-w-md rounded-[2rem] bg-white/95 p-6 shadow-panel ring-1 ring-slate-200/80 sm:p-8">
+            <form method="POST" action="{{ route('login') }}" class="w-full max-w-md rounded-lg bg-white/95 p-6 shadow-panel ring-1 ring-slate-200/80 sm:p-8">
                 @csrf
                 <div class="mb-8">
                     <img src="{{ asset('brand/digitofina-logo.svg') }}" alt="DigitoFina" class="h-16 w-auto">
@@ -74,7 +74,7 @@
                     <a href="{{ route('password.request') }}" class="font-semibold text-brand-700 hover:text-brand-900">Reset password</a>
                 </div>
 
-                <button class="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-orchid-500 font-semibold text-white shadow-lg shadow-brand-200 hover:from-brand-800 hover:to-orchid-700">
+                <button class="df-action-primary mt-6 flex h-12 w-full items-center justify-center gap-2">
                     Login
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
                 </button>

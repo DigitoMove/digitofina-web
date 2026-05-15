@@ -10,8 +10,15 @@
     $checkedKyc = old('kyc_checklist', collect($client->kyc_documents ?? [])->filter()->keys()->all());
 @endphp
 
-<div class="grid gap-5">
-    <section>
+<div data-df-steps class="grid gap-5">
+    <div class="grid gap-2 md:grid-cols-4">
+        <button type="button" class="df-step" data-df-step><span class="grid h-6 w-6 place-items-center rounded-full bg-white text-xs">1</span> Type</button>
+        <button type="button" class="df-step" data-df-step><span class="grid h-6 w-6 place-items-center rounded-full bg-white text-xs">2</span> Biodata</button>
+        <button type="button" class="df-step" data-df-step><span class="grid h-6 w-6 place-items-center rounded-full bg-white text-xs">3</span> Address</button>
+        <button type="button" class="df-step" data-df-step><span class="grid h-6 w-6 place-items-center rounded-full bg-white text-xs">4</span> KYC</button>
+    </div>
+
+    <section data-df-step-panel class="df-panel p-5">
         <h2 class="text-lg font-semibold text-slate-950">Client Type & Status</h2>
         <div class="mt-4 grid gap-4 md:grid-cols-4">
             <label class="text-sm font-medium text-slate-700">Client type
@@ -40,9 +47,10 @@
                 </select>
             </label>
         </div>
+        <div class="mt-5 flex justify-end"><button type="button" data-df-step-next class="df-action-primary">Continue</button></div>
     </section>
 
-    <section class="border-t border-slate-200 pt-5">
+    <section data-df-step-panel class="df-panel p-5">
         <h2 class="text-lg font-semibold text-slate-950">Biodata</h2>
         <div class="mt-4 grid gap-4 md:grid-cols-3">
             <label class="text-sm font-medium text-slate-700">First name<input name="first_name" value="{{ old('first_name', $client->first_name) }}" class="mt-1 w-full rounded border-slate-300"></label>
@@ -58,9 +66,10 @@
             <label class="text-sm font-medium text-slate-700">Occupation<input name="occupation" value="{{ old('occupation', $client->occupation) }}" class="mt-1 w-full rounded border-slate-300"></label>
             <label class="text-sm font-medium text-slate-700">Marital status<input name="marital_status" value="{{ old('marital_status', $client->marital_status) }}" class="mt-1 w-full rounded border-slate-300"></label>
         </div>
+        <div class="mt-5 flex justify-between gap-3"><button type="button" data-df-step-prev class="df-action-secondary">Back</button><button type="button" data-df-step-next class="df-action-primary">Continue</button></div>
     </section>
 
-    <section class="border-t border-slate-200 pt-5">
+    <section data-df-step-panel class="df-panel p-5">
         <h2 class="text-lg font-semibold text-slate-950">Address & Business</h2>
         <div class="mt-4 grid gap-4 md:grid-cols-3">
             <label class="text-sm font-medium text-slate-700 md:col-span-3">Physical address<textarea name="address" class="mt-1 w-full rounded border-slate-300" rows="2">{{ old('address', $client->address) }}</textarea></label>
@@ -74,9 +83,10 @@
             <label class="text-sm font-medium text-slate-700">Business name<input name="business_name" value="{{ old('business_name', $client->business_name) }}" class="mt-1 w-full rounded border-slate-300"></label>
             <label class="text-sm font-medium text-slate-700 md:col-span-3">Business details<textarea name="business_details" class="mt-1 w-full rounded border-slate-300" rows="2">{{ old('business_details', $client->business_details) }}</textarea></label>
         </div>
+        <div class="mt-5 flex justify-between gap-3"><button type="button" data-df-step-prev class="df-action-secondary">Back</button><button type="button" data-df-step-next class="df-action-primary">Continue</button></div>
     </section>
 
-    <section class="border-t border-slate-200 pt-5">
+    <section data-df-step-panel class="df-panel p-5">
         <h2 class="text-lg font-semibold text-slate-950">Next of Kin & KYC</h2>
         <div class="mt-4 grid gap-4 md:grid-cols-3">
             <label class="text-sm font-medium text-slate-700">Next of kin<input name="next_of_kin_name" value="{{ old('next_of_kin_name', $client->next_of_kin_name) }}" class="mt-1 w-full rounded border-slate-300"></label>
@@ -91,6 +101,6 @@
                 <label class="flex items-center gap-2 rounded border border-slate-200 px-3 py-2 text-sm text-slate-700"><input type="checkbox" name="kyc_checklist[]" value="{{ $key }}" class="rounded border-slate-300" @checked(in_array($key, $checkedKyc, true))>{{ $label }}</label>
             @endforeach
         </div>
+        <div class="mt-5 flex justify-between gap-3"><button type="button" data-df-step-prev class="df-action-secondary">Back</button><button class="df-action-primary">Save client</button></div>
     </section>
 </div>
-<button class="mt-6 rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Save client</button>
