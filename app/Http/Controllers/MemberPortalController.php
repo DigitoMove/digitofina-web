@@ -15,6 +15,8 @@ class MemberPortalController extends Controller
             ->with([
                 'accounts.accountType',
                 'accounts.transactions.type',
+                'savingsAccounts.product',
+                'savingsAccounts.transactions',
                 'loans.product',
                 'loans.schedules',
             ])
@@ -25,11 +27,24 @@ class MemberPortalController extends Controller
             return redirect()->route('dashboard')->withErrors(['member' => 'No member profile is linked to this login yet.']);
         }
 
+        $savingsAccounts = $client->savingsAccounts;
+        $legacySavingsTotal = $client->accounts->where('accountType.category', 'savings')->sum(fn ($account) => (float) $account->balance);
+        $investmentGrowth = $savingsAccounts->sum(fn ($account): float => (float) $account->transactions
+            ->where('type', 'interest_posting')
+            ->where('status', 'successful')
+            ->sum('amount'));
+        $investmentTransactions = $savingsAccounts
+            ->flatMap->transactions
+            ->sortByDesc('transaction_date')
+            ->take(12);
+
         return view('member.dashboard', [
             'client' => $client,
-            'savingsTotal' => $client->accounts->where('accountType.category', 'savings')->sum(fn ($account) => (float) $account->balance),
+            'savingsAccounts' => $savingsAccounts,
+            'savingsTotal' => $savingsAccounts->sum(fn ($account): float => (float) $account->current_balance) ?: $legacySavingsTotal,
+            'investmentGrowth' => $investmentGrowth,
             'loanBalance' => $client->loans->sum(fn ($loan) => (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance),
-            'transactions' => $client->accounts->flatMap->transactions->sortByDesc('posted_at')->take(12),
+            'transactions' => $investmentTransactions->isNotEmpty() ? $investmentTransactions : $client->accounts->flatMap->transactions->sortByDesc('posted_at')->take(12),
         ]);
     }
 }

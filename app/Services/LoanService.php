@@ -350,16 +350,24 @@ class LoanService
                 $schedule = LoanSchedule::query()->whereKey($schedule->id)->lockForUpdate()->firstOrFail();
                 $loan = Loan::query()->with('product')->whereKey($schedule->loan_id)->lockForUpdate()->firstOrFail();
                 $days = (int) $schedule->due_date->diffInDays($asOf);
+                [$penaltyPeriodStart, $penaltyPeriodEnd] = $this->penalties->penaltyPeriod(
+                    $schedule,
+                    $asOf,
+                    $loan->product->penalty_type,
+                    $loan->repayment_frequency ?: $loan->product->repayment_frequency,
+                );
                 $alreadyApplied = LoanPenalty::query()
                     ->where('loan_schedule_id', $schedule->id)
-                    ->whereDate('calculated_for_date', $asOf->toDateString())
+                    ->whereDate('calculated_for_date', '>=', $penaltyPeriodStart->toDateString())
+                    ->whereDate('calculated_for_date', '<=', $penaltyPeriodEnd->toDateString())
                     ->exists();
 
                 $penaltyAmount = $alreadyApplied ? 0 : $this->penalties->calculate(
                     $schedule,
                     (float) $loan->product->penalty_rate,
                     $loan->product->penalty_type,
-                    $days
+                    $days,
+                    $loan->repayment_frequency ?: $loan->product->repayment_frequency,
                 );
 
                 if ($penaltyAmount > 0) {

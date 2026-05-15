@@ -2,7 +2,8 @@
 
 namespace App\Jobs;
 
-use App\Models\SavingsAccount;
+use App\Services\SavingsInterestService;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -19,21 +20,22 @@ class PostInterest implements ShouldQueue
     public function __construct(
         public ?int $organizationId = null,
         public ?int $branchId = null,
+        public ?string $asOf = null,
     ) {}
 
-    public function handle(): void
+    public function handle(SavingsInterestService $interest): void
     {
-        $eligibleAccounts = SavingsAccount::query()
-            ->where('status', 'active')
-            ->when($this->organizationId, fn ($query, int $organizationId) => $query->where('organization_id', $organizationId))
-            ->when($this->branchId, fn ($query, int $branchId) => $query->where('branch_id', $branchId))
-            ->whereHas('product', fn ($query) => $query->where('interest_rate', '>', 0))
-            ->count();
+        $posted = $interest->postDueInterest(
+            $this->organizationId,
+            $this->branchId,
+            $this->asOf ? CarbonImmutable::parse($this->asOf) : null,
+        );
 
-        Log::info('Queued savings interest posting scan completed.', [
+        Log::info('Queued savings interest posting completed.', [
             'organization_id' => $this->organizationId,
             'branch_id' => $this->branchId,
-            'eligible_accounts' => $eligibleAccounts,
+            'as_of' => $this->asOf,
+            'posted_accounts' => $posted,
         ]);
     }
 
