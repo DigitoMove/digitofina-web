@@ -8,12 +8,20 @@
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
-    --color-brand-50: #ecfeff;
-    --color-brand-100: #cffafe;
-    --color-brand-200: #a5f3fc;
-    --color-brand-500: #06b6d4;
-    --color-brand-600: #0891b2;
-    --color-brand-700: #0e7490;
+    --color-brand-50: #faf5ff;
+    --color-brand-100: #f3e8ff;
+    --color-brand-200: #e9d5ff;
+    --color-brand-300: #d8b4fe;
+    --color-brand-400: #c084fc;
+    --color-brand-500: #a855f7;
+    --color-brand-600: #9333ea;
+    --color-brand-700: #7e22ce;
+    --color-brand-800: #6b21a8;
+    --color-brand-900: #581c87;
+    --color-brand-950: #3b0764;
+    --color-orchid-50: #fdf4ff;
+    --color-orchid-500: #d946ef;
+    --color-orchid-700: #a21caf;
     --color-forest-50: #ecfdf5;
     --color-forest-500: #10b981;
     --color-forest-700: #047857;
@@ -24,22 +32,22 @@
     --color-coral-500: #f43f5e;
     --color-coral-700: #be123c;
     --radius-card: 1.35rem;
-    --shadow-panel: 0 18px 50px rgb(15 23 42 / 0.08);
+    --shadow-panel: 0 20px 55px rgb(88 28 135 / 0.12);
 }
 
 @layer base {
     html {
-        @apply bg-slate-50;
+        @apply bg-brand-50;
     }
 
     body {
-        @apply bg-slate-50 text-slate-900 antialiased;
+        @apply bg-brand-50 text-slate-900 antialiased;
     }
 
     input:not([type='checkbox']):not([type='radio']):not([type='hidden']),
     select,
     textarea {
-        @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500;
+        @apply w-full rounded-2xl border border-brand-100 bg-white/90 px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500;
     }
 
     input:not([type='checkbox']):not([type='radio']):not([type='hidden']),
@@ -65,19 +73,19 @@
 
 @layer components {
     .df-panel {
-        @apply rounded-card border border-slate-200/80 bg-white/95 shadow-panel;
+        @apply rounded-card border border-brand-100/90 bg-white/95 shadow-panel;
     }
 
     .df-soft-panel {
-        @apply rounded-card border border-white/70 bg-white/80 shadow-panel;
+        @apply rounded-card border border-white/80 bg-white/85 shadow-panel;
     }
 
     .df-action-primary {
-        @apply rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800;
+        @apply rounded-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-orchid-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-200/70 hover:from-brand-800 hover:to-orchid-700;
     }
 
     .df-action-secondary {
-        @apply rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700;
+        @apply rounded-2xl border border-brand-100 bg-white px-4 py-2 text-sm font-semibold text-brand-800 shadow-sm hover:border-brand-200 hover:bg-brand-50 hover:text-brand-900;
     }
 }
 
@@ -97,13 +105,27 @@ main section.rounded,
 main form.rounded,
 main div.overflow-hidden.rounded,
 main [class*='border-slate-200'][class*='bg-white'] {
-    border-color: rgb(203 213 225 / 0.78);
+    border-color: rgb(233 213 255 / 0.95);
+    background:
+        linear-gradient(180deg, rgb(255 255 255 / 0.98), rgb(255 255 255 / 0.92)),
+        radial-gradient(circle at top left, rgb(216 180 254 / 0.22), transparent 34%);
+    box-shadow: var(--shadow-panel);
+}
+
+main section.rounded,
+main form.rounded,
+main div.overflow-hidden.rounded {
+    border-radius: 1.5rem;
+}
+
+main .rounded-3xl,
+main .rounded-\[2rem\] {
     box-shadow: var(--shadow-panel);
 }
 
 main table thead[class*='bg-slate-50'] {
-    background: #f7fbff;
-    color: #475569;
+    background: linear-gradient(90deg, #faf5ff, #fdf4ff);
+    color: #6b21a8;
 }
 
 main table tbody tr {
@@ -111,15 +133,77 @@ main table tbody tr {
 }
 
 main table tbody tr:hover {
-    background-color: #f8fafc;
+    background-color: #faf5ff;
 }
 
 main a.text-blue-700,
 main a.text-blue-800 {
-    color: #0e7490;
+    color: #7e22ce;
 }
 
 main a.text-blue-700:hover,
 main a.text-blue-800:hover {
-    color: #155e75;
+    color: #581c87;
+}
+
+main .bg-blue-700,
+main button.bg-blue-700,
+main a.bg-blue-700,
+main .bg-slate-800,
+main .bg-slate-900 {
+    background-image: linear-gradient(135deg, #7e22ce, #c026d3);
+    box-shadow: 0 12px 28px rgb(168 85 247 / 0.24);
+}
+
+main .hover\:bg-blue-800:hover {
+    background-image: linear-gradient(135deg, #6b21a8, #a21caf);
+}
+
+main .bg-blue-50 {
+    background-color: #f3e8ff;
+}
+
+main .text-blue-800,
+main .text-cyan-700,
+main .text-cyan-800 {
+    color: #6b21a8;
+}
+
+main .bg-cyan-50,
+main .bg-sky-50,
+main .bg-violet-50 {
+    background-color: #f5f3ff;
+}
+
+main .bg-cyan-500,
+main .bg-cyan-600,
+main .bg-sky-500,
+main .bg-blue-500 {
+    background-color: #8b5cf6;
+}
+
+main .from-cyan-500,
+main .from-sky-500,
+main .from-blue-500 {
+    --tw-gradient-from: #8b5cf6 var(--tw-gradient-from-position);
+    --tw-gradient-to: rgb(139 92 246 / 0) var(--tw-gradient-to-position);
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+main .to-cyan-500,
+main .to-cyan-600,
+main .to-sky-500,
+main .to-blue-500 {
+    --tw-gradient-to: #d946ef var(--tw-gradient-to-position);
+}
+
+main span.rounded,
+main span.rounded-full,
+main span.rounded-xl {
+    border-color: rgb(233 213 255 / 0.7);
+}
+
+main pre.bg-slate-950 {
+    background: #3b0764;
+    border: 1px solid rgb(216 180 254 / 0.3);
 }
