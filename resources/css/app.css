@@ -181,6 +181,12 @@ main [class*='bg-white'] {
 main table {
     border-collapse: separate;
     border-spacing: 0;
+    min-width: 760px;
+    table-layout: auto;
+}
+
+main div:has(> table) {
+    overflow-x: auto;
 }
 
 main table thead[class*='bg-slate-50'] {
@@ -190,6 +196,41 @@ main table thead[class*='bg-slate-50'] {
 
 main table th {
     @apply text-xs font-semibold uppercase tracking-wide;
+    white-space: nowrap;
+}
+
+main table th,
+main table td {
+    padding: 0.95rem 1.1rem !important;
+    vertical-align: middle;
+}
+
+main table th:first-child,
+main table td:first-child {
+    padding-left: 1.35rem !important;
+}
+
+main table th:last-child,
+main table td:last-child {
+    padding-right: 1.35rem !important;
+}
+
+main table td {
+    min-width: 7.5rem;
+}
+
+main table td:first-child {
+    min-width: 10rem;
+}
+
+main table td:last-child {
+    min-width: 4.5rem;
+}
+
+main table td div,
+main table td span,
+main table td a {
+    line-height: 1.45;
 }
 
 main table tbody tr {
