@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\AccountType;
 use App\Models\Approval;
 use App\Models\ChartAccount;
+use App\Models\FinancialDay;
 use App\Models\JournalEntry;
 use App\Models\Loan;
 use App\Models\LoanApproval;
@@ -13,6 +14,7 @@ use App\Models\LoanDisbursement;
 use App\Models\LoanPenalty;
 use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
+use App\Models\RoleFinancialLimit;
 use App\Models\TransactionType;
 use App\Models\User;
 use Carbon\CarbonInterface;
@@ -241,6 +243,9 @@ class LoanService
                 throw new InvalidArgumentException('Loan must be active before repayments can be posted.');
             }
 
+            $paymentDate = $paidAt ?: now();
+            $this->ensureRepaymentBusinessDateOpen($user, (int) $loan->branch_id, $paymentDate);
+
             $remaining = $amount;
 
             $penaltyPaid = min($remaining, (float) $loan->penalty_balance);
@@ -286,7 +291,7 @@ class LoanService
                 'fees_paid' => $feesPaid,
                 'interest_paid' => $interestPaid,
                 'principal_paid' => $principalPaid,
-                'paid_at' => ($paidAt ?: now())->toDateString(),
+                'paid_at' => $paymentDate->toDateString(),
             ]);
 
             foreach ([
@@ -321,7 +326,7 @@ class LoanService
         });
     }
 
-    public function applyOverduePenalties(?Loan $loan = null, ?CarbonInterface $asOf = null): int
+    public function applyOverduePenalties(?Loan $loan = null, ?CarbonInterface $asOf = null, ?int $branchId = null): int
     {
         $asOf = $asOf ?: now();
         $count = 0;
@@ -334,6 +339,10 @@ class LoanService
 
         if ($loan) {
             $query->where('loan_id', $loan->id);
+        }
+
+        if ($branchId) {
+            $query->whereHas('loan', fn ($query) => $query->where('branch_id', $branchId));
         }
 
         foreach ($query->cursor() as $schedule) {
@@ -447,5 +456,34 @@ class LoanService
             2 => 'Branch Manager + Accountant',
             default => 'Credit Committee / Admin',
         };
+    }
+
+    private function ensureRepaymentBusinessDateOpen(User $user, int $branchId, CarbonInterface $paymentDate): void
+    {
+        if ($paymentDate->isPast() && ! $paymentDate->isSameDay(today())) {
+            if (! $user->canPerform('post-backdated-transactions')) {
+                throw new InvalidArgumentException('Backdated repayments require permission.');
+            }
+
+            $limit = RoleFinancialLimit::query()
+                ->where('role_id', $user->role_id)
+                ->where('is_active', true)
+                ->where(fn ($query) => $query->whereNull('organization_id')->orWhere('organization_id', $user->organization_id))
+                ->latest('organization_id')
+                ->first();
+
+            if ($limit && (int) $limit->max_backdate_days > 0 && (int) $paymentDate->diffInDays(today()) > (int) $limit->max_backdate_days) {
+                throw new InvalidArgumentException('Backdated repayment date is outside this role limit.');
+            }
+        }
+
+        $financialDay = FinancialDay::query()
+            ->where('branch_id', $branchId)
+            ->whereDate('business_date', $paymentDate->toDateString())
+            ->first();
+
+        if ($financialDay && in_array($financialDay->status, ['closed', 'locked'], true)) {
+            throw new InvalidArgumentException('The financial day is closed and locked for this branch.');
+        }
     }
 }

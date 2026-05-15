@@ -11,5 +11,6 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('loans:apply-penalties')->dailyAt('18:00')->withoutOverlapping();
+Schedule::command('end-of-day:process')->dailyAt('19:00')->withoutOverlapping();
 Schedule::job(new PostInterest)->dailyAt('23:00')->withoutOverlapping();
 Schedule::job(new RunBackupJob)->dailyAt('02:00')->withoutOverlapping();

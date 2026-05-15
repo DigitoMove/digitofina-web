@@ -42,6 +42,8 @@
                             ['Loans', 'loans.index', 'M4 6h16v12H4z M8 10h8 M8 14h5'],
                             ['Arrears', 'arrears.index', 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
                             ['Teller Drawer', 'teller.index', 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10'],
+                            ['End of Day', 'end-of-day.index', 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'],
+                            ['Data Imports', 'imports.index', 'M12 3v12m0 0 4-4m-4 4-4-4 M5 19h14 M5 15v4 M19 15v4'],
                             ['Reports', 'reports.index', 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h4'],
                         ];
                     $adminItems = [

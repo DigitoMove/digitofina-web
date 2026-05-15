@@ -16,9 +16,7 @@ use InvalidArgumentException;
 
 class TransactionPostingService
 {
-    public function __construct(private AuditLogger $auditLogger)
-    {
-    }
+    public function __construct(private AuditLogger $auditLogger) {}
 
     public function postCash(Account $account, DrawerSession $session, TransactionType $type, float $amount, User $user, ?string $description = null, ?string $chequeNumber = null): Transaction
     {
@@ -38,6 +36,10 @@ class TransactionPostingService
             if ($amount <= 0) {
                 throw new InvalidArgumentException('Amount must be greater than zero.');
             }
+
+            $financialControls = app(FinancialControlService::class);
+            $businessDate = $financialControls->ensureFinancialDayOpen($user, (int) $drawer->branch_id, now());
+            $financialControls->enforceTransactionLimit($user, $amount, $businessDate);
 
             $direction = $type->direction;
 

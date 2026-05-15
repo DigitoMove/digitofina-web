@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AccountingController;
+use App\Http\Controllers\Api\V1\ApiDocumentationController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\ClientController;
 use App\Http\Controllers\Api\V1\ClientDocumentController;
@@ -11,6 +12,7 @@ use App\Http\Controllers\Api\V1\LoanProductController;
 use App\Http\Controllers\Api\V1\LoanRepaymentController;
 use App\Http\Controllers\Api\V1\LoanWorkflowController;
 use App\Http\Controllers\Api\V1\NotificationController;
+use App\Http\Controllers\Api\V1\OfflineSyncController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\SavingsAccountController;
@@ -22,6 +24,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:api')->name('auth.login');
 Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:api')->name('auth.forgot-password');
+Route::get('/docs/openapi.json', [ApiDocumentationController::class, 'openapi'])->middleware('throttle:api')->name('docs.openapi');
 Route::post('/payments/mobile-money/callback', [PaymentController::class, 'callback'])->middleware(['throttle:api', 'idempotent.financial'])->name('payments.callback');
 Route::post('/webhooks/{source}/{provider}', [WebhookController::class, 'store'])->middleware('throttle:api')->name('webhooks.store');
 
@@ -31,6 +34,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::post('/auth/refresh', [AuthController::class, 'refresh'])->name('auth.refresh');
     Route::put('/auth/password', [AuthController::class, 'changePassword'])->name('auth.password.change');
     Route::post('/auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
+
+    Route::get('/sync/manifest', [OfflineSyncController::class, 'manifest'])->name('sync.manifest');
+    Route::get('/sync/clients', [OfflineSyncController::class, 'pullClients'])->name('sync.clients.pull');
+    Route::post('/sync/clients', [OfflineSyncController::class, 'pushClients'])->middleware('throttle:api-sensitive')->name('sync.clients.push');
 
     Route::apiResource('clients', ClientController::class)->except(['destroy']);
     Route::get('/clients/{client}/documents', [ClientDocumentController::class, 'index'])->name('clients.documents.index');

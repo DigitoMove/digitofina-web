@@ -41,6 +41,14 @@ class ClientResource extends JsonResource
             'registered_at' => $this->registered_at?->toDateString(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
+            'sync' => [
+                'local_temp_id' => $this->local_temp_id,
+                'source' => $this->sync_source,
+                'version' => $this->sync_version,
+                'client_modified_at' => $this->client_modified_at?->toIso8601String(),
+                'synced_at' => $this->synced_at?->toIso8601String(),
+                'server_updated_at' => $this->updated_at?->toIso8601String(),
+            ],
         ];
 
         if (! ApiQuery::wantsDetailedResource($request)) {

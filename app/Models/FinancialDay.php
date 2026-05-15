@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class FinancialDay extends Model
 {
@@ -36,5 +37,15 @@ class FinancialDay extends Model
     public function closedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'closed_by');
+    }
+
+    public function dailySummary(): HasOne
+    {
+        return $this->hasOne(BranchDailySummary::class);
+    }
+
+    public function cashReconciliation(): HasOne
+    {
+        return $this->hasOne(BranchCashReconciliation::class);
     }
 }

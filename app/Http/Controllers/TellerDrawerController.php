@@ -8,11 +8,13 @@ use App\Models\DrawerSession;
 use App\Models\TellerDrawer;
 use App\Models\TransactionType;
 use App\Services\AuditLogger;
+use App\Services\FinancialControlService;
+use App\Services\TellerService;
 use App\Services\TransactionPostingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
+use InvalidArgumentException;
 
 class TellerDrawerController extends Controller
 {
@@ -32,26 +34,21 @@ class TellerDrawerController extends Controller
         ]);
     }
 
-    public function open(Request $request, AuditLogger $auditLogger): RedirectResponse
+    public function open(Request $request, TellerService $tellers, FinancialControlService $financialControls, AuditLogger $auditLogger): RedirectResponse
     {
         $data = $request->validate([
             'teller_drawer_id' => ['required', 'exists:teller_drawers,id'],
             'opening_balance' => ['required', 'numeric', 'min:0'],
         ]);
 
-        DB::transaction(function () use ($data, $auditLogger) {
-            $drawer = TellerDrawer::whereKey($data['teller_drawer_id'])->lockForUpdate()->firstOrFail();
-            $drawer->update(['status' => 'open', 'current_balance' => $data['opening_balance'], 'assigned_user_id' => auth()->id()]);
-
-            $session = DrawerSession::create([
-                'teller_drawer_id' => $drawer->id,
-                'user_id' => auth()->id(),
-                'opening_balance' => $data['opening_balance'],
-                'status' => 'open',
-            ]);
-
+        try {
+            $drawer = TellerDrawer::query()->findOrFail($data['teller_drawer_id']);
+            $financialControls->ensureFinancialDayOpen($request->user(), (int) $drawer->branch_id, today());
+            $session = $tellers->openDrawer($drawer, $request->user(), (float) $data['opening_balance']);
             $auditLogger->record('drawer.opened', $session, $session->toArray());
-        });
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['opening_balance' => $exception->getMessage()])->withInput();
+        }
 
         return back()->with('status', 'Drawer opened.');
     }
@@ -74,25 +71,16 @@ class TellerDrawerController extends Controller
         return redirect()->route('receipts.show', $transaction)->with('status', 'Transaction posted.');
     }
 
-    public function close(Request $request, AuditLogger $auditLogger): RedirectResponse
+    public function close(Request $request, FinancialControlService $financialControls): RedirectResponse
     {
         $data = $request->validate(['closing_balance' => ['required', 'numeric', 'min:0']]);
 
-        DB::transaction(function () use ($data, $auditLogger) {
-            $session = DrawerSession::where('user_id', auth()->id())->where('status', 'open')->lockForUpdate()->latest()->firstOrFail();
-            $drawer = $session->drawer()->lockForUpdate()->firstOrFail();
-            $expected = (float) $drawer->current_balance;
-
-            $session->update([
-                'closing_balance' => $data['closing_balance'],
-                'expected_balance' => $expected,
-                'variance' => (float) $data['closing_balance'] - $expected,
-                'status' => 'closed',
-                'closed_at' => now(),
-            ]);
-            $drawer->update(['status' => 'closed', 'current_balance' => $data['closing_balance']]);
-            $auditLogger->record('drawer.closed', $session, $session->toArray());
-        });
+        try {
+            $session = DrawerSession::where('user_id', auth()->id())->where('status', 'open')->latest()->firstOrFail();
+            $financialControls->closeDrawer($session, $request->user(), (float) $data['closing_balance']);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['closing_balance' => $exception->getMessage()])->withInput();
+        }
 
         return back()->with('status', 'Drawer closed.');
     }

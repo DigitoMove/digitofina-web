@@ -23,6 +23,9 @@ class Client extends Model
             'closed_at' => 'datetime',
             'gps_latitude' => 'decimal:7',
             'gps_longitude' => 'decimal:7',
+            'client_modified_at' => 'datetime',
+            'synced_at' => 'datetime',
+            'sync_version' => 'integer',
         ];
     }
 
