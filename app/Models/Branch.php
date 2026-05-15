@@ -42,4 +42,9 @@ class Branch extends Model
     {
         return $this->hasMany(SavingsAccount::class);
     }
+
+    public function drawers(): HasMany
+    {
+        return $this->hasMany(TellerDrawer::class);
+    }
 }

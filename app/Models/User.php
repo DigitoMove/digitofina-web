@@ -54,6 +54,11 @@ class User extends Authenticatable
         return $this->belongsTo(Role::class);
     }
 
+    public function roleFinancialLimit(): HasOne
+    {
+        return $this->hasOneThrough(RoleFinancialLimit::class, Role::class, 'id', 'role_id', 'role_id', 'id');
+    }
+
     public function drawerSessions(): HasMany
     {
         return $this->hasMany(DrawerSession::class);
