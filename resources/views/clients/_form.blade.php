@@ -1,5 +1,7 @@
 @csrf
 @php
+    $requiredBadge = '<span class="ml-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-700">Required</span>';
+    $individualRequiredBadge = '<span class="ml-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700">Required for individual</span>';
     $kycChecks = [
         'identity_confirmed' => 'Identity confirmed',
         'address_confirmed' => 'Address confirmed',
@@ -21,15 +23,15 @@
     <section data-df-step-panel class="df-panel p-5">
         <h2 class="text-lg font-semibold text-slate-950">Client Type & Status</h2>
         <div class="mt-4 grid gap-4 md:grid-cols-4">
-            <label class="text-sm font-medium text-slate-700">Client type
-                <select name="client_type" class="mt-1 w-full rounded border-slate-300">
+            <label class="text-sm font-medium text-slate-700">Client type {!! $requiredBadge !!}
+                <select name="client_type" class="mt-1 w-full rounded border-slate-300" required>
                     @foreach (['individual', 'group', 'business', 'institution'] as $type)
                         <option value="{{ $type }}" @selected(old('client_type', $client->client_type ?? 'individual') === $type)>{{ str($type)->headline() }}</option>
                     @endforeach
                 </select>
             </label>
-            <label class="text-sm font-medium text-slate-700">Branch
-                <select name="branch_id" class="mt-1 w-full rounded border-slate-300">@foreach($branches as $branch)<option value="{{ $branch->id }}" @selected(old('branch_id', $client->branch_id ?? '') == $branch->id)>{{ $branch->name }}</option>@endforeach</select>
+            <label class="text-sm font-medium text-slate-700">Branch {!! $requiredBadge !!}
+                <select name="branch_id" class="mt-1 w-full rounded border-slate-300" required>@foreach($branches as $branch)<option value="{{ $branch->id }}" @selected(old('branch_id', $client->branch_id ?? '') == $branch->id)>{{ $branch->name }}</option>@endforeach</select>
             </label>
             <label class="text-sm font-medium text-slate-700">Client status
                 <select name="status" class="mt-1 w-full rounded border-slate-300">
@@ -53,14 +55,14 @@
     <section data-df-step-panel class="df-panel p-5">
         <h2 class="text-lg font-semibold text-slate-950">Biodata</h2>
         <div class="mt-4 grid gap-4 md:grid-cols-3">
-            <label class="text-sm font-medium text-slate-700">First name<input name="first_name" value="{{ old('first_name', $client->first_name) }}" class="mt-1 w-full rounded border-slate-300"></label>
+            <label class="text-sm font-medium text-slate-700">First name {!! $individualRequiredBadge !!}<input name="first_name" value="{{ old('first_name', $client->first_name) }}" class="mt-1 w-full rounded border-slate-300"></label>
             <label class="text-sm font-medium text-slate-700">Middle name<input name="middle_name" value="{{ old('middle_name', $client->middle_name) }}" class="mt-1 w-full rounded border-slate-300"></label>
-            <label class="text-sm font-medium text-slate-700">Last name<input name="last_name" value="{{ old('last_name', $client->last_name) }}" class="mt-1 w-full rounded border-slate-300"></label>
+            <label class="text-sm font-medium text-slate-700">Last name {!! $individualRequiredBadge !!}<input name="last_name" value="{{ old('last_name', $client->last_name) }}" class="mt-1 w-full rounded border-slate-300"></label>
             <label class="text-sm font-medium text-slate-700">Gender<select name="gender" class="mt-1 w-full rounded border-slate-300"><option value="">Not specified</option>@foreach(['male', 'female', 'other'] as $gender)<option value="{{ $gender }}" @selected(old('gender', $client->gender) === $gender)>{{ str($gender)->headline() }}</option>@endforeach</select></label>
             <label class="text-sm font-medium text-slate-700">Date of birth<input type="date" name="date_of_birth" value="{{ old('date_of_birth', $client->date_of_birth?->toDateString()) }}" class="mt-1 w-full rounded border-slate-300"></label>
             <label class="text-sm font-medium text-slate-700">Nationality<input name="nationality" value="{{ old('nationality', $client->nationality ?? 'Ugandan') }}" class="mt-1 w-full rounded border-slate-300"></label>
             <label class="text-sm font-medium text-slate-700">National ID / NIN<input name="national_id" value="{{ old('national_id', $client->national_id) }}" class="mt-1 w-full rounded border-slate-300"></label>
-            <label class="text-sm font-medium text-slate-700">Phone<input name="phone" value="{{ old('phone', $client->phone) }}" class="mt-1 w-full rounded border-slate-300" required></label>
+            <label class="text-sm font-medium text-slate-700">Phone {!! $requiredBadge !!}<input name="phone" value="{{ old('phone', $client->phone) }}" class="mt-1 w-full rounded border-slate-300" required></label>
             <label class="text-sm font-medium text-slate-700">Alternative phone<input name="alternative_phone" value="{{ old('alternative_phone', $client->alternative_phone) }}" class="mt-1 w-full rounded border-slate-300"></label>
             <label class="text-sm font-medium text-slate-700">Email<input name="email" value="{{ old('email', $client->email) }}" class="mt-1 w-full rounded border-slate-300"></label>
             <label class="text-sm font-medium text-slate-700">Occupation<input name="occupation" value="{{ old('occupation', $client->occupation) }}" class="mt-1 w-full rounded border-slate-300"></label>

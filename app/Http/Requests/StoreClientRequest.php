@@ -12,6 +12,15 @@ class StoreClientRequest extends FormRequest
         return $this->user()?->canPerform('manage-clients') ?? false;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'client_type' => $this->input('client_type', 'individual'),
+            'kyc_status' => $this->input('kyc_status', 'pending'),
+            'status' => $this->input('status', 'active'),
+        ]);
+    }
+
     /**
      * @return array<string, array<int, mixed>>
      */
@@ -46,9 +55,9 @@ class StoreClientRequest extends FormRequest
             'employment_status' => ['nullable', 'string', 'max:191'],
             'business_name' => ['nullable', 'string', 'max:191'],
             'business_details' => ['nullable', 'string'],
-            'kyc_status' => ['required', 'in:pending,verified,rejected'],
+            'kyc_status' => ['nullable', 'in:pending,verified,rejected'],
             'risk_rating' => ['nullable', 'in:low,medium,high'],
-            'status' => ['required', 'in:pending,active,dormant,suspended,blacklisted,closed'],
+            'status' => ['nullable', 'in:pending,active,dormant,suspended,blacklisted,closed'],
             'kyc_checklist' => ['array'],
             'kyc_checklist.*' => ['string', 'max:80'],
             'profile_photo' => ['nullable', 'image', 'max:2048'],

@@ -39,7 +39,7 @@ class StoreLoanApplicationRequest extends FormRequest
             'requested_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'term_periods' => ['required', 'integer', 'min:1'],
             'repayment_frequency' => ['required', Rule::in(['daily', 'weekly', 'monthly'])],
-            'purpose' => ['required', 'string', 'max:255'],
+            'purpose' => ['nullable', 'string', 'max:255'],
             'source_of_repayment' => ['nullable', 'string', 'max:255'],
             'business_details' => ['nullable', 'string'],
             'existing_loans' => ['nullable', 'string'],
