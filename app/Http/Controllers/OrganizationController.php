@@ -44,6 +44,7 @@ class OrganizationController extends Controller
     {
         $user = $request->user();
         $organization = $user?->organization
+            ?: $user?->branch?->organization
             ?: Organization::query()->orderBy('id')->first();
 
         abort_unless($organization, 404);

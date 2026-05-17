@@ -26,6 +26,7 @@ class UpdateOrganizationRequest extends FormRequest
     {
         $organization = $this->route('organization')
             ?: $this->user()?->organization
+            ?: $this->user()?->branch?->organization
             ?: Organization::query()->orderBy('id')->first();
 
         return [
