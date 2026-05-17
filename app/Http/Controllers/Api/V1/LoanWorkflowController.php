@@ -17,6 +17,7 @@ use App\Services\LoanApprovalService;
 use App\Services\LoanCalculatorService;
 use App\Services\LoanDisbursementService;
 use App\Services\LoanService;
+use App\Services\LoanVisibilityService;
 use App\Support\ApiQuery;
 use App\Support\ApiResponse;
 use App\Support\ApiSecurity;
@@ -180,6 +181,22 @@ class LoanWorkflowController extends Controller
         return ApiResponse::resource(new LoanResource($rejectedLoan->load(['client', 'product'])), 'Loan rejected successfully.');
     }
 
+    public function cancel(Request $request, Loan $loan, LoanService $loans): JsonResponse
+    {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        abort_unless($request->user()->hasRole('super-admin') || $request->user()->canPerform('manage-users') || $request->user()->canPerform('disburse-loans'), 403);
+
+        $data = $request->validate(['reason' => ['required', 'string', 'max:1000']]);
+
+        try {
+            $cancelledLoan = $loans->cancel($loan, $request->user(), $data['reason']);
+        } catch (InvalidArgumentException $exception) {
+            abort(422, $exception->getMessage());
+        }
+
+        return ApiResponse::resource(new LoanResource($cancelledLoan->load(['client', 'product', 'officer'])), 'Loan cancelled successfully.');
+    }
+
     public function disburse(Request $request, Loan $loan, LoanDisbursementService $disbursements, FinancialControlService $controls): JsonResponse
     {
         ApiSecurity::assertTenantAccess($request->user(), $loan);
@@ -216,13 +233,13 @@ class LoanWorkflowController extends Controller
         );
     }
 
-    public function arrears(Request $request): JsonResponse
+    public function arrears(Request $request, LoanVisibilityService $visibility): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-loans') || $request->user()->canPerform('view-reports'), 403);
 
         $arrearsQuery = LoanSchedule::query()
             ->with('loan')
-            ->whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))
+            ->whereHas('loan', fn ($query) => $visibility->scope(ApiSecurity::scopeTenant($query, $request->user()), $request->user()))
             ->where('outstanding_amount', '>', 0)
             ->where(fn ($query) => $query->where('status', 'overdue')->orWhereDate('due_date', '<', now()->toDateString()));
 

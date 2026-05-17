@@ -62,8 +62,13 @@ class LoanApplicationService
     private function assignedOfficer(array $data, User $creator): User
     {
         $assignedOfficerId = (int) ($data['assigned_officer_id'] ?? 0);
+        $isCommercial = ($data['loan_type'] ?? 'standard') === 'commercial';
 
         if ($assignedOfficerId === 0) {
+            if ($isCommercial && ($creator->hasRole('super-admin') || $creator->canPerform('manage-users') || $creator->canPerform('disburse-loans'))) {
+                throw ValidationException::withMessages(['assigned_officer_id' => 'Commercial loans must be assigned to a branch head or loans officer.']);
+            }
+
             return $creator;
         }
 

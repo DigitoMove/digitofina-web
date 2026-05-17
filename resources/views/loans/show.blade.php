@@ -49,6 +49,9 @@
                 <div><dt class="text-slate-500">Requested</dt><dd class="font-semibold">UGX {{ number_format($loan->requested_amount, 2) }}</dd></div>
                 <div><dt class="text-slate-500">Approved</dt><dd>UGX {{ number_format($loan->approved_amount ?? 0, 2) }}</dd></div>
                 <div><dt class="text-slate-500">Purpose</dt><dd>{{ $loan->purpose }}</dd></div>
+                <div><dt class="text-slate-500">Type</dt><dd>{{ str($loan->loan_type ?? 'standard')->headline() }}</dd></div>
+                <div><dt class="text-slate-500">Assigned officer</dt><dd>{{ $loan->officer?->name ?? 'Unassigned' }}</dd></div>
+                <div><dt class="text-slate-500">Created by</dt><dd>{{ $loan->creator?->name ?? 'System' }}</dd></div>
                 <div><dt class="text-slate-500">Repayment</dt><dd>{{ $loan->term_periods }} {{ str($loan->repayment_frequency)->headline() }} installment(s)</dd></div>
                 <div><dt class="text-slate-500">Savings at application</dt><dd>UGX {{ number_format($loan->savings_balance_at_application, 2) }} / Required {{ number_format($loan->required_savings_amount, 2) }}</dd></div>
             </dl>
@@ -83,6 +86,17 @@
         <h2 class="font-semibold text-slate-950">Workflow Actions</h2>
         @if($errors->has('workflow'))
             <div class="mt-4 rounded border border-coral-500/20 bg-coral-50 p-3 text-sm text-coral-700">{{ $errors->first('workflow') }}</div>
+        @endif
+        @if($errors->has('cancel_reason'))
+            <div class="mt-4 rounded border border-coral-500/20 bg-coral-50 p-3 text-sm text-coral-700">{{ $errors->first('cancel_reason') }}</div>
+        @endif
+
+        @if((auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans')) && ! in_array($loan->status, ['cancelled', 'rejected', 'disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true))
+            <form method="POST" action="{{ route('loans.cancel', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-coral-500/20 bg-coral-50 p-4 md:grid-cols-[1fr_auto]">
+                @csrf
+                <input name="reason" value="{{ old('reason') }}" placeholder="Cancellation reason" class="rounded border-coral-200">
+                <button class="df-action-danger">Cancel Loan</button>
+            </form>
         @endif
 
         @if($loan->status === 'draft')

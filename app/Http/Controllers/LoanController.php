@@ -7,7 +7,6 @@ use App\Http\Requests\StoreLoanApplicationRequest;
 use App\Models\Client;
 use App\Models\Loan;
 use App\Models\LoanProduct;
-use App\Models\User;
 use App\Services\BusinessCalendarService;
 use App\Services\LoanApplicationService;
 use App\Services\LoanApprovalService;
@@ -30,12 +29,14 @@ class LoanController extends Controller
             ->with(['client', 'product', 'officer'])
             ->tap(fn ($query) => $visibility->scope($query, $request->user()))
             ->when($request->string('search')->toString(), function ($query, string $search): void {
-                $query->where('loan_number', 'like', "%{$search}%")
-                    ->orWhereHas('client', function ($query) use ($search): void {
-                        $query->where('client_number', 'like', "%{$search}%")
-                            ->orWhere('first_name', 'like', "%{$search}%")
-                            ->orWhere('last_name', 'like', "%{$search}%");
-                    });
+                $query->where(function ($query) use ($search): void {
+                    $query->where('loan_number', 'like', "%{$search}%")
+                        ->orWhereHas('client', function ($query) use ($search): void {
+                            $query->where('client_number', 'like', "%{$search}%")
+                                ->orWhere('first_name', 'like', "%{$search}%")
+                                ->orWhere('last_name', 'like', "%{$search}%");
+                        });
+                });
             })
             ->when($request->string('status')->toString(), fn ($query, string $status) => $query->where('status', $status))
             ->when($request->string('status_group')->toString() === 'applications', fn ($query) => $query->whereIn('status', ['draft', 'under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved']))

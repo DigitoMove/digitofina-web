@@ -9,6 +9,7 @@ use App\Http\Resources\LoanScheduleResource;
 use App\Models\Client;
 use App\Models\Loan;
 use App\Services\LoanApplicationService;
+use App\Services\LoanVisibilityService;
 use App\Support\ApiQuery;
 use App\Support\ApiResponse;
 use App\Support\ApiSecurity;
@@ -18,12 +19,13 @@ use Illuminate\Http\Response;
 
 class LoanController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    public function index(Request $request, LoanVisibilityService $visibility): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-loans') || $request->user()->canPerform('view-own-accounts'), 403);
 
         $loansQuery = ApiSecurity::scopeTenant(Loan::query(), $request->user())
-            ->with(['client', 'product'])
+            ->with(['client', 'product', 'officer'])
+            ->tap(fn ($query) => $request->user()->isMember() ? $query : $visibility->scope($query, $request->user()))
             ->when($request->user()->isMember(), fn ($query) => $query->where('client_id', $request->user()->client?->id))
             ->when($request->string('search')->toString(), function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
@@ -36,7 +38,7 @@ class LoanController extends Controller
             $loansQuery,
             $request,
             ['purpose'],
-            ['status', 'loan_product_id', 'client_id'],
+            ['status', 'loan_product_id', 'client_id', 'loan_type', 'officer_id'],
             ['id', 'loan_number', 'requested_amount', 'approved_amount', 'status', 'application_date', 'created_at', 'updated_at'],
         )->paginate(ApiQuery::perPage($request, 15));
 
@@ -49,7 +51,7 @@ class LoanController extends Controller
         ApiSecurity::assertTenantAccess($request->user(), Client::findOrFail($request->validated('client_id')));
 
         return ApiResponse::resource(
-            new LoanResource($applications->submit($request->validated(), $request->user())->load(['client', 'product'])),
+            new LoanResource($applications->submit($request->validated(), $request->user())->load(['client', 'product', 'officer'])),
             'Loan application created successfully.',
             201
         );
@@ -60,7 +62,7 @@ class LoanController extends Controller
         ApiSecurity::assertTenantAccess(request()->user(), $loan);
         abort_unless(request()->user()->canPerform('manage-loans') || $loan->client_id === request()->user()->client?->id, 403);
 
-        return ApiResponse::resource(new LoanResource($loan->load(['client', 'product', 'schedules', 'repayments.receivedBy'])), 'Loan retrieved.');
+        return ApiResponse::resource(new LoanResource($loan->load(['client', 'product', 'officer', 'creator', 'schedules', 'repayments.receivedBy'])), 'Loan retrieved.');
     }
 
     public function schedule(Loan $loan): JsonResponse

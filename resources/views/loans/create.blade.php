@@ -11,6 +11,10 @@
         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <label class="text-sm font-medium">Client<select name="client_id" class="mt-1 w-full rounded border-slate-300">@foreach($clients as $client)<option value="{{ $client->id }}" @selected(old('client_id') == $client->id)>{{ $client->client_number }} - {{ $client->full_name }}</option>@endforeach</select></label>
             <label class="text-sm font-medium">Product<select name="loan_product_id" class="mt-1 w-full rounded border-slate-300">@foreach($products as $product)<option value="{{ $product->id }}" data-interest-rate="{{ $product->annual_interest_rate }}" @selected(old('loan_product_id') == $product->id)>{{ $product->name }} · {{ $product->annual_interest_rate }}%</option>@endforeach</select></label>
+            <label class="text-sm font-medium">Loan type<select name="loan_type" class="mt-1 w-full rounded border-slate-300"><option value="standard" @selected(old('loan_type', 'standard') === 'standard')>Officer loan</option>@if($canAssignOfficer)<option value="commercial" @selected(old('loan_type') === 'commercial')>Commercial loan</option>@endif</select></label>
+            @if($canAssignOfficer)
+                <label class="text-sm font-medium">Assigned officer<select name="assigned_officer_id" class="mt-1 w-full rounded border-slate-300"><option value="">Use me as officer</option>@foreach($assignableOfficers as $officer)<option value="{{ $officer->id }}" @selected(old('assigned_officer_id') == $officer->id)>{{ $officer->name }} · {{ $officer->role?->name }}</option>@endforeach</select></label>
+            @endif
             <label class="text-sm font-medium">Requested amount<input name="requested_amount" value="{{ old('requested_amount') }}" type="number" min="100" step="100" class="mt-1 w-full rounded border-slate-300" required></label>
             <div class="text-sm font-medium">Package interest per annum
                 <div class="mt-1 rounded border border-slate-200 bg-slate-50 px-3 py-2 font-semibold text-slate-950" data-package-interest-rate>{{ number_format((float) ($selectedProduct?->annual_interest_rate ?? 0), 4) }}%</div>

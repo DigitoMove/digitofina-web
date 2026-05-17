@@ -28,6 +28,7 @@ class LoanResource extends JsonResource
             'term_periods' => $this->term_periods,
             'repayment_frequency' => $this->repayment_frequency,
             'purpose' => $this->purpose,
+            'loan_type' => $this->loan_type ?? 'standard',
             'status' => $this->status,
             'application_date' => $this->application_date?->toDateString(),
             'submitted_at' => $this->submitted_at?->toDateString(),
@@ -35,6 +36,11 @@ class LoanResource extends JsonResource
             'disbursed_at' => $this->disbursed_at?->toDateString(),
             'client' => new ClientResource($this->whenLoaded('client')),
             'product' => new LoanProductResource($this->whenLoaded('product')),
+            'officer' => $this->whenLoaded('officer', fn () => $this->officer ? [
+                'id' => $this->officer->id,
+                'name' => $this->officer->name,
+                'email' => $this->officer->email,
+            ] : null),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

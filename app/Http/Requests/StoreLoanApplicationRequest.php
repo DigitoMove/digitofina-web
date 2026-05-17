@@ -2,18 +2,25 @@
 
 namespace App\Http\Requests;
 
-use App\Support\CurrencyDenomination;
 use App\Models\User;
+use App\Support\CurrencyDenomination;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class StoreLoanApplicationRequest extends FormRequest
 {
     public function authorize(): bool
     {
         return $this->user()?->canPerform('manage-loans') ?? false;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'loan_type' => $this->input('loan_type', 'standard'),
+        ]);
     }
 
     /**
@@ -51,12 +58,25 @@ class StoreLoanApplicationRequest extends FormRequest
         return [
             function (Validator $validator): void {
                 $assignedOfficerId = $this->integer('assigned_officer_id');
+                $canAssignOfficer = $this->user()?->canPerform('manage-users') || $this->user()?->canPerform('disburse-loans') || $this->user()?->hasRole('super-admin');
+
+                if ($this->input('loan_type') === 'commercial' && ! $canAssignOfficer) {
+                    $validator->errors()->add('loan_type', 'Only supervisors and administrators can create commercial loans.');
+
+                    return;
+                }
+
+                if ($this->input('loan_type') === 'commercial' && ! $assignedOfficerId) {
+                    $validator->errors()->add('assigned_officer_id', 'Commercial loans must be assigned to a branch head or loans officer.');
+
+                    return;
+                }
 
                 if (! $assignedOfficerId) {
                     return;
                 }
 
-                if (! ($this->user()?->canPerform('manage-users') || $this->user()?->canPerform('disburse-loans') || $this->user()?->hasRole('super-admin'))) {
+                if (! $canAssignOfficer) {
                     $validator->errors()->add('assigned_officer_id', 'Only supervisors and administrators can assign a loan to another officer.');
 
                     return;

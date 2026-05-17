@@ -210,9 +210,12 @@ class DatabaseSeeder extends Seeder
         ];
 
         foreach ($branchChartAccounts as $account) {
-            ChartAccount::updateOrCreate(['code' => $branch->code.'-'.$account['suffix']], $account + [
+            ChartAccount::updateOrCreate(['code' => $branch->code.'-'.$account['suffix']], [
                 'organization_id' => $organization->id,
                 'branch_id' => $branch->id,
+                'name' => $account['name'],
+                'type' => $account['type'],
+                'normal_balance' => $account['normal_balance'],
                 'is_system' => false,
                 'is_active' => true,
             ]);

@@ -82,6 +82,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::post('/loans/schedule-preview', [LoanWorkflowController::class, 'schedulePreview'])->name('loans.schedule-preview');
     Route::post('/loans/{loan}/approve', [LoanWorkflowController::class, 'approve'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('loans.approve');
     Route::post('/loans/{loan}/reject', [LoanWorkflowController::class, 'reject'])->name('loans.reject');
+    Route::post('/loans/{loan}/cancel', [LoanWorkflowController::class, 'cancel'])->name('loans.cancel');
     Route::post('/loans/{loan}/disburse', [LoanWorkflowController::class, 'disburse'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('loans.disburse');
     Route::post('/loans/{loan}/repayments', [LoanRepaymentController::class, 'store'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('loans.repayments.store');
     Route::get('/loans/{loan}/schedule', [LoanController::class, 'schedule'])->name('loans.schedule');
