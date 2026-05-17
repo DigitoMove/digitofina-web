@@ -118,7 +118,7 @@ class LoanController extends Controller
         ]);
     }
 
-    public function show(Loan $loan): View
+    public function show(Loan $loan, LoanVisibilityService $visibility): View
     {
         return view('loans.show', [
             'loan' => $loan->load([
@@ -136,6 +136,8 @@ class LoanController extends Controller
                 'repayments.receivedBy',
             ]),
             'guarantorClients' => Client::where('status', 'active')->where('id', '!=', $loan->client_id)->orderBy('first_name')->get(),
+            'assignableOfficers' => $visibility->assignableOfficers(request()->user())->get(),
+            'canAssignOfficer' => $visibility->canAssignOfficer(request()->user()),
         ]);
     }
 
@@ -215,6 +217,23 @@ class LoanController extends Controller
         }
 
         return back()->with('status', 'Loan cancelled.');
+    }
+
+    public function assignOfficer(Request $request, Loan $loan, LoanService $service): RedirectResponse
+    {
+        abort_unless($request->user()->hasRole('super-admin') || $request->user()->canPerform('manage-users') || $request->user()->canPerform('disburse-loans'), 403);
+
+        $data = $request->validate([
+            'officer_id' => ['required', 'exists:users,id'],
+        ]);
+
+        try {
+            $service->assignOfficer($loan, $request->user(), (int) $data['officer_id']);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['officer_id' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Assigned officer updated.');
     }
 
     public function disburse(Request $request, Loan $loan, LoanDisbursementService $disbursements): RedirectResponse

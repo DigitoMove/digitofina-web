@@ -163,6 +163,43 @@ class LoanService
         });
     }
 
+    public function assignOfficer(Loan $loan, User $user, int $officerId): Loan
+    {
+        abort_unless($user->hasRole('super-admin') || $user->canPerform('manage-users') || $user->canPerform('disburse-loans'), 403);
+
+        return DB::transaction(function () use ($loan, $user, $officerId): Loan {
+            $loan = Loan::query()->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+            $assignedOfficer = User::query()
+                ->with('role')
+                ->where('status', 'active')
+                ->whereKey($officerId)
+                ->firstOrFail();
+
+            if (! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer', 'officer', 'management'], true)) {
+                throw new InvalidArgumentException('Select an active branch head or loans officer.');
+            }
+
+            if ($loan->organization_id && $assignedOfficer->organization_id && (int) $loan->organization_id !== (int) $assignedOfficer->organization_id) {
+                throw new InvalidArgumentException('The assigned officer must belong to this organization.');
+            }
+
+            if ($loan->branch_id && $assignedOfficer->branch_id && (int) $loan->branch_id !== (int) $assignedOfficer->branch_id && ! $user->canPerform('manage-organization')) {
+                throw new InvalidArgumentException('The assigned officer must belong to this branch.');
+            }
+
+            $oldOfficerId = $loan->officer_id;
+            $loan->update(['officer_id' => $assignedOfficer->id]);
+
+            $this->auditLogger->record('loan.officer_assigned', $loan, [
+                'old_officer_id' => $oldOfficerId,
+                'new_officer_id' => $assignedOfficer->id,
+                'assigned_by' => $user->id,
+            ]);
+
+            return $loan->refresh();
+        });
+    }
+
     public function generateSavingsAccount(Loan $loan, User $user): Account
     {
         abort_unless($user->canPerform('manage-accounts') || $user->canPerform('manage-loans'), 403);
