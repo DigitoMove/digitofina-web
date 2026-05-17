@@ -2,10 +2,11 @@
 
 @section('content')
 @php
-    $workflow = ['draft', 'submitted', 'review', 'approved', 'active', 'closed'];
+    $workflow = ['draft', 'appraisal', 'approval', 'approved', 'active', 'closed'];
     $statusIndex = match (true) {
-        in_array($loan->status, ['draft', 'pending_guarantor_approval', 'pending_collateral_verification'], true) => 0,
-        in_array($loan->status, ['submitted', 'under_review', 'recommended'], true) => 1,
+        $loan->status === 'draft' => 0,
+        $loan->status === 'under_review' => 1,
+        in_array($loan->status, ['submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true) => 2,
         $loan->status === 'approved' => 3,
         in_array($loan->status, ['disbursed', 'active', 'in_arrears', 'restructured'], true) => 4,
         in_array($loan->status, ['fully_paid', 'closed'], true) => 5,
@@ -63,16 +64,66 @@
                     </div>
                 @endforeach
             </div>
+            <div class="mt-4 grid gap-3 md:grid-cols-2">
+                <div class="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Savings account</div>
+                    <div class="mt-2 font-semibold text-slate-950">{{ $loan->savingsAccount?->account_number ?? 'Not generated' }}</div>
+                    <div class="mt-1 text-slate-500">Balance: UGX {{ number_format($loan->savingsAccount?->balance ?? 0, 2) }}</div>
+                </div>
+                <div class="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Loan account</div>
+                    <div class="mt-2 font-semibold text-slate-950">{{ $loan->loanAccount?->account_number ?? 'Not generated' }}</div>
+                    <div class="mt-1 text-slate-500">Outstanding: UGX {{ number_format($loan->loanAccount?->balance ?? 0, 2) }}</div>
+                </div>
+            </div>
         </div>
     </section>
 
     <section data-df-tab-panel="workflow" class="df-panel p-5">
         <h2 class="font-semibold text-slate-950">Workflow Actions</h2>
-        @if(in_array($loan->status, ['submitted', 'under_review', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification']))
+        @if($errors->has('workflow'))
+            <div class="mt-4 rounded border border-coral-500/20 bg-coral-50 p-3 text-sm text-coral-700">{{ $errors->first('workflow') }}</div>
+        @endif
+
+        @if($loan->status === 'draft')
+            <div class="mt-4 grid gap-4 lg:grid-cols-4">
+                <form method="POST" action="{{ route('loans.generate-savings-account', $loan) }}" class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    @csrf
+                    <div class="text-sm font-semibold text-slate-950">Savings account</div>
+                    <div class="text-sm text-slate-500">{{ $loan->savingsAccount?->account_number ?? 'Create or attach client savings' }}</div>
+                    <button @disabled((bool) $loan->savings_account_id) class="df-action-secondary disabled:pointer-events-none disabled:bg-slate-300">Generate</button>
+                </form>
+                <form method="POST" action="{{ route('loans.generate-loan-account', $loan) }}" class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    @csrf
+                    <div class="text-sm font-semibold text-slate-950">Loan account</div>
+                    <div class="text-sm text-slate-500">{{ $loan->loanAccount?->account_number ?? 'Create repayment account' }}</div>
+                    <button @disabled((bool) $loan->loan_account_id) class="df-action-secondary disabled:pointer-events-none disabled:bg-slate-300">Generate</button>
+                </form>
+                <form method="POST" action="{{ route('loans.submit-appraisal', $loan) }}" class="grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 lg:col-span-2">
+                    @csrf
+                    <div class="text-sm font-semibold text-slate-950">Appraisal</div>
+                    <div class="text-sm text-slate-500">Move this application to officer appraisal after both accounts exist.</div>
+                    <button class="df-action-primary">Submit for Appraisal</button>
+                </form>
+            </div>
+        @endif
+
+        @if($loan->status === 'under_review')
+            <form method="POST" action="{{ route('loans.submit-approval', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 md:grid-cols-[1fr_auto]">
+                @csrf
+                <div>
+                    <div class="text-sm font-semibold text-slate-950">Approval queue</div>
+                    <div class="text-sm text-slate-500">Send the appraised application to the approver.</div>
+                </div>
+                <button class="df-action-primary">Submit for Approval</button>
+            </form>
+        @endif
+
+        @if(in_array($loan->status, ['submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification']))
             <div class="mt-4 grid gap-4 lg:grid-cols-2">
                 <form method="POST" action="{{ route('loans.approve', $loan) }}" class="grid gap-3 rounded-lg border border-forest-500/20 bg-forest-50 p-4">
                     @csrf
-                    <input name="approved_amount" type="number" step="0.01" value="{{ old('approved_amount', $loan->requested_amount) }}">
+                    <input name="approved_amount" type="number" min="100" step="100" value="{{ old('approved_amount', $loan->requested_amount) }}">
                     <textarea name="comments" placeholder="Approval comments">{{ old('comments') }}</textarea>
                     <button class="df-action-primary">Approve Loan</button>
                 </form>
@@ -85,9 +136,10 @@
         @endif
 
         @if($loan->status === 'approved')
-            <form method="POST" action="{{ route('loans.disburse', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 md:grid-cols-[240px_auto]">
+            <form method="POST" action="{{ route('loans.disburse', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 md:grid-cols-[240px_1fr_auto]">
                 @csrf
                 <select name="payment_method"><option value="transfer_to_savings">Transfer to savings</option><option value="cash">Cash</option><option value="mobile_money">Mobile money</option><option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option></select>
+                <div class="text-sm text-slate-600">Application fee is deducted from proceeds using the admin setting.</div>
                 <button class="df-action-primary">Disburse</button>
             </form>
         @endif
@@ -95,7 +147,7 @@
         @if(in_array($loan->status, ['active', 'in_arrears']))
             <form method="POST" action="{{ route('loans.repayments.store', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-5">
                 @csrf
-                <input name="amount" type="number" step="0.01" placeholder="Amount">
+                <input name="amount" type="number" min="100" step="100" placeholder="Amount">
                 <select name="payment_method"><option value="cash">Cash</option><option value="mobile_money">Mobile money</option><option value="bank">Bank</option><option value="savings_deduction">Savings deduction</option><option value="cheque">Cheque</option></select>
                 <input name="reference" placeholder="Reference">
                 <input name="paid_at" type="date" value="{{ now()->toDateString() }}">

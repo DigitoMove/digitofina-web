@@ -7,6 +7,7 @@ use App\Models\Client;
 use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
 use App\Models\User;
+use App\Support\CurrencyDenomination;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -26,6 +27,10 @@ class SavingsAccountService
         $client = Client::findOrFail($data['client_id']);
         $product = SavingsProduct::findOrFail($data['savings_product_id']);
         $openingDeposit = (float) ($data['opening_deposit'] ?? 0);
+
+        if ($openingDeposit > 0) {
+            CurrencyDenomination::assertValid($openingDeposit, 'Opening deposit');
+        }
 
         if ($client->status !== 'active') {
             throw ValidationException::withMessages(['client_id' => 'A client must be active before opening a savings account.']);

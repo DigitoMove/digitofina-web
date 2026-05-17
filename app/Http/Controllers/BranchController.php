@@ -7,6 +7,7 @@ use App\Http\Requests\UpdateBranchRequest;
 use App\Models\Branch;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\BranchGeneralLedgerService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -34,7 +35,7 @@ class BranchController extends Controller
         return view('branches.create', ['branch' => new Branch, 'managers' => $this->managerOptions()]);
     }
 
-    public function store(StoreBranchRequest $request, AuditLogger $auditLogger): RedirectResponse
+    public function store(StoreBranchRequest $request, AuditLogger $auditLogger, BranchGeneralLedgerService $generalLedger): RedirectResponse
     {
         Gate::authorize('create', Branch::class);
 
@@ -46,6 +47,7 @@ class BranchController extends Controller
         ]);
 
         $auditLogger->record('branch.created', $branch, $branch->toArray());
+        $generalLedger->ensureDefaults($branch);
 
         return redirect()->route('branches.index')->with('status', 'Branch created.');
     }

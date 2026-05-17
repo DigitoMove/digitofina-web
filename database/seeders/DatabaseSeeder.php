@@ -110,7 +110,7 @@ class DatabaseSeeder extends Seeder
             $role->permissions()->sync($permissionIds);
         }
 
-        $admin = User::updateOrCreate(['email' => 'admin@digitofina.test'], [
+        $admin = User::withTrashed()->updateOrCreate(['email' => 'admin@digitofina.test'], [
             'organization_id' => $organization->id,
             'branch_id' => $branch->id,
             'role_id' => Role::where('slug', 'super-admin')->value('id'),
@@ -120,63 +120,10 @@ class DatabaseSeeder extends Seeder
             'status' => 'active',
             'password' => Hash::make('password'),
         ]);
-
-        $teller = User::updateOrCreate(['email' => 'teller@digitofina.test'], [
-            'organization_id' => $organization->id,
-            'branch_id' => $branch->id,
-            'role_id' => Role::where('slug', 'cashier')->value('id'),
-            'name' => 'Luweero Cashier',
-            'phone' => '+256 700 000 101',
-            'position' => 'Cashier',
-            'status' => 'active',
-            'password' => Hash::make('password'),
-        ]);
-
-        User::updateOrCreate(['email' => 'cashier@digitofina.test'], [
-            'organization_id' => $organization->id,
-            'branch_id' => $branch->id,
-            'role_id' => Role::where('slug', 'cashier')->value('id'),
-            'name' => 'Luweero Cashier',
-            'phone' => '+256 700 000 101',
-            'position' => 'Cashier',
-            'status' => 'active',
-            'password' => Hash::make('password'),
-        ]);
-
-        User::updateOrCreate(['email' => 'officer@digitofina.test'], [
-            'organization_id' => $organization->id,
-            'branch_id' => $branch->id,
-            'role_id' => Role::where('slug', 'officer')->value('id'),
-            'name' => 'Luweero Loans Officer',
-            'phone' => '+256 700 000 102',
-            'position' => 'Credit Officer',
-            'status' => 'active',
-            'password' => Hash::make('password'),
-        ]);
-
-        User::updateOrCreate(['email' => 'management@digitofina.test'], [
-            'organization_id' => $organization->id,
-            'branch_id' => $branch->id,
-            'role_id' => Role::where('slug', 'management')->value('id'),
-            'name' => 'Luweero Management',
-            'phone' => '+256 700 000 103',
-            'position' => 'Management',
-            'status' => 'active',
-            'password' => Hash::make('password'),
-        ]);
-
-        $member = User::updateOrCreate(['email' => 'member@digitofina.test'], [
-            'organization_id' => $organization->id,
-            'branch_id' => $branch->id,
-            'role_id' => Role::where('slug', 'member')->value('id'),
-            'name' => 'Amina Nakato',
-            'phone' => '+256 701 111 222',
-            'position' => 'Member',
-            'status' => 'active',
-            'password' => Hash::make('password'),
-        ]);
+        $admin->restore();
 
         $branch->update(['manager_user_id' => $admin->id]);
+        User::query()->whereKeyNot($admin->id)->delete();
 
         $accountTypes = [
             ['name' => 'Savings Account', 'code' => 'SAV', 'category' => 'savings', 'minimum_balance' => 5000],
@@ -188,6 +135,32 @@ class DatabaseSeeder extends Seeder
         foreach ($accountTypes as $type) {
             AccountType::updateOrCreate(['code' => $type['code']], $type + ['organization_id' => $organization->id]);
         }
+
+        $adminClient = Client::updateOrCreate(['user_id' => $admin->id], [
+            'organization_id' => $organization->id,
+            'branch_id' => $branch->id,
+            'officer_id' => $admin->id,
+            'client_number' => '1001-CADMIN',
+            'client_type' => 'individual',
+            'first_name' => 'DigitoFina',
+            'last_name' => 'Admin',
+            'phone' => $admin->phone,
+            'email' => $admin->email,
+            'kyc_status' => 'verified',
+            'status' => 'active',
+            'registered_at' => now()->toDateString(),
+        ]);
+
+        Account::firstOrCreate(['account_number' => '1001-SAV-ADMIN'], [
+            'organization_id' => $organization->id,
+            'client_id' => $adminClient->id,
+            'branch_id' => $branch->id,
+            'account_type_id' => AccountType::where('code', 'SAV')->value('id'),
+            'account_name' => 'DigitoFina Admin Savings',
+            'status' => 'active',
+            'balance' => 0,
+            'opened_at' => now()->toDateString(),
+        ]);
 
         $transactionTypes = [
             ['name' => 'Deposit', 'code' => 'deposit', 'direction' => 'credit', 'affects_cash_drawer' => true],
@@ -225,12 +198,36 @@ class DatabaseSeeder extends Seeder
             ChartAccount::updateOrCreate(['code' => $account['code']], $account + ['organization_id' => $organization->id, 'is_system' => true, 'is_active' => true]);
         }
 
+        $branchChartAccounts = [
+            ['suffix' => '5200', 'name' => 'Welfare Expense', 'type' => 'expense', 'normal_balance' => 'debit'],
+            ['suffix' => '5210', 'name' => 'Transport Expense', 'type' => 'expense', 'normal_balance' => 'debit'],
+            ['suffix' => '5220', 'name' => 'Travel Expense', 'type' => 'expense', 'normal_balance' => 'debit'],
+            ['suffix' => '5230', 'name' => 'Office Supplies Expense', 'type' => 'expense', 'normal_balance' => 'debit'],
+            ['suffix' => '5290', 'name' => 'Other Expenses', 'type' => 'expense', 'normal_balance' => 'debit'],
+            ['suffix' => '4300', 'name' => 'Other Income', 'type' => 'income', 'normal_balance' => 'credit'],
+            ['suffix' => '4310', 'name' => 'Welfare Income', 'type' => 'income', 'normal_balance' => 'credit'],
+            ['suffix' => '4320', 'name' => 'Other Business Income', 'type' => 'income', 'normal_balance' => 'credit'],
+        ];
+
+        foreach ($branchChartAccounts as $account) {
+            ChartAccount::updateOrCreate(['code' => $branch->code.'-'.$account['suffix']], $account + [
+                'organization_id' => $organization->id,
+                'branch_id' => $branch->id,
+                'is_system' => false,
+                'is_active' => true,
+            ]);
+        }
+
         $settings = [
             ['key' => 'currency', 'label' => 'Default currency', 'value' => 'UGX', 'type' => 'string', 'group' => 'general', 'description' => 'Currency used for financial amounts.'],
             ['key' => 'date_format', 'label' => 'Date format', 'value' => 'd M Y', 'type' => 'string', 'group' => 'general', 'description' => 'Display format for operational dates.'],
             ['key' => 'client_number_format', 'label' => 'Client number format', 'value' => '{branch}-C{sequence}', 'type' => 'string', 'group' => 'numbering', 'description' => 'Template for generated client numbers.'],
             ['key' => 'account_number_format', 'label' => 'Account number format', 'value' => '{branch}-{product}-{sequence}', 'type' => 'string', 'group' => 'numbering', 'description' => 'Template for generated account numbers.'],
             ['key' => 'loan_number_format', 'label' => 'Loan number format', 'value' => '{branch}-LN-{sequence}', 'type' => 'string', 'group' => 'numbering', 'description' => 'Template for generated loan numbers.'],
+            ['key' => 'loan_application_fee', 'label' => 'Loan application fee', 'value' => '10000', 'type' => 'money', 'group' => 'loans', 'description' => 'Fee deducted from loan proceeds when a supervisor disburses into client savings.'],
+            ['key' => 'loan_application_fee_ranges', 'label' => 'Loan application fee ranges', 'value' => json_encode([['min' => 50000, 'max' => 100000, 'fee' => 5000], ['min' => 100100, 'max' => 200000, 'fee' => 10000], ['min' => 200100, 'max' => 500000, 'fee' => 15000], ['min' => 500100, 'max' => null, 'fee' => 25000]], JSON_PRETTY_PRINT), 'type' => 'json', 'group' => 'loans', 'description' => 'JSON fee bands based on requested loan amount and used at disbursement. Each item: min, max, fee. Use null max for open-ended.'],
+            ['key' => 'repayment_public_holidays', 'label' => 'Repayment public holidays', 'value' => json_encode([], JSON_PRETTY_PRINT), 'type' => 'json', 'group' => 'loans', 'description' => 'JSON array of public holiday dates excluded from repayment due dates. Use YYYY-MM-DD values.'],
+            ['key' => 'loan_arrears_penalty_rate', 'label' => 'Loan arrears penalty rate', 'value' => '2', 'type' => 'number', 'group' => 'loans', 'description' => 'Percentage penalty applied to each overdue installment once it is one day past due.'],
             ['key' => 'repayment_priority', 'label' => 'Repayment allocation priority', 'value' => 'penalties,fees,interest,principal', 'type' => 'string', 'group' => 'loans', 'description' => 'Order used when allocating loan repayments.'],
             ['key' => 'small_loan_approval_limit', 'label' => 'Small loan approval limit', 'value' => '1000000', 'type' => 'money', 'group' => 'approvals', 'description' => 'Maximum amount for branch manager approval.'],
             ['key' => 'large_withdrawal_maker_checker_threshold', 'label' => 'Large withdrawal checker threshold', 'value' => '5000000', 'type' => 'money', 'group' => 'approvals', 'description' => 'Withdrawals at or above this amount require maker-checker approval.'],
@@ -247,7 +244,7 @@ class DatabaseSeeder extends Seeder
             'organization_id' => $organization->id,
             'branch_id' => $branch->id,
             'officer_id' => $admin->id,
-            'user_id' => $member->id,
+            'user_id' => null,
             'client_type' => 'individual',
             'first_name' => 'Amina',
             'last_name' => 'Nakato',
@@ -267,9 +264,7 @@ class DatabaseSeeder extends Seeder
             'registered_at' => now()->toDateString(),
         ]);
 
-        if (! $client->user_id) {
-            $client->update(['user_id' => $member->id]);
-        }
+        $client->update(['officer_id' => $admin->id, 'user_id' => null]);
 
         Account::firstOrCreate(['account_number' => '1001-SAV-0000001'], [
             'organization_id' => $organization->id,
@@ -328,7 +323,7 @@ class DatabaseSeeder extends Seeder
         TellerDrawer::firstOrCreate(['code' => 'TD-1001-01'], [
             'organization_id' => $organization->id,
             'branch_id' => $branch->id,
-            'assigned_user_id' => $teller->id,
+            'assigned_user_id' => null,
             'name' => '1001 LUWEERO',
             'currency' => 'UGX',
             'current_balance' => 75800,

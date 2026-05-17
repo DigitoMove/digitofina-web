@@ -15,4 +15,9 @@ class SystemSetting extends Model
     {
         return ['value' => 'string'];
     }
+
+    public static function value(string $key, mixed $default = null): mixed
+    {
+        return static::query()->where('key', $key)->value('value') ?? $default;
+    }
 }

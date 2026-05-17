@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\CurrencyDenomination;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreJournalEntryRequest extends FormRequest
@@ -21,8 +22,8 @@ class StoreJournalEntryRequest extends FormRequest
             'branch_id' => ['nullable', 'exists:branches,id'],
             'lines' => ['required', 'array', 'min:2'],
             'lines.*.account_code' => ['required', 'string', 'exists:chart_accounts,code'],
-            'lines.*.debit' => ['nullable', 'numeric', 'min:0'],
-            'lines.*.credit' => ['nullable', 'numeric', 'min:0'],
+            'lines.*.debit' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
+            'lines.*.credit' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
             'lines.*.narration' => ['nullable', 'string', 'max:1000'],
         ];
     }

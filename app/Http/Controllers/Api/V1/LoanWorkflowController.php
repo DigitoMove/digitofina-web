@@ -20,21 +20,55 @@ use App\Services\LoanService;
 use App\Support\ApiQuery;
 use App\Support\ApiResponse;
 use App\Support\ApiSecurity;
+use App\Support\CurrencyDenomination;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use InvalidArgumentException;
 
 class LoanWorkflowController extends Controller
 {
-    public function submit(Request $request, Loan $loan): JsonResponse
+    public function submit(Request $request, Loan $loan, LoanService $loans): JsonResponse
     {
         ApiSecurity::assertTenantAccess($request->user(), $loan);
-        abort_unless($request->user()->canPerform('manage-loans'), 403);
-        abort_unless(in_array($loan->status, ['draft', 'pending_guarantor_approval', 'pending_collateral_verification'], true), 422);
 
-        $loan->update(['status' => 'submitted', 'submitted_at' => now()->toDateString()]);
+        try {
+            $loan = $loans->submitForApproval($loan, $request->user());
+        } catch (InvalidArgumentException $exception) {
+            abort(422, $exception->getMessage());
+        }
 
         return ApiResponse::resource(new LoanResource($loan->fresh()->load(['client', 'product'])), 'Loan application submitted successfully.');
+    }
+
+    public function generateSavingsAccount(Request $request, Loan $loan, LoanService $loans): JsonResponse
+    {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
+
+        $loans->generateSavingsAccount($loan, $request->user());
+
+        return ApiResponse::resource(new LoanResource($loan->fresh()->load(['client', 'product'])), 'Savings account generated successfully.');
+    }
+
+    public function generateLoanAccount(Request $request, Loan $loan, LoanService $loans): JsonResponse
+    {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
+
+        $loans->generateLoanAccount($loan, $request->user());
+
+        return ApiResponse::resource(new LoanResource($loan->fresh()->load(['client', 'product'])), 'Loan account generated successfully.');
+    }
+
+    public function submitForAppraisal(Request $request, Loan $loan, LoanService $loans): JsonResponse
+    {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
+
+        try {
+            $appraisedLoan = $loans->submitForAppraisal($loan, $request->user());
+        } catch (InvalidArgumentException $exception) {
+            abort(422, $exception->getMessage());
+        }
+
+        return ApiResponse::resource(new LoanResource($appraisedLoan->load(['client', 'product'])), 'Loan submitted for appraisal successfully.');
     }
 
     public function addGuarantor(StoreLoanGuarantorRequest $request, Loan $loan): JsonResponse
@@ -62,7 +96,7 @@ class LoanWorkflowController extends Controller
     public function schedulePreview(Request $request, LoanCalculatorService $calculator): JsonResponse
     {
         $data = $request->validate([
-            'principal' => ['required', 'numeric', 'min:1'],
+            'principal' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'annual_interest_rate' => ['required', 'numeric', 'min:0'],
             'installments' => ['required', 'integer', 'min:1'],
             'interest_method' => ['required', 'in:flat,declining_balance,reducing_balance_equal_installments'],
@@ -149,7 +183,7 @@ class LoanWorkflowController extends Controller
     public function disburse(Request $request, Loan $loan, LoanDisbursementService $disbursements, FinancialControlService $controls): JsonResponse
     {
         ApiSecurity::assertTenantAccess($request->user(), $loan);
-        abort_unless($request->user()->canPerform('disburse-loans') || $request->user()->canPerform('manage-loans'), 403);
+        abort_unless($request->user()->canPerform('disburse-loans'), 403);
 
         $data = $request->validate([
             'payment_method' => ['required', 'in:cash,mobile_money,bank_transfer,transfer_to_savings,cheque'],
@@ -260,7 +294,7 @@ class LoanWorkflowController extends Controller
         ApiSecurity::assertPermission($request->user(), 'waive-penalties');
 
         $data = $request->validate([
-            'amount' => ['required', 'numeric', 'min:1'],
+            'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'reason' => ['required', 'string', 'max:1000'],
         ]);
 

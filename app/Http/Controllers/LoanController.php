@@ -7,10 +7,14 @@ use App\Http\Requests\StoreLoanApplicationRequest;
 use App\Models\Client;
 use App\Models\Loan;
 use App\Models\LoanProduct;
+use App\Services\BusinessCalendarService;
 use App\Services\LoanApplicationService;
 use App\Services\LoanApprovalService;
+use App\Services\LoanCalculatorService;
 use App\Services\LoanDisbursementService;
 use App\Services\LoanService;
+use App\Support\CurrencyDenomination;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -31,6 +35,7 @@ class LoanController extends Controller
                     });
             })
             ->when($request->string('status')->toString(), fn ($query, string $status) => $query->where('status', $status))
+            ->when($request->string('status_group')->toString() === 'applications', fn ($query) => $query->whereIn('status', ['draft', 'under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved']))
             ->when($request->integer('loan_product_id'), fn ($query, int $productId) => $query->where('loan_product_id', $productId))
             ->latest()
             ->paginate(15)
@@ -54,7 +59,54 @@ class LoanController extends Controller
     {
         $loan = $applications->submit($request->validated(), $request->user());
 
-        return redirect()->route('loans.show', $loan)->with('status', 'Loan application submitted.');
+        return redirect()->route('loans.show', $loan)->with('status', 'Loan application created.');
+    }
+
+    public function schedulePreview(Request $request, LoanCalculatorService $calculator, BusinessCalendarService $calendar): JsonResponse
+    {
+        abort_unless($request->user()->canPerform('manage-loans'), 403);
+
+        $data = $request->validate([
+            'loan_product_id' => ['required', 'exists:loan_products,id'],
+            'requested_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+            'term_periods' => ['required', 'integer', 'min:1', 'max:730'],
+            'repayment_frequency' => ['required', 'in:daily,weekly,monthly'],
+        ]);
+
+        $product = LoanProduct::query()->findOrFail($data['loan_product_id']);
+        $principal = (float) $data['requested_amount'];
+        $periods = (int) $data['term_periods'];
+        $periodicRate = $this->periodicRate((float) $product->annual_interest_rate, $data['repayment_frequency']);
+
+        $rows = match ($product->interest_method) {
+            'flat' => $calculator->flatRate($principal, $periodicRate, $periods),
+            'reducing_balance_equal_installments' => $calculator->reducingBalanceEqualInstallments($principal, $periodicRate, $periods),
+            default => $calculator->decliningBalance($principal, $periodicRate, $periods),
+        };
+
+        $schedule = collect($rows)->map(function (array $row) use ($calendar, $data): array {
+            $dueDate = $calendar->dueDate(today(), $row['installment'], $data['repayment_frequency']);
+
+            return [
+                'installment' => $row['installment'],
+                'due_date' => $dueDate->toDateString(),
+                'principal' => round($row['principal'], 2),
+                'interest' => round($row['interest'], 2),
+                'total' => round($row['total'], 2),
+                'balance' => round($row['balance'], 2),
+            ];
+        });
+
+        return response()->json([
+            'summary' => [
+                'installments' => $periods,
+                'principal' => $principal,
+                'annual_interest_rate' => (float) $product->annual_interest_rate,
+                'interest' => round($schedule->sum('interest'), 2),
+                'total' => round($schedule->sum('total'), 2),
+            ],
+            'schedule' => $schedule->values(),
+        ]);
     }
 
     public function show(Loan $loan): View
@@ -63,6 +115,8 @@ class LoanController extends Controller
             'loan' => $loan->load([
                 'client.accounts.accountType',
                 'product',
+                'savingsAccount.accountType',
+                'loanAccount.accountType',
                 'schedules',
                 'loanGuarantors.guarantorClient',
                 'collaterals',
@@ -72,6 +126,42 @@ class LoanController extends Controller
             ]),
             'guarantorClients' => Client::where('status', 'active')->where('id', '!=', $loan->client_id)->orderBy('first_name')->get(),
         ]);
+    }
+
+    public function generateSavingsAccount(Loan $loan, LoanService $service): RedirectResponse
+    {
+        $service->generateSavingsAccount($loan, auth()->user());
+
+        return back()->with('status', 'Savings account generated.');
+    }
+
+    public function generateLoanAccount(Loan $loan, LoanService $service): RedirectResponse
+    {
+        $service->generateLoanAccount($loan, auth()->user());
+
+        return back()->with('status', 'Loan account generated.');
+    }
+
+    public function submitForAppraisal(Loan $loan, LoanService $service): RedirectResponse
+    {
+        try {
+            $service->submitForAppraisal($loan, auth()->user());
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['workflow' => $exception->getMessage()]);
+        }
+
+        return back()->with('status', 'Loan submitted for appraisal.');
+    }
+
+    public function submitForApproval(Loan $loan, LoanService $service): RedirectResponse
+    {
+        try {
+            $service->submitForApproval($loan, auth()->user());
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['workflow' => $exception->getMessage()]);
+        }
+
+        return back()->with('status', 'Loan submitted for approval.');
     }
 
     public function approve(ApproveLoanRequest $request, Loan $loan, LoanApprovalService $approvals): RedirectResponse
@@ -103,7 +193,7 @@ class LoanController extends Controller
 
     public function disburse(Request $request, Loan $loan, LoanDisbursementService $disbursements): RedirectResponse
     {
-        abort_unless(auth()->user()->canPerform('disburse-loans') || auth()->user()->canPerform('manage-loans'), 403);
+        abort_unless(auth()->user()->canPerform('disburse-loans'), 403);
 
         $data = $request->validate([
             'payment_method' => ['required', 'in:cash,mobile_money,bank_transfer,transfer_to_savings,cheque'],
@@ -116,5 +206,14 @@ class LoanController extends Controller
         }
 
         return back()->with('status', 'Loan disbursed into client savings account.');
+    }
+
+    private function periodicRate(float $annualRate, string $frequency): float
+    {
+        return match ($frequency) {
+            'daily' => $annualRate / 365,
+            'weekly' => $annualRate / 52,
+            default => $annualRate / 12,
+        };
     }
 }

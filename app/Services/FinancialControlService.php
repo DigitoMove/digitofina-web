@@ -16,6 +16,7 @@ use App\Models\SavingsTransaction;
 use App\Models\SuspiciousTransactionAlert;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Support\CurrencyDenomination;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
@@ -251,6 +252,10 @@ class FinancialControlService
             throw new InvalidArgumentException('Closing balance cannot be negative.');
         }
 
+        if ($closingBalance > 0) {
+            CurrencyDenomination::assertValid($closingBalance, 'Closing balance');
+        }
+
         return DB::transaction(function () use ($session, $user, $closingBalance): DrawerSession {
             $session = DrawerSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
             $drawer = $session->drawer()->lockForUpdate()->firstOrFail();
@@ -286,6 +291,10 @@ class FinancialControlService
     public function reconcileBranchCash(Branch $branch, User $user, CarbonInterface|string|null $businessDate, float $countedCash, ?string $notes = null): BranchCashReconciliation
     {
         $date = $businessDate instanceof CarbonInterface ? CarbonImmutable::parse($businessDate->toDateString()) : CarbonImmutable::parse($businessDate ?: today()->toDateString());
+
+        if ($countedCash > 0) {
+            CurrencyDenomination::assertValid($countedCash, 'Counted cash');
+        }
 
         return DB::transaction(function () use ($branch, $user, $date, $countedCash, $notes): BranchCashReconciliation {
             $financialDay = FinancialDay::query()->firstOrCreate(

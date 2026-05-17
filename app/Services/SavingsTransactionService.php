@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\SavingsAccount;
 use App\Models\SavingsTransaction;
 use App\Models\User;
+use App\Support\CurrencyDenomination;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -75,6 +76,8 @@ class SavingsTransactionService
             throw new InvalidArgumentException('Amount must be greater than zero.');
         }
 
+        CurrencyDenomination::assertValid($amount);
+
         return DB::transaction(function () use ($fromAccount, $toAccount, $amount, $user, $narration): array {
             $orderedIds = collect([$fromAccount->id, $toAccount->id])->sort()->values();
             $locked = SavingsAccount::query()
@@ -129,6 +132,8 @@ class SavingsTransactionService
         if ($amount <= 0) {
             throw new InvalidArgumentException('Amount must be greater than zero.');
         }
+
+        CurrencyDenomination::assertValid($amount);
 
         return DB::transaction(function () use ($account, $amount, $teller, $type, $paymentMethod, $narration): SavingsTransaction {
             $account = SavingsAccount::query()->with('product')->whereKey($account->id)->lockForUpdate()->firstOrFail();

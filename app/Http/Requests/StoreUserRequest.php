@@ -18,11 +18,11 @@ class StoreUserRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'branch_id' => ['nullable', 'exists:branches,id'],
+            'branch_id' => ['required', 'exists:branches,id'],
             'role_id' => ['required', 'exists:roles,id'],
             'name' => ['required', 'string', 'max:191'],
             'email' => ['required', 'email', 'max:191', 'unique:users,email'],
-            'phone' => ['nullable', 'string', 'max:40', 'unique:users,phone'],
+            'phone' => ['required', 'string', 'max:40', 'unique:users,phone', 'unique:clients,phone'],
             'position' => ['nullable', 'string', 'max:191'],
             'status' => ['required', 'in:active,suspended,disabled'],
             'password' => ['required', 'confirmed', Password::defaults()],

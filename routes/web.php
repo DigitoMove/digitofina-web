@@ -14,6 +14,7 @@ use App\Http\Controllers\ClientKycController;
 use App\Http\Controllers\ClientNoteController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DataImportController;
+use App\Http\Controllers\DueRepaymentController;
 use App\Http\Controllers\EndOfDayController;
 use App\Http\Controllers\LinkPreviewController;
 use App\Http\Controllers\LoanCollateralController;
@@ -90,7 +91,12 @@ Route::middleware('auth')->group(function () {
     Route::post('/savings-transfers', [SavingsTransactionController::class, 'transfer'])->name('savings-transfers.store');
     Route::get('/savings-transactions/{savingsTransaction}/receipt', [SavingsTransactionController::class, 'receipt'])->name('savings-transactions.receipt');
     Route::resource('loan-products', LoanProductController::class)->except(['show', 'destroy']);
+    Route::post('/loans/schedule-preview', [LoanController::class, 'schedulePreview'])->name('loans.schedule-preview');
     Route::resource('loans', LoanController::class)->only(['index', 'create', 'store', 'show']);
+    Route::post('/loans/{loan}/generate-savings-account', [LoanController::class, 'generateSavingsAccount'])->name('loans.generate-savings-account');
+    Route::post('/loans/{loan}/generate-loan-account', [LoanController::class, 'generateLoanAccount'])->name('loans.generate-loan-account');
+    Route::post('/loans/{loan}/submit-appraisal', [LoanController::class, 'submitForAppraisal'])->name('loans.submit-appraisal');
+    Route::post('/loans/{loan}/submit-approval', [LoanController::class, 'submitForApproval'])->name('loans.submit-approval');
     Route::post('/loans/{loan}/approve', [LoanController::class, 'approve'])->name('loans.approve');
     Route::post('/loans/{loan}/reject', [LoanController::class, 'reject'])->name('loans.reject');
     Route::post('/loans/{loan}/disburse', [LoanController::class, 'disburse'])->name('loans.disburse');
@@ -102,6 +108,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/loan-repayments/{loanRepayment}/receipt', [LoanRepaymentController::class, 'receipt'])->name('loan-repayments.receipt');
     Route::get('/arrears', [ArrearsController::class, 'index'])->name('arrears.index');
     Route::post('/arrears/apply-penalties', [ArrearsController::class, 'applyPenalties'])->name('arrears.apply-penalties');
+    Route::get('/due-repayments', [DueRepaymentController::class, 'index'])->name('due-repayments.index');
     Route::get('/teller-drawer', [TellerDrawerController::class, 'index'])->name('teller.index');
     Route::post('/teller-drawer/open', [TellerDrawerController::class, 'open'])->name('teller.open');
     Route::post('/teller-drawer/post', [TellerDrawerController::class, 'post'])->name('teller.post');
@@ -120,4 +127,5 @@ Route::middleware('auth')->group(function () {
     Route::post('/imports/{import}/rollback', [DataImportController::class, 'rollback'])->name('imports.rollback');
     Route::get('/receipts/{transaction}', [ReceiptController::class, 'show'])->name('receipts.show');
     Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+    Route::get('/reports/{report}', [ReportController::class, 'show'])->name('reports.show');
 });

@@ -73,6 +73,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::get('/loan-products', [LoanProductController::class, 'index'])->name('loan-products.index');
     Route::put('/loan-products/{loanProduct}', [LoanProductController::class, 'update'])->middleware('throttle:api-sensitive')->name('loan-products.update');
     Route::apiResource('loans', LoanController::class)->only(['index', 'store', 'show']);
+    Route::post('/loans/{loan}/generate-savings-account', [LoanWorkflowController::class, 'generateSavingsAccount'])->name('loans.generate-savings-account');
+    Route::post('/loans/{loan}/generate-loan-account', [LoanWorkflowController::class, 'generateLoanAccount'])->name('loans.generate-loan-account');
+    Route::post('/loans/{loan}/submit-appraisal', [LoanWorkflowController::class, 'submitForAppraisal'])->name('loans.submit-appraisal');
     Route::post('/loans/{loan}/submit', [LoanWorkflowController::class, 'submit'])->name('loans.submit');
     Route::post('/loans/{loan}/guarantors', [LoanWorkflowController::class, 'addGuarantor'])->name('loans.guarantors.store');
     Route::post('/loans/{loan}/collaterals', [LoanWorkflowController::class, 'addCollateral'])->name('loans.collaterals.store');

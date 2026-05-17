@@ -8,10 +8,12 @@ use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\UserSavingsAccountProvisioningService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\View\View;
@@ -45,18 +47,22 @@ class UserManagementController extends Controller
         return view('users.create', $this->formData(new User));
     }
 
-    public function store(StoreUserRequest $request, AuditLogger $auditLogger): RedirectResponse
+    public function store(StoreUserRequest $request, AuditLogger $auditLogger, UserSavingsAccountProvisioningService $savingsAccounts): RedirectResponse
     {
         Gate::authorize('create', User::class);
 
         $data = $request->validated();
-        $user = User::create(Arr::except($data, ['password']) + [
-            'organization_id' => $request->user()->organization_id,
-            'password' => Hash::make($data['password']),
-            'is_active' => $data['status'] === 'active',
-        ]);
 
-        $auditLogger->record('user.created', $user, $user->only(['id', 'name', 'email', 'role_id', 'branch_id', 'status']));
+        DB::transaction(function () use ($data, $request, $auditLogger, $savingsAccounts): void {
+            $user = User::create(Arr::except($data, ['password']) + [
+                'organization_id' => $request->user()->organization_id,
+                'password' => Hash::make($data['password']),
+                'is_active' => $data['status'] === 'active',
+            ]);
+
+            $auditLogger->record('user.created', $user, $user->only(['id', 'name', 'email', 'role_id', 'branch_id', 'status']));
+            $savingsAccounts->ensure($user, $request->user());
+        });
 
         return redirect()->route('users.index')->with('status', 'Staff user created.');
     }

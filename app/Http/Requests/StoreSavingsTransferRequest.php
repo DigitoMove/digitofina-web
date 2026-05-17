@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\CurrencyDenomination;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreSavingsTransferRequest extends FormRequest
@@ -19,7 +20,7 @@ class StoreSavingsTransferRequest extends FormRequest
         return [
             'from_savings_account_id' => ['required', 'exists:savings_accounts,id'],
             'to_savings_account_id' => ['required', 'different:from_savings_account_id', 'exists:savings_accounts,id'],
-            'amount' => ['required', 'numeric', 'min:1'],
+            'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'narration' => ['nullable', 'string', 'max:1000'],
         ];
     }

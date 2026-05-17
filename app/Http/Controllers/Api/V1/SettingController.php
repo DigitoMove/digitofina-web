@@ -8,10 +8,14 @@ use App\Http\Resources\MakerCheckerRequestResource;
 use App\Http\Resources\SystemSettingResource;
 use App\Models\SystemSetting;
 use App\Services\AuditLogger;
+use App\Services\BusinessCalendarService;
 use App\Services\FinancialControlService;
+use App\Services\LoanApplicationFeeService;
 use App\Support\ApiResponse;
 use App\Support\ApiSecurity;
+use App\Support\CurrencyDenomination;
 use Illuminate\Http\JsonResponse;
+use InvalidArgumentException;
 
 class SettingController extends Controller
 {
@@ -25,8 +29,10 @@ class SettingController extends Controller
         );
     }
 
-    public function update(UpdateApiSystemSettingsRequest $request, AuditLogger $auditLogger, FinancialControlService $controls): JsonResponse
+    public function update(UpdateApiSystemSettingsRequest $request, AuditLogger $auditLogger, FinancialControlService $controls, LoanApplicationFeeService $applicationFees, BusinessCalendarService $calendar): JsonResponse
     {
+        $this->validateMoneySettings($request, $applicationFees, $calendar);
+
         if ($controls->requiresMakerChecker($request->user(), 'settings_update')) {
             $oldValues = ApiSecurity::scopeTenant(SystemSetting::query(), $request->user())
                 ->whereIn('key', array_keys($request->validated('settings', [])))
@@ -68,5 +74,32 @@ class SettingController extends Controller
         }
 
         return ApiResponse::collection(SystemSettingResource::collection($updated), 'System settings updated.');
+    }
+
+    private function validateMoneySettings(UpdateApiSystemSettingsRequest $request, LoanApplicationFeeService $applicationFees, BusinessCalendarService $calendar): void
+    {
+        foreach ($request->validated('settings', []) as $key => $value) {
+            $setting = ApiSecurity::scopeTenant(SystemSetting::query(), $request->user())->where('key', $key)->firstOrFail();
+
+            try {
+                if ($setting->type === 'money' && (float) $value > 0) {
+                    CurrencyDenomination::assertValid((float) $value, $setting->label ?? str($key)->headline()->toString());
+                }
+
+                if ($setting->type === 'number' && filled($value) && (! is_numeric($value) || (float) $value < 0)) {
+                    throw new InvalidArgumentException(($setting->label ?? str($key)->headline()->toString()).' must be a positive number.');
+                }
+
+                if ($setting->key === 'loan_application_fee_ranges') {
+                    $applicationFees->assertValidJson($value);
+                }
+
+                if ($setting->key === 'repayment_public_holidays') {
+                    $calendar->assertValidHolidayJson($value);
+                }
+            } catch (InvalidArgumentException $exception) {
+                abort(422, $exception->getMessage());
+            }
+        }
     }
 }

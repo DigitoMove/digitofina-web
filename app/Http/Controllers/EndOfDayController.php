@@ -8,6 +8,7 @@ use App\Models\BranchCashReconciliation;
 use App\Models\BranchDailySummary;
 use App\Models\DailyAccountingSummary;
 use App\Services\EndOfDayService;
+use App\Support\CurrencyDenomination;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -60,7 +61,7 @@ class EndOfDayController extends Controller
         $data = $request->validate([
             'branch_id' => ['required', 'exists:branches,id'],
             'business_date' => ['required', 'date'],
-            'counted_cash' => ['required', 'numeric', 'min:0'],
+            'counted_cash' => ['required', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
@@ -95,7 +96,7 @@ class EndOfDayController extends Controller
         $data = $request->validate([
             'branch_id' => ['required', 'exists:branches,id'],
             'business_date' => ['required', 'date'],
-            'counted_cash' => ['required', 'numeric', 'min:0'],
+            'counted_cash' => ['required', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
 

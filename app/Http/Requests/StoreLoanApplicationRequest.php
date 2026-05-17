@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\CurrencyDenomination;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -24,9 +25,9 @@ class StoreLoanApplicationRequest extends FormRequest
             'client_id' => ['required', Rule::exists('clients', 'id')->where('status', 'active')],
             'loan_product_id' => ['required', Rule::exists('loan_products', 'id')->where('status', 'active')],
             'savings_account_id' => ['nullable', Rule::exists('accounts', 'id')],
-            'requested_amount' => ['required', 'numeric', 'min:1'],
+            'requested_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'term_periods' => ['required', 'integer', 'min:1'],
-            'repayment_frequency' => ['required', Rule::in(['daily', 'weekly', 'bi-weekly', 'monthly', 'quarterly'])],
+            'repayment_frequency' => ['required', Rule::in(['daily', 'weekly', 'monthly'])],
             'purpose' => ['required', 'string', 'max:255'],
             'source_of_repayment' => ['nullable', 'string', 'max:255'],
             'business_details' => ['nullable', 'string'],

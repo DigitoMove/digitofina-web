@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\CurrencyDenomination;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreSavingsTransactionRequest extends FormRequest
@@ -17,7 +18,7 @@ class StoreSavingsTransactionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'amount' => ['required', 'numeric', 'min:1'],
+            'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'payment_method' => ['required', 'in:cash,mobile_money,bank,cheque,internal_transfer'],
             'narration' => ['nullable', 'string', 'max:1000'],
         ];

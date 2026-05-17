@@ -36,7 +36,19 @@ class ArrearsController extends Controller
             ->paginate(20)
             ->withQueryString();
 
-        return view('arrears.index', ['schedules' => $schedules]);
+        $loanArrears = LoanSchedule::query()
+            ->whereIn('loan_id', $schedules->getCollection()->pluck('loan_id')->unique())
+            ->where('outstanding_amount', '>', 0)
+            ->whereDate('due_date', '<', now()->toDateString())
+            ->selectRaw('loan_id, sum(outstanding_amount) as cumulative_due, max(days_overdue) as stored_days_overdue')
+            ->groupBy('loan_id')
+            ->get()
+            ->keyBy('loan_id');
+
+        return view('arrears.index', [
+            'schedules' => $schedules,
+            'loanArrears' => $loanArrears,
+        ]);
     }
 
     public function applyPenalties(Request $request, LoanService $service): RedirectResponse

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\CurrencyDenomination;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreSavingsAccountRequest extends FormRequest
@@ -22,7 +23,7 @@ class StoreSavingsAccountRequest extends FormRequest
             'savings_product_id' => ['required', 'exists:savings_products,id'],
             'opening_date' => ['required', 'date'],
             'status' => ['required', 'in:pending,active,frozen,dormant,closed'],
-            'opening_deposit' => ['nullable', 'numeric', 'min:0'],
+            'opening_deposit' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
         ];
     }
 }

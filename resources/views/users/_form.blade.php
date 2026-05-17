@@ -7,7 +7,7 @@
         <input name="email" value="{{ old('email', $user->email) }}" class="mt-1 w-full rounded border-slate-300" required>
     </label>
     <label class="block text-sm font-medium text-slate-700">Phone
-        <input name="phone" value="{{ old('phone', $user->phone) }}" class="mt-1 w-full rounded border-slate-300">
+        <input name="phone" value="{{ old('phone', $user->phone) }}" class="mt-1 w-full rounded border-slate-300" required>
     </label>
     <label class="block text-sm font-medium text-slate-700">Position
         <input name="position" value="{{ old('position', $user->position) }}" class="mt-1 w-full rounded border-slate-300">
@@ -20,8 +20,8 @@
         </select>
     </label>
     <label class="block text-sm font-medium text-slate-700">Branch
-        <select name="branch_id" class="mt-1 w-full rounded border-slate-300">
-            <option value="">Global access</option>
+        <select name="branch_id" class="mt-1 w-full rounded border-slate-300" required>
+            <option value="">Select branch</option>
             @foreach ($branches as $branch)
                 <option value="{{ $branch->id }}" @selected((string) old('branch_id', $user->branch_id) === (string) $branch->id)>{{ $branch->name }}</option>
             @endforeach

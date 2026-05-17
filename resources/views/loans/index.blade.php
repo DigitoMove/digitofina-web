@@ -6,7 +6,7 @@
 </div>
 <form class="mb-4 grid gap-3 rounded border bg-white p-4 md:grid-cols-[1fr_180px_220px_auto]">
     <input name="search" value="{{ request('search') }}" placeholder="Search loan or client" class="rounded border-slate-300">
-    <select name="status" class="rounded border-slate-300"><option value="">All statuses</option>@foreach(['submitted','pending_guarantor_approval','approved','active','in_arrears','fully_paid','rejected'] as $status)<option value="{{ $status }}" @selected(request('status') === $status)>{{ str($status)->headline() }}</option>@endforeach</select>
+    <select name="status" class="rounded border-slate-300"><option value="">All statuses</option>@foreach(['draft','under_review','submitted','pending_guarantor_approval','approved','active','in_arrears','fully_paid','rejected'] as $status)<option value="{{ $status }}" @selected(request('status') === $status)>{{ str($status)->headline() }}</option>@endforeach</select>
     <select name="loan_product_id" class="rounded border-slate-300"><option value="">All products</option>@foreach($products as $product)<option value="{{ $product->id }}" @selected((int) request('loan_product_id') === $product->id)>{{ $product->name }}</option>@endforeach</select>
     <button class="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Filter</button>
 </form>

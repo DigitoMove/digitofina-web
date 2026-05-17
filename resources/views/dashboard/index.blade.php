@@ -11,17 +11,20 @@
 
 @php
     $cards = [
-        ['Total clients', $totalClients, 'bg-brand-50 text-brand-800', 'from-brand-500 to-brand-600', [38, 58, 44, 68, 74]],
-        ['Active accounts', $activeAccounts, 'bg-emerald-50 text-emerald-700', 'from-emerald-500 to-emerald-600', [46, 52, 63, 57, 78]],
-        ['Total savings', number_format($totalSavings, 2).' UGX', 'bg-brand-50 text-brand-800', 'from-brand-500 to-forest-500', [42, 55, 61, 76, 84]],
-        ['Total loans', number_format($totalLoans, 2).' UGX', 'bg-brand-50 text-brand-800', 'from-brand-600 to-sun-400', [35, 48, 65, 62, 80]],
-        ["Today's deposits", number_format($todayDeposits, 2).' UGX', 'bg-green-50 text-green-700', 'from-green-500 to-emerald-500', [28, 44, 50, 72, 88]],
-        ["Today's withdrawals", number_format($todayWithdrawals, 2).' UGX', 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [24, 40, 38, 52, 46]],
-        ['Teller drawer balance', number_format($drawerBalance, 2).' UGX', 'bg-sun-50 text-sun-600', 'from-sun-400 to-brand-600', [34, 47, 57, 51, 69]],
-        ['Pending approvals', $pendingApprovals, 'bg-rose-50 text-rose-700', 'from-rose-500 to-pink-500', [18, 26, 44, 32, 54]],
-        ['Branches', $branchCount, 'bg-slate-100 text-slate-700', 'from-slate-500 to-brand-600', [44, 50, 54, 58, 62]],
-        ['Active staff', $staffCount, 'bg-lime-50 text-lime-700', 'from-lime-500 to-emerald-500', [32, 43, 52, 68, 73]],
-        ['Audit events today', $auditEventsToday, 'bg-slate-100 text-slate-700', 'from-slate-600 to-slate-800', [20, 42, 30, 56, 48]],
+        ['Total clients', $totalClients, 'bg-brand-50 text-brand-800', 'from-brand-500 to-brand-600', [38, 58, 44, 68, 74], route('clients.index')],
+        ['Active accounts', $activeAccounts, 'bg-emerald-50 text-emerald-700', 'from-emerald-500 to-emerald-600', [46, 52, 63, 57, 78], route('accounts.index')],
+        ['Loan applications', $loanApplications, 'bg-sky-50 text-sky-700', 'from-sky-500 to-blue-600', [30, 45, 62, 58, 75], route('loans.index', ['status_group' => 'applications'])],
+        ['Loans in arrears', $arrearsCount, 'bg-red-50 text-red-700', 'from-red-500 to-rose-600', [20, 34, 48, 42, 60], route('arrears.index')],
+        ['Due today', $dueTodayCount, 'bg-violet-50 text-violet-700', 'from-violet-500 to-indigo-600', [24, 38, 50, 70, 64], route('due-repayments.index')],
+        ['Total savings', number_format($totalSavings, 2).' UGX', 'bg-brand-50 text-brand-800', 'from-brand-500 to-forest-500', [42, 55, 61, 76, 84], route('accounts.index')],
+        ['Total loans', number_format($totalLoans, 2).' UGX', 'bg-brand-50 text-brand-800', 'from-brand-600 to-sun-400', [35, 48, 65, 62, 80], route('loans.index')],
+        ["Today's deposits", number_format($todayDeposits, 2).' UGX', 'bg-green-50 text-green-700', 'from-green-500 to-emerald-500', [28, 44, 50, 72, 88], route('reports.index')],
+        ["Today's withdrawals", number_format($todayWithdrawals, 2).' UGX', 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [24, 40, 38, 52, 46], route('reports.index')],
+        ['Teller drawer balance', number_format($drawerBalance, 2).' UGX', 'bg-sun-50 text-sun-600', 'from-sun-400 to-brand-600', [34, 47, 57, 51, 69], route('teller.index')],
+        ['Pending approvals', $pendingApprovals, 'bg-rose-50 text-rose-700', 'from-rose-500 to-pink-500', [18, 26, 44, 32, 54], route('reports.index')],
+        ['Branches', $branchCount, 'bg-slate-100 text-slate-700', 'from-slate-500 to-brand-600', [44, 50, 54, 58, 62], route('branches.index')],
+        ['Active staff', $staffCount, 'bg-lime-50 text-lime-700', 'from-lime-500 to-emerald-500', [32, 43, 52, 68, 73], route('users.index')],
+        ['Audit events today', $auditEventsToday, 'bg-slate-100 text-slate-700', 'from-slate-600 to-slate-800', [20, 42, 30, 56, 48], route('audit-logs.index')],
     ];
 
     $cashRows = [
@@ -40,8 +43,8 @@
 @endphp
 
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-    @foreach ($cards as [$label, $value, $badgeClass, $barClass, $spark])
-        <div class="df-panel df-hover-lift relative overflow-hidden p-5">
+    @foreach ($cards as [$label, $value, $badgeClass, $barClass, $spark, $href])
+        <a href="{{ $href }}" class="df-panel df-hover-lift relative overflow-hidden p-5">
             <div class="flex items-start justify-between gap-4">
                 <div>
                     <div class="text-sm font-medium text-slate-500">{{ $label }}</div>
@@ -58,8 +61,73 @@
                     <div class="flex-1 rounded-t-lg bg-gradient-to-t {{ $barClass }}" style="height: {{ $point }}%"></div>
                 @endforeach
             </div>
-        </div>
+        </a>
     @endforeach
+</div>
+
+<div class="mt-6 grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+    <section class="df-panel p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <h2 class="text-lg font-semibold text-slate-950">Repayment Calendar</h2>
+                <p class="text-sm text-slate-500">{{ $calendarMonth->format('F Y') }} scheduled repayments by day.</p>
+            </div>
+            <a href="{{ route('due-repayments.index') }}" class="df-action-secondary">Today</a>
+        </div>
+        <div class="mt-5 grid grid-cols-7 overflow-hidden rounded-t-lg bg-slate-800 text-center text-xs font-semibold uppercase tracking-wide text-white">
+            @foreach(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as $weekday)
+                <div class="border-r border-white/10 px-2 py-3 last:border-r-0">{{ $weekday }}</div>
+            @endforeach
+        </div>
+        <div class="grid grid-cols-7 overflow-hidden rounded-b-lg border border-t-0 border-slate-200">
+            @foreach($calendarDays as $day)
+                <a href="{{ route('due-repayments.index', ['date' => $day['date']->toDateString()]) }}" class="min-h-24 border-b border-r border-slate-200 p-2 text-left transition hover:bg-brand-50 {{ $day['count'] > 0 ? 'bg-brand-600 text-white hover:text-slate-950' : 'bg-white text-slate-700' }} {{ $day['is_today'] ? 'bg-sky-100 text-slate-950 ring-2 ring-inset ring-brand-600' : '' }} {{ $day['is_current_month'] ? '' : 'opacity-40' }}">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-sm font-semibold">{{ $day['date']->day }}</span>
+                        @if($day['date']->isSunday())
+                            <span class="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-semibold">Off</span>
+                        @endif
+                    </div>
+                    @if($day['count'] > 0)
+                        <div class="mt-3 rounded bg-cyan-300/80 px-2 py-1 text-xs font-semibold text-slate-950">{{ $day['count'] }} due</div>
+                        <div class="mt-1 text-[11px] {{ $day['is_today'] ? 'text-slate-500' : 'text-white/80' }}">UGX {{ number_format($day['amount'], 0) }}</div>
+                    @else
+                        <div class="mt-3 text-xs text-slate-400">No dues</div>
+                    @endif
+                </a>
+            @endforeach
+        </div>
+    </section>
+
+    <section class="df-panel p-5">
+        <div class="flex items-center justify-between gap-3">
+            <div>
+                <h2 class="text-lg font-semibold text-slate-950">Scheduled Today</h2>
+                <p class="text-sm text-slate-500">Clients expected to pay today.</p>
+            </div>
+            <div class="text-right">
+                <div class="text-2xl font-semibold text-slate-950">{{ $dueTodayCount }}</div>
+                <div class="text-xs text-slate-500">UGX {{ number_format($dueTodayAmount, 0) }}</div>
+            </div>
+        </div>
+        <div class="mt-5 divide-y divide-slate-200">
+            @forelse($dueToday as $schedule)
+                <div class="py-3">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <a href="{{ route('loans.show', $schedule->loan) }}" class="font-semibold text-slate-950 hover:text-brand-700">{{ $schedule->loan->client->full_name }}</a>
+                            <div class="mt-1 text-xs text-slate-500">{{ $schedule->loan->client->phone }}{{ $schedule->loan->client->alternative_phone ? ' / '.$schedule->loan->client->alternative_phone : '' }}</div>
+                        </div>
+                        <div class="text-right text-sm font-semibold text-slate-950">UGX {{ number_format($schedule->outstanding_amount, 0) }}</div>
+                    </div>
+                    <div class="mt-1 text-xs text-slate-500">{{ $schedule->loan->loan_number }} · Installment #{{ $schedule->installment_number }}</div>
+                </div>
+            @empty
+                <div class="py-10 text-center text-sm text-slate-500">No clients are scheduled to pay today.</div>
+            @endforelse
+        </div>
+        <a href="{{ route('due-repayments.index') }}" class="mt-4 inline-flex text-sm font-semibold text-brand-700">View all due today</a>
+    </section>
 </div>
 
 <div class="mt-6 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">

@@ -14,6 +14,7 @@ use App\Services\PaymentGatewayService;
 use App\Services\WebhookIngestionService;
 use App\Support\ApiResponse;
 use App\Support\ApiSecurity;
+use App\Support\CurrencyDenomination;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,7 +29,7 @@ class PaymentController extends Controller
             'provider_id' => ['nullable', 'exists:payment_providers,id'],
             'payable_type' => ['required', 'in:savings_account,loan'],
             'payable_id' => ['required', 'integer'],
-            'amount' => ['required', 'numeric', 'min:1'],
+            'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'phone' => ['required', 'string', 'max:40'],
             'metadata' => ['nullable', 'array'],
         ]);

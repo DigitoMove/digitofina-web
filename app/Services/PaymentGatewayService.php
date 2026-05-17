@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\PaymentProvider;
 use App\Models\PaymentRequest;
+use App\Support\CurrencyDenomination;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
@@ -14,6 +15,8 @@ class PaymentGatewayService
      */
     public function initiateCollection(PaymentProvider $provider, Model $payable, float $amount, string $phone, array $metadata = []): PaymentRequest
     {
+        CurrencyDenomination::assertValid($amount);
+
         return PaymentRequest::create([
             'organization_id' => $provider->organization_id,
             'payment_provider_id' => $provider->id,

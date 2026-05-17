@@ -6,7 +6,10 @@ use Carbon\CarbonInterface;
 
 class LoanScheduleService
 {
-    public function __construct(private LoanCalculatorService $calculator) {}
+    public function __construct(
+        private LoanCalculatorService $calculator,
+        private BusinessCalendarService $calendar,
+    ) {}
 
     /**
      * @return array<int, array{installment:int, due_date:string, principal:float, interest:float, total:float, balance:float}>
@@ -20,13 +23,7 @@ class LoanScheduleService
         };
 
         return array_map(function (array $row) use ($startDate, $frequency): array {
-            $dueDate = match ($frequency) {
-                'daily' => $startDate->copy()->addDays($row['installment']),
-                'weekly' => $startDate->copy()->addWeeks($row['installment']),
-                'bi_weekly' => $startDate->copy()->addWeeks($row['installment'] * 2),
-                'quarterly' => $startDate->copy()->addMonths($row['installment'] * 3),
-                default => $startDate->copy()->addMonths($row['installment']),
-            };
+            $dueDate = $this->calendar->dueDate($startDate, $row['installment'], $frequency);
 
             return $row + ['due_date' => $dueDate->toDateString()];
         }, $rows);

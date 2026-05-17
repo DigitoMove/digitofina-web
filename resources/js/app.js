@@ -94,9 +94,187 @@ const initKeyboardFocus = () => {
     });
 };
 
+const formatMoney = (value) => {
+    return new Intl.NumberFormat('en-UG', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(Number(value || 0));
+};
+
+const initLoanSchedulePreview = () => {
+    document.querySelectorAll('[data-loan-schedule-preview]').forEach((form) => {
+        const frequency = form.querySelector('[name="repayment_frequency"]');
+        const product = form.querySelector('[name="loan_product_id"]');
+        const packageInterestRate = form.querySelector('[data-package-interest-rate]');
+        const unit = form.querySelector('[data-period-unit]');
+        const button = form.querySelector('[data-preview-schedule]');
+        const rows = form.querySelector('[data-preview-rows]');
+        const error = form.querySelector('[data-preview-error]');
+
+        const setUnit = () => {
+            const labels = {
+                daily: 'days',
+                weekly: 'weeks',
+                monthly: 'months',
+            };
+
+            if (unit && frequency) {
+                unit.textContent = labels[frequency.value] || 'periods';
+            }
+        };
+
+        const syncProductInterestRateDisplay = () => {
+            const selectedRate = product?.selectedOptions?.[0]?.dataset?.interestRate;
+
+            if (!packageInterestRate || !selectedRate) {
+                return;
+            }
+
+            packageInterestRate.textContent = `${Number(selectedRate).toFixed(4)}%`;
+        };
+
+        const setError = (message) => {
+            if (!error) {
+                return;
+            }
+
+            error.textContent = message;
+            error.hidden = !message;
+        };
+
+        const renderSummary = (summary) => {
+            form.querySelector('[data-preview-installments]').textContent = summary.installments || 0;
+            form.querySelector('[data-preview-principal]').textContent = formatMoney(summary.principal);
+            form.querySelector('[data-preview-interest]').textContent = formatMoney(summary.interest);
+            form.querySelector('[data-preview-total]').textContent = formatMoney(summary.total);
+        };
+
+        const renderRows = (schedule) => {
+            if (!rows) {
+                return;
+            }
+
+            if (!schedule.length) {
+                rows.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">No preview yet.</td></tr>';
+
+                return;
+            }
+
+            rows.innerHTML = schedule.map((row) => `
+                <tr class="border-t border-slate-200">
+                    <td class="p-2">${row.installment}</td>
+                    <td>${row.due_date}</td>
+                    <td>${formatMoney(row.principal)}</td>
+                    <td>${formatMoney(row.interest)}</td>
+                    <td>${formatMoney(row.total)}</td>
+                    <td>${formatMoney(row.balance)}</td>
+                </tr>
+            `).join('');
+        };
+
+        const preview = async () => {
+            setError('');
+            button.disabled = true;
+            button.textContent = 'Previewing...';
+
+            try {
+                const response = await fetch(form.dataset.previewUrl, {
+                    method: 'POST',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                    },
+                    body: new FormData(form),
+                });
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    const message = payload.message || Object.values(payload.errors || {})?.[0]?.[0] || 'Unable to preview schedule.';
+                    throw new Error(message);
+                }
+
+                renderSummary(payload.summary || {});
+                renderRows(payload.schedule || []);
+            } catch (previewError) {
+                setError(previewError.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Preview Schedule';
+            }
+        };
+
+        setUnit();
+        frequency?.addEventListener('change', setUnit);
+        product?.addEventListener('change', syncProductInterestRateDisplay);
+        button?.addEventListener('click', preview);
+    });
+};
+
+const initReportLauncher = () => {
+    const modal = document.querySelector('[data-report-modal]');
+    const form = document.querySelector('[data-report-form]');
+    const title = document.querySelector('[data-report-modal-title]');
+    const dateFields = document.querySelector('[data-report-date-fields]');
+    const detailField = document.querySelector('[data-report-detail-field]');
+
+    if (!modal || !form) {
+        return;
+    }
+
+    const close = () => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    };
+
+    document.querySelectorAll('[data-report-open]').forEach((button) => {
+        button.addEventListener('click', () => {
+            form.action = button.dataset.reportUrl || '';
+
+            if (title) {
+                title.textContent = button.dataset.reportTitle || 'Generate Report';
+            }
+
+            if (dateFields) {
+                dateFields.hidden = button.dataset.reportDates !== '1';
+                dateFields.querySelectorAll('input').forEach((input) => {
+                    input.disabled = dateFields.hidden;
+                });
+            }
+
+            if (detailField) {
+                detailField.hidden = button.dataset.reportDetail !== '1';
+                detailField.querySelectorAll('select').forEach((select) => {
+                    select.disabled = detailField.hidden;
+                });
+            }
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        });
+    });
+
+    modal.querySelectorAll('[data-report-close]').forEach((button) => {
+        button.addEventListener('click', close);
+    });
+
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            close();
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            close();
+        }
+    });
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     initSteps();
     initRipples();
     initKeyboardFocus();
+    initLoanSchedulePreview();
+    initReportLauncher();
 });

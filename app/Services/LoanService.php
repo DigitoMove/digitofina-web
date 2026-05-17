@@ -15,8 +15,10 @@ use App\Models\LoanPenalty;
 use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
 use App\Models\RoleFinancialLimit;
+use App\Models\SystemSetting;
 use App\Models\TransactionType;
 use App\Models\User;
+use App\Support\CurrencyDenomination;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -30,10 +32,14 @@ class LoanService
         private TransactionPostingService $transactions,
         private LoanCalculatorService $calculator,
         private PenaltyCalculationService $penalties,
+        private LoanApplicationFeeService $applicationFees,
+        private BusinessCalendarService $calendar,
     ) {}
 
     public function approve(Loan $loan, User $approver, float $approvedAmount, ?string $comments = null): Loan
     {
+        CurrencyDenomination::assertValid($approvedAmount, 'Approved amount');
+
         if ($approver->hasRole('cashier') || $approver->hasRole('member')) {
             throw new InvalidArgumentException('Cashiers and members cannot approve loans.');
         }
@@ -124,10 +130,137 @@ class LoanService
         });
     }
 
+    public function generateSavingsAccount(Loan $loan, User $user): Account
+    {
+        abort_unless($user->canPerform('manage-accounts') || $user->canPerform('manage-loans'), 403);
+
+        return DB::transaction(function () use ($loan): Account {
+            $loan = Loan::query()->with(['client.branch'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+
+            if ($loan->savings_account_id) {
+                return Account::query()->findOrFail($loan->savings_account_id);
+            }
+
+            $existing = $loan->client->accounts()
+                ->whereHas('accountType', fn ($query) => $query->where('category', 'savings'))
+                ->first();
+
+            if ($existing) {
+                $loan->update(['savings_account_id' => $existing->id]);
+
+                return $existing;
+            }
+
+            $type = AccountType::query()->where('category', 'savings')->firstOrFail();
+            $account = Account::create([
+                'organization_id' => $loan->organization_id,
+                'client_id' => $loan->client_id,
+                'branch_id' => $loan->branch_id,
+                'account_type_id' => $type->id,
+                'account_number' => $this->numbers->accountNumber($loan->client->branch, $type),
+                'account_name' => $loan->client->full_name.' Savings Account',
+                'status' => 'active',
+                'balance' => 0,
+                'opened_at' => now()->toDateString(),
+            ]);
+
+            $loan->update(['savings_account_id' => $account->id]);
+            $this->auditLogger->record('loan.savings_account_generated', $loan, ['account_number' => $account->account_number]);
+
+            return $account;
+        });
+    }
+
+    public function generateLoanAccount(Loan $loan, User $user): Account
+    {
+        abort_unless($user->canPerform('manage-accounts') || $user->canPerform('manage-loans'), 403);
+
+        return DB::transaction(function () use ($loan): Account {
+            $loan = Loan::query()->with(['client.branch'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+
+            if ($loan->loan_account_id) {
+                return Account::query()->findOrFail($loan->loan_account_id);
+            }
+
+            $type = AccountType::query()->where('category', 'loan')->firstOrFail();
+            $account = Account::create([
+                'organization_id' => $loan->organization_id,
+                'client_id' => $loan->client_id,
+                'branch_id' => $loan->branch_id,
+                'account_type_id' => $type->id,
+                'loan_id' => $loan->id,
+                'account_number' => $this->numbers->accountNumber($loan->client->branch, $type),
+                'account_name' => $loan->client->full_name.' Loan Account',
+                'status' => 'active',
+                'balance' => 0,
+                'opened_at' => now()->toDateString(),
+            ]);
+
+            $loan->update(['loan_account_id' => $account->id]);
+            $this->auditLogger->record('loan.loan_account_generated', $loan, ['account_number' => $account->account_number]);
+
+            return $account;
+        });
+    }
+
+    public function submitForAppraisal(Loan $loan, User $user): Loan
+    {
+        abort_unless($user->canPerform('manage-loans'), 403);
+
+        return DB::transaction(function () use ($loan, $user): Loan {
+            $loan = Loan::query()->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+
+            if ($loan->status !== 'draft') {
+                throw new InvalidArgumentException('Only draft loans can be submitted for appraisal.');
+            }
+
+            if (! $loan->savings_account_id || ! $loan->loan_account_id) {
+                throw new InvalidArgumentException('Generate the savings and loan accounts before appraisal.');
+            }
+
+            $loan->update([
+                'status' => 'under_review',
+                'reviewed_by' => $user->id,
+            ]);
+
+            $this->auditLogger->record('loan.submitted_for_appraisal', $loan);
+
+            return $loan->refresh();
+        });
+    }
+
+    public function submitForApproval(Loan $loan, User $user): Loan
+    {
+        abort_unless($user->canPerform('manage-loans'), 403);
+
+        return DB::transaction(function () use ($loan): Loan {
+            $loan = Loan::query()->with('product')->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+
+            if ($loan->status !== 'under_review') {
+                throw new InvalidArgumentException('Only appraised loans can be submitted for approval.');
+            }
+
+            $status = match (true) {
+                $loan->product->require_guarantors => 'pending_guarantor_approval',
+                $loan->product->require_collateral => 'pending_collateral_verification',
+                default => 'submitted',
+            };
+
+            $loan->update([
+                'status' => $status,
+                'submitted_at' => now()->toDateString(),
+            ]);
+
+            $this->auditLogger->record('loan.submitted_for_approval', $loan);
+
+            return $loan->refresh();
+        });
+    }
+
     public function disburseToSavings(Loan $loan, User $user, string $paymentMethod = 'transfer_to_savings'): Loan
     {
         return DB::transaction(function () use ($loan, $user, $paymentMethod) {
-            $loan = Loan::query()->with(['client', 'product', 'savingsAccount'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+            $loan = Loan::query()->with(['client', 'product', 'savingsAccount', 'loanAccount'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
 
             if ($loan->status !== 'approved') {
                 throw new InvalidArgumentException('Loan must be approved before disbursement.');
@@ -141,27 +274,26 @@ class LoanService
                 throw new InvalidArgumentException('Client needs a savings account before disbursement.');
             }
 
-            $loanType = AccountType::query()->where('category', 'loan')->firstOrFail();
-            $loanAccount = Account::create([
-                'organization_id' => $loan->organization_id,
-                'client_id' => $loan->client_id,
-                'branch_id' => $loan->branch_id,
-                'account_type_id' => $loanType->id,
-                'loan_id' => $loan->id,
-                'account_number' => $this->numbers->accountNumber($loan->client->branch, $loanType),
-                'account_name' => $loan->client->full_name.' Loan Account',
-                'status' => 'active',
-                'balance' => $loan->approved_amount,
-                'opened_at' => now()->toDateString(),
-            ]);
+            $loanAccount = $loan->loanAccount ?: $this->generateLoanAccount($loan, $user);
+            $loanAccount->update(['balance' => $loan->approved_amount]);
 
-            $fees = round((float) $loan->product->processing_fee + (float) $loan->product->insurance_fee, 2);
+            $fees = round($this->applicationFees->feeFor((float) $loan->requested_amount), 2);
+            CurrencyDenomination::assertValid((float) $loan->approved_amount, 'Approved amount');
+
+            if ($fees > 0) {
+                CurrencyDenomination::assertValid($fees, 'Application fee');
+            }
+
+            if ($fees > (float) $loan->approved_amount) {
+                throw new InvalidArgumentException('Application fee cannot exceed the approved loan amount.');
+            }
+
             $netAmount = max(0, round((float) $loan->approved_amount - $fees, 2));
             $type = TransactionType::query()->where('code', 'loan_disbursement')->firstOrFail();
             $transaction = $this->transactions->postNonCashCredit($savings, $type, $netAmount, $user, 'Loan disbursement to savings account', [
                 ['account_code' => '1200', 'entry_type' => 'debit', 'amount' => $loan->approved_amount, 'memo' => 'Loan principal raised'],
                 ['account_code' => '2100', 'entry_type' => 'credit', 'amount' => $netAmount, 'memo' => 'Loan proceeds credited to savings'],
-                ['account_code' => '4200', 'entry_type' => 'credit', 'amount' => $fees, 'memo' => 'Loan disbursement fees deducted'],
+                ['account_code' => '4200', 'entry_type' => 'credit', 'amount' => $fees, 'memo' => 'Loan application fee deducted'],
             ]);
 
             LoanDisbursement::create([
@@ -208,13 +340,7 @@ class LoanService
 
         foreach ($rows as $row) {
             $i = $row['installment'];
-            $dueDate = match ($loan->repayment_frequency) {
-                'daily' => $startDate->copy()->addDays($i),
-                'weekly' => $startDate->copy()->addWeeks($i),
-                'bi-weekly' => $startDate->copy()->addWeeks($i * 2),
-                'quarterly' => $startDate->copy()->addMonths($i * 3),
-                default => $startDate->copy()->addMonths($i),
-            };
+            $dueDate = $this->calendar->dueDate($startDate, $i, $loan->repayment_frequency);
             $totalDue = round($row['principal'] + $row['interest'], 2);
 
             LoanSchedule::create([
@@ -236,6 +362,8 @@ class LoanService
 
     public function repay(Loan $loan, float $amount, User $user, ?int $transactionId = null, string $paymentMethod = 'cash', ?string $reference = null, ?CarbonInterface $paidAt = null): LoanRepayment
     {
+        CurrencyDenomination::assertValid($amount);
+
         return DB::transaction(function () use ($loan, $amount, $user, $transactionId, $paymentMethod, $reference, $paidAt) {
             $loan = Loan::query()->whereKey($loan->id)->lockForUpdate()->firstOrFail();
 
@@ -353,7 +481,7 @@ class LoanService
                 [$penaltyPeriodStart, $penaltyPeriodEnd] = $this->penalties->penaltyPeriod(
                     $schedule,
                     $asOf,
-                    $loan->product->penalty_type,
+                    'percentage',
                     $loan->repayment_frequency ?: $loan->product->repayment_frequency,
                 );
                 $alreadyApplied = LoanPenalty::query()
@@ -364,8 +492,8 @@ class LoanService
 
                 $penaltyAmount = $alreadyApplied ? 0 : $this->penalties->calculate(
                     $schedule,
-                    (float) $loan->product->penalty_rate,
-                    $loan->product->penalty_type,
+                    (float) SystemSetting::value('loan_arrears_penalty_rate', 2),
+                    'percentage',
                     $days,
                     $loan->repayment_frequency ?: $loan->product->repayment_frequency,
                 );

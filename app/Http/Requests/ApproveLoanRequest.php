@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\CurrencyDenomination;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -20,7 +21,7 @@ class ApproveLoanRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'approved_amount' => ['required', 'numeric', 'min:1'],
+            'approved_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'comments' => ['nullable', 'string'],
         ];
     }

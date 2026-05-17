@@ -22,7 +22,11 @@
             <div class="mt-4 grid gap-4 md:grid-cols-2">
                 @foreach ($items as $setting)
                     <label class="block text-sm font-medium text-slate-700">{{ $setting->label ?? str($setting->key)->headline() }}
-                        <input name="settings[{{ $setting->key }}]" value="{{ old('settings.'.$setting->key, $setting->value) }}" class="mt-1 w-full rounded border-slate-300">
+                        @if($setting->type === 'json')
+                            <textarea name="settings[{{ $setting->key }}]" rows="8" class="mt-1 w-full rounded border-slate-300 font-mono text-xs">{{ old('settings.'.$setting->key, $setting->value) }}</textarea>
+                        @else
+                            <input name="settings[{{ $setting->key }}]" value="{{ old('settings.'.$setting->key, $setting->value) }}" @if($setting->type === 'money') type="number" min="0" step="100" @elseif($setting->type === 'number') type="number" min="0" step="0.0001" @endif class="mt-1 w-full rounded border-slate-300">
+                        @endif
                         @if ($setting->description)
                             <span class="mt-1 block text-xs font-normal text-slate-500">{{ $setting->description }}</span>
                         @endif

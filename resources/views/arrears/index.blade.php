@@ -10,20 +10,22 @@
 </form>
 <div class="overflow-hidden rounded border bg-white">
     <table class="w-full text-left text-sm">
-        <thead class="bg-slate-50"><tr><th class="p-3">Client</th><th>Loan</th><th>Due date</th><th>Days</th><th>Outstanding</th><th>Penalty</th><th>Status</th></tr></thead>
+        <thead class="bg-slate-50"><tr><th class="p-3">Client</th><th>Loan</th><th>Due date</th><th>Days due</th><th>Installment due</th><th>Cumulative due</th><th>Penalty</th><th>Status</th></tr></thead>
         <tbody>
             @forelse($schedules as $schedule)
+                @php($cumulative = $loanArrears->get($schedule->loan_id))
                 <tr class="border-t">
                     <td class="p-3">{{ $schedule->loan->client->full_name }}</td>
                     <td><a class="font-semibold text-blue-700" href="{{ route('loans.show', $schedule->loan) }}">{{ $schedule->loan->loan_number }}</a><div class="text-slate-500">{{ $schedule->loan->product->name }}</div></td>
                     <td>{{ $schedule->due_date->format('d M Y') }}</td>
                     <td>{{ $schedule->days_overdue ?: (int) $schedule->due_date->diffInDays(now()) }}</td>
                     <td>UGX {{ number_format($schedule->outstanding_amount, 2) }}</td>
+                    <td>UGX {{ number_format($cumulative?->cumulative_due ?? $schedule->outstanding_amount, 2) }}</td>
                     <td>UGX {{ number_format($schedule->penalty_due, 2) }}</td>
                     <td><span class="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">{{ str($schedule->status)->headline() }}</span></td>
                 </tr>
             @empty
-                <tr><td colspan="7" class="p-6 text-center text-slate-500">No overdue installments found.</td></tr>
+                <tr><td colspan="8" class="p-6 text-center text-slate-500">No overdue installments found.</td></tr>
             @endforelse
         </tbody>
     </table>

@@ -18,7 +18,7 @@ class UpdateApiSystemSettingsRequest extends FormRequest
     {
         return [
             'settings' => ['required', 'array', 'min:1'],
-            'settings.*' => ['nullable', 'string', 'max:1000'],
+            'settings.*' => ['nullable', 'string', 'max:10000'],
         ];
     }
 }

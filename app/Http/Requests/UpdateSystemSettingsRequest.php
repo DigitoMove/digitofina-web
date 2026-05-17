@@ -18,7 +18,7 @@ class UpdateSystemSettingsRequest extends FormRequest
     {
         return [
             'settings' => ['array'],
-            'settings.*' => ['nullable', 'string', 'max:1000'],
+            'settings.*' => ['nullable', 'string', 'max:10000'],
         ];
     }
 }

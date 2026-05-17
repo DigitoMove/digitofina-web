@@ -24,6 +24,11 @@ class ChartAccount extends Model
         return $this->belongsTo(self::class, 'parent_id');
     }
 
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id');

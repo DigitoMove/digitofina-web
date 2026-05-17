@@ -1,0 +1,28 @@
+<?php
+
+namespace App\Support;
+
+use InvalidArgumentException;
+
+class CurrencyDenomination
+{
+    public const MINIMUM_UNIT = 100;
+
+    public static function assertValid(float|int|string $amount, string $field = 'Amount'): void
+    {
+        $amount = (float) $amount;
+
+        if ($amount < self::MINIMUM_UNIT) {
+            throw new InvalidArgumentException("{$field} must be at least UGX ".number_format(self::MINIMUM_UNIT).'.');
+        }
+
+        if (fmod($amount, self::MINIMUM_UNIT) !== 0.0) {
+            throw new InvalidArgumentException("{$field} must be in multiples of UGX ".number_format(self::MINIMUM_UNIT).'.');
+        }
+    }
+
+    public static function validationRule(): string
+    {
+        return 'multiple_of:'.self::MINIMUM_UNIT;
+    }
+}

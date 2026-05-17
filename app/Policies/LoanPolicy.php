@@ -24,7 +24,7 @@ class LoanPolicy
 
     public function disburse(User $user, Loan $loan): bool
     {
-        return ($user->canPerform('disburse-loans') || $user->canPerform('manage-loans')) && $loan->status === 'approved';
+        return $user->canPerform('disburse-loans') && $loan->status === 'approved';
     }
 
     public function repay(User $user, Loan $loan): bool
