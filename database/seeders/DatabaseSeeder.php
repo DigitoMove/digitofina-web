@@ -93,13 +93,10 @@ class DatabaseSeeder extends Seeder
             'accountant' => $permissions->whereIn('slug', ['manage-accounts', 'approve-transactions', 'approve-reversals', 'approve-maker-checker', 'view-approvals', 'manage-accounting', 'post-journal-entries', 'manage-end-of-day', 'import-data', 'view-reports', 'export-reports', 'post-repayments'])->pluck('id')->all(),
             'loan-officer' => $permissions->whereIn('slug', ['manage-clients', 'verify-kyc', 'manage-loans', 'post-repayments', 'view-reports'])->pluck('id')->all(),
             'teller-cashier' => $permissions->whereIn('slug', ['manage-clients', 'manage-accounts', 'post-transactions', 'request-reversals', 'manage-drawers', 'post-repayments'])->pluck('id')->all(),
-            'field-officer' => $permissions->whereIn('slug', ['manage-clients', 'manage-loans', 'post-repayments'])->pluck('id')->all(),
             'auditor' => $permissions->whereIn('slug', ['view-reports', 'export-reports', 'view-audit-logs', 'audit-system'])->pluck('id')->all(),
             'data-entry-clerk' => $permissions->whereIn('slug', ['manage-clients', 'verify-kyc', 'import-data'])->pluck('id')->all(),
             'read-only-viewer' => $permissions->whereIn('slug', ['view-reports'])->pluck('id')->all(),
-            'admin' => $permissions->whereNotIn('slug', ['view-own-accounts'])->pluck('id')->all(),
-            'management' => $permissions->whereIn('slug', ['manage-branches', 'manage-users', 'manage-clients', 'verify-kyc', 'manage-accounts', 'approve-transactions', 'approve-reversals', 'approve-maker-checker', 'view-approvals', 'manage-loans', 'approve-loans', 'disburse-loans', 'write-off-loans', 'waive-penalties', 'manage-end-of-day', 'import-data', 'view-reports', 'audit-system'])->pluck('id')->all(),
-            'officer' => $permissions->whereIn('slug', ['manage-clients', 'manage-accounts', 'manage-loans', 'view-reports'])->pluck('id')->all(),
+            'supervisor' => $permissions->whereNotIn('slug', ['view-own-accounts'])->pluck('id')->all(),
             'member' => $permissions->whereIn('slug', ['view-own-accounts'])->pluck('id')->all(),
         ];
 
@@ -114,6 +111,24 @@ class DatabaseSeeder extends Seeder
         if ($tellerCashierRole && $cashierRole) {
             User::where('role_id', $cashierRole->id)->update(['role_id' => $tellerCashierRole->id]);
             $cashierRole->delete();
+        }
+
+        $roleConsolidations = [
+            'loan-officer' => ['field-officer', 'officer'],
+            'supervisor' => ['admin', 'management'],
+        ];
+
+        foreach ($roleConsolidations as $targetSlug => $duplicateSlugs) {
+            $targetRole = Role::where('slug', $targetSlug)->first();
+
+            if (! $targetRole) {
+                continue;
+            }
+
+            Role::whereIn('slug', $duplicateSlugs)->get()->each(function (Role $duplicateRole) use ($targetRole): void {
+                User::where('role_id', $duplicateRole->id)->update(['role_id' => $targetRole->id]);
+                $duplicateRole->delete();
+            });
         }
 
         $admin = User::withTrashed()->firstOrCreate(['email' => 'admin@digitofina.test'], [

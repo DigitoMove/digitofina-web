@@ -33,7 +33,7 @@ class ClientController extends Controller
         return view('clients.index', [
             'clients' => $clients,
             'branches' => Branch::orderBy('name')->get(),
-            'officers' => User::whereHas('role', fn ($query) => $query->whereIn('slug', ['officer', 'loan-officer', 'field-officer']))->orderBy('name')->get(),
+            'officers' => User::whereHas('role', fn ($query) => $query->where('slug', 'loan-officer'))->orderBy('name')->get(),
         ]);
     }
 

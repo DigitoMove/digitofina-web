@@ -76,7 +76,7 @@ class LoanService
                 'approvable_id' => $loan->id,
                 'requested_by' => $loan->officer_id,
                 'approved_by' => $approver->id,
-                'level' => 'Admin / Final Approver',
+                'level' => 'Supervisor / Final Approver',
                 'status' => 'approved',
                 'comments' => $comments,
                 'acted_at' => now(),
@@ -175,8 +175,8 @@ class LoanService
                 ->whereKey($officerId)
                 ->firstOrFail();
 
-            if (! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer', 'officer', 'management'], true)) {
-                throw new InvalidArgumentException('Select an active branch head or loans officer.');
+            if (! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer'], true)) {
+                throw new InvalidArgumentException('Select an active branch head or Loan Officer.');
             }
 
             if ($loan->organization_id && $assignedOfficer->organization_id && (int) $loan->organization_id !== (int) $assignedOfficer->organization_id) {
@@ -686,7 +686,7 @@ class LoanService
         return match ($this->approvalLevel($amount)) {
             1 => 'Branch Manager',
             2 => 'Branch Manager + Accountant',
-            default => 'Credit Committee / Admin',
+            default => 'Credit Committee / Supervisor',
         };
     }
 

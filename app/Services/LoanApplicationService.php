@@ -66,14 +66,14 @@ class LoanApplicationService
 
         if ($assignedOfficerId === 0) {
             if ($isCommercial && ($creator->hasRole('super-admin') || $creator->canPerform('manage-users') || $creator->canPerform('disburse-loans'))) {
-                throw ValidationException::withMessages(['assigned_officer_id' => 'Commercial loans must be assigned to a branch head or loans officer.']);
+                throw ValidationException::withMessages(['assigned_officer_id' => 'Commercial loans must be assigned to a branch head or Loan Officer.']);
             }
 
             return $creator;
         }
 
         if (! ($creator->hasRole('super-admin') || $creator->canPerform('manage-users') || $creator->canPerform('disburse-loans'))) {
-            throw ValidationException::withMessages(['assigned_officer_id' => 'Only supervisors and administrators can assign a loan to another officer.']);
+            throw ValidationException::withMessages(['assigned_officer_id' => 'Only supervisors can assign a loan to another Loan Officer.']);
         }
 
         $assignedOfficer = User::query()
@@ -81,8 +81,8 @@ class LoanApplicationService
             ->where('status', 'active')
             ->findOrFail($assignedOfficerId);
 
-        if (! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer', 'officer', 'management'], true)) {
-            throw ValidationException::withMessages(['assigned_officer_id' => 'Select an active branch head or loans officer.']);
+        if (! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer'], true)) {
+            throw ValidationException::withMessages(['assigned_officer_id' => 'Select an active branch head or Loan Officer.']);
         }
 
         return $assignedOfficer;

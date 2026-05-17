@@ -45,7 +45,7 @@ class LoanVisibilityService
             ->where('status', 'active')
             ->when($user->organization_id, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
             ->when($user->branch_id && ! $user->canPerform('manage-organization'), fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
-            ->whereHas('role', fn (Builder $query): Builder => $query->whereIn('slug', ['branch-manager', 'loan-officer', 'officer', 'management']))
+            ->whereHas('role', fn (Builder $query): Builder => $query->whereIn('slug', ['branch-manager', 'loan-officer']))
             ->orderBy('name');
     }
 }

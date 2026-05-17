@@ -61,13 +61,13 @@ class StoreLoanApplicationRequest extends FormRequest
                 $canAssignOfficer = $this->user()?->canPerform('manage-users') || $this->user()?->canPerform('disburse-loans') || $this->user()?->hasRole('super-admin');
 
                 if ($this->input('loan_type') === 'commercial' && ! $canAssignOfficer) {
-                    $validator->errors()->add('loan_type', 'Only supervisors and administrators can create commercial loans.');
+                    $validator->errors()->add('loan_type', 'Only supervisors can create commercial loans.');
 
                     return;
                 }
 
                 if ($this->input('loan_type') === 'commercial' && ! $assignedOfficerId) {
-                    $validator->errors()->add('assigned_officer_id', 'Commercial loans must be assigned to a branch head or loans officer.');
+                    $validator->errors()->add('assigned_officer_id', 'Commercial loans must be assigned to a branch head or Loan Officer.');
 
                     return;
                 }
@@ -77,15 +77,15 @@ class StoreLoanApplicationRequest extends FormRequest
                 }
 
                 if (! $canAssignOfficer) {
-                    $validator->errors()->add('assigned_officer_id', 'Only supervisors and administrators can assign a loan to another officer.');
+                    $validator->errors()->add('assigned_officer_id', 'Only supervisors can assign a loan to another Loan Officer.');
 
                     return;
                 }
 
                 $assignedOfficer = User::query()->with('role')->find($assignedOfficerId);
 
-                if (! $assignedOfficer || ! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer', 'officer', 'management'], true)) {
-                    $validator->errors()->add('assigned_officer_id', 'Select an active branch head or loans officer.');
+                if (! $assignedOfficer || ! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer'], true)) {
+                    $validator->errors()->add('assigned_officer_id', 'Select an active branch head or Loan Officer.');
                 }
             },
         ];

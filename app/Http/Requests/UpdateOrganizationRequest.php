@@ -14,7 +14,7 @@ class UpdateOrganizationRequest extends FormRequest
 
         return $user?->canPerform('manage-organization')
             || $user?->hasRole('super-admin')
-            || $user?->hasRole('admin')
+            || $user?->hasRole('supervisor')
             || $user?->hasRole('organization-admin')
             || false;
     }

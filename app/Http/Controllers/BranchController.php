@@ -78,7 +78,7 @@ class BranchController extends Controller
     {
         return User::query()
             ->where('status', 'active')
-            ->whereHas('role', fn ($query) => $query->whereIn('slug', ['super-admin', 'organization-admin', 'branch-manager', 'management', 'admin']))
+            ->whereHas('role', fn ($query) => $query->whereIn('slug', ['super-admin', 'organization-admin', 'branch-manager', 'supervisor']))
             ->orderBy('name')
             ->get();
     }

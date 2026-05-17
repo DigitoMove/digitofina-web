@@ -36,7 +36,7 @@
                 @php
                     $user = auth()->user();
                     $isRouteActive = fn (string $route): bool => request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*');
-                    $canManageOrganization = $user->canPerform('manage-organization') || $user->hasRole('super-admin') || $user->hasRole('admin') || $user->hasRole('organization-admin');
+                    $canManageOrganization = $user->canPerform('manage-organization') || $user->hasRole('super-admin') || $user->hasRole('supervisor') || $user->hasRole('organization-admin');
                     $navGroups = $user->isMember() ? [] : [
                         [
                             'label' => 'Clients',

@@ -23,14 +23,14 @@ class OrganizationPolicy
     {
         return $user->canPerform('manage-organization')
             || $user->hasRole('super-admin')
-            || $user->hasRole('admin')
+            || $user->hasRole('supervisor')
             || $user->hasRole('organization-admin');
     }
 
     private function isSystemAdministrator(User $user): bool
     {
         return $user->hasRole('super-admin')
-            || $user->hasRole('admin');
+            || $user->hasRole('supervisor');
     }
 
     private function sameOrganization(User $user, Organization $organization): bool
