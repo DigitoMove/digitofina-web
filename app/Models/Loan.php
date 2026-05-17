@@ -59,6 +59,11 @@ class Loan extends Model
         return $this->belongsTo(User::class, 'officer_id');
     }
 
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
     public function reviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');

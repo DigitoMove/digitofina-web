@@ -12,6 +12,7 @@ use App\Models\LoanSchedule;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
+use App\Services\LoanVisibilityService;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Carbon\CarbonPeriod;
@@ -22,7 +23,7 @@ use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function __invoke(): View|RedirectResponse
+    public function __invoke(LoanVisibilityService $visibility): View|RedirectResponse
     {
         if (Auth::user()->isMember()) {
             return redirect()->route('member.dashboard');
@@ -35,7 +36,7 @@ class DashboardController extends Controller
         $today = CarbonImmutable::today();
         $monthStart = $today->startOfMonth();
         $monthEnd = $today->endOfMonth();
-        $scheduleScope = fn (Builder $query): Builder => $this->scopeForUser($query, $user);
+        $scheduleScope = fn (Builder $query): Builder => $visibility->scope($query, $user);
         $dueToday = LoanSchedule::query()
             ->with(['loan.client', 'loan.product'])
             ->whereHas('loan', $scheduleScope)
@@ -88,7 +89,7 @@ class DashboardController extends Controller
             ->sum('outstanding_amount');
         $loanApplications = Loan::query()
             ->whereIn('status', ['draft', 'under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved'])
-            ->tap(fn (Builder $query) => $this->scopeForUser($query, $user))
+            ->tap(fn (Builder $query) => $visibility->scope($query, $user))
             ->count();
 
         return view('dashboard.index', [
@@ -119,16 +120,4 @@ class DashboardController extends Controller
         ]);
     }
 
-    private function scopeForUser(Builder $query, User $user): Builder
-    {
-        if ($user->canPerform('manage-branches')) {
-            return $query;
-        }
-
-        if ($user->branch_id) {
-            return $query->where('branch_id', $user->branch_id);
-        }
-
-        return $query;
-    }
 }

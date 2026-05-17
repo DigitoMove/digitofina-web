@@ -7,12 +7,14 @@ use App\Http\Requests\StoreLoanApplicationRequest;
 use App\Models\Client;
 use App\Models\Loan;
 use App\Models\LoanProduct;
+use App\Models\User;
 use App\Services\BusinessCalendarService;
 use App\Services\LoanApplicationService;
 use App\Services\LoanApprovalService;
 use App\Services\LoanCalculatorService;
 use App\Services\LoanDisbursementService;
 use App\Services\LoanService;
+use App\Services\LoanVisibilityService;
 use App\Support\CurrencyDenomination;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -22,10 +24,11 @@ use InvalidArgumentException;
 
 class LoanController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, LoanVisibilityService $visibility): View
     {
         $loans = Loan::query()
             ->with(['client', 'product', 'officer'])
+            ->tap(fn ($query) => $visibility->scope($query, $request->user()))
             ->when($request->string('search')->toString(), function ($query, string $search): void {
                 $query->where('loan_number', 'like', "%{$search}%")
                     ->orWhereHas('client', function ($query) use ($search): void {
@@ -36,6 +39,8 @@ class LoanController extends Controller
             })
             ->when($request->string('status')->toString(), fn ($query, string $status) => $query->where('status', $status))
             ->when($request->string('status_group')->toString() === 'applications', fn ($query) => $query->whereIn('status', ['draft', 'under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved']))
+            ->when($request->string('loan_type')->toString(), fn ($query, string $loanType) => $query->where('loan_type', $loanType))
+            ->when($request->integer('officer_id'), fn ($query, int $officerId) => $query->where('officer_id', $officerId))
             ->when($request->integer('loan_product_id'), fn ($query, int $productId) => $query->where('loan_product_id', $productId))
             ->latest()
             ->paginate(15)
@@ -44,14 +49,17 @@ class LoanController extends Controller
         return view('loans.index', [
             'loans' => $loans,
             'products' => LoanProduct::orderBy('name')->get(),
+            'officers' => $visibility->assignableOfficers($request->user())->get(),
         ]);
     }
 
-    public function create(): View
+    public function create(Request $request, LoanVisibilityService $visibility): View
     {
         return view('loans.create', [
             'clients' => Client::where('status', 'active')->orderBy('first_name')->get(),
             'products' => LoanProduct::where('is_active', true)->where('status', 'active')->orderBy('name')->get(),
+            'assignableOfficers' => $visibility->assignableOfficers($request->user())->get(),
+            'canAssignOfficer' => $visibility->canAssignOfficer($request->user()),
         ]);
     }
 
@@ -114,6 +122,8 @@ class LoanController extends Controller
         return view('loans.show', [
             'loan' => $loan->load([
                 'client.accounts.accountType',
+                'creator',
+                'officer',
                 'product',
                 'savingsAccount.accountType',
                 'loanAccount.accountType',
@@ -189,6 +199,21 @@ class LoanController extends Controller
         }
 
         return back()->with('status', 'Loan rejected.');
+    }
+
+    public function cancel(Request $request, Loan $loan, LoanService $service): RedirectResponse
+    {
+        abort_unless($request->user()->hasRole('super-admin') || $request->user()->canPerform('manage-users') || $request->user()->canPerform('disburse-loans'), 403);
+
+        $data = $request->validate(['reason' => ['required', 'string', 'max:1000']]);
+
+        try {
+            $service->cancel($loan, $request->user(), $data['reason']);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['cancel_reason' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Loan cancelled.');
     }
 
     public function disburse(Request $request, Loan $loan, LoanDisbursementService $disbursements): RedirectResponse

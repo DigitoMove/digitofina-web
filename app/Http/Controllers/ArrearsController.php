@@ -5,18 +5,21 @@ namespace App\Http\Controllers;
 use App\Models\Loan;
 use App\Models\LoanSchedule;
 use App\Services\LoanService;
+use App\Services\LoanVisibilityService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ArrearsController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, LoanVisibilityService $visibility): View
     {
         abort_unless(auth()->user()->canPerform('manage-loans') || auth()->user()->canPerform('view-reports'), 403);
 
         $schedules = LoanSchedule::query()
             ->with(['loan.client', 'loan.product'])
+            ->whereHas('loan', fn (Builder $query): Builder => $visibility->scope($query, $request->user()))
             ->where('outstanding_amount', '>', 0)
             ->where(function ($query): void {
                 $query->where('status', 'overdue')

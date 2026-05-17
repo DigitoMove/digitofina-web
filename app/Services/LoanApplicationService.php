@@ -26,6 +26,7 @@ class LoanApplicationService
         $product = LoanProduct::findOrFail($data['loan_product_id']);
         $savings = Account::where('client_id', $client->id)->whereHas('accountType', fn ($query) => $query->where('category', 'savings'))->first();
         $requestedAmount = (float) $data['requested_amount'];
+        $assignedOfficer = $this->assignedOfficer($data, $officer);
         CurrencyDenomination::assertValid($requestedAmount, 'Requested amount');
 
         if ($requestedAmount < (float) $product->min_amount || $requestedAmount > (float) $product->max_amount) {
@@ -36,10 +37,11 @@ class LoanApplicationService
             throw ValidationException::withMessages(['term_periods' => 'Loan term is outside the selected product limits.']);
         }
 
-        $loan = Loan::create($data + [
+        $loan = Loan::create(collect($data)->except('assigned_officer_id')->all() + [
             'organization_id' => $officer->organization_id,
             'branch_id' => $client->branch_id,
-            'officer_id' => $officer->id,
+            'officer_id' => $assignedOfficer->id,
+            'created_by' => $officer->id,
             'savings_account_id' => $savings?->id,
             'loan_number' => $this->numbers->loanNumber($client->branch),
             'interest_rate' => $product->annual_interest_rate,
@@ -52,5 +54,32 @@ class LoanApplicationService
         $this->auditLogger->record('loan.created', $loan, $loan->toArray());
 
         return $loan->refresh();
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function assignedOfficer(array $data, User $creator): User
+    {
+        $assignedOfficerId = (int) ($data['assigned_officer_id'] ?? 0);
+
+        if ($assignedOfficerId === 0) {
+            return $creator;
+        }
+
+        if (! ($creator->hasRole('super-admin') || $creator->canPerform('manage-users') || $creator->canPerform('disburse-loans'))) {
+            throw ValidationException::withMessages(['assigned_officer_id' => 'Only supervisors and administrators can assign a loan to another officer.']);
+        }
+
+        $assignedOfficer = User::query()
+            ->with('role')
+            ->where('status', 'active')
+            ->findOrFail($assignedOfficerId);
+
+        if (! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer', 'officer', 'management'], true)) {
+            throw ValidationException::withMessages(['assigned_officer_id' => 'Select an active branch head or loans officer.']);
+        }
+
+        return $assignedOfficer;
     }
 }

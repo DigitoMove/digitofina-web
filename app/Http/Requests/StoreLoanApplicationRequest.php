@@ -3,8 +3,10 @@
 namespace App\Http\Requests;
 
 use App\Support\CurrencyDenomination;
+use App\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 use Illuminate\Validation\Rule;
 
 class StoreLoanApplicationRequest extends FormRequest
@@ -24,6 +26,8 @@ class StoreLoanApplicationRequest extends FormRequest
         return [
             'client_id' => ['required', Rule::exists('clients', 'id')->where('status', 'active')],
             'loan_product_id' => ['required', Rule::exists('loan_products', 'id')->where('status', 'active')],
+            'loan_type' => ['required', Rule::in(['standard', 'commercial'])],
+            'assigned_officer_id' => ['nullable', Rule::exists('users', 'id')->where('status', 'active')],
             'savings_account_id' => ['nullable', Rule::exists('accounts', 'id')],
             'requested_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'term_periods' => ['required', 'integer', 'min:1'],
@@ -36,6 +40,34 @@ class StoreLoanApplicationRequest extends FormRequest
             'credit_score' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'collateral_details' => ['nullable', 'string'],
             'credit_officer_comments' => ['nullable', 'string'],
+        ];
+    }
+
+    /**
+     * @return array<int, callable(Validator): void>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                $assignedOfficerId = $this->integer('assigned_officer_id');
+
+                if (! $assignedOfficerId) {
+                    return;
+                }
+
+                if (! ($this->user()?->canPerform('manage-users') || $this->user()?->canPerform('disburse-loans') || $this->user()?->hasRole('super-admin'))) {
+                    $validator->errors()->add('assigned_officer_id', 'Only supervisors and administrators can assign a loan to another officer.');
+
+                    return;
+                }
+
+                $assignedOfficer = User::query()->with('role')->find($assignedOfficerId);
+
+                if (! $assignedOfficer || ! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer', 'officer', 'management'], true)) {
+                    $validator->errors()->add('assigned_officer_id', 'Select an active branch head or loans officer.');
+                }
+            },
         ];
     }
 }

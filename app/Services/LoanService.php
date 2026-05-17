@@ -130,6 +130,39 @@ class LoanService
         });
     }
 
+    public function cancel(Loan $loan, User $user, string $reason): Loan
+    {
+        abort_unless($user->hasRole('super-admin') || $user->canPerform('manage-users') || $user->canPerform('disburse-loans'), 403);
+
+        return DB::transaction(function () use ($loan, $user, $reason): Loan {
+            $loan = Loan::query()->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+
+            if (in_array($loan->status, ['disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true)) {
+                throw new InvalidArgumentException('This loan can no longer be cancelled.');
+            }
+
+            $loan->update([
+                'status' => 'cancelled',
+                'reviewed_by' => $user->id,
+                'rejection_reason' => $reason,
+            ]);
+
+            LoanApproval::create([
+                'organization_id' => $loan->organization_id,
+                'loan_id' => $loan->id,
+                'approver_id' => $user->id,
+                'approval_level' => 1,
+                'status' => 'cancelled',
+                'notes' => $reason,
+                'acted_at' => now(),
+            ]);
+
+            $this->auditLogger->record('loan.cancelled', $loan, ['reason' => $reason]);
+
+            return $loan->refresh();
+        });
+    }
+
     public function generateSavingsAccount(Loan $loan, User $user): Account
     {
         abort_unless($user->canPerform('manage-accounts') || $user->canPerform('manage-loans'), 403);

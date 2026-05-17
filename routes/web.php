@@ -99,6 +99,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/loans/{loan}/submit-approval', [LoanController::class, 'submitForApproval'])->name('loans.submit-approval');
     Route::post('/loans/{loan}/approve', [LoanController::class, 'approve'])->name('loans.approve');
     Route::post('/loans/{loan}/reject', [LoanController::class, 'reject'])->name('loans.reject');
+    Route::post('/loans/{loan}/cancel', [LoanController::class, 'cancel'])->name('loans.cancel');
     Route::post('/loans/{loan}/disburse', [LoanController::class, 'disburse'])->name('loans.disburse');
     Route::post('/loans/{loan}/guarantors', [LoanGuarantorController::class, 'store'])->name('loans.guarantors.store');
     Route::put('/loans/{loan}/guarantors/{guarantor}', [LoanGuarantorController::class, 'updateStatus'])->name('loans.guarantors.status');
