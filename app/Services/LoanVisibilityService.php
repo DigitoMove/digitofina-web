@@ -2,14 +2,15 @@
 
 namespace App\Services;
 
+use App\Models\Loan;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 
 class LoanVisibilityService
 {
     /**
-     * @param  Builder<\App\Models\Loan>  $query
-     * @return Builder<\App\Models\Loan>
+     * @param  Builder<Loan>  $query
+     * @return Builder<Loan>
      */
     public function scope(Builder $query, User $user): Builder
     {
