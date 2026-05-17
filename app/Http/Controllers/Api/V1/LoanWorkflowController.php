@@ -197,6 +197,24 @@ class LoanWorkflowController extends Controller
         return ApiResponse::resource(new LoanResource($cancelledLoan->load(['client', 'product', 'officer'])), 'Loan cancelled successfully.');
     }
 
+    public function assignOfficer(Request $request, Loan $loan, LoanService $loans): JsonResponse
+    {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        abort_unless($request->user()->hasRole('super-admin') || $request->user()->canPerform('manage-users') || $request->user()->canPerform('disburse-loans'), 403);
+
+        $data = $request->validate([
+            'officer_id' => ['required', 'exists:users,id'],
+        ]);
+
+        try {
+            $assignedLoan = $loans->assignOfficer($loan, $request->user(), (int) $data['officer_id']);
+        } catch (InvalidArgumentException $exception) {
+            abort(422, $exception->getMessage());
+        }
+
+        return ApiResponse::resource(new LoanResource($assignedLoan->load(['client', 'product', 'officer'])), 'Assigned officer updated successfully.');
+    }
+
     public function disburse(Request $request, Loan $loan, LoanDisbursementService $disbursements, FinancialControlService $controls): JsonResponse
     {
         ApiSecurity::assertTenantAccess($request->user(), $loan);

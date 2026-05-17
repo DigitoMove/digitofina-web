@@ -90,6 +90,21 @@
         @if($errors->has('cancel_reason'))
             <div class="mt-4 rounded border border-coral-500/20 bg-coral-50 p-3 text-sm text-coral-700">{{ $errors->first('cancel_reason') }}</div>
         @endif
+        @if($errors->has('officer_id'))
+            <div class="mt-4 rounded border border-coral-500/20 bg-coral-50 p-3 text-sm text-coral-700">{{ $errors->first('officer_id') }}</div>
+        @endif
+
+        @if($canAssignOfficer)
+            <form method="POST" action="{{ route('loans.assign-officer', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_auto]">
+                @csrf
+                <select name="officer_id" class="rounded border-slate-300">
+                    @foreach($assignableOfficers as $officer)
+                        <option value="{{ $officer->id }}" @selected((int) old('officer_id', $loan->officer_id) === $officer->id)>{{ $officer->name }} · {{ $officer->role?->name }}</option>
+                    @endforeach
+                </select>
+                <button class="df-action-secondary">Update Assigned Officer</button>
+            </form>
+        @endif
 
         @if((auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans')) && ! in_array($loan->status, ['cancelled', 'rejected', 'disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true))
             <form method="POST" action="{{ route('loans.cancel', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-coral-500/20 bg-coral-50 p-4 md:grid-cols-[1fr_auto]">
