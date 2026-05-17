@@ -13,7 +13,7 @@
 
 <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
     <div>
-        <h1 class="df-title">Cashier Dashboard</h1>
+        <h1 class="df-title">Teller / Cashier Dashboard</h1>
         <p class="df-muted">Drawer operations, account lookup, postings, and today’s collections.</p>
     </div>
     <div class="rounded border px-4 py-3 text-sm {{ $statusClass }}">

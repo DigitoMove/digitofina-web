@@ -32,4 +32,9 @@ class Transaction extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    public function drawerSession(): BelongsTo
+    {
+        return $this->belongsTo(DrawerSession::class);
+    }
 }

@@ -94,6 +94,50 @@ const initKeyboardFocus = () => {
     });
 };
 
+const initSidebar = () => {
+    const sidebar = document.querySelector('[data-sidebar]');
+    const openButton = document.querySelector('[data-sidebar-open]');
+    const closeButtons = document.querySelectorAll('[data-sidebar-close]');
+    const backdrop = document.querySelector('[data-sidebar-backdrop]');
+    const desktopQuery = window.matchMedia('(min-width: 1024px)');
+
+    if (!sidebar || !openButton || !backdrop) {
+        return;
+    }
+
+    const setOpen = (isOpen) => {
+        sidebar.classList.toggle('-translate-x-full', !isOpen);
+        sidebar.classList.toggle('translate-x-0', isOpen);
+        backdrop.classList.toggle('hidden', !isOpen);
+        document.body.classList.toggle('overflow-hidden', isOpen);
+        openButton.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    };
+
+    openButton.addEventListener('click', () => setOpen(true));
+    closeButtons.forEach((button) => button.addEventListener('click', () => setOpen(false)));
+    backdrop.addEventListener('click', () => setOpen(false));
+
+    sidebar.querySelectorAll('a').forEach((link) => {
+        link.addEventListener('click', () => {
+            if (!desktopQuery.matches) {
+                setOpen(false);
+            }
+        });
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            setOpen(false);
+        }
+    });
+
+    desktopQuery.addEventListener('change', (event) => {
+        if (event.matches) {
+            setOpen(false);
+        }
+    });
+};
+
 const formatMoney = (value) => {
     return new Intl.NumberFormat('en-UG', {
         minimumFractionDigits: 2,
@@ -275,6 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSteps();
     initRipples();
     initKeyboardFocus();
+    initSidebar();
     initLoanSchedulePreview();
     initReportLauncher();
 });

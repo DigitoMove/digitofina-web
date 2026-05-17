@@ -29,6 +29,7 @@ return new class extends Migration
             ['suffix' => '4300', 'name' => 'Other Income', 'type' => 'income', 'normal_balance' => 'credit'],
             ['suffix' => '4310', 'name' => 'Welfare Income', 'type' => 'income', 'normal_balance' => 'credit'],
             ['suffix' => '4320', 'name' => 'Other Business Income', 'type' => 'income', 'normal_balance' => 'credit'],
+            ['suffix' => '4330', 'name' => 'Application Fees Income', 'type' => 'income', 'normal_balance' => 'credit'],
         ];
 
         foreach ($branches as $branch) {
@@ -58,7 +59,7 @@ return new class extends Migration
     public function down(): void
     {
         DB::table('chart_accounts')
-            ->whereIn('name', ['Welfare Expense', 'Transport Expense', 'Travel Expense', 'Office Supplies Expense', 'Other Expenses', 'Other Income', 'Welfare Income', 'Other Business Income'])
+            ->whereIn('name', ['Welfare Expense', 'Transport Expense', 'Travel Expense', 'Office Supplies Expense', 'Other Expenses', 'Other Income', 'Welfare Income', 'Other Business Income', 'Application Fees Income'])
             ->where('is_system', false)
             ->delete();
 

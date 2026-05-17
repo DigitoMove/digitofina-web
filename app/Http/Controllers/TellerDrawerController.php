@@ -67,7 +67,7 @@ class TellerDrawerController extends Controller
                     ->with('role')
                     ->where('organization_id', $request->user()->organization_id)
                     ->where('status', 'active')
-                    ->whereHas('role', fn ($query) => $query->whereIn('slug', ['cashier', 'teller-cashier']))
+                    ->whereHas('role', fn ($query) => $query->where('slug', 'teller-cashier'))
                     ->orderBy('name')
                     ->get()
                 : collect(),
@@ -193,8 +193,8 @@ class TellerDrawerController extends Controller
             ->where('status', 'active')
             ->firstOrFail();
 
-        if (! in_array($teller->role?->slug, ['cashier', 'teller-cashier'], true)) {
-            throw new InvalidArgumentException('Select an active teller or cashier.');
+        if ($teller->role?->slug !== 'teller-cashier') {
+            throw new InvalidArgumentException('Select an active teller/cashier.');
         }
 
         return $teller;

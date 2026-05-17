@@ -18,7 +18,6 @@ use App\Models\TransactionType;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
@@ -101,7 +100,6 @@ class DatabaseSeeder extends Seeder
             'admin' => $permissions->whereNotIn('slug', ['view-own-accounts'])->pluck('id')->all(),
             'management' => $permissions->whereIn('slug', ['manage-branches', 'manage-users', 'manage-clients', 'verify-kyc', 'manage-accounts', 'approve-transactions', 'approve-reversals', 'approve-maker-checker', 'view-approvals', 'manage-loans', 'approve-loans', 'disburse-loans', 'write-off-loans', 'waive-penalties', 'manage-end-of-day', 'import-data', 'view-reports', 'audit-system'])->pluck('id')->all(),
             'officer' => $permissions->whereIn('slug', ['manage-clients', 'manage-accounts', 'manage-loans', 'view-reports'])->pluck('id')->all(),
-            'cashier' => $permissions->whereIn('slug', ['manage-clients', 'manage-accounts', 'post-transactions', 'manage-drawers'])->pluck('id')->all(),
             'member' => $permissions->whereIn('slug', ['view-own-accounts'])->pluck('id')->all(),
         ];
 
@@ -110,7 +108,15 @@ class DatabaseSeeder extends Seeder
             $role->permissions()->sync($permissionIds);
         }
 
-        $admin = User::withTrashed()->updateOrCreate(['email' => 'admin@digitofina.test'], [
+        $tellerCashierRole = Role::where('slug', 'teller-cashier')->first();
+        $cashierRole = Role::where('slug', 'cashier')->first();
+
+        if ($tellerCashierRole && $cashierRole) {
+            User::where('role_id', $cashierRole->id)->update(['role_id' => $tellerCashierRole->id]);
+            $cashierRole->delete();
+        }
+
+        $admin = User::withTrashed()->firstOrCreate(['email' => 'admin@digitofina.test'], [
             'organization_id' => $organization->id,
             'branch_id' => $branch->id,
             'role_id' => Role::where('slug', 'super-admin')->value('id'),
@@ -118,12 +124,11 @@ class DatabaseSeeder extends Seeder
             'phone' => '+256 700 000 100',
             'position' => 'System Administrator',
             'status' => 'active',
-            'password' => Hash::make('password'),
+            'password' => 'password',
         ]);
         $admin->restore();
 
         $branch->update(['manager_user_id' => $admin->id]);
-        User::query()->whereKeyNot($admin->id)->delete();
 
         $accountTypes = [
             ['name' => 'Savings Account', 'code' => 'SAV', 'category' => 'savings', 'minimum_balance' => 5000],
@@ -207,6 +212,7 @@ class DatabaseSeeder extends Seeder
             ['suffix' => '4300', 'name' => 'Other Income', 'type' => 'income', 'normal_balance' => 'credit'],
             ['suffix' => '4310', 'name' => 'Welfare Income', 'type' => 'income', 'normal_balance' => 'credit'],
             ['suffix' => '4320', 'name' => 'Other Business Income', 'type' => 'income', 'normal_balance' => 'credit'],
+            ['suffix' => '4330', 'name' => 'Application Fees Income', 'type' => 'income', 'normal_balance' => 'credit'],
         ];
 
         foreach ($branchChartAccounts as $account) {

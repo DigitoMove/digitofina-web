@@ -66,6 +66,8 @@ Route::middleware('auth')->group(function () {
     Route::resource('branches', BranchController::class)->except(['show', 'destroy']);
     Route::resource('users', UserManagementController::class)->except(['show', 'destroy']);
     Route::resource('roles', RoleController::class)->except(['show', 'destroy']);
+    Route::get('/organization', [OrganizationController::class, 'editCurrent'])->name('organization.current');
+    Route::put('/organization', [OrganizationController::class, 'updateCurrent'])->name('organization.current.update');
     Route::get('/organization/{organization}/edit', [OrganizationController::class, 'edit'])->name('organization.edit');
     Route::put('/organization/{organization}', [OrganizationController::class, 'update'])->name('organization.update');
     Route::get('/settings', [SystemSettingController::class, 'index'])->name('settings.index');

@@ -3,8 +3,11 @@
 namespace App\Services;
 
 use App\Models\Account;
+use App\Models\BranchDailySummary;
 use App\Models\ChartAccount;
 use App\Models\Client;
+use App\Models\DrawerMovement;
+use App\Models\DrawerSession;
 use App\Models\FixedDepositAccount;
 use App\Models\JournalEntry;
 use App\Models\Loan;
@@ -13,6 +16,7 @@ use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
 use App\Models\ShareAccount;
 use App\Models\SystemSetting;
+use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\User;
 use Carbon\Carbon;
@@ -40,10 +44,14 @@ class ReportCatalogService
         return [
             $this->report('user-posted-transactions', 'Posted Transactions', 'User Posted Transactions', 'transactions', ['posted_by' => 'user']),
             $this->report('system-posted-transactions', 'Posted Transactions', 'System Posted Transactions', 'transactions', ['posted_by' => 'system']),
+            $this->report('daily-teller-transactions', 'Posted Transactions', 'Daily Teller Transactions', 'teller_transactions'),
             $this->report('exchange-rates', 'Treasury', 'Exchange Rates', 'settings', ['setting' => 'currency'], false, false),
             $this->report('cash-balances', 'Treasury', 'Cash Balances', 'cash_balances', [], false),
+            $this->report('drawer-balances-by-teller', 'Treasury', 'Drawer Balances By Teller', 'drawer_balances', [], true, false),
+            $this->report('branch-period-summary', 'Treasury', 'Branch Period Summary', 'branch_period_summary', [], true, false),
             $this->report('client-register', 'Clients', 'Client Register', 'clients'),
             $this->report('new-clients', 'Clients', 'New Clients', 'clients', ['date_column' => 'registered_at']),
+            $this->report('officer-entries', 'Clients', 'Officer Entries', 'officer_entries'),
             $this->report('active-clients', 'Clients', 'Active Clients', 'clients', ['status' => 'active'], false),
             $this->report('chart-of-accounts', 'Accounting', 'Chart Of Accounts', 'chart_accounts', [], false),
             $this->report('gl-account-transactions', 'Accounting', 'GL Account Transactions', 'journal_entries'),
@@ -86,7 +94,7 @@ class ReportCatalogService
             $this->report('loan-aging-report', 'Loan Accounts', 'Loan Aging Report', 'loan_schedules', ['arrears' => true], false),
             $this->report('portfolio-summary', 'Loan Accounts', 'Portfolio Summary', 'loan_summary', [], false),
             $this->report('portfolio-at-risk', 'Loan Accounts', 'Portfolio At Risk', 'loan_schedules', ['arrears' => true], false),
-            $this->report('loan-book', 'Loan Accounts', 'Loan Book', 'loans', [], false),
+            $this->report('loan-book', 'Loan Accounts', 'Loan Book', 'loan_book', [], false),
             $this->report('loan-recovery', 'Loan Accounts', 'Loan Recovery', 'loan_repayments'),
             $this->report('loan-repayments-by-relations-officer', 'Loan Accounts', 'Loan Repayments By Relations Officer', 'loan_repayments'),
             $this->report('loan-accounts-paid-up', 'Loan Accounts', 'Loan Accounts Paid Up', 'loans', ['status' => 'fully_paid']),
@@ -124,7 +132,7 @@ class ReportCatalogService
         abort_unless($definition, 404);
 
         $from = $definition['usesDates']
-            ? (filled($filters['from'] ?? null) ? Carbon::parse($filters['from'])->startOfDay() : now()->startOfMonth())
+            ? (filled($filters['from'] ?? null) ? Carbon::parse($filters['from'])->startOfDay() : today()->startOfDay())
             : Carbon::parse('1900-01-01')->startOfDay();
         $to = $definition['usesDates']
             ? (filled($filters['to'] ?? null) ? Carbon::parse($filters['to'])->endOfDay() : now()->endOfDay())
@@ -136,8 +144,12 @@ class ReportCatalogService
 
         [$columns, $rows, $summary] = match ($definition['kind']) {
             'transactions' => $this->transactions($payload, $from, $to, $branchId, $limit, $user),
+            'teller_transactions' => $this->tellerTransactions($from, $to, $branchId, $limit, $user),
             'cash_balances' => $this->cashBalances($branchId, $user),
+            'drawer_balances' => $this->drawerBalances($from, $to, $branchId, $user),
+            'branch_period_summary' => $this->branchPeriodSummary($from, $to, $branchId, $user),
             'clients' => $this->clients($payload, $from, $to, $branchId, $limit, $user),
+            'officer_entries' => $this->officerEntries($from, $to, $branchId, $user),
             'chart_accounts' => $this->chartAccounts($branchId, $user),
             'journal_entries' => $this->journalEntries($from, $to, $branchId, $limit, $user),
             'journal_analysis' => $this->journalAnalysis($from, $to, $branchId, $user),
@@ -148,6 +160,7 @@ class ReportCatalogService
             'loan_disbursements' => $this->loanDisbursements($payload, $from, $to, $branchId, $limit, $user),
             'loan_schedules' => $this->loanSchedules($payload, $from, $to, $branchId, $limit, $user),
             'loan_summary' => $this->loanSummary($branchId, $user),
+            'loan_book' => $this->loanBook($branchId, $detail === 'brief' ? 100 : 5000, $user),
             'loan_repayments' => $this->loanRepayments($from, $to, $branchId, $limit, $user),
             'term_deposits' => $this->termDeposits($payload, $from, $to, $limit),
             'settings' => $this->settings($payload),
@@ -181,6 +194,38 @@ class ReportCatalogService
         return [['Date', 'Reference', 'Client', 'Type', 'Amount', 'Posted By'], $rows, ['Total amount' => $this->money((float) $query->sum('amount'))]];
     }
 
+    private function tellerTransactions(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
+    {
+        $query = DrawerMovement::query()
+            ->with(['session.drawer.branch', 'session.user', 'user'])
+            ->whereBetween('created_at', [$from, $to])
+            ->whereHas('session.drawer', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+
+        $cashIn = (float) (clone $query)->where('type', 'cash_in')->sum('amount');
+        $cashOut = (float) (clone $query)->where('type', 'cash_out')->sum('amount');
+        $rows = (clone $query)->latest()->limit($limit)->get()->map(fn (DrawerMovement $movement): array => [
+            'Date' => $movement->created_at?->format('d M Y H:i'),
+            'Branch' => $movement->session?->drawer?->branch?->name ?? 'N/A',
+            'Teller / Cashier' => $movement->session?->user?->name ?? $movement->user?->name ?? 'N/A',
+            'Drawer' => $movement->session?->drawer?->name ?? 'N/A',
+            'Reference' => $movement->reference ?? 'N/A',
+            'Direction' => $movement->type === 'cash_out' ? 'Cash Out' : 'Cash In',
+            'Amount' => $this->money((float) $movement->amount),
+            'Balance After' => $this->money((float) $movement->balance_after),
+            'Description' => $movement->description ?? '',
+        ]);
+
+        return [
+            ['Date', 'Branch', 'Teller / Cashier', 'Drawer', 'Reference', 'Direction', 'Amount', 'Balance After', 'Description'],
+            $rows,
+            [
+                'Cash in' => $this->money($cashIn),
+                'Cash out' => $this->money($cashOut),
+                'Net cash movement' => $this->money($cashIn - $cashOut),
+            ],
+        ];
+    }
+
     private function cashBalances(?int $branchId, User $user): array
     {
         $query = Account::query()
@@ -202,6 +247,99 @@ class ReportCatalogService
         return [['Branch', 'Account', 'Name', 'Balance', 'Status'], $rows, ['Cash balance' => $this->money((float) $query->sum('balance'))]];
     }
 
+    private function drawerBalances(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
+    {
+        $sessions = DrawerSession::query()
+            ->with(['drawer.branch', 'user'])
+            ->whereBetween('opened_at', [$from, $to])
+            ->whereHas('drawer', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
+            ->orderByDesc('opened_at')
+            ->get();
+        $sessionRows = $sessions->map(fn (DrawerSession $session): array => [
+            'Branch' => $session->drawer?->branch?->name ?? 'N/A',
+            'Teller / Cashier' => $session->user?->name ?? 'N/A',
+            'Drawer' => $session->drawer?->name ?? 'N/A',
+            'Opened' => $session->opened_at?->format('d M Y H:i'),
+            'Closed' => $session->closed_at?->format('d M Y H:i') ?? 'Open',
+            'Opening' => $this->money((float) $session->opening_balance),
+            'Expected' => $this->money((float) ($session->expected_balance ?? $session->drawer?->current_balance ?? 0)),
+            'Closing' => $session->closing_balance === null ? 'Open' : $this->money((float) $session->closing_balance),
+            'Variance' => $this->money((float) ($session->variance ?? 0)),
+            'Status' => Str::headline($session->status),
+        ]);
+
+        if ($sessionRows->isNotEmpty()) {
+            return [
+                ['Branch', 'Teller / Cashier', 'Drawer', 'Opened', 'Closed', 'Opening', 'Expected', 'Closing', 'Variance', 'Status'],
+                $sessionRows,
+                [
+                    'Sessions' => number_format($sessionRows->count()),
+                    'Open sessions' => number_format($sessions->where('status', 'open')->count()),
+                    'Current drawer cash' => $this->money((float) $sessions->pluck('drawer')->unique('id')->sum('current_balance')),
+                ],
+            ];
+        }
+
+        $drawers = TellerDrawer::query()
+            ->with(['branch', 'assignedUser'])
+            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
+            ->orderBy('code')
+            ->get();
+        $rows = $drawers->map(fn (TellerDrawer $drawer): array => [
+            'Branch' => $drawer->branch?->name ?? 'N/A',
+            'Teller / Cashier' => $drawer->assignedUser?->name ?? 'Unassigned',
+            'Drawer' => $drawer->name,
+            'Opened' => 'No session in period',
+            'Closed' => 'N/A',
+            'Opening' => $this->money(0),
+            'Expected' => $this->money((float) $drawer->current_balance),
+            'Closing' => $this->money((float) $drawer->current_balance),
+            'Variance' => $this->money(0),
+            'Status' => Str::headline($drawer->status),
+        ]);
+
+        return [
+            ['Branch', 'Teller / Cashier', 'Drawer', 'Opened', 'Closed', 'Opening', 'Expected', 'Closing', 'Variance', 'Status'],
+            $rows,
+            ['Current drawer cash' => $this->money((float) $drawers->sum('current_balance'))],
+        ];
+    }
+
+    private function branchPeriodSummary(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
+    {
+        $query = BranchDailySummary::query()
+            ->with('branch')
+            ->whereBetween('business_date', [$from->toDateString(), $to->toDateString()])
+            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user));
+
+        $rows = (clone $query)
+            ->orderBy('business_date')
+            ->get()
+            ->map(fn (BranchDailySummary $summary): array => [
+                'Date' => $summary->business_date?->format('d M Y'),
+                'Branch' => $summary->branch?->name ?? 'N/A',
+                'Cash In' => $this->money((float) $summary->cash_in),
+                'Cash Out' => $this->money((float) $summary->cash_out),
+                'Expected Cash' => $this->money((float) $summary->expected_cash),
+                'Counted Cash' => $this->money((float) $summary->counted_cash),
+                'Variance' => $this->money((float) $summary->cash_variance),
+                'Loan Repayments' => $this->money((float) $summary->loan_repayments),
+                'Loan Disbursements' => $this->money((float) $summary->loan_disbursements),
+                'Status' => Str::headline($summary->status),
+            ]);
+
+        return [
+            ['Date', 'Branch', 'Cash In', 'Cash Out', 'Expected Cash', 'Counted Cash', 'Variance', 'Loan Repayments', 'Loan Disbursements', 'Status'],
+            $rows,
+            [
+                'Cash in' => $this->money((float) (clone $query)->sum('cash_in')),
+                'Cash out' => $this->money((float) (clone $query)->sum('cash_out')),
+                'Loan repayments' => $this->money((float) (clone $query)->sum('loan_repayments')),
+                'Branches reported' => number_format((clone $query)->distinct('branch_id')->count('branch_id')),
+            ],
+        ];
+    }
+
     private function clients(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
     {
         $dateColumn = $payload['date_column'] ?? 'created_at';
@@ -220,6 +358,60 @@ class ReportCatalogService
         ]);
 
         return [['Client No.', 'Name', 'Phone', 'Branch', 'Status'], $rows, ['Clients' => number_format($query->count())]];
+    }
+
+    private function officerEntries(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
+    {
+        $officers = User::query()
+            ->with(['role', 'branch'])
+            ->where('organization_id', $user->organization_id)
+            ->where('status', 'active')
+            ->whereHas('role', fn (Builder $query): Builder => $query->where('slug', '!=', 'member'))
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->orderBy('name')
+            ->get();
+
+        $rows = $officers->map(function (User $officer) use ($from, $to, $branchId, $user): array {
+            $clients = Client::query()
+                ->where('officer_id', $officer->id)
+                ->whereBetween('created_at', [$from, $to])
+                ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user));
+            $loans = Loan::query()
+                ->where(function (Builder $query) use ($officer): void {
+                    $query
+                        ->where('created_by', $officer->id)
+                        ->orWhere(fn (Builder $query): Builder => $query->whereNull('created_by')->where('officer_id', $officer->id));
+                })
+                ->whereBetween('created_at', [$from, $to])
+                ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user));
+
+            $outstandingBalance = (float) (clone $loans)->sum('principal_balance')
+                + (float) (clone $loans)->sum('interest_balance')
+                + (float) (clone $loans)->sum('fees_balance')
+                + (float) (clone $loans)->sum('penalty_balance');
+
+            return [
+                'Officer' => $officer->name,
+                'Role' => $officer->role?->name ?? 'N/A',
+                'Branch' => $officer->branch?->name ?? 'N/A',
+                'Clients Added' => number_format((clone $clients)->count()),
+                'Loans Created' => number_format((clone $loans)->count()),
+                'Commercial Loans' => number_format((clone $loans)->where('loan_type', 'commercial')->count()),
+                'Approved Amount' => $this->money((float) (clone $loans)->sum('approved_amount')),
+                'Outstanding Balance' => $this->money($outstandingBalance),
+            ];
+        })->filter(fn (array $row): bool => $row['Clients Added'] !== '0' || $row['Loans Created'] !== '0')->values();
+
+        return [
+            ['Officer', 'Role', 'Branch', 'Clients Added', 'Loans Created', 'Commercial Loans', 'Approved Amount', 'Outstanding Balance'],
+            $rows,
+            [
+                'Officers with entries' => number_format($rows->count()),
+                'Clients added' => number_format($rows->sum(fn (array $row): int => (int) str_replace(',', '', $row['Clients Added']))),
+                'Loans created' => number_format($rows->sum(fn (array $row): int => (int) str_replace(',', '', $row['Loans Created']))),
+            ],
+        ];
     }
 
     private function chartAccounts(?int $branchId, User $user): array
@@ -393,6 +585,118 @@ class ReportCatalogService
         return [['Date', 'Loan', 'Client', 'Gross', 'Fees', 'Net', 'By'], $rows, ['Net disbursed' => $this->money((float) $query->sum('net_amount'))]];
     }
 
+    private function loanBook(?int $branchId, int $limit, User $user): array
+    {
+        $columns = [
+            'Product',
+            'Name',
+            'Gender',
+            'Account',
+            'Rescheduled',
+            'Disbursement',
+            'Maturity',
+            'Interest Rate P.M',
+            'Loan Principal',
+            'Loan Interest',
+            'Loan Fees',
+            'Loan Total',
+            'Installment Cycle',
+            'Number Of Installments',
+            'Paid Principal',
+            'Paid Interest',
+            'Paid Fees',
+            'Paid Penalty',
+            'Paid Total',
+            'Overdue Principal',
+            'Overdue Interest',
+            'Overdue Fees',
+            'Overdue Penalty',
+            'Overdue Total',
+            'Arrears Days',
+            'Balance Principal',
+            'Balance Interest',
+            'Balance Fees',
+            'Balance Penalty',
+            'Balance Total',
+            'Customer Relationship Officer',
+        ];
+
+        $loans = Loan::query()
+            ->with(['client', 'product', 'loanAccount', 'officer', 'schedules'])
+            ->whereIn('status', ['approved', 'disbursed', 'active', 'in_arrears', 'restructured', 'fully_paid'])
+            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
+            ->orderBy('loan_product_id')
+            ->orderBy('loan_number')
+            ->limit($limit)
+            ->get();
+
+        $rows = $loans->map(function (Loan $loan): array {
+            $schedules = $loan->schedules;
+            $overdueSchedules = $schedules
+                ->where('outstanding_amount', '>', 0)
+                ->filter(fn (LoanSchedule $schedule): bool => $schedule->status === 'overdue' || $schedule->due_date?->lt(today()));
+            $arrearsDays = (int) $overdueSchedules->max(fn (LoanSchedule $schedule): int => (int) ($schedule->days_overdue ?: max(0, $schedule->due_date?->diffInDays(today()) ?? 0)));
+            $isArrears = $overdueSchedules->isNotEmpty() || $loan->status === 'in_arrears';
+            $principalDue = (float) $schedules->sum('principal_due');
+            $interestDue = (float) $schedules->sum('interest_due');
+            $feesDue = (float) $schedules->sum('fees_due');
+            $penaltyDue = (float) $schedules->sum('penalty_due');
+            $paidPrincipal = (float) $schedules->sum('principal_paid');
+            $paidInterest = (float) $schedules->sum('interest_paid');
+            $paidFees = (float) $schedules->sum('fees_paid');
+            $paidPenalty = (float) $schedules->sum('penalty_paid');
+            $overduePrincipal = $this->remainingScheduleBucket($overdueSchedules, 'principal');
+            $overdueInterest = $this->remainingScheduleBucket($overdueSchedules, 'interest');
+            $overdueFees = $this->remainingScheduleBucket($overdueSchedules, 'fees');
+            $overduePenalty = $this->remainingScheduleBucket($overdueSchedules, 'penalty');
+            $balancePrincipal = max(0, $principalDue - $paidPrincipal);
+            $balanceInterest = max(0, $interestDue - $paidInterest);
+            $balanceFees = max(0, $feesDue - $paidFees);
+            $balancePenalty = max(0, $penaltyDue - $paidPenalty);
+
+            return [
+                'Product' => $loan->product?->name ?? 'N/A',
+                'Name' => $loan->client?->full_name ?? 'N/A',
+                'Gender' => Str::headline((string) ($loan->client?->gender ?? '')),
+                'Account' => $loan->loanAccount?->account_number ?? $loan->loan_number,
+                'Rescheduled' => in_array($loan->status, ['restructured', 'closed_rescheduled'], true) ? 'Yes' : 'No',
+                'Disbursement' => $loan->disbursed_at?->format('d-m-Y'),
+                'Maturity' => $schedules->max('due_date')?->format('d-m-Y'),
+                'Interest Rate P.M' => $this->periodicInterestRate($loan),
+                'Loan Principal' => $this->amount($principalDue ?: (float) ($loan->approved_amount ?? $loan->requested_amount)),
+                'Loan Interest' => $this->amount($interestDue),
+                'Loan Fees' => $this->amount($feesDue),
+                'Loan Total' => $this->amount($principalDue + $interestDue + $feesDue),
+                'Installment Cycle' => $this->installmentCycle($loan),
+                'Number Of Installments' => (string) $schedules->count(),
+                'Paid Principal' => $this->amount($paidPrincipal),
+                'Paid Interest' => $this->amount($paidInterest),
+                'Paid Fees' => $this->amount($paidFees),
+                'Paid Penalty' => $this->amount($paidPenalty),
+                'Paid Total' => $this->amount($paidPrincipal + $paidInterest + $paidFees + $paidPenalty),
+                'Overdue Principal' => $this->amount($overduePrincipal),
+                'Overdue Interest' => $this->amount($overdueInterest),
+                'Overdue Fees' => $this->amount($overdueFees),
+                'Overdue Penalty' => $this->amount($overduePenalty),
+                'Overdue Total' => $this->amount($overduePrincipal + $overdueInterest + $overdueFees + $overduePenalty),
+                'Arrears Days' => (string) $arrearsDays,
+                'Balance Principal' => $this->amount($balancePrincipal),
+                'Balance Interest' => $this->amount($balanceInterest),
+                'Balance Fees' => $this->amount($balanceFees),
+                'Balance Penalty' => $this->amount($balancePenalty),
+                'Balance Total' => $this->amount($balancePrincipal + $balanceInterest + $balanceFees + $balancePenalty),
+                'Customer Relationship Officer' => $loan->officer?->name ?? 'Unassigned',
+                '_is_arrears' => $isArrears,
+            ];
+        });
+
+        return [$columns, $rows, [
+            'Loans' => number_format($rows->count()),
+            'Loans in arrears' => number_format($rows->where('_is_arrears', true)->count()),
+            'Balance total' => $this->money($loans->sum(fn (Loan $loan): float => (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance)),
+        ]];
+    }
+
     private function loanSchedules(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
     {
         $query = LoanSchedule::query()
@@ -528,5 +832,39 @@ class ReportCatalogService
     private function money(float $amount): string
     {
         return 'UGX '.number_format($amount, 2);
+    }
+
+    private function amount(float $amount): string
+    {
+        return number_format($amount, 2);
+    }
+
+    /**
+     * @param  Collection<int, LoanSchedule>  $schedules
+     */
+    private function remainingScheduleBucket(Collection $schedules, string $bucket): float
+    {
+        return (float) $schedules->sum(fn (LoanSchedule $schedule): float => max(0, (float) $schedule->getAttribute("{$bucket}_due") - (float) $schedule->getAttribute("{$bucket}_paid")));
+    }
+
+    private function periodicInterestRate(Loan $loan): string
+    {
+        $rate = (float) $loan->interest_rate;
+        $periodicRate = match ($loan->repayment_frequency) {
+            'daily' => $rate / 365,
+            'weekly' => $rate / 52,
+            default => $rate / 12,
+        };
+
+        return number_format($periodicRate, 2);
+    }
+
+    private function installmentCycle(Loan $loan): string
+    {
+        return match ($loan->repayment_frequency) {
+            'daily' => '1 Day(s)',
+            'weekly' => '1 Week(s)',
+            default => '1 Month(s)',
+        };
     }
 }

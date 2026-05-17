@@ -39,6 +39,11 @@ class Loan extends Model
         return $this->belongsTo(Client::class);
     }
 
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
     public function product(): BelongsTo
     {
         return $this->belongsTo(LoanProduct::class, 'loan_product_id');

@@ -43,7 +43,7 @@
             </thead>
             <tbody>
                 @forelse($rows as $row)
-                    <tr class="border-t border-slate-200">
+                    <tr class="border-t border-slate-200 {{ ($row['_is_arrears'] ?? false) ? 'font-semibold text-red-700' : '' }}">
                         @foreach($columns as $column)
                             <td class="whitespace-nowrap px-4 py-3">{{ $row[$column] ?? '' }}</td>
                         @endforeach

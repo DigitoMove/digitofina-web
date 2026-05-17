@@ -59,6 +59,7 @@
 <div data-df-tabs class="grid gap-5">
     <div class="df-tablist" role="tablist">
         <button type="button" class="df-tab" data-df-tab-target="summary">Daily Summary</button>
+        <button type="button" class="df-tab" data-df-tab-target="management">Management Review</button>
         <button type="button" class="df-tab" data-df-tab-target="reconcile">Cash Reconciliation</button>
         <button type="button" class="df-tab" data-df-tab-target="accounting">Accounting Summary</button>
         <button type="button" class="df-tab" data-df-tab-target="controls">Close & Lock</button>
@@ -92,6 +93,130 @@
                 <div class="df-soft-panel p-4 text-sm"><div class="font-semibold">{{ number_format($summary?->teller_sessions_closed ?? 0) }}</div><div class="text-slate-500">Sessions closed</div></div>
                 <div class="df-soft-panel p-4 text-sm"><div class="font-semibold">{{ number_format($summary?->overdue_installments ?? 0) }}</div><div class="text-slate-500">Overdue installments</div></div>
                 <div class="df-soft-panel p-4 text-sm"><div class="font-semibold">{{ number_format($summary?->reminders_queued ?? 0) }}</div><div class="text-slate-500">Reminders queued</div></div>
+            </div>
+        </div>
+    </section>
+
+    <section data-df-tab-panel="management" class="grid gap-5">
+        <div class="grid gap-5 xl:grid-cols-2">
+            <div class="df-panel overflow-hidden">
+                <div class="border-b border-slate-200 px-5 py-4">
+                    <h2 class="font-semibold text-slate-950">Teller / Cashier Transactions</h2>
+                    <p class="df-muted">Cash-in and cash-out drawer activity posted today.</p>
+                </div>
+                <div class="overflow-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600">
+                            <tr><th>Time</th><th>Teller / Cashier</th><th>Type</th><th>Amount</th><th>Balance</th><th>Reference</th></tr>
+                        </thead>
+                        <tbody>
+                            @forelse($tellerMovements as $movement)
+                                <tr class="border-t border-slate-200">
+                                    <td>{{ $movement->created_at?->format('H:i') }}</td>
+                                    <td>{{ $movement->session?->user?->name ?? $movement->user?->name ?? 'N/A' }}</td>
+                                    <td>{{ $movement->type === 'cash_out' ? 'Cash Out' : 'Cash In' }}</td>
+                                    <td>UGX {{ number_format((float) $movement->amount, 2) }}</td>
+                                    <td>UGX {{ number_format((float) $movement->balance_after, 2) }}</td>
+                                    <td>{{ $movement->reference ?? 'N/A' }}</td>
+                                </tr>
+                            @empty
+                                <tr><td colspan="6" class="p-4 text-slate-500">No teller/cashier transactions posted for this day.</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+                <div class="border-t border-slate-200 px-5 py-3">
+                    <a href="{{ route('reports.show', ['report' => 'daily-teller-transactions', 'from' => $businessDate->toDateString(), 'to' => $businessDate->toDateString(), 'branch_id' => $branch->id]) }}" class="text-sm font-semibold text-brand-700 hover:text-brand-900">Open full teller transaction report</a>
+                </div>
+            </div>
+
+            <div class="df-panel overflow-hidden">
+                <div class="border-b border-slate-200 px-5 py-4">
+                    <h2 class="font-semibold text-slate-950">Drawer Balances</h2>
+                    <p class="df-muted">Current drawer cash and today’s teller sessions.</p>
+                </div>
+                <div class="overflow-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600">
+                            <tr><th>Drawer</th><th>Assigned</th><th>Current Balance</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                            @forelse($drawerBalances as $drawer)
+                                <tr class="border-t border-slate-200">
+                                    <td>{{ $drawer->code }} · {{ $drawer->name }}</td>
+                                    <td>{{ $drawer->assignedUser?->name ?? 'Unassigned' }}</td>
+                                    <td>UGX {{ number_format((float) $drawer->current_balance, 2) }}</td>
+                                    <td>{{ str($drawer->status)->headline() }}</td>
+                                </tr>
+                            @empty
+                                <tr><td colspan="4" class="p-4 text-slate-500">No drawers configured for this branch.</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+                <div class="border-t border-slate-200 px-5 py-3">
+                    <a href="{{ route('reports.show', ['report' => 'drawer-balances-by-teller', 'from' => $businessDate->toDateString(), 'to' => $businessDate->toDateString(), 'branch_id' => $branch->id]) }}" class="text-sm font-semibold text-brand-700 hover:text-brand-900">Open drawer balance report</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid gap-5 xl:grid-cols-2">
+            <div class="df-panel overflow-hidden">
+                <div class="border-b border-slate-200 px-5 py-4">
+                    <h2 class="font-semibold text-slate-950">Officer Entries</h2>
+                    <p class="df-muted">Clients added and loans created by branch officers today.</p>
+                </div>
+                <div class="overflow-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600">
+                            <tr><th>Officer</th><th>Role</th><th>Clients Added</th><th>Loans Created</th><th>Approved Amount</th></tr>
+                        </thead>
+                        <tbody>
+                            @forelse($officerActivities as $activity)
+                                <tr class="border-t border-slate-200">
+                                    <td>{{ $activity['officer']->name }}</td>
+                                    <td>{{ $activity['officer']->role?->name ?? 'N/A' }}</td>
+                                    <td>{{ number_format($activity['clients_added']) }}</td>
+                                    <td>{{ number_format($activity['loans_created']) }}</td>
+                                    <td>UGX {{ number_format((float) $activity['approved_amount'], 2) }}</td>
+                                </tr>
+                            @empty
+                                <tr><td colspan="5" class="p-4 text-slate-500">No officer entries recorded for this day.</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+                <div class="border-t border-slate-200 px-5 py-3">
+                    <a href="{{ route('reports.show', ['report' => 'officer-entries', 'from' => $businessDate->toDateString(), 'to' => $businessDate->toDateString(), 'branch_id' => $branch->id]) }}" class="text-sm font-semibold text-brand-700 hover:text-brand-900">Open officer entries report</a>
+                </div>
+            </div>
+
+            <div class="df-panel overflow-hidden">
+                <div class="border-b border-slate-200 px-5 py-4">
+                    <h2 class="font-semibold text-slate-950">Branch Period Report</h2>
+                    <p class="df-muted">Starts with the current business day and can be expanded from Reports.</p>
+                </div>
+                <div class="grid gap-3 p-5 sm:grid-cols-2">
+                    <div class="df-soft-panel p-4 text-sm">
+                        <div class="font-semibold">UGX {{ number_format((float) ($summary?->cash_in ?? 0), 2) }}</div>
+                        <div class="text-slate-500">Cash in today</div>
+                    </div>
+                    <div class="df-soft-panel p-4 text-sm">
+                        <div class="font-semibold">UGX {{ number_format((float) ($summary?->cash_out ?? 0), 2) }}</div>
+                        <div class="text-slate-500">Cash out today</div>
+                    </div>
+                    <div class="df-soft-panel p-4 text-sm">
+                        <div class="font-semibold">UGX {{ number_format((float) ($summary?->loan_repayments ?? 0), 2) }}</div>
+                        <div class="text-slate-500">Loan repayments today</div>
+                    </div>
+                    <div class="df-soft-panel p-4 text-sm">
+                        <div class="font-semibold">UGX {{ number_format((float) ($summary?->cash_variance ?? 0), 2) }}</div>
+                        <div class="text-slate-500">Cash variance today</div>
+                    </div>
+                </div>
+                <div class="border-t border-slate-200 px-5 py-3">
+                    <a href="{{ route('reports.show', ['report' => 'branch-period-summary', 'from' => $businessDate->toDateString(), 'to' => $businessDate->toDateString(), 'branch_id' => $branch->id]) }}" class="text-sm font-semibold text-brand-700 hover:text-brand-900">Open branch period summary</a>
+                </div>
             </div>
         </div>
     </section>

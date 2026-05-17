@@ -122,7 +122,15 @@ it('approves and disburses a loan with guarantor checks and a repayment schedule
 
     $loan = Loan::first();
     $response->assertRedirect(route('loans.show', $loan));
-    expect($loan->status)->toBe('pending_guarantor_approval');
+    expect($loan->status)->toBe('draft');
+
+    $this->actingAs($user)
+        ->post(route('loans.generate-loan-account', $loan))
+        ->assertRedirect();
+
+    $this->actingAs($user)
+        ->post(route('loans.submit-appraisal', $loan))
+        ->assertRedirect();
 
     $this->actingAs($user)->post(route('loans.guarantors.store', $loan), [
         'type' => 'existing_client',
@@ -131,6 +139,12 @@ it('approves and disburses a loan with guarantor checks and a repayment schedule
         'guaranteed_amount' => 1_000_000,
         'status' => 'accepted',
     ])->assertRedirect();
+
+    $this->actingAs($user)
+        ->post(route('loans.submit-approval', $loan))
+        ->assertRedirect();
+
+    expect($loan->fresh()->status)->toBe('pending_guarantor_approval');
 
     $this->actingAs($user)->post(route('loans.approve', $loan), [
         'approved_amount' => 1_000_000,

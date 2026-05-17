@@ -6,9 +6,16 @@ use App\Jobs\RunEndOfDayProcess;
 use App\Models\Branch;
 use App\Models\BranchCashReconciliation;
 use App\Models\BranchDailySummary;
+use App\Models\Client;
 use App\Models\DailyAccountingSummary;
+use App\Models\DrawerMovement;
+use App\Models\DrawerSession;
+use App\Models\Loan;
+use App\Models\TellerDrawer;
+use App\Models\User;
 use App\Services\EndOfDayService;
 use App\Support\CurrencyDenomination;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -42,15 +49,74 @@ class EndOfDayController extends Controller
             ->whereDate('business_date', $businessDate->toDateString())
             ->orderBy('account_code')
             ->get();
+        $drawerSessions = DrawerSession::query()
+            ->with(['drawer', 'user'])
+            ->whereHas('drawer', fn (Builder $query): Builder => $query->where('branch_id', $branch->id))
+            ->whereDate('opened_at', $businessDate->toDateString())
+            ->orderByDesc('opened_at')
+            ->get();
+        $tellerMovements = DrawerMovement::query()
+            ->with(['session.drawer', 'session.user', 'user'])
+            ->whereHas('session.drawer', fn (Builder $query): Builder => $query->where('branch_id', $branch->id))
+            ->whereDate('created_at', $businessDate->toDateString())
+            ->latest()
+            ->limit(15)
+            ->get();
+        $drawerBalances = TellerDrawer::query()
+            ->with('assignedUser')
+            ->where('branch_id', $branch->id)
+            ->orderBy('code')
+            ->get();
+        $periodStart = $businessDate->copy()->startOfDay();
+        $periodEnd = $businessDate->copy()->endOfDay();
+        $officerActivities = User::query()
+            ->with('role')
+            ->where('organization_id', $request->user()->organization_id)
+            ->where('branch_id', $branch->id)
+            ->where('status', 'active')
+            ->whereHas('role', fn (Builder $query): Builder => $query->where('slug', '!=', 'member'))
+            ->orderBy('name')
+            ->get()
+            ->map(function (User $officer) use ($branch, $periodStart, $periodEnd): array {
+                $clientsAdded = Client::query()
+                    ->where('branch_id', $branch->id)
+                    ->where('officer_id', $officer->id)
+                    ->whereBetween('created_at', [$periodStart, $periodEnd])
+                    ->count();
+                $loansCreated = Loan::query()
+                    ->where('branch_id', $branch->id)
+                    ->where(function (Builder $query) use ($officer): void {
+                        $query
+                            ->where('created_by', $officer->id)
+                            ->orWhere(fn (Builder $query): Builder => $query->whereNull('created_by')->where('officer_id', $officer->id));
+                    })
+                    ->whereBetween('created_at', [$periodStart, $periodEnd]);
+
+                return [
+                    'officer' => $officer,
+                    'clients_added' => $clientsAdded,
+                    'loans_created' => (clone $loansCreated)->count(),
+                    'approved_amount' => (float) (clone $loansCreated)->sum('approved_amount'),
+                ];
+            })
+            ->filter(fn (array $row): bool => $row['clients_added'] > 0 || $row['loans_created'] > 0)
+            ->values();
 
         return view('end-of-day.index', [
-            'branches' => Branch::query()->orderBy('name')->get(),
+            'branches' => Branch::query()
+                ->when(! $request->user()->canPerform('manage-branches'), fn (Builder $query): Builder => $query->whereKey($request->user()->branch_id))
+                ->orderBy('name')
+                ->get(),
             'branch' => $branch,
             'businessDate' => $businessDate,
             'financialDay' => $financialDay,
             'summary' => $summary,
             'reconciliation' => $reconciliation,
             'accountingSummaries' => $accountingSummaries,
+            'drawerSessions' => $drawerSessions,
+            'tellerMovements' => $tellerMovements,
+            'drawerBalances' => $drawerBalances,
+            'officerActivities' => $officerActivities,
         ]);
     }
 

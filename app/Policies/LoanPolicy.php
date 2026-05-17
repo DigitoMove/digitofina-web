@@ -19,7 +19,7 @@ class LoanPolicy
 
     public function approve(User $user, Loan $loan): bool
     {
-        return ! $user->hasRole('cashier') && ! $user->hasRole('member') && $user->canPerform('approve-loans') && in_array($loan->status, ['submitted', 'under_review', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true);
+        return ! $user->hasRole('teller-cashier') && ! $user->hasRole('member') && $user->canPerform('approve-loans') && in_array($loan->status, ['submitted', 'under_review', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true);
     }
 
     public function disburse(User $user, Loan $loan): bool

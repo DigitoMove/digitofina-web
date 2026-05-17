@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Organization;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -9,7 +10,13 @@ class UpdateOrganizationRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->canPerform('manage-organization') ?? false;
+        $user = $this->user();
+
+        return $user?->canPerform('manage-organization')
+            || $user?->hasRole('super-admin')
+            || $user?->hasRole('admin')
+            || $user?->hasRole('organization-admin')
+            || false;
     }
 
     /**
@@ -17,7 +24,9 @@ class UpdateOrganizationRequest extends FormRequest
      */
     public function rules(): array
     {
-        $organization = $this->route('organization');
+        $organization = $this->route('organization')
+            ?: $this->user()?->organization
+            ?: Organization::query()->orderBy('id')->first();
 
         return [
             'name' => ['required', 'string', 'max:191'],

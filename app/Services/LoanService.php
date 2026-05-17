@@ -40,8 +40,8 @@ class LoanService
     {
         CurrencyDenomination::assertValid($approvedAmount, 'Approved amount');
 
-        if ($approver->hasRole('cashier') || $approver->hasRole('member')) {
-            throw new InvalidArgumentException('Cashiers and members cannot approve loans.');
+        if ($approver->hasRole('teller-cashier') || $approver->hasRole('member')) {
+            throw new InvalidArgumentException('Tellers/cashiers and members cannot approve loans.');
         }
 
         return DB::transaction(function () use ($loan, $approver, $approvedAmount, $comments) {
@@ -330,7 +330,7 @@ class LoanService
     public function disburseToSavings(Loan $loan, User $user, string $paymentMethod = 'transfer_to_savings'): Loan
     {
         return DB::transaction(function () use ($loan, $user, $paymentMethod) {
-            $loan = Loan::query()->with(['client', 'product', 'savingsAccount', 'loanAccount'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+            $loan = Loan::query()->with(['branch', 'client', 'product', 'savingsAccount', 'loanAccount'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
 
             if ($loan->status !== 'approved') {
                 throw new InvalidArgumentException('Loan must be approved before disbursement.');
@@ -360,11 +360,17 @@ class LoanService
 
             $netAmount = max(0, round((float) $loan->approved_amount - $fees, 2));
             $type = TransactionType::query()->where('code', 'loan_disbursement')->firstOrFail();
-            $transaction = $this->transactions->postNonCashCredit($savings, $type, $netAmount, $user, 'Loan disbursement to savings account', [
+            $applicationFeeIncomeCode = $this->applicationFeeIncomeCode($loan);
+            $journals = [
                 ['account_code' => '1200', 'entry_type' => 'debit', 'amount' => $loan->approved_amount, 'memo' => 'Loan principal raised'],
                 ['account_code' => '2100', 'entry_type' => 'credit', 'amount' => $netAmount, 'memo' => 'Loan proceeds credited to savings'],
-                ['account_code' => '4200', 'entry_type' => 'credit', 'amount' => $fees, 'memo' => 'Loan application fee deducted'],
-            ]);
+            ];
+
+            if ($fees > 0) {
+                $journals[] = ['account_code' => $applicationFeeIncomeCode, 'entry_type' => 'credit', 'amount' => $fees, 'memo' => 'Loan application fee deducted'];
+            }
+
+            $transaction = $this->transactions->postNonCashCredit($savings, $type, $netAmount, $user, 'Loan disbursement to savings account', $journals);
 
             LoanDisbursement::create([
                 'organization_id' => $loan->organization_id,
@@ -428,6 +434,22 @@ class LoanService
         }
 
         $loan->update(['interest_balance' => round($totalInterest, 2)]);
+    }
+
+    private function applicationFeeIncomeCode(Loan $loan): string
+    {
+        $branch = $loan->branch;
+        $branchCode = $branch?->code;
+
+        if ($branchCode) {
+            $branchAccountCode = $branchCode.'-4330';
+
+            if (ChartAccount::query()->where('code', $branchAccountCode)->where('is_active', true)->exists()) {
+                return $branchAccountCode;
+            }
+        }
+
+        return '4200';
     }
 
     public function repay(Loan $loan, float $amount, User $user, ?int $transactionId = null, string $paymentMethod = 'cash', ?string $reference = null, ?CarbonInterface $paidAt = null): LoanRepayment
@@ -548,11 +570,15 @@ class LoanService
                 $schedule = LoanSchedule::query()->whereKey($schedule->id)->lockForUpdate()->firstOrFail();
                 $loan = Loan::query()->with('product')->whereKey($schedule->loan_id)->lockForUpdate()->firstOrFail();
                 $days = (int) $schedule->due_date->diffInDays($asOf);
+                $penaltyType = $loan->product?->penalty_type ?: 'percentage';
+                $penaltyRate = (float) ($loan->product?->penalty_rate ?? 0);
+                $penaltyRate = $penaltyRate > 0 ? $penaltyRate : (float) SystemSetting::value('loan_arrears_penalty_rate', 2);
+                $repaymentFrequency = $loan->repayment_frequency ?: $loan->product?->repayment_frequency;
                 [$penaltyPeriodStart, $penaltyPeriodEnd] = $this->penalties->penaltyPeriod(
                     $schedule,
                     $asOf,
-                    'percentage',
-                    $loan->repayment_frequency ?: $loan->product->repayment_frequency,
+                    $penaltyType,
+                    $repaymentFrequency,
                 );
                 $alreadyApplied = LoanPenalty::query()
                     ->where('loan_schedule_id', $schedule->id)
@@ -562,10 +588,10 @@ class LoanService
 
                 $penaltyAmount = $alreadyApplied ? 0 : $this->penalties->calculate(
                     $schedule,
-                    (float) SystemSetting::value('loan_arrears_penalty_rate', 2),
-                    'percentage',
+                    $penaltyRate,
+                    $penaltyType,
                     $days,
-                    $loan->repayment_frequency ?: $loan->product->repayment_frequency,
+                    $repaymentFrequency,
                 );
 
                 if ($penaltyAmount > 0) {

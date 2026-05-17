@@ -11,12 +11,18 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
-#[Signature('users:retain-super-admin-only')]
+#[Signature('users:retain-super-admin-only {--force : Run without an interactive confirmation prompt}')]
 #[Description('Soft-delete every non-super-admin user while preserving roles and permissions')]
 class RetainSuperAdminOnly extends Command
 {
     public function handle(): int
     {
+        if (! $this->option('force') && ! $this->confirm('This will soft-delete every non-super-admin user. Continue?')) {
+            $this->warn('No users were changed.');
+
+            return self::SUCCESS;
+        }
+
         $superAdmin = User::query()
             ->whereHas('role', fn ($query) => $query->where('slug', 'super-admin'))
             ->orderByRaw('case when email = ? then 0 else 1 end', ['admin@digitofina.test'])

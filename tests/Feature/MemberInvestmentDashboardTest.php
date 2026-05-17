@@ -67,7 +67,7 @@ it('shows members their savings investment growth and posting cycle', function (
     $this->actingAs($user)
         ->get(route('member.dashboard'))
         ->assertOk()
-        ->assertSee('My Savings &amp; Investment Growth', false)
+        ->assertSee('My Savings & Investment Growth', false)
         ->assertSee('Quarterly Growth Investment')
         ->assertSee('Quarterly')
         ->assertSee('12.00%')

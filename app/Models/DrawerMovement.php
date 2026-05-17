@@ -21,4 +21,9 @@ class DrawerMovement extends Model
     {
         return $this->belongsTo(DrawerSession::class, 'drawer_session_id');
     }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
 }

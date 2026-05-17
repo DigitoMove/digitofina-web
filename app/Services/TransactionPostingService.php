@@ -184,6 +184,10 @@ class TransactionPostingService
             ]);
 
             foreach ($journals as $journal) {
+                if ((float) ($journal['amount'] ?? 0) <= 0) {
+                    continue;
+                }
+
                 $chartAccount = isset($journal['account_code'])
                     ? ChartAccount::query()->where('code', $journal['account_code'])->first()
                     : null;
@@ -191,6 +195,15 @@ class TransactionPostingService
                 unset($payload['account_code']);
 
                 JournalEntry::create($payload + [
+                    'organization_id' => $account->organization_id,
+                    'branch_id' => $account->branch_id,
+                    'created_by' => $user->id,
+                    'posted_by' => $user->id,
+                    'journal_number' => 'JE'.now()->format('ymdHis').Str::upper(Str::random(4)),
+                    'journal_date' => now()->toDateString(),
+                    'description' => $description,
+                    'status' => 'posted',
+                    'posted_at' => now(),
                     'chart_account_id' => $chartAccount?->id,
                     'account_name' => $journal['account_name'] ?? $chartAccount?->name,
                     'transaction_id' => $transaction->id,
