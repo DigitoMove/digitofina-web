@@ -2,7 +2,12 @@
 @section('content')
 <div class="mb-5 flex flex-wrap justify-between gap-3">
     <h1 class="text-2xl font-semibold">Loans</h1>
-    <div class="flex gap-2"><a href="{{ route('arrears.index') }}" class="rounded border px-4 py-2 text-sm font-semibold">Arrears</a><a href="{{ route('loans.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">New Application</a></div>
+    <div class="flex gap-2">
+        <a href="{{ route('arrears.index') }}" class="rounded border px-4 py-2 text-sm font-semibold">Arrears</a>
+        @can('create', \App\Models\Loan::class)
+            <a href="{{ route('loans.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">New Application</a>
+        @endcan
+    </div>
 </div>
 <form class="mb-4 grid gap-3 rounded border bg-white p-4 md:grid-cols-[1fr_150px_170px_200px_200px_auto]">
     <input name="search" value="{{ request('search') }}" placeholder="Search loan or client" class="rounded border-slate-300">

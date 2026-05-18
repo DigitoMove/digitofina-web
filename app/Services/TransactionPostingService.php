@@ -249,6 +249,14 @@ class TransactionPostingService
                 throw new InvalidArgumentException('Use a non-cash general ledger account.');
             }
 
+            if ($chartAccount->drawer_direction === 'cash_in' && $entryType !== 'credit') {
+                throw new InvalidArgumentException('This ledger account is configured to add money to the drawer.');
+            }
+
+            if ($chartAccount->drawer_direction === 'cash_out' && $entryType !== 'debit') {
+                throw new InvalidArgumentException('This ledger account is configured to take money from the drawer.');
+            }
+
             $financialControls = app(FinancialControlService::class);
             $businessDate = $financialControls->ensureFinancialDayOpen($user, (int) $drawer->branch_id, now());
             $financialControls->enforceTransactionLimit($user, $amount, $businessDate);

@@ -9,7 +9,12 @@ class StoreClientRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->canPerform('manage-clients') ?? false;
+        $user = $this->user();
+
+        return $user !== null
+            && ! $user->isTellerCashier()
+            && ! $user->isMember()
+            && $user->canPerform('manage-clients');
     }
 
     protected function prepareForValidation(): void

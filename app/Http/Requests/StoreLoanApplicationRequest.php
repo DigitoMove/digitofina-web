@@ -13,7 +13,12 @@ class StoreLoanApplicationRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->canPerform('manage-loans') ?? false;
+        $user = $this->user();
+
+        return $user !== null
+            && ! $user->isTellerCashier()
+            && ! $user->isMember()
+            && $user->canPerform('manage-loans');
     }
 
     protected function prepareForValidation(): void

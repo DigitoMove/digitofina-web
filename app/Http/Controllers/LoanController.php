@@ -18,6 +18,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
@@ -56,6 +57,8 @@ class LoanController extends Controller
 
     public function create(Request $request, LoanVisibilityService $visibility): View
     {
+        Gate::authorize('create', Loan::class);
+
         return view('loans.create', [
             'clients' => Client::where('status', 'active')->orderBy('first_name')->get(),
             'products' => LoanProduct::where('is_active', true)->where('status', 'active')->orderBy('name')->get(),
@@ -74,7 +77,7 @@ class LoanController extends Controller
 
     public function schedulePreview(Request $request, LoanScheduleService $schedules): JsonResponse
     {
-        abort_unless($request->user()->canPerform('manage-loans'), 403);
+        Gate::authorize('create', Loan::class);
 
         $data = $request->validate([
             'loan_product_id' => ['required', 'exists:loan_products,id'],

@@ -118,6 +118,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/arrears/apply-penalties', [ArrearsController::class, 'applyPenalties'])->name('arrears.apply-penalties');
     Route::get('/due-repayments', [DueRepaymentController::class, 'index'])->name('due-repayments.index');
     Route::get('/teller-drawer', [TellerDrawerController::class, 'index'])->name('teller.index');
+    Route::post('/teller-drawer/ledger-accounts', [TellerDrawerController::class, 'storeLedgerAccount'])->name('teller.ledger-accounts.store');
+    Route::post('/teller-drawer/managed-post', [TellerDrawerController::class, 'postManagedDrawer'])->name('teller.managed-post');
     Route::post('/teller-drawer/drawers', [TellerDrawerController::class, 'storeDrawer'])->name('teller.drawers.store');
     Route::post('/teller-drawer/open', [TellerDrawerController::class, 'open'])->name('teller.open');
     Route::post('/teller-drawer/post', [TellerDrawerController::class, 'post'])->name('teller.post');

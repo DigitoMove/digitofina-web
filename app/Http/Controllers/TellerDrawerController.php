@@ -20,6 +20,7 @@ use App\Support\CurrencyDenomination;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use InvalidArgumentException;
@@ -31,19 +32,25 @@ class TellerDrawerController extends Controller
         $canOpenForTellers = $request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users');
         $session = DrawerSession::with('drawer')->where('user_id', auth()->id())->where('status', 'open')->latest()->first();
         $branchId = $session?->drawer?->branch_id ?? $request->user()->branch_id;
+        $lookupScope = $request->string('lookup_scope')->toString();
         $accountSearch = $request->string('account_search')->trim()->toString();
-        $glSearch = $request->string('gl_search')->trim()->toString();
+        $selectedAccountTypeId = Str::startsWith($lookupScope, 'account_type:')
+            ? (int) Str::after($lookupScope, 'account_type:')
+            : $request->integer('account_type_id');
+        $isGeneralLedgerLookup = $lookupScope === 'general_ledger';
+        $shouldSearchClientAccounts = $accountSearch !== '' && ! $isGeneralLedgerLookup;
+        $shouldSearchGeneralLedger = $accountSearch !== '' && $isGeneralLedgerLookup;
         $account = $request->account_number
             ? Account::with(['client', 'accountType'])
                 ->where('account_number', $request->account_number)
                 ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-                ->when($request->integer('account_type_id'), fn ($query, int $typeId) => $query->where('account_type_id', $typeId))
+                ->when($selectedAccountTypeId, fn ($query, int $typeId) => $query->where('account_type_id', $typeId))
                 ->first()
             : null;
         $accountResults = Account::query()
             ->with(['client', 'accountType'])
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when($request->integer('account_type_id'), fn (Builder $query, int $typeId): Builder => $query->where('account_type_id', $typeId))
+            ->when($selectedAccountTypeId, fn (Builder $query, int $typeId): Builder => $query->where('account_type_id', $typeId))
             ->when($accountSearch, function (Builder $query, string $search): void {
                 $query->where(function (Builder $query) use ($search): void {
                     $query->whereAny(['account_number', 'account_name', 'status'], 'like', "%{$search}%")
@@ -52,7 +59,7 @@ class TellerDrawerController extends Controller
                         });
                 });
             })
-            ->when(! $accountSearch && ! $request->account_number, fn (Builder $query): Builder => $query->limit(8))
+            ->when(! $shouldSearchClientAccounts, fn (Builder $query): Builder => $query->whereRaw('1 = 0'))
             ->orderBy('account_number')
             ->limit(12)
             ->get();
@@ -106,23 +113,46 @@ class TellerDrawerController extends Controller
                     ->get()
                 : collect(),
             'canOpenForTellers' => $canOpenForTellers,
+            'canManageLedgerAccounts' => $this->canManageLedgerAccounts($request),
             'accountTypes' => AccountType::where('is_active', true)->get(),
             'chartAccounts' => ChartAccount::query()
                 ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
                 ->where('is_active', true)
                 ->where('is_cash_account', false)
                 ->whereIn('type', ['expense', 'income', 'asset', 'liability'])
-                ->when($glSearch, function (Builder $query, string $search): void {
+                ->when($accountSearch, function (Builder $query, string $search): void {
                     $query->whereAny(['code', 'name', 'type'], 'like', "%{$search}%");
                 })
+                ->when(! $shouldSearchGeneralLedger, fn (Builder $query): Builder => $query->whereRaw('1 = 0'))
                 ->orderBy('type')
                 ->orderBy('name')
                 ->limit(25)
+                ->get(),
+            'managedChartAccounts' => ChartAccount::query()
+                ->with('branch')
+                ->when(! $request->user()->canPerform('manage-organization'), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
+                ->where('is_cash_account', false)
+                ->orderBy('branch_id')
+                ->orderBy('code')
+                ->limit(80)
+                ->get(),
+            'openDrawerSessions' => DrawerSession::query()
+                ->with(['drawer.branch', 'user'])
+                ->where('status', 'open')
+                ->whereHas('drawer', function (Builder $query) use ($request): void {
+                    $query->where('status', 'open')
+                        ->when(! $request->user()->canPerform('manage-organization'), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id));
+                })
+                ->latest()
                 ->get(),
             'transactionTypes' => TransactionType::where('is_active', true)->get(),
             'account' => $account,
             'accountResults' => $accountResults,
             'selectedChartAccount' => $selectedChartAccount,
+            'lookupScope' => $lookupScope,
+            'selectedAccountTypeId' => $selectedAccountTypeId,
+            'isGeneralLedgerLookup' => $isGeneralLedgerLookup,
+            'hasLookupSearch' => $accountSearch !== '',
             'recentMovements' => $session
                 ? DrawerMovement::query()->with('session.drawer')->where('drawer_session_id', $session->id)->latest()->limit(8)->get()
                 : collect(),
@@ -133,6 +163,82 @@ class TellerDrawerController extends Controller
             'dueTodayAmount' => (float) $dueToday->sum('outstanding_amount'),
             'expectedBalance' => (float) ($session?->opening_balance ?? 0) + $cashIn - $cashOut,
         ]);
+    }
+
+    public function storeLedgerAccount(Request $request, AuditLogger $auditLogger): RedirectResponse
+    {
+        abort_unless($this->canManageLedgerAccounts($request), 403);
+
+        $data = $request->validate([
+            'branch_id' => ['required', 'exists:branches,id'],
+            'suffix' => ['required', 'string', 'max:20', 'regex:/^[A-Za-z0-9]+$/'],
+            'name' => ['required', 'string', 'max:191'],
+            'type' => ['required', Rule::in(['asset', 'liability', 'equity', 'income', 'expense'])],
+            'normal_balance' => ['required', Rule::in(['debit', 'credit'])],
+            'drawer_direction' => ['required', Rule::in(['cash_in', 'cash_out', 'both'])],
+        ]);
+
+        $branch = Branch::query()->findOrFail($data['branch_id']);
+        $this->authorizeDrawerBranch($request, $branch);
+
+        $code = Str::upper($branch->code.'-'.$data['suffix']);
+
+        if (ChartAccount::query()->where('code', $code)->exists()) {
+            return back()->withErrors(['ledger_account' => 'A ledger account with code '.$code.' already exists.'])->withInput();
+        }
+
+        $chartAccount = ChartAccount::create([
+            'organization_id' => $branch->organization_id,
+            'branch_id' => $branch->id,
+            'code' => $code,
+            'name' => $data['name'],
+            'type' => $data['type'],
+            'normal_balance' => $data['normal_balance'],
+            'drawer_direction' => $data['drawer_direction'],
+            'is_cash_account' => false,
+            'is_system' => false,
+            'is_active' => true,
+        ]);
+
+        $auditLogger->record('ledger_account.created', $chartAccount, $chartAccount->toArray());
+
+        return back()->with('status', 'Ledger account created.');
+    }
+
+    public function postManagedDrawer(Request $request, TransactionPostingService $posting): RedirectResponse
+    {
+        abort_unless($this->canManageLedgerAccounts($request), 403);
+
+        $data = $request->validate([
+            'drawer_session_id' => ['required', 'exists:drawer_sessions,id'],
+            'chart_account_id' => ['required', 'exists:chart_accounts,id'],
+            'drawer_direction' => ['required', Rule::in(['cash_in', 'cash_out'])],
+            'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+            'description' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $session = DrawerSession::query()->with('drawer.branch')->findOrFail($data['drawer_session_id']);
+        $chartAccount = ChartAccount::query()->findOrFail($data['chart_account_id']);
+
+        try {
+            $this->authorizeDrawerBranch($request, $session->drawer->branch);
+
+            if ((int) $chartAccount->branch_id !== (int) $session->drawer->branch_id) {
+                throw new InvalidArgumentException('Select a ledger account from the same branch as the drawer.');
+            }
+
+            $entryType = $chartAccount->drawerEntryType($data['drawer_direction']);
+
+            if (! $entryType) {
+                throw new InvalidArgumentException('Select whether this posting adds to or takes from the drawer.');
+            }
+
+            $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], $request->user(), $data['description'] ?? null);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['managed_drawer_posting' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Drawer ledger posting completed.');
     }
 
     public function storeDrawer(Request $request, AuditLogger $auditLogger): RedirectResponse
@@ -358,6 +464,12 @@ class TellerDrawerController extends Controller
         }
 
         abort_unless((int) $request->user()->branch_id === (int) $branch->id, 403);
+    }
+
+    private function canManageLedgerAccounts(Request $request): bool
+    {
+        return $request->user()->canPerform('manage-accounting')
+            || ($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'));
     }
 
     private function assertAssignedTellerBelongsToBranch(?int $tellerUserId, Branch $branch): void

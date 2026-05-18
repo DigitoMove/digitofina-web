@@ -8,7 +8,9 @@
     </div>
     <div class="flex gap-2">
         <a href="{{ route('client-groups.index') }}" class="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Groups</a>
-        <a href="{{ route('clients.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Register Client</a>
+        @can('create', \App\Models\Client::class)
+            <a href="{{ route('clients.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Register Client</a>
+        @endcan
     </div>
 </div>
 

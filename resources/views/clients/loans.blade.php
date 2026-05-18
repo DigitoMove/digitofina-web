@@ -8,7 +8,9 @@
     </div>
     <div class="flex flex-wrap gap-2">
         <a href="{{ route('clients.show', $client) }}" class="df-action-secondary">Client Dashboard</a>
-        <a href="{{ route('loans.create', ['client_id' => $client->id]) }}" class="df-action-primary">New Loan</a>
+        @can('create', \App\Models\Loan::class)
+            <a href="{{ route('loans.create', ['client_id' => $client->id]) }}" class="df-action-primary">New Loan</a>
+        @endcan
     </div>
 </div>
 

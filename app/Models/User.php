@@ -84,6 +84,11 @@ class User extends Authenticatable
         return $this->hasRole('member');
     }
 
+    public function isTellerCashier(): bool
+    {
+        return in_array($this->role?->slug, ['teller-cashier', 'cashier', 'teller'], true);
+    }
+
     public function canPerform(string $permission): bool
     {
         if ($this->hasRole('super-admin')) {

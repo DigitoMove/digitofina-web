@@ -10,6 +10,7 @@
     $loanAccounts = $client->accounts->filter(fn ($account) => $account->accountType?->category === 'loan');
     $currentAccounts = $client->accounts->filter(fn ($account) => $account->accountType?->category === 'current');
     $otherAccounts = $client->accounts->reject(fn ($account) => in_array($account->accountType?->category, ['savings', 'loan', 'current'], true));
+    $canCreateLoan = auth()->user()->can('create', \App\Models\Loan::class);
     $activeSavings = $basicSavingsAccounts->where('status', 'active')->count();
     $dormantSavings = $basicSavingsAccounts->where('status', 'dormant')->count();
     $activeCurrent = $currentAccounts->where('status', 'active')->count();
@@ -53,7 +54,7 @@
             'leftValue' => $approvingApplications,
             'rightLabel' => 'Approved',
             'rightValue' => $approvedApplications,
-            'href' => route('loans.create', ['client_id' => $client->id]),
+            'href' => $canCreateLoan ? route('loans.create', ['client_id' => $client->id]) : route('clients.loans', $client),
         ],
         [
             'title' => 'Current Accounts',
@@ -89,16 +90,16 @@
             'href' => route('reports.show', 'share-accounts'),
         ],
     ];
-    $actionItems = [
+    $actionItems = array_filter([
         ['Client Account Dashboard', route('clients.show', $client), 'CD', 0],
         ['Transaction Authorisation Details', route('audit-logs.index', ['search' => $client->client_number]), 'TA', 0],
         ['Edit Client Details', route('clients.edit', $client), 'ED', null],
         ['Open Account', route('accounts.create', ['client_id' => $client->id]), 'OA', $client->accounts->count()],
         ['Savings Account', route('clients.savings-accounts', $client), 'SA', $basicSavingsAccounts->count()],
         ['Account Queries', route('clients.accounts', $client), 'AQ', $client->accounts->count()],
-        ['Loan Prospects', route('loans.create', ['client_id' => $client->id]), 'LP', $newApplications->count()],
+        $canCreateLoan ? ['Loan Prospects', route('loans.create', ['client_id' => $client->id]), 'LP', $newApplications->count()] : null,
         ['Due Repayments', route('due-repayments.index', ['search' => $client->client_number]), 'DR', $arrearsLoans],
-    ];
+    ]);
     $kycChecks = [
         'identity_confirmed' => 'Identity confirmed',
         'address_confirmed' => 'Address confirmed',
@@ -130,7 +131,7 @@
     <div class="flex flex-wrap gap-2">
         @foreach ([
             ['Savings Accounts', array_filter([! $hasSavingsAccount ? ['Generate savings account', route('clients.savings-accounts.generate', $client), 'post'] : null, ['View accounts', route('clients.savings-accounts', $client), 'get']])],
-            ['Loan Accounts', [['New application', route('loans.create', ['client_id' => $client->id])], ['View loans', route('clients.loans', $client)]]],
+            ['Loan Accounts', array_filter([$canCreateLoan ? ['New application', route('loans.create', ['client_id' => $client->id])] : null, ['View loans', route('clients.loans', $client)]])],
             ['Current Accounts', [['Open current account', route('accounts.create', ['client_id' => $client->id])], ['View accounts', route('clients.accounts', $client)]]],
             ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]],
             ['Term Deposits', [['Maturity report', route('reports.show', 'term-deposits-maturity-report')], ['Funded term deposits', route('reports.show', 'funded-term-deposit-accounts')]]],
@@ -323,7 +324,9 @@
                             <h2 class="font-semibold text-slate-950">Loan Accounts List</h2>
                             <p class="mt-1 text-sm text-slate-500">Each row is a separate loan account attached to this client.</p>
                         </div>
-                        <a class="df-action-secondary min-h-9 px-3 py-1.5" href="{{ route('loans.create', ['client_id' => $client->id]) }}">New Loan</a>
+                        @can('create', \App\Models\Loan::class)
+                            <a class="df-action-secondary min-h-9 px-3 py-1.5" href="{{ route('loans.create', ['client_id' => $client->id]) }}">New Loan</a>
+                        @endcan
                     </div>
                     <div class="overflow-x-auto">
                         <table class="min-w-full text-left text-sm">

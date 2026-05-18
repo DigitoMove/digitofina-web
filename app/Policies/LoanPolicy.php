@@ -14,12 +14,14 @@ class LoanPolicy
 
     public function create(User $user): bool
     {
-        return $user->canPerform('manage-loans');
+        return ! $user->isTellerCashier()
+            && ! $user->isMember()
+            && $user->canPerform('manage-loans');
     }
 
     public function approve(User $user, Loan $loan): bool
     {
-        return ! $user->hasRole('teller-cashier') && ! $user->hasRole('member') && $user->canPerform('approve-loans') && in_array($loan->status, ['submitted', 'under_review', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true);
+        return ! $user->isTellerCashier() && ! $user->isMember() && $user->canPerform('approve-loans') && in_array($loan->status, ['submitted', 'under_review', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true);
     }
 
     public function disburse(User $user, Loan $loan): bool

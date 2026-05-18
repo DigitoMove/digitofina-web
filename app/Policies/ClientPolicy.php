@@ -14,7 +14,9 @@ class ClientPolicy
 
     public function create(User $user): bool
     {
-        return $user->canPerform('manage-clients');
+        return ! $user->isTellerCashier()
+            && ! $user->isMember()
+            && $user->canPerform('manage-clients');
     }
 
     public function view(User $user, Client $client): bool
