@@ -8,7 +8,6 @@ use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AuditLogger;
-use App\Services\UserSavingsAccountProvisioningService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -47,13 +46,13 @@ class UserManagementController extends Controller
         return view('users.create', $this->formData(new User));
     }
 
-    public function store(StoreUserRequest $request, AuditLogger $auditLogger, UserSavingsAccountProvisioningService $savingsAccounts): RedirectResponse
+    public function store(StoreUserRequest $request, AuditLogger $auditLogger): RedirectResponse
     {
         Gate::authorize('create', User::class);
 
         $data = $request->validated();
 
-        DB::transaction(function () use ($data, $request, $auditLogger, $savingsAccounts): void {
+        DB::transaction(function () use ($data, $request, $auditLogger): void {
             $user = User::create(Arr::except($data, ['password']) + [
                 'organization_id' => $request->user()->organization_id,
                 'password' => Hash::make($data['password']),
@@ -61,7 +60,6 @@ class UserManagementController extends Controller
             ]);
 
             $auditLogger->record('user.created', $user, $user->only(['id', 'name', 'email', 'role_id', 'branch_id', 'status']));
-            $savingsAccounts->ensure($user, $request->user());
         });
 
         return redirect()->route('users.index')->with('status', 'Staff user created.');
