@@ -14,6 +14,6 @@ class TransactionPolicy
 
     public function reverse(User $user, Transaction $transaction): bool
     {
-        return $user->canPerform('approve-loans') && $transaction->status === 'posted';
+        return $user->canPerform('approve-reversals') && $transaction->status === 'posted';
     }
 }

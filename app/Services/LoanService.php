@@ -471,11 +471,11 @@ class LoanService
         return '4200';
     }
 
-    public function repay(Loan $loan, float $amount, User $user, ?int $transactionId = null, string $paymentMethod = 'cash', ?string $reference = null, ?CarbonInterface $paidAt = null): LoanRepayment
+    public function repay(Loan $loan, float $amount, User $user, ?int $transactionId = null, string $paymentMethod = 'cash', ?string $reference = null, ?CarbonInterface $paidAt = null, string $counterAccountCode = '1000', string $journalMemo = 'Loan repayment allocation'): LoanRepayment
     {
         CurrencyDenomination::assertValid($amount);
 
-        return DB::transaction(function () use ($loan, $amount, $user, $transactionId, $paymentMethod, $reference, $paidAt) {
+        return DB::transaction(function () use ($loan, $amount, $user, $transactionId, $paymentMethod, $reference, $paidAt, $counterAccountCode, $journalMemo) {
             $loan = Loan::query()->whereKey($loan->id)->lockForUpdate()->firstOrFail();
 
             if (! in_array($loan->status, ['active', 'in_arrears'], true)) {
@@ -536,7 +536,7 @@ class LoanService
             }
 
             foreach ([
-                ['1000', 'debit', $penaltyPaid + $feesPaid + $interestPaid + $principalPaid],
+                [$counterAccountCode, 'debit', $penaltyPaid + $feesPaid + $interestPaid + $principalPaid],
                 ['4100', 'credit', $interestPaid],
                 ['4200', 'credit', $feesPaid + $penaltyPaid],
                 ['1200', 'credit', $principalPaid],
@@ -551,7 +551,7 @@ class LoanService
                         'account_name' => $chartAccount?->name ?? $accountCode,
                         'entry_type' => $entryType,
                         'amount' => $entryAmount,
-                        'memo' => 'Loan repayment allocation',
+                        'memo' => $journalMemo,
                     ]);
                 }
             }

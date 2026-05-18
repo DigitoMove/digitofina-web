@@ -23,6 +23,7 @@ use App\Http\Controllers\LoanGuarantorController;
 use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\LoanRepaymentController;
 use App\Http\Controllers\MemberPortalController;
+use App\Http\Controllers\NonCashTransactionController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReceiptController;
@@ -129,6 +130,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/teller-drawer/{drawer}/close', [TellerDrawerController::class, 'closeDrawer'])->name('teller.drawers.close');
     Route::put('/teller-drawer/{drawer}', [TellerDrawerController::class, 'updateDrawer'])->name('teller.drawers.update');
     Route::delete('/teller-drawer/{drawer}', [TellerDrawerController::class, 'destroyDrawer'])->name('teller.drawers.destroy');
+    Route::get('/non-cash-transactions', [NonCashTransactionController::class, 'index'])->name('non-cash.index');
+    Route::post('/non-cash-transactions', [NonCashTransactionController::class, 'store'])->name('non-cash.store');
     Route::get('/end-of-day', [EndOfDayController::class, 'index'])->name('end-of-day.index');
     Route::post('/end-of-day/reconcile', [EndOfDayController::class, 'reconcile'])->name('end-of-day.reconcile');
     Route::post('/end-of-day/process', [EndOfDayController::class, 'process'])->name('end-of-day.process');

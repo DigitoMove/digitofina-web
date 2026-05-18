@@ -621,4 +621,6 @@
         </div>
     </aside>
 </div>
+
+<x-transaction-receipt-modal :transaction="$receiptTransaction" :close-url="route('teller.index')" />
 @endsection

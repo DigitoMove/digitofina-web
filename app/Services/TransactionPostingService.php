@@ -233,6 +233,140 @@ class TransactionPostingService
         });
     }
 
+    public function postNonCash(Account $account, TransactionType $type, ChartAccount $offsetAccount, float $amount, User $user, string $description, ?CarbonInterface $postedAt = null): Transaction
+    {
+        $postedAt ??= now();
+        CurrencyDenomination::assertValid($amount);
+
+        return DB::transaction(function () use ($account, $type, $offsetAccount, $amount, $user, $description, $postedAt): Transaction {
+            $account = Account::query()->with(['accountType', 'client.loans'])->whereKey($account->id)->lockForUpdate()->firstOrFail();
+            $offsetAccount = ChartAccount::query()->whereKey($offsetAccount->id)->lockForUpdate()->firstOrFail();
+
+            if ($account->status !== 'active') {
+                throw new InvalidArgumentException('Account is not active.');
+            }
+
+            if (! $offsetAccount->is_active || $offsetAccount->is_cash_account) {
+                throw new InvalidArgumentException('Select an active non-cash general ledger account.');
+            }
+
+            if ((int) $account->branch_id !== (int) $offsetAccount->branch_id) {
+                throw new InvalidArgumentException('The offset general ledger account must belong to the same branch.');
+            }
+
+            app(FinancialControlService::class)->ensureFinancialDayOpen($user, (int) $account->branch_id, $postedAt);
+
+            if ($account->accountType?->category === 'loan') {
+                if ($type->code !== 'loan_repayment') {
+                    throw new InvalidArgumentException('Loan accounts only accept non-cash loan repayments.');
+                }
+
+                return $this->postNonCashLoanRepayment($account, $type, $offsetAccount, $amount, $user, $description, $postedAt);
+            }
+
+            $direction = $type->direction;
+
+            if (in_array($direction, ['debit', 'withdrawal'], true)) {
+                if ((float) $account->balance < $amount) {
+                    throw new InvalidArgumentException('Insufficient account balance.');
+                }
+
+                $account->decrement('balance', $amount);
+                $offsetEntryType = 'credit';
+            } else {
+                $account->increment('balance', $amount);
+                $offsetEntryType = 'debit';
+            }
+
+            $account->refresh();
+
+            $transaction = Transaction::create([
+                'account_id' => $account->id,
+                'transaction_type_id' => $type->id,
+                'branch_id' => $account->branch_id,
+                'user_id' => $user->id,
+                'reference' => $this->reference(),
+                'amount' => $amount,
+                'balance_after' => $account->balance,
+                'description' => $description,
+                'posted_at' => $postedAt,
+                'created_at' => $postedAt,
+                'updated_at' => now(),
+            ]);
+
+            JournalEntry::create([
+                'organization_id' => $account->organization_id,
+                'branch_id' => $account->branch_id,
+                'created_by' => $user->id,
+                'posted_by' => $user->id,
+                'journal_number' => 'NC'.now()->format('ymdHis').Str::upper(Str::random(4)),
+                'journal_date' => $postedAt->toDateString(),
+                'description' => $description,
+                'status' => 'posted',
+                'posted_at' => $postedAt,
+                'chart_account_id' => $offsetAccount->id,
+                'transaction_id' => $transaction->id,
+                'reference' => $transaction->reference,
+                'account_name' => $offsetAccount->name,
+                'entry_type' => $offsetEntryType,
+                'amount' => $amount,
+                'memo' => $description,
+                'created_at' => $postedAt,
+                'updated_at' => now(),
+            ]);
+
+            $this->auditLogger->record('transaction.non_cash_posted', $transaction, [
+                'account_number' => $account->account_number,
+                'offset_account' => $offsetAccount->code,
+                'amount' => $amount,
+                'type' => $type->code,
+            ]);
+
+            return $transaction;
+        });
+    }
+
+    private function postNonCashLoanRepayment(Account $account, TransactionType $type, ChartAccount $offsetAccount, float $amount, User $user, string $description, CarbonInterface $postedAt): Transaction
+    {
+        $loan = $account->client->loans()
+            ->where('loan_account_id', $account->id)
+            ->whereIn('status', ['active', 'in_arrears'])
+            ->first();
+
+        if (! $loan) {
+            throw new InvalidArgumentException('No active loan is linked to this loan account.');
+        }
+
+        $transaction = Transaction::create([
+            'account_id' => $account->id,
+            'transaction_type_id' => $type->id,
+            'branch_id' => $account->branch_id,
+            'user_id' => $user->id,
+            'reference' => $this->reference(),
+            'amount' => $amount,
+            'balance_after' => max(0, (float) $account->balance - $amount),
+            'description' => $description,
+            'posted_at' => $postedAt,
+            'created_at' => $postedAt,
+            'updated_at' => now(),
+        ]);
+
+        app(LoanService::class)->repay($loan, $amount, $user, $transaction->id, 'non_cash', $transaction->reference, $postedAt, $offsetAccount->code, $description);
+
+        $loan->refresh();
+        $account->update(['balance' => max(0, (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance)]);
+        $transaction->update(['balance_after' => $account->balance]);
+
+        $this->auditLogger->record('transaction.non_cash_loan_repayment_posted', $transaction, [
+            'account_number' => $account->account_number,
+            'amount' => $amount,
+            'loan_number' => $loan->loan_number,
+            'offset_account' => $offsetAccount->code,
+        ]);
+
+        return $transaction->refresh();
+    }
+
     public function postGeneralLedgerCash(ChartAccount $chartAccount, DrawerSession $session, string $entryType, float $amount, User $user, ?string $description = null, ?CarbonInterface $postedAt = null): JournalEntry
     {
         $postedAt ??= now();

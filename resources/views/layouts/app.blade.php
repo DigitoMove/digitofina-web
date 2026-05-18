@@ -60,6 +60,7 @@
                             'icon' => 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10',
                             'items' => [
                                 ['Teller Drawer', 'teller.index', 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10'],
+                                ['Non-Cash Transactions', 'non-cash.index', 'M7 7h10M7 12h10M7 17h6 M4 5h16v14H4z'],
                                 ['End of Day', 'end-of-day.index', 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'],
                                 ['Data Imports', 'imports.index', 'M12 3v12m0 0 4-4m-4 4-4-4 M5 19h14 M5 15v4 M19 15v4'],
                             ],

@@ -10,6 +10,7 @@ use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
 use App\Models\LoanSchedule;
 use App\Models\TellerDrawer;
+use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -163,6 +164,7 @@ class TellerDrawerController extends Controller
             'dueToday' => $dueToday,
             'dueTodayAmount' => (float) $dueToday->sum('outstanding_amount'),
             'expectedBalance' => (float) ($session?->opening_balance ?? 0) + $cashIn - $cashOut,
+            'receiptTransaction' => $this->receiptTransaction($request),
         ]);
     }
 
@@ -383,7 +385,10 @@ class TellerDrawerController extends Controller
             return back()->withErrors(['amount' => $exception->getMessage()])->withInput();
         }
 
-        return redirect()->route('receipts.show', $transaction)->with('status', 'Transaction posted.');
+        return redirect()
+            ->route('teller.index')
+            ->with('status', 'Transaction posted.')
+            ->with('receipt_transaction_id', $transaction->id);
     }
 
     public function close(Request $request, FinancialControlService $financialControls): RedirectResponse
@@ -480,6 +485,21 @@ class TellerDrawerController extends Controller
     {
         return $request->user()->canPerform('manage-accounting')
             || ($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'));
+    }
+
+    private function receiptTransaction(Request $request): ?Transaction
+    {
+        $transactionId = (int) session('receipt_transaction_id');
+
+        if (! $transactionId) {
+            return null;
+        }
+
+        return Transaction::query()
+            ->with(['account.client', 'type', 'user'])
+            ->whereKey($transactionId)
+            ->when(! $request->user()->canPerform('manage-organization') && ! $request->user()->hasRole('super-admin'), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
+            ->first();
     }
 
     private function ledgerEntryType(ChartAccount $chartAccount, ?string $requestedDirection): ?string
