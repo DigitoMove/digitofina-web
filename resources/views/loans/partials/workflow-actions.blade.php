@@ -105,7 +105,7 @@
         <form method="POST" action="{{ route('loans.disburse', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 md:grid-cols-[240px_1fr_auto]">
             @csrf
             <label class="text-sm font-semibold text-slate-700">Payment method <x-required-badge /><select name="payment_method" class="mt-1" required><option value="transfer_to_savings">Transfer to savings</option><option value="cash">Cash</option><option value="mobile_money">Mobile money</option><option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option></select></label>
-            <div class="text-sm text-slate-600">Application fee is deducted from proceeds using the admin setting.</div>
+            <div class="text-sm text-slate-600">Application fee is calculated from the requested amount and deducted from the disbursement proceeds.</div>
             <button class="df-action-primary">Disburse</button>
         </form>
     @endif

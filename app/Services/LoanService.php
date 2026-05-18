@@ -357,7 +357,8 @@ class LoanService
             $loanAccount = $loan->loanAccount ?: $this->generateLoanAccount($loan, $user);
             $loanAccount->update(['balance' => $loan->approved_amount]);
 
-            $fees = round($this->applicationFees->feeFor((float) $loan->requested_amount), 2);
+            $requestedAmountForFee = (float) $loan->requested_amount;
+            $fees = round($this->applicationFees->feeFor($requestedAmountForFee), 2);
             CurrencyDenomination::assertValid((float) $loan->approved_amount, 'Approved amount');
 
             if ($fees > 0) {
@@ -406,7 +407,11 @@ class LoanService
             ]);
 
             $this->generateSchedule($loan->refresh(), $disbursementDate);
-            $this->auditLogger->record('loan.disbursed_to_savings', $loan, ['amount' => $loan->approved_amount]);
+            $this->auditLogger->record('loan.disbursed_to_savings', $loan, [
+                'amount' => $loan->approved_amount,
+                'application_fee_basis' => $requestedAmountForFee,
+                'application_fee' => $fees,
+            ]);
 
             return $loan->refresh();
         });
