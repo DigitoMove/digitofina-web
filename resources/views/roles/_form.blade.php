@@ -1,9 +1,9 @@
 @csrf
 <div class="grid gap-4 md:grid-cols-2">
-    <label class="block text-sm font-medium text-slate-700">Role name
+    <label class="block text-sm font-medium text-slate-700">Role name <x-required-badge />
         <input name="name" value="{{ old('name', $role->name) }}" class="mt-1 w-full rounded border-slate-300" required>
     </label>
-    <label class="block text-sm font-medium text-slate-700">Slug
+    <label class="block text-sm font-medium text-slate-700">Slug <x-required-badge />
         <input name="slug" value="{{ old('slug', $role->slug) }}" class="mt-1 w-full rounded border-slate-300" required>
     </label>
 </div>

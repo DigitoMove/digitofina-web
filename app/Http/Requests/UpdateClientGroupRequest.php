@@ -12,6 +12,13 @@ class UpdateClientGroupRequest extends FormRequest
         return $this->user()?->canPerform('manage-clients') ?? false;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'status' => $this->input('status', $this->route('client_group')?->status ?? 'active'),
+        ]);
+    }
+
     /**
      * @return array<string, array<int, mixed>>
      */
@@ -30,7 +37,7 @@ class UpdateClientGroupRequest extends FormRequest
             'treasurer_client_id' => ['nullable', 'exists:clients,id'],
             'member_ids' => ['array'],
             'member_ids.*' => ['integer', 'exists:clients,id'],
-            'status' => ['required', 'in:active,inactive,suspended,closed'],
+            'status' => ['nullable', 'in:active,inactive,suspended,closed'],
         ];
     }
 }

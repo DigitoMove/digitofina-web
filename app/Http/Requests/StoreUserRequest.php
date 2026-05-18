@@ -12,6 +12,13 @@ class StoreUserRequest extends FormRequest
         return $this->user()?->canPerform('manage-users') ?? false;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'status' => $this->input('status', 'active'),
+        ]);
+    }
+
     /**
      * @return array<string, array<int, mixed>>
      */
@@ -24,7 +31,7 @@ class StoreUserRequest extends FormRequest
             'email' => ['required', 'email', 'max:191', 'unique:users,email'],
             'phone' => ['required', 'string', 'max:40', 'unique:users,phone', 'unique:clients,phone'],
             'position' => ['nullable', 'string', 'max:191'],
-            'status' => ['required', 'in:active,suspended,disabled'],
+            'status' => ['nullable', 'in:active,suspended,disabled'],
             'password' => ['required', 'confirmed', Password::defaults()],
         ];
     }

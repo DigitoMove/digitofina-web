@@ -22,8 +22,8 @@
                 <form method="POST" action="{{ route('imports.store') }}" enctype="multipart/form-data" class="mt-5 grid gap-4 md:grid-cols-2">
                     @csrf
                     <label class="block">
-                        <span class="text-sm font-medium text-slate-700">Import type</span>
-                        <select name="type" class="mt-2 h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-900 shadow-sm transition hover:border-brand-300 focus:border-brand-500 focus:ring-4 focus:ring-brand-100">
+                        <span class="text-sm font-medium text-slate-700">Import type <x-required-badge /></span>
+                        <select name="type" class="mt-2 h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-900 shadow-sm transition hover:border-brand-300 focus:border-brand-500 focus:ring-4 focus:ring-brand-100" required>
                             @foreach ($types as $key => $type)
                                 <option value="{{ $key }}" @selected(old('type') === $key)>{{ $type['label'] }}</option>
                             @endforeach
@@ -41,8 +41,8 @@
                     </label>
 
                     <label class="block md:col-span-2">
-                        <span class="text-sm font-medium text-slate-700">Excel or CSV file</span>
-                        <input type="file" name="file" accept=".csv,.txt,.xlsx" class="mt-2 h-12 w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-700 shadow-sm transition file:mr-4 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:border-brand-300 focus:border-brand-500 focus:ring-4 focus:ring-brand-100">
+                        <span class="text-sm font-medium text-slate-700">Excel or CSV file <x-required-badge /></span>
+                        <input type="file" name="file" accept=".csv,.txt,.xlsx" class="mt-2 h-12 w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-700 shadow-sm transition file:mr-4 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:border-brand-300 focus:border-brand-500 focus:ring-4 focus:ring-brand-100" required>
                     </label>
 
                     <div class="md:col-span-2">

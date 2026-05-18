@@ -57,7 +57,20 @@ class ClientController extends Controller
     {
         Gate::authorize('view', $client);
 
-        $client->load(['branch', 'officer', 'accounts.accountType', 'loans.product', 'documents.uploadedBy', 'documents.verifiedBy', 'notes.user', 'groups']);
+        $client->load([
+            'branch',
+            'officer',
+            'accounts.accountType',
+            'savingsAccounts.product',
+            'shareAccounts.product',
+            'loans.branch',
+            'loans.loanAccount.accountType',
+            'loans.product',
+            'documents.uploadedBy',
+            'documents.verifiedBy',
+            'notes.user',
+            'groups',
+        ]);
 
         return view('clients.show', compact('client'));
     }

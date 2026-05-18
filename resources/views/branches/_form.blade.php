@@ -1,9 +1,9 @@
 @csrf
 <div class="grid gap-4 md:grid-cols-2">
-    <label class="block text-sm font-medium text-slate-700">Branch code
+    <label class="block text-sm font-medium text-slate-700">Branch code <x-required-badge />
         <input name="code" value="{{ old('code', $branch->code) }}" class="mt-1 w-full rounded border-slate-300" required>
     </label>
-    <label class="block text-sm font-medium text-slate-700">Branch name
+    <label class="block text-sm font-medium text-slate-700">Branch name <x-required-badge />
         <input name="name" value="{{ old('name', $branch->name) }}" class="mt-1 w-full rounded border-slate-300" required>
     </label>
     <label class="block text-sm font-medium text-slate-700">Branch manager

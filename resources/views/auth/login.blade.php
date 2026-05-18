@@ -63,10 +63,10 @@
                     <div class="mb-4 rounded-2xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">{{ $errors->first() }}</div>
                 @endif
 
-                <label class="block text-sm font-semibold text-slate-700">Email or phone</label>
+                <label class="block text-sm font-semibold text-slate-700">Email or phone <x-required-badge /></label>
                 <input name="login" value="{{ old('login') }}" class="mt-1 h-12 w-full rounded-2xl border border-brand-100 bg-brand-50/60 px-4 focus:border-brand-500 focus:bg-white focus:ring-brand-100" required autofocus autocomplete="username">
 
-                <label class="mt-4 block text-sm font-semibold text-slate-700">Password</label>
+                <label class="mt-4 block text-sm font-semibold text-slate-700">Password <x-required-badge /></label>
                 <input name="password" type="password" class="mt-1 h-12 w-full rounded-2xl border border-brand-100 bg-brand-50/60 px-4 focus:border-brand-500 focus:bg-white focus:ring-brand-100" required autocomplete="current-password">
 
                 <div class="mt-4 flex items-center justify-between gap-3 text-sm">

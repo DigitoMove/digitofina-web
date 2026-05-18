@@ -12,6 +12,13 @@ class StoreSavingsProductRequest extends FormRequest
         return $this->user()?->canPerform('manage-accounts') ?? false;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'status' => $this->input('status', 'active'),
+        ]);
+    }
+
     /**
      * @return array<string, array<int, mixed>>
      */
@@ -29,7 +36,7 @@ class StoreSavingsProductRequest extends FormRequest
             'monthly_maintenance_fee' => ['required', 'numeric', 'min:0'],
             'account_number_prefix' => ['required', 'string', 'max:20'],
             'allows_overdraft' => ['boolean'],
-            'status' => ['required', 'in:active,inactive'],
+            'status' => ['nullable', 'in:active,inactive'],
         ];
     }
 }

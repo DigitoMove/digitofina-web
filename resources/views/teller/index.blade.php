@@ -47,8 +47,8 @@
         @unless($session)
             <form method="POST" action="{{ route('teller.open') }}" class="mt-5 grid gap-3">
                 @csrf
-                <label class="text-sm font-semibold text-slate-700">Drawer
-                    <select name="teller_drawer_id" class="mt-1">
+                <label class="text-sm font-semibold text-slate-700">Drawer <x-required-badge />
+                    <select name="teller_drawer_id" class="mt-1" required>
                         @foreach($drawers as $openDrawer)
                             <option value="{{ $openDrawer->id }}" @selected((int) old('teller_drawer_id') === $openDrawer->id)>{{ $openDrawer->code }} {{ $openDrawer->name }}</option>
                         @endforeach
@@ -64,8 +64,8 @@
                         </select>
                     </label>
                 @endif
-                <label class="text-sm font-semibold text-slate-700">Opening Balance
-                    <input name="opening_balance" type="number" min="0" step="100" value="{{ old('opening_balance') }}" class="mt-1" placeholder="Opening balance">
+                <label class="text-sm font-semibold text-slate-700">Opening Balance <x-required-badge />
+                    <input name="opening_balance" type="number" min="0" step="100" value="{{ old('opening_balance') }}" class="mt-1" placeholder="Opening balance" required>
                 </label>
                 <button class="df-action-primary">Open Drawer</button>
             </form>
@@ -140,21 +140,21 @@
             @if($errors->any())
                 <div class="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700 md:col-span-2">{{ $errors->first() }}</div>
             @endif
-            <label class="text-sm font-semibold text-slate-700">Posting Account
-                <select name="account_scope" class="mt-1">
+            <label class="text-sm font-semibold text-slate-700">Posting Account <x-required-badge />
+                <select name="account_scope" class="mt-1" required>
                     <option value="client_account" @selected(old('account_scope', 'client_account') === 'client_account')>Savings / Loan / Other Client Account</option>
                     <option value="general_ledger" @selected(old('account_scope') === 'general_ledger')>General Ledger Account</option>
                 </select>
             </label>
             <input type="hidden" name="account_number" value="{{ $account?->account_number ?? request('account_number') }}">
-            <label class="text-sm font-semibold text-slate-700">Transaction Type
+            <label class="text-sm font-semibold text-slate-700">Transaction Type <x-required-badge label="Required for client account" class="bg-amber-50 text-amber-700" />
                 <select name="transaction_type_id" class="mt-1">
                     @foreach($transactionTypes as $type)
                         <option value="{{ $type->id }}">{{ $type->name }}</option>
                     @endforeach
                 </select>
             </label>
-            <label class="text-sm font-semibold text-slate-700">General Ledger Account
+            <label class="text-sm font-semibold text-slate-700">General Ledger Account <x-required-badge label="Required for GL" class="bg-amber-50 text-amber-700" />
                 <select name="chart_account_id" class="mt-1">
                     <option value="">Select branch GL account</option>
                     @foreach($chartAccounts->groupBy('type') as $type => $accounts)
@@ -166,7 +166,7 @@
                     @endforeach
                 </select>
             </label>
-            <label class="text-sm font-semibold text-slate-700">GL Side
+            <label class="text-sm font-semibold text-slate-700">GL Side <x-required-badge label="Required for GL" class="bg-amber-50 text-amber-700" />
                 <select name="gl_entry_type" class="mt-1">
                     <option value="debit" @selected(old('gl_entry_type') === 'debit')>Debit selected GL account</option>
                     <option value="credit" @selected(old('gl_entry_type') === 'credit')>Credit selected GL account</option>
@@ -175,8 +175,8 @@
             <label class="text-sm font-semibold text-slate-700">Cheque No
                 <input name="cheque_number" class="mt-1">
             </label>
-            <label class="text-sm font-semibold text-slate-700">Amount
-                <input name="amount" type="number" min="100" step="100" class="mt-1">
+            <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge />
+                <input name="amount" type="number" min="100" step="100" class="mt-1" required>
             </label>
             <label class="text-sm font-semibold text-slate-700 md:col-span-2">Transaction Description
                 <textarea name="description" rows="3" class="mt-1"></textarea>
@@ -244,8 +244,8 @@
         <p class="df-muted">Confirm counted cash before ending the session.</p>
         <form method="POST" action="{{ route('teller.close') }}" class="mt-5 grid gap-3">
             @csrf
-            <label class="text-sm font-semibold text-slate-700">Closing Balance
-                <input name="closing_balance" type="number" min="0" step="100" value="{{ $drawer?->current_balance }}" class="mt-1" placeholder="Closing balance">
+            <label class="text-sm font-semibold text-slate-700">Closing Balance <x-required-badge />
+                <input name="closing_balance" type="number" min="0" step="100" value="{{ $drawer?->current_balance }}" class="mt-1" placeholder="Closing balance" required>
             </label>
             <button @disabled(!$session) class="df-action-danger disabled:pointer-events-none disabled:bg-slate-400">Close Drawer</button>
         </form>

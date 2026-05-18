@@ -17,7 +17,7 @@
             </div>
             @if (session('status')) <div class="mb-4 rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-700">{{ session('status') }}</div> @endif
             @if ($errors->any()) <div class="mb-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{{ $errors->first() }}</div> @endif
-            <label class="block text-sm font-medium text-slate-700">Email</label>
+            <label class="block text-sm font-medium text-slate-700">Email <x-required-badge /></label>
             <input name="email" value="{{ old('email') }}" class="mt-1 h-11 w-full rounded-xl border border-brand-100 px-3 focus:border-brand-500 focus:ring-brand-100" required autofocus>
             <button class="df-action-primary mt-6 h-11 w-full">Send reset link</button>
             <a href="{{ route('login') }}" class="mt-4 block text-center text-sm font-medium text-brand-700">Back to login</a>

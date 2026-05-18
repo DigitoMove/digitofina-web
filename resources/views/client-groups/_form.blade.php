@@ -1,8 +1,8 @@
 @csrf
 <div class="grid gap-4 md:grid-cols-2">
-    <label class="text-sm font-medium text-slate-700">Group number<input name="group_number" value="{{ old('group_number', $group->group_number) }}" class="mt-1 w-full rounded border-slate-300" required></label>
-    <label class="text-sm font-medium text-slate-700">Group name<input name="name" value="{{ old('name', $group->name) }}" class="mt-1 w-full rounded border-slate-300" required></label>
-    <label class="text-sm font-medium text-slate-700">Branch<select name="branch_id" class="mt-1 w-full rounded border-slate-300">@foreach($branches as $branch)<option value="{{ $branch->id }}" @selected(old('branch_id', $group->branch_id) == $branch->id)>{{ $branch->name }}</option>@endforeach</select></label>
+    <label class="text-sm font-medium text-slate-700">Group number <x-required-badge /><input name="group_number" value="{{ old('group_number', $group->group_number) }}" class="mt-1 w-full rounded border-slate-300" required></label>
+    <label class="text-sm font-medium text-slate-700">Group name <x-required-badge /><input name="name" value="{{ old('name', $group->name) }}" class="mt-1 w-full rounded border-slate-300" required></label>
+    <label class="text-sm font-medium text-slate-700">Branch <x-required-badge /><select name="branch_id" class="mt-1 w-full rounded border-slate-300" required>@foreach($branches as $branch)<option value="{{ $branch->id }}" @selected(old('branch_id', $group->branch_id) == $branch->id)>{{ $branch->name }}</option>@endforeach</select></label>
     <label class="text-sm font-medium text-slate-700">Registration number<input name="registration_number" value="{{ old('registration_number', $group->registration_number) }}" class="mt-1 w-full rounded border-slate-300"></label>
     <label class="text-sm font-medium text-slate-700">Phone<input name="phone" value="{{ old('phone', $group->phone) }}" class="mt-1 w-full rounded border-slate-300"></label>
     <label class="text-sm font-medium text-slate-700">Meeting day<input name="meeting_day" value="{{ old('meeting_day', $group->meeting_day) }}" class="mt-1 w-full rounded border-slate-300"></label>

@@ -17,11 +17,11 @@
                 <p class="mt-1 text-sm text-brand-700">Choose a strong password for your DigitoFina staff account.</p>
             </div>
             @if ($errors->any()) <div class="mb-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{{ $errors->first() }}</div> @endif
-            <label class="block text-sm font-medium text-slate-700">Email</label>
+            <label class="block text-sm font-medium text-slate-700">Email <x-required-badge /></label>
             <input name="email" value="{{ old('email', $request->email) }}" class="mt-1 h-11 w-full rounded-xl border border-brand-100 px-3 focus:border-brand-500 focus:ring-brand-100" required>
-            <label class="mt-4 block text-sm font-medium text-slate-700">New password</label>
+            <label class="mt-4 block text-sm font-medium text-slate-700">New password <x-required-badge /></label>
             <input name="password" type="password" class="mt-1 h-11 w-full rounded-xl border border-brand-100 px-3 focus:border-brand-500 focus:ring-brand-100" required>
-            <label class="mt-4 block text-sm font-medium text-slate-700">Confirm password</label>
+            <label class="mt-4 block text-sm font-medium text-slate-700">Confirm password <x-required-badge /></label>
             <input name="password_confirmation" type="password" class="mt-1 h-11 w-full rounded-xl border border-brand-100 px-3 focus:border-brand-500 focus:ring-brand-100" required>
             <button class="df-action-primary mt-6 h-11 w-full">Update password</button>
         </form>

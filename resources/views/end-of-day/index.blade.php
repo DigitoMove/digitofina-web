@@ -229,8 +229,8 @@
             <h2 class="font-semibold text-slate-950">Branch Cash Count</h2>
             <p class="df-muted">Count physical cash after all teller drawers have been closed.</p>
             <div class="mt-4 grid gap-3">
-                <label class="text-sm font-semibold text-slate-700">Counted Cash
-                    <input class="mt-1" name="counted_cash" type="number" step="0.01" value="{{ old('counted_cash', $reconciliation?->counted_cash ?? $summary?->expected_cash ?? 0) }}">
+                <label class="text-sm font-semibold text-slate-700">Counted Cash <x-required-badge />
+                    <input class="mt-1" name="counted_cash" type="number" step="0.01" value="{{ old('counted_cash', $reconciliation?->counted_cash ?? $summary?->expected_cash ?? 0) }}" required>
                 </label>
                 <label class="text-sm font-semibold text-slate-700">Notes
                     <textarea class="mt-1" name="notes" rows="3">{{ old('notes', $reconciliation?->notes) }}</textarea>
@@ -284,7 +284,7 @@
             <h2 class="font-semibold text-slate-950">Close Business Day</h2>
             <p class="df-muted">Requires all teller sessions to be closed. Closing runs summaries, overdue checks, penalties, and reminders.</p>
             <div class="mt-4 grid gap-3">
-                <input name="counted_cash" type="number" step="0.01" value="{{ old('counted_cash', $reconciliation?->counted_cash ?? $summary?->expected_cash ?? 0) }}">
+                <label class="text-sm font-semibold text-slate-700">Counted cash <x-required-badge /><input name="counted_cash" type="number" step="0.01" value="{{ old('counted_cash', $reconciliation?->counted_cash ?? $summary?->expected_cash ?? 0) }}" required></label>
                 <textarea name="notes" rows="3" placeholder="Closure notes">{{ old('notes', $reconciliation?->notes) }}</textarea>
                 <button class="df-action-primary">Close Day</button>
             </div>

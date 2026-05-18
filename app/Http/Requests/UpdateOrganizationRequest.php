@@ -19,15 +19,22 @@ class UpdateOrganizationRequest extends FormRequest
             || false;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $organization = $this->organization();
+
+        $this->merge([
+            'financial_year_start_month' => $this->input('financial_year_start_month', $organization?->financial_year_start_month ?? 'january'),
+            'status' => $this->input('status', $organization?->status ?? 'active'),
+        ]);
+    }
+
     /**
      * @return array<string, array<int, mixed>>
      */
     public function rules(): array
     {
-        $organization = $this->route('organization')
-            ?: $this->user()?->organization
-            ?: $this->user()?->branch?->organization
-            ?: Organization::query()->orderBy('id')->first();
+        $organization = $this->organization();
 
         return [
             'name' => ['required', 'string', 'max:191'],
@@ -38,8 +45,16 @@ class UpdateOrganizationRequest extends FormRequest
             'email' => ['nullable', 'email', 'max:191'],
             'address' => ['nullable', 'string'],
             'currency' => ['required', 'string', 'max:10'],
-            'financial_year_start_month' => ['required', 'string', 'max:20'],
-            'status' => ['required', 'in:active,suspended,disabled'],
+            'financial_year_start_month' => ['nullable', 'string', 'max:20'],
+            'status' => ['nullable', 'in:active,suspended,disabled'],
         ];
+    }
+
+    private function organization(): ?Organization
+    {
+        return $this->route('organization')
+            ?: $this->user()?->organization
+            ?: $this->user()?->branch?->organization
+            ?: Organization::query()->orderBy('id')->first();
     }
 }

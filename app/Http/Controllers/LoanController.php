@@ -122,7 +122,10 @@ class LoanController extends Controller
     {
         return view('loans.show', [
             'loan' => $loan->load([
+                'branch',
                 'client.accounts.accountType',
+                'client.branch',
+                'client.documents',
                 'creator',
                 'officer',
                 'product',

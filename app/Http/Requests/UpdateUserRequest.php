@@ -13,6 +13,13 @@ class UpdateUserRequest extends FormRequest
         return $this->user()?->canPerform('manage-users') ?? false;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'status' => $this->input('status', $this->route('user')?->status ?? 'active'),
+        ]);
+    }
+
     /**
      * @return array<string, array<int, mixed>>
      */
@@ -27,7 +34,7 @@ class UpdateUserRequest extends FormRequest
             'email' => ['required', 'email', 'max:191', Rule::unique('users', 'email')->ignore($user)],
             'phone' => ['required', 'string', 'max:40', Rule::unique('users', 'phone')->ignore($user)],
             'position' => ['nullable', 'string', 'max:191'],
-            'status' => ['required', 'in:active,suspended,disabled'],
+            'status' => ['nullable', 'in:active,suspended,disabled'],
             'password' => ['nullable', 'confirmed', Password::defaults()],
         ];
     }

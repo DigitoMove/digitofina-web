@@ -13,6 +13,13 @@ class StoreLoanProductRequest extends FormRequest
         return $this->user()?->canPerform('manage-loans') ?? false;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'status' => $this->input('status', 'active'),
+        ]);
+    }
+
     /**
      * Get the validation rules that apply to the request.
      *
@@ -46,7 +53,7 @@ class StoreLoanProductRequest extends FormRequest
             'require_collateral' => ['nullable', 'boolean'],
             'auto_deduct_repayment_from_savings' => ['nullable', 'boolean'],
             'loan_account_number_prefix' => ['required', 'string', 'max:20'],
-            'status' => ['required', Rule::in(['active', 'inactive'])],
+            'status' => ['nullable', Rule::in(['active', 'inactive'])],
         ];
     }
 }

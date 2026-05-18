@@ -2,228 +2,531 @@
 
 @section('content')
 @php
-    $workflow = ['draft', 'appraisal', 'approval', 'approved', 'active', 'closed'];
+    $client = $loan->client;
+    $displayName = $client->full_name ?: $client->business_name ?: $client->client_number;
+    $profilePhotoDocument = $client->documents->firstWhere('type', 'profile_photo');
+    $loanAccountNumber = $loan->loanAccount?->account_number ?? $loan->loan_number;
+    $approvedOrRequestedAmount = (float) ($loan->approved_amount ?? $loan->requested_amount);
+    $disbursedAmount = (float) $loan->disbursements->sum('disbursed_amount');
+    $netDisbursedAmount = (float) $loan->disbursements->sum('net_amount');
+    $paidAmount = (float) $loan->repayments->sum('amount');
+    $maturityDate = $loan->schedules->sortByDesc('due_date')->first()?->due_date;
+    $totalInstallments = $loan->schedules->count();
+    $paidInstallments = $loan->schedules->where('status', 'paid')->count();
+    $lateInstallments = $loan->schedules->filter(fn ($schedule) => $schedule->due_date?->isPast() && $schedule->status !== 'paid')->count();
+    $unpaidInstallments = max(0, $totalInstallments - $paidInstallments);
+    $arrearsDays = (int) $loan->schedules->max('days_overdue');
+    $isNonPerforming = in_array($loan->status, ['in_arrears', 'written_off'], true);
+    $canCancel = (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans')) && ! in_array($loan->status, ['cancelled', 'rejected', 'disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true);
+    $workflow = ['Draft', 'Appraisal', 'Approval', 'Approved', 'Disbursed', 'Closed'];
     $statusIndex = match (true) {
         $loan->status === 'draft' => 0,
         $loan->status === 'under_review' => 1,
         in_array($loan->status, ['submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true) => 2,
         $loan->status === 'approved' => 3,
         in_array($loan->status, ['disbursed', 'active', 'in_arrears', 'restructured'], true) => 4,
-        in_array($loan->status, ['fully_paid', 'closed'], true) => 5,
+        in_array($loan->status, ['fully_paid', 'closed', 'written_off'], true) => 5,
         default => 2,
     };
+    $statusTone = match ($loan->status) {
+        'fully_paid', 'closed' => 'bg-blue-100 text-blue-800',
+        'written_off', 'cancelled', 'rejected' => 'bg-red-100 text-red-800',
+        'in_arrears' => 'bg-rose-100 text-rose-800',
+        'active', 'disbursed' => 'bg-emerald-100 text-emerald-800',
+        'approved' => 'bg-amber-100 text-amber-800',
+        default => 'bg-slate-100 text-slate-700',
+    };
+    $statusLabel = match ($loan->status) {
+        'fully_paid', 'closed' => 'Closed Obligation Met',
+        'written_off' => 'Closed Written-Off',
+        default => str($loan->status)->headline(),
+    };
+    $summaryRows = [
+        [
+            'label' => 'Principal',
+            'initial' => max($approvedOrRequestedAmount, (float) $loan->schedules->sum('principal_due')),
+            'paid' => (float) $loan->schedules->sum('principal_paid'),
+            'overdue' => (float) $loan->schedules->filter(fn ($schedule) => $schedule->due_date?->isPast() && $schedule->status !== 'paid')->sum(fn ($schedule) => max(0, (float) $schedule->principal_due - (float) $schedule->principal_paid)),
+            'balance' => (float) $loan->principal_balance,
+        ],
+        [
+            'label' => 'Interest',
+            'initial' => (float) $loan->schedules->sum('interest_due'),
+            'paid' => (float) $loan->schedules->sum('interest_paid'),
+            'overdue' => (float) $loan->schedules->filter(fn ($schedule) => $schedule->due_date?->isPast() && $schedule->status !== 'paid')->sum(fn ($schedule) => max(0, (float) $schedule->interest_due - (float) $schedule->interest_paid)),
+            'balance' => (float) $loan->interest_balance,
+        ],
+        [
+            'label' => 'Fees',
+            'initial' => (float) $loan->schedules->sum('fees_due'),
+            'paid' => (float) $loan->schedules->sum('fees_paid'),
+            'overdue' => (float) $loan->schedules->filter(fn ($schedule) => $schedule->due_date?->isPast() && $schedule->status !== 'paid')->sum(fn ($schedule) => max(0, (float) $schedule->fees_due - (float) $schedule->fees_paid)),
+            'balance' => (float) $loan->fees_balance,
+        ],
+        [
+            'label' => 'Penalty',
+            'initial' => (float) $loan->schedules->sum('penalty_due'),
+            'paid' => (float) $loan->schedules->sum('penalty_paid'),
+            'overdue' => (float) $loan->schedules->filter(fn ($schedule) => $schedule->due_date?->isPast() && $schedule->status !== 'paid')->sum(fn ($schedule) => max(0, (float) $schedule->penalty_due - (float) $schedule->penalty_paid)),
+            'balance' => (float) $loan->penalty_balance,
+        ],
+    ];
+    $actionItems = [
+        ['Client Account Dashboard', route('clients.show', $client), 'CD', 0],
+        ['Loan Account Details', route('loans.show', $loan), 'LA', null],
+        ['Transaction Authorisation Details', route('audit-logs.index', ['search' => $loanAccountNumber]), 'TA', 0],
+        ['Disburse Loan', route('loans.show', $loan), 'DL', $loan->status === 'approved' ? 1 : 0],
+        ['Assign Officer', route('loans.show', $loan), 'AO', $canAssignOfficer ? 1 : 0],
+        ['Loan Account Reports', route('reports.show', 'loan-book'), 'LR', null],
+        ['Account Notes', route('loans.show', $loan), 'AN', 0],
+        ['Account Notifications', route('loans.show', $loan), 'NO', 0],
+    ];
+    $accountMenus = [
+        ['Savings Accounts', [['Open savings account', route('savings-accounts.create', ['client_id' => $client->id])], ['View accounts', route('savings-accounts.index', ['search' => $client->client_number])]]],
+        ['Loan Accounts', [['New application', route('loans.create', ['client_id' => $client->id])], ['View loans', route('loans.index', ['search' => $client->client_number])]]],
+        ['Current Accounts', [['Open current account', route('accounts.create', ['client_id' => $client->id])], ['View accounts', route('accounts.index', ['search' => $client->client_number])]]],
+        ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]],
+        ['Term Deposits', [['Maturity report', route('reports.show', 'term-deposits-maturity-report')], ['Funded term deposits', route('reports.show', 'funded-term-deposit-accounts')]]],
+    ];
 @endphp
 
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div>
-        <h1 class="df-title">{{ $loan->loan_number }}</h1>
-        <p class="df-muted">{{ $loan->client->full_name }} · {{ $loan->product->name }}</p>
+        <h1 class="df-title">Loan Account</h1>
+        <p class="df-muted">{{ $loanAccountNumber }} · {{ $displayName }} · {{ $loan->product?->name ?? 'Loan product' }}</p>
     </div>
-    <span class="df-badge {{ in_array($loan->status, ['active', 'fully_paid', 'closed'], true) ? 'border-forest-500/20 bg-forest-50 text-forest-700' : 'border-sun-400/20 bg-sun-50 text-sun-600' }}">{{ str($loan->status)->headline() }}</span>
+    <span class="inline-flex rounded-full px-3 py-1 text-sm font-semibold {{ $statusTone }}">{{ $statusLabel }}</span>
 </div>
 
-<section class="df-panel mb-5 p-5">
-    <div class="grid gap-3 md:grid-cols-6">
-        @foreach ($workflow as $index => $label)
-            <div class="df-step {{ $index < $statusIndex ? 'is-complete' : '' }} {{ $index === $statusIndex ? 'is-active' : '' }}">
-                <span class="grid h-6 w-6 place-items-center rounded-full bg-white text-xs">{{ $index + 1 }}</span>
-                {{ str($label)->headline() }}
+<div class="grid gap-5 xl:grid-cols-[22rem_1fr]">
+    <aside class="grid gap-5">
+        <section class="df-panel p-5">
+            <div class="aspect-[4/3] overflow-hidden rounded-card border border-slate-200 bg-slate-100">
+                @if($profilePhotoDocument)
+                    <img src="{{ route('clients.documents.download', [$client, $profilePhotoDocument]) }}" alt="{{ $displayName }}" class="h-full w-full object-cover">
+                @else
+                    <div class="grid h-full place-items-center bg-gradient-to-br from-slate-100 to-slate-200 text-6xl font-semibold text-slate-400">{{ str($displayName)->substr(0, 1)->upper() }}</div>
+                @endif
             </div>
-        @endforeach
-    </div>
-</section>
+            <div class="mt-5">
+                <h2 class="text-xl font-semibold text-slate-800">{{ $displayName }}</h2>
+                <dl class="mt-3 grid gap-1 text-sm text-slate-600">
+                    <div><dt class="inline font-semibold">Client Number:</dt> <dd class="inline">{{ $client->client_number }}</dd></div>
+                    <div><dt class="inline font-semibold">Client Branch:</dt> <dd class="inline">{{ $client->branch?->name ?? $loan->branch?->name }}</dd></div>
+                    <div><dt class="inline font-semibold">Loan Status:</dt> <dd class="inline">{{ $statusLabel }}</dd></div>
+                </dl>
+            </div>
+        </section>
 
-<div data-df-tabs class="grid gap-5">
-    <div class="df-tablist" role="tablist">
-        <button type="button" class="df-tab" data-df-tab-target="summary">Summary</button>
-        <button type="button" class="df-tab" data-df-tab-target="workflow">Workflow</button>
-        <button type="button" class="df-tab" data-df-tab-target="security">Guarantors & Collateral</button>
-        <button type="button" class="df-tab" data-df-tab-target="schedule">Schedule</button>
-        <button type="button" class="df-tab" data-df-tab-target="activity">Activity</button>
-    </div>
+        <section class="df-panel p-5">
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Manage Account</h2>
+            <div class="mt-3 divide-y divide-slate-100">
+                @foreach($actionItems as [$label, $href, $icon, $count])
+                    <a href="{{ $href }}" class="flex items-center gap-3 py-2.5 text-sm font-medium text-brand-700 hover:text-brand-900">
+                        <span class="grid h-7 w-7 place-items-center rounded bg-slate-100 text-[10px] font-bold text-slate-600">{{ $icon }}</span>
+                        <span class="min-w-0 flex-1">{{ $label }}</span>
+                        @if(! is_null($count))
+                            <span class="rounded-full bg-brand-600 px-2 py-0.5 text-xs font-semibold text-white">{{ number_format($count) }}</span>
+                        @endif
+                    </a>
+                @endforeach
+            </div>
+        </section>
 
-    <section data-df-tab-panel="summary" class="grid gap-5 xl:grid-cols-3">
-        <div class="df-panel p-5">
-            <h2 class="font-semibold text-slate-950">Application</h2>
-            <dl class="mt-4 grid gap-3 text-sm">
-                <div><dt class="text-slate-500">Requested</dt><dd class="font-semibold">UGX {{ number_format($loan->requested_amount, 2) }}</dd></div>
-                <div><dt class="text-slate-500">Approved</dt><dd>UGX {{ number_format($loan->approved_amount ?? 0, 2) }}</dd></div>
-                <div><dt class="text-slate-500">Purpose</dt><dd>{{ $loan->purpose }}</dd></div>
-                <div><dt class="text-slate-500">Type</dt><dd>{{ str($loan->loan_type ?? 'standard')->headline() }}</dd></div>
-                <div><dt class="text-slate-500">Assigned officer</dt><dd>{{ $loan->officer?->name ?? 'Unassigned' }}</dd></div>
-                <div><dt class="text-slate-500">Created by</dt><dd>{{ $loan->creator?->name ?? 'System' }}</dd></div>
-                <div><dt class="text-slate-500">Repayment</dt><dd>{{ $loan->term_periods }} {{ str($loan->repayment_frequency)->headline() }} installment(s)</dd></div>
-                <div><dt class="text-slate-500">Savings at application</dt><dd>UGX {{ number_format($loan->savings_balance_at_application, 2) }} / Required {{ number_format($loan->required_savings_amount, 2) }}</dd></div>
-            </dl>
+        <section class="df-panel p-5 text-sm text-slate-600">
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Address</h2>
+            <div class="mt-3 leading-6">
+                <div>{{ $client->address ?: 'No physical address recorded.' }}</div>
+                <div>{{ $client->village ?: '' }}</div>
+                <div>{{ $client->sub_county ?: '' }} {{ $client->district ?: '' }}</div>
+                <div>{{ $client->region ?: '' }}</div>
+                <div class="mt-2">P1: {{ $client->phone ?: 'N/A' }}</div>
+                @if($client->alternative_phone)<div>P2: {{ $client->alternative_phone }}</div>@endif
+            </div>
+        </section>
+    </aside>
+
+    <main class="grid gap-5">
+        <div class="flex flex-wrap justify-end gap-2">
+            @foreach ($accountMenus as [$label, $links])
+                <details class="group relative">
+                    <summary class="df-action-primary min-h-10 cursor-pointer list-none rounded-lg px-3 py-2">{{ $label }} <span class="ml-1 text-xs">▾</span></summary>
+                    <div class="absolute right-0 z-20 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-2 text-sm shadow-xl">
+                        @foreach($links as [$linkLabel, $href])
+                            <a href="{{ $href }}" class="block rounded px-3 py-2 font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-800">{{ $linkLabel }}</a>
+                        @endforeach
+                    </div>
+                </details>
+            @endforeach
         </div>
 
-        <div class="df-panel p-5 xl:col-span-2">
-            <h2 class="font-semibold text-slate-950">Balances</h2>
-            <div class="mt-4 grid gap-3 md:grid-cols-4">
-                @foreach ([['Principal', $loan->principal_balance], ['Interest', $loan->interest_balance], ['Fees', $loan->fees_balance], ['Penalty', $loan->penalty_balance]] as [$label, $amount])
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $label }}</div>
-                        <div class="mt-2 text-xl font-semibold text-slate-950">{{ number_format($amount, 2) }}</div>
+        <section class="df-panel p-5">
+            <div class="grid gap-3 md:grid-cols-6">
+                @foreach ($workflow as $index => $label)
+                    <div class="df-step {{ $index < $statusIndex ? 'is-complete' : '' }} {{ $index === $statusIndex ? 'is-active' : '' }}">
+                        <span class="grid h-6 w-6 place-items-center rounded-full bg-white text-xs">{{ $index + 1 }}</span>
+                        {{ $label }}
                     </div>
                 @endforeach
             </div>
-            <div class="mt-4 grid gap-3 md:grid-cols-2">
-                <div class="rounded-lg border border-slate-200 bg-white p-4 text-sm">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Savings account</div>
-                    <div class="mt-2 font-semibold text-slate-950">{{ $loan->savingsAccount?->account_number ?? 'Not generated' }}</div>
-                    <div class="mt-1 text-slate-500">Balance: UGX {{ number_format($loan->savingsAccount?->balance ?? 0, 2) }}</div>
-                </div>
-                <div class="rounded-lg border border-slate-200 bg-white p-4 text-sm">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Loan account</div>
-                    <div class="mt-2 font-semibold text-slate-950">{{ $loan->loanAccount?->account_number ?? 'Not generated' }}</div>
-                    <div class="mt-1 text-slate-500">Outstanding: UGX {{ number_format($loan->loanAccount?->balance ?? 0, 2) }}</div>
-                </div>
+        </section>
+
+        <div data-df-tabs class="grid gap-5">
+            <div class="df-tablist" role="tablist">
+                <button type="button" class="df-tab" data-df-tab-target="general">General</button>
+                <button type="button" class="df-tab" data-df-tab-target="workflow">Workflow</button>
+                <button type="button" class="df-tab" data-df-tab-target="schedule">Loan Schedule</button>
+                <button type="button" class="df-tab" data-df-tab-target="repayments">Repayments</button>
+                <button type="button" class="df-tab" data-df-tab-target="properties">Properties</button>
             </div>
-        </div>
-    </section>
 
-    <section data-df-tab-panel="workflow" class="df-panel p-5">
-        <h2 class="font-semibold text-slate-950">Workflow Actions</h2>
-        @if($errors->has('workflow'))
-            <div class="mt-4 rounded border border-coral-500/20 bg-coral-50 p-3 text-sm text-coral-700">{{ $errors->first('workflow') }}</div>
-        @endif
-        @if($errors->has('cancel_reason'))
-            <div class="mt-4 rounded border border-coral-500/20 bg-coral-50 p-3 text-sm text-coral-700">{{ $errors->first('cancel_reason') }}</div>
-        @endif
-        @if($errors->has('officer_id'))
-            <div class="mt-4 rounded border border-coral-500/20 bg-coral-50 p-3 text-sm text-coral-700">{{ $errors->first('officer_id') }}</div>
-        @endif
+            <section data-df-tab-panel="general" class="grid gap-5">
+                <div class="grid gap-5 xl:grid-cols-[1fr_26rem]">
+                    <div class="df-panel bg-slate-50 p-5">
+                        <dl class="grid gap-x-8 gap-y-3 text-sm md:grid-cols-2">
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Account Number</dt><dd class="font-semibold text-sky-700">{{ $loanAccountNumber }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Application No.</dt><dd class="font-semibold text-sky-700">{{ $loan->loan_number }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Account Status</dt><dd class="font-semibold text-sky-700">{{ $statusLabel }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Disbursed Amount</dt><dd class="font-semibold text-sky-700">UGX {{ number_format($disbursedAmount, 2) }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Account Branch</dt><dd class="font-semibold text-sky-700">{{ $loan->branch?->name ?? $client->branch?->name ?? 'N/A' }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Maturity Date</dt><dd class="font-semibold text-sky-700">{{ $maturityDate?->format('d-m-Y') ?? 'Pending schedule' }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Loan Officer</dt><dd class="font-semibold text-sky-700">{{ $loan->officer?->name ?? 'Unassigned' }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Created By</dt><dd class="font-semibold text-sky-700">{{ $loan->creator?->name ?? 'System' }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Product Name</dt><dd class="font-semibold text-sky-700">{{ $loan->product?->name ?? 'Loan product' }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Savings Account</dt><dd class="font-semibold text-sky-700">{{ $loan->savingsAccount?->account_number ?? 'Not generated' }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Loan Purpose</dt><dd class="font-semibold text-sky-700">{{ $loan->purpose ?: 'Not recorded' }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Loan Account</dt><dd class="font-semibold text-sky-700">{{ $loan->loanAccount?->account_number ?? 'Not generated' }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Principal Amount</dt><dd class="font-semibold text-sky-700">UGX {{ number_format($approvedOrRequestedAmount, 2) }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Loan Type</dt><dd class="font-semibold text-sky-700">{{ str($loan->loan_type ?? 'standard')->headline() }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Disburse Date</dt><dd class="font-semibold text-sky-700">{{ $loan->disbursed_at?->format('d-m-Y') ?? 'Not disbursed' }}</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Repayment</dt><dd class="font-semibold text-sky-700">{{ $loan->term_periods }} {{ str($loan->repayment_frequency)->headline() }} installment(s)</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Interest Rate P.A</dt><dd class="font-semibold text-sky-700">{{ number_format((float) $loan->interest_rate, 2) }}%</dd></div>
+                            <div class="grid grid-cols-[12rem_1fr] gap-2"><dt class="text-slate-500">Privileged Access</dt><dd class="font-semibold text-sky-700">No</dd></div>
+                        </dl>
+                    </div>
 
-        @if($canAssignOfficer)
-            <form method="POST" action="{{ route('loans.assign-officer', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_auto]">
-                @csrf
-                <select name="officer_id" class="rounded border-slate-300">
-                    @foreach($assignableOfficers as $officer)
-                        <option value="{{ $officer->id }}" @selected((int) old('officer_id', $loan->officer_id) === $officer->id)>{{ $officer->name }} · {{ $officer->role?->name }}</option>
+                    <div class="grid gap-5">
+                        <div class="rounded-card bg-sky-100 p-5 text-sm text-sky-900">
+                            <dl class="grid gap-3">
+                                <div class="flex justify-between gap-3"><dt>Total Installments</dt><dd class="font-semibold">{{ number_format($totalInstallments) }}</dd></div>
+                                <div class="flex justify-between gap-3"><dt>Paid Installments</dt><dd class="font-semibold">{{ number_format($paidInstallments) }}</dd></div>
+                                <div class="flex justify-between gap-3"><dt>Late Installments</dt><dd class="font-semibold">{{ number_format($lateInstallments) }}</dd></div>
+                                <div class="flex justify-between gap-3"><dt>Unpaid Installments</dt><dd class="font-semibold">{{ number_format($unpaidInstallments) }}</dd></div>
+                                <div class="flex justify-between gap-3"><dt>Arrears Days</dt><dd class="font-semibold">{{ number_format($arrearsDays) }}</dd></div>
+                                <div class="flex justify-between gap-3"><dt>Non Performing</dt><dd class="font-semibold">{{ $isNonPerforming ? 'Yes' : 'No' }}</dd></div>
+                            </dl>
+                        </div>
+                        <div class="rounded-card bg-emerald-100 p-5 text-sm text-emerald-900">
+                            <dl class="grid gap-3">
+                                <div class="flex justify-between gap-3"><dt>Accrued Interest</dt><dd class="font-semibold">UGX {{ number_format((float) $loan->interest_balance, 2) }}</dd></div>
+                                <div class="flex justify-between gap-3"><dt>Payoff Amount</dt><dd class="font-semibold">UGX {{ number_format((float) ($loan->principal_balance + $loan->interest_balance + $loan->fees_balance + $loan->penalty_balance), 2) }}</dd></div>
+                                <div class="flex justify-between gap-3"><dt>Net Disbursed</dt><dd class="font-semibold">UGX {{ number_format($netDisbursedAmount, 2) }}</dd></div>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="df-panel overflow-hidden">
+                    <h2 class="px-5 py-4 text-center text-xl font-semibold text-slate-800">Disbursements</h2>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-left text-sm">
+                            <thead class="bg-slate-700 text-xs uppercase text-white">
+                                <tr>
+                                    <th class="px-4 py-3">No.</th>
+                                    <th class="px-4 py-3">Disbursement Date</th>
+                                    <th class="px-4 py-3 text-right">Disbursed Amount</th>
+                                    <th class="px-4 py-3 text-right">Fees Deducted</th>
+                                    <th class="px-4 py-3 text-right">Net Amount</th>
+                                    <th class="px-4 py-3">Reversed</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                @forelse($loan->disbursements as $disbursement)
+                                    <tr class="odd:bg-white even:bg-slate-50">
+                                        <td class="px-4 py-3">{{ $loop->iteration }}</td>
+                                        <td class="px-4 py-3">{{ $disbursement->disbursement_date?->format('d-m-Y') ?? 'Pending' }}</td>
+                                        <td class="px-4 py-3 text-right">UGX {{ number_format((float) $disbursement->disbursed_amount, 2) }}</td>
+                                        <td class="px-4 py-3 text-right">UGX {{ number_format((float) $disbursement->fees_deducted, 2) }}</td>
+                                        <td class="px-4 py-3 text-right">UGX {{ number_format((float) $disbursement->net_amount, 2) }}</td>
+                                        <td class="px-4 py-3"><span class="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">No</span></td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="6" class="px-4 py-8 text-center text-sm text-slate-500">No disbursement has been posted for this loan yet.</td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="df-panel overflow-hidden">
+                    <h2 class="px-5 py-4 text-center text-xl font-semibold text-slate-800">Loan Amounts Summary</h2>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-left text-sm">
+                            <thead class="bg-slate-700 text-xs uppercase text-white">
+                                <tr>
+                                    <th class="px-4 py-3">Description</th>
+                                    <th class="px-4 py-3 text-right">Initial Amounts</th>
+                                    <th class="px-4 py-3 text-right">Paid Amounts</th>
+                                    <th class="px-4 py-3 text-right">Overdue Amounts</th>
+                                    <th class="px-4 py-3 text-right">Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                @foreach($summaryRows as $row)
+                                    <tr class="odd:bg-white even:bg-slate-50">
+                                        <td class="px-4 py-3 font-medium text-slate-700">{{ $row['label'] }}</td>
+                                        <td class="px-4 py-3 text-right">UGX {{ number_format($row['initial'], 2) }}</td>
+                                        <td class="px-4 py-3 text-right">UGX {{ number_format($row['paid'], 2) }}</td>
+                                        <td class="px-4 py-3 text-right">UGX {{ number_format($row['overdue'], 2) }}</td>
+                                        <td class="px-4 py-3 text-right">UGX {{ number_format($row['balance'], 2) }}</td>
+                                    </tr>
+                                @endforeach
+                                <tr class="bg-slate-50 font-semibold text-slate-900">
+                                    <td class="px-4 py-3">Totals</td>
+                                    <td class="px-4 py-3 text-right">UGX {{ number_format(collect($summaryRows)->sum('initial'), 2) }}</td>
+                                    <td class="px-4 py-3 text-right">UGX {{ number_format(collect($summaryRows)->sum('paid'), 2) }}</td>
+                                    <td class="px-4 py-3 text-right">UGX {{ number_format(collect($summaryRows)->sum('overdue'), 2) }}</td>
+                                    <td class="px-4 py-3 text-right">UGX {{ number_format(collect($summaryRows)->sum('balance'), 2) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section data-df-tab-panel="workflow" class="grid gap-5">
+                <div class="df-panel p-5">
+                    <h2 class="font-semibold text-slate-950">Workflow Actions</h2>
+                    @foreach(['workflow', 'cancel_reason', 'officer_id', 'approved_amount', 'reason', 'payment_method'] as $errorKey)
+                        @if($errors->has($errorKey))
+                            <div class="mt-4 rounded border border-coral-500/20 bg-coral-50 p-3 text-sm text-coral-700">{{ $errors->first($errorKey) }}</div>
+                        @endif
                     @endforeach
-                </select>
-                <button class="df-action-secondary">Update Assigned Officer</button>
-            </form>
-        @endif
 
-        @if((auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans')) && ! in_array($loan->status, ['cancelled', 'rejected', 'disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true))
-            <form method="POST" action="{{ route('loans.cancel', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-coral-500/20 bg-coral-50 p-4 md:grid-cols-[1fr_auto]">
-                @csrf
-                <input name="reason" value="{{ old('reason') }}" placeholder="Cancellation reason" class="rounded border-coral-200">
-                <button class="df-action-danger">Cancel Loan</button>
-            </form>
-        @endif
+                    @if($canAssignOfficer)
+                        <form method="POST" action="{{ route('loans.assign-officer', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_auto]">
+                            @csrf
+                            <label class="text-sm font-semibold text-slate-700">Assigned officer <x-required-badge />
+                                <select name="officer_id" class="mt-1 rounded border-slate-300" required>
+                                    @foreach($assignableOfficers as $officer)
+                                        <option value="{{ $officer->id }}" @selected((int) old('officer_id', $loan->officer_id) === $officer->id)>{{ $officer->name }} · {{ $officer->role?->name }}</option>
+                                    @endforeach
+                                </select>
+                            </label>
+                            <button class="df-action-secondary">Update Assigned Officer</button>
+                        </form>
+                    @endif
 
-        @if($loan->status === 'draft')
-            <div class="mt-4 grid gap-4 lg:grid-cols-4">
-                <form method="POST" action="{{ route('loans.generate-savings-account', $loan) }}" class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    @csrf
-                    <div class="text-sm font-semibold text-slate-950">Savings account</div>
-                    <div class="text-sm text-slate-500">{{ $loan->savingsAccount?->account_number ?? 'Create or attach client savings' }}</div>
-                    <button @disabled((bool) $loan->savings_account_id) class="df-action-secondary disabled:pointer-events-none disabled:bg-slate-300">Generate</button>
-                </form>
-                <form method="POST" action="{{ route('loans.generate-loan-account', $loan) }}" class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    @csrf
-                    <div class="text-sm font-semibold text-slate-950">Loan account</div>
-                    <div class="text-sm text-slate-500">{{ $loan->loanAccount?->account_number ?? 'Create repayment account' }}</div>
-                    <button @disabled((bool) $loan->loan_account_id) class="df-action-secondary disabled:pointer-events-none disabled:bg-slate-300">Generate</button>
-                </form>
-                <form method="POST" action="{{ route('loans.submit-appraisal', $loan) }}" class="grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 lg:col-span-2">
-                    @csrf
-                    <div class="text-sm font-semibold text-slate-950">Appraisal</div>
-                    <div class="text-sm text-slate-500">Move this application to officer appraisal after both accounts exist.</div>
-                    <button class="df-action-primary">Submit for Appraisal</button>
-                </form>
-            </div>
-        @endif
+                    @if($canCancel)
+                        <form method="POST" action="{{ route('loans.cancel', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-coral-500/20 bg-coral-50 p-4 md:grid-cols-[1fr_auto]">
+                            @csrf
+                            <label class="text-sm font-semibold text-coral-800">Cancellation reason <x-required-badge /><input name="reason" value="{{ old('reason') }}" placeholder="Cancellation reason" class="mt-1 rounded border-coral-200" required></label>
+                            <button class="df-action-danger">Cancel Loan</button>
+                        </form>
+                    @endif
 
-        @if($loan->status === 'under_review')
-            <form method="POST" action="{{ route('loans.submit-approval', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 md:grid-cols-[1fr_auto]">
-                @csrf
-                <div>
-                    <div class="text-sm font-semibold text-slate-950">Approval queue</div>
-                    <div class="text-sm text-slate-500">Send the appraised application to the approver.</div>
+                    @if($loan->status === 'draft')
+                        <div class="mt-4 grid gap-4 lg:grid-cols-4">
+                            <form method="POST" action="{{ route('loans.generate-savings-account', $loan) }}" class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                                @csrf
+                                <div class="text-sm font-semibold text-slate-950">Savings account</div>
+                                <div class="text-sm text-slate-500">{{ $loan->savingsAccount?->account_number ?? 'Create or attach client savings' }}</div>
+                                <button @disabled((bool) $loan->savings_account_id) class="df-action-secondary disabled:pointer-events-none disabled:bg-slate-300">Generate</button>
+                            </form>
+                            <form method="POST" action="{{ route('loans.generate-loan-account', $loan) }}" class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                                @csrf
+                                <div class="text-sm font-semibold text-slate-950">Loan account</div>
+                                <div class="text-sm text-slate-500">{{ $loan->loanAccount?->account_number ?? 'Create repayment account' }}</div>
+                                <button @disabled((bool) $loan->loan_account_id) class="df-action-secondary disabled:pointer-events-none disabled:bg-slate-300">Generate</button>
+                            </form>
+                            <form method="POST" action="{{ route('loans.submit-appraisal', $loan) }}" class="grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 lg:col-span-2">
+                                @csrf
+                                <div class="text-sm font-semibold text-slate-950">Appraisal</div>
+                                <div class="text-sm text-slate-500">Move this application to officer appraisal after both accounts exist.</div>
+                                <button class="df-action-primary">Submit for Appraisal</button>
+                            </form>
+                        </div>
+                    @endif
+
+                    @if($loan->status === 'under_review')
+                        <form method="POST" action="{{ route('loans.submit-approval', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 md:grid-cols-[1fr_auto]">
+                            @csrf
+                            <div>
+                                <div class="text-sm font-semibold text-slate-950">Approval queue</div>
+                                <div class="text-sm text-slate-500">Send the appraised application to the approver.</div>
+                            </div>
+                            <button class="df-action-primary">Submit for Approval</button>
+                        </form>
+                    @endif
+
+                    @if(in_array($loan->status, ['submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true))
+                        <div class="mt-4 grid gap-4 lg:grid-cols-2">
+                            <form method="POST" action="{{ route('loans.approve', $loan) }}" class="grid gap-3 rounded-lg border border-forest-500/20 bg-forest-50 p-4">
+                                @csrf
+                                <label class="text-sm font-semibold text-slate-700">Approved amount <x-required-badge /><input name="approved_amount" type="number" min="100" step="100" value="{{ old('approved_amount', $loan->requested_amount) }}" required></label>
+                                <textarea name="comments" placeholder="Approval comments">{{ old('comments') }}</textarea>
+                                <button class="df-action-primary">Approve Loan</button>
+                            </form>
+                            <form method="POST" action="{{ route('loans.reject', $loan) }}" class="grid gap-3 rounded-lg border border-coral-500/20 bg-coral-50 p-4">
+                                @csrf
+                                <label class="text-sm font-semibold text-coral-800">Rejection reason <x-required-badge /><input name="reason" placeholder="Rejection reason" required></label>
+                                <button class="df-action-danger">Reject Loan</button>
+                            </form>
+                        </div>
+                    @endif
+
+                    @if($loan->status === 'approved')
+                        <form method="POST" action="{{ route('loans.disburse', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 md:grid-cols-[240px_1fr_auto]">
+                            @csrf
+                            <label class="text-sm font-semibold text-slate-700">Payment method <x-required-badge /><select name="payment_method" class="mt-1" required><option value="transfer_to_savings">Transfer to savings</option><option value="cash">Cash</option><option value="mobile_money">Mobile money</option><option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option></select></label>
+                            <div class="text-sm text-slate-600">Application fee is deducted from proceeds using the admin setting.</div>
+                            <button class="df-action-primary">Disburse</button>
+                        </form>
+                    @endif
+
+                    @if(in_array($loan->status, ['active', 'in_arrears'], true))
+                        <form method="POST" action="{{ route('loans.repayments.store', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-5">
+                            @csrf
+                            <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge /><input name="amount" type="number" min="100" step="100" placeholder="Amount" required></label>
+                            <label class="text-sm font-semibold text-slate-700">Payment method <x-required-badge /><select name="payment_method" required><option value="cash">Cash</option><option value="mobile_money">Mobile money</option><option value="bank">Bank</option><option value="savings_deduction">Savings deduction</option><option value="cheque">Cheque</option></select></label>
+                            <input name="reference" placeholder="Reference">
+                            <label class="text-sm font-semibold text-slate-700">Paid date <x-required-badge /><input name="paid_at" type="date" value="{{ now()->toDateString() }}" required></label>
+                            <button class="df-action-primary">Post repayment</button>
+                        </form>
+                    @endif
+
+                    @unless($canAssignOfficer || $canCancel || in_array($loan->status, ['draft', 'under_review', 'submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved', 'active', 'in_arrears'], true))
+                        <p class="mt-4 text-sm text-slate-500">There are no workflow actions available for this loan at the current status.</p>
+                    @endunless
                 </div>
-                <button class="df-action-primary">Submit for Approval</button>
-            </form>
-        @endif
+            </section>
 
-        @if(in_array($loan->status, ['submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification']))
-            <div class="mt-4 grid gap-4 lg:grid-cols-2">
-                <form method="POST" action="{{ route('loans.approve', $loan) }}" class="grid gap-3 rounded-lg border border-forest-500/20 bg-forest-50 p-4">
-                    @csrf
-                    <input name="approved_amount" type="number" min="100" step="100" value="{{ old('approved_amount', $loan->requested_amount) }}">
-                    <textarea name="comments" placeholder="Approval comments">{{ old('comments') }}</textarea>
-                    <button class="df-action-primary">Approve Loan</button>
-                </form>
-                <form method="POST" action="{{ route('loans.reject', $loan) }}" class="grid gap-3 rounded-lg border border-coral-500/20 bg-coral-50 p-4">
-                    @csrf
-                    <input name="reason" placeholder="Rejection reason">
-                    <button class="df-action-danger">Reject Loan</button>
-                </form>
-            </div>
-        @endif
+            <section data-df-tab-panel="schedule" class="df-panel overflow-hidden">
+                <h2 class="px-5 py-4 font-semibold text-slate-950">Repayment Schedule</h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-left text-sm">
+                        <thead class="bg-slate-700 text-xs uppercase text-white">
+                            <tr>
+                                <th class="px-4 py-3">#</th>
+                                <th class="px-4 py-3">Due date</th>
+                                <th class="px-4 py-3 text-right">Principal</th>
+                                <th class="px-4 py-3 text-right">Interest</th>
+                                <th class="px-4 py-3 text-right">Penalty</th>
+                                <th class="px-4 py-3 text-right">Paid</th>
+                                <th class="px-4 py-3 text-right">Outstanding</th>
+                                <th class="px-4 py-3">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            @forelse($loan->schedules as $schedule)
+                                <tr class="odd:bg-white even:bg-slate-50">
+                                    <td class="px-4 py-3">{{ $schedule->installment_number }}</td>
+                                    <td class="px-4 py-3">{{ $schedule->due_date?->format('d-m-Y') ?? 'Pending' }}</td>
+                                    <td class="px-4 py-3 text-right">UGX {{ number_format((float) $schedule->principal_due, 2) }}</td>
+                                    <td class="px-4 py-3 text-right">UGX {{ number_format((float) $schedule->interest_due, 2) }}</td>
+                                    <td class="px-4 py-3 text-right">UGX {{ number_format((float) $schedule->penalty_due, 2) }}</td>
+                                    <td class="px-4 py-3 text-right">UGX {{ number_format((float) $schedule->total_paid, 2) }}</td>
+                                    <td class="px-4 py-3 text-right">UGX {{ number_format((float) $schedule->outstanding_amount, 2) }}</td>
+                                    <td class="px-4 py-3">{{ str($schedule->status)->headline() }}</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="8" class="px-4 py-8 text-center text-sm text-slate-500">The repayment schedule has not been generated yet.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </section>
 
-        @if($loan->status === 'approved')
-            <form method="POST" action="{{ route('loans.disburse', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 md:grid-cols-[240px_1fr_auto]">
-                @csrf
-                <select name="payment_method"><option value="transfer_to_savings">Transfer to savings</option><option value="cash">Cash</option><option value="mobile_money">Mobile money</option><option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option></select>
-                <div class="text-sm text-slate-600">Application fee is deducted from proceeds using the admin setting.</div>
-                <button class="df-action-primary">Disburse</button>
-            </form>
-        @endif
+            <section data-df-tab-panel="repayments" class="df-panel overflow-hidden">
+                <h2 class="px-5 py-4 font-semibold text-slate-950">Repayments</h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-left text-sm">
+                        <thead class="bg-slate-700 text-xs uppercase text-white">
+                            <tr>
+                                <th class="px-4 py-3">Receipt</th>
+                                <th class="px-4 py-3">Paid Date</th>
+                                <th class="px-4 py-3">Received By</th>
+                                <th class="px-4 py-3">Method</th>
+                                <th class="px-4 py-3 text-right">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            @forelse($loan->repayments as $repayment)
+                                <tr class="odd:bg-white even:bg-slate-50">
+                                    <td class="px-4 py-3"><a class="font-semibold text-brand-700" href="{{ route('loan-repayments.receipt', $repayment) }}">{{ $repayment->receipt_number ?? 'Receipt' }}</a></td>
+                                    <td class="px-4 py-3">{{ $repayment->paid_at?->format('d-m-Y') }}</td>
+                                    <td class="px-4 py-3">{{ $repayment->receivedBy?->name ?? 'System' }}</td>
+                                    <td class="px-4 py-3">{{ str($repayment->payment_method)->headline() }}</td>
+                                    <td class="px-4 py-3 text-right">UGX {{ number_format((float) $repayment->amount, 2) }}</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="5" class="px-4 py-8 text-center text-sm text-slate-500">No repayments have been posted for this loan yet.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </section>
 
-        @if(in_array($loan->status, ['active', 'in_arrears']))
-            <form method="POST" action="{{ route('loans.repayments.store', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-5">
-                @csrf
-                <input name="amount" type="number" min="100" step="100" placeholder="Amount">
-                <select name="payment_method"><option value="cash">Cash</option><option value="mobile_money">Mobile money</option><option value="bank">Bank</option><option value="savings_deduction">Savings deduction</option><option value="cheque">Cheque</option></select>
-                <input name="reference" placeholder="Reference">
-                <input name="paid_at" type="date" value="{{ now()->toDateString() }}">
-                <button class="df-action-primary">Post repayment</button>
-            </form>
-        @endif
-    </section>
+            <section data-df-tab-panel="properties" class="grid gap-5 xl:grid-cols-2">
+                <div class="df-panel p-5">
+                    <h2 class="font-semibold text-slate-950">Guarantors</h2>
+                    <form method="POST" action="{{ route('loans.guarantors.store', $loan) }}" class="mt-4 grid gap-3 md:grid-cols-2">
+                        @csrf
+                        <label class="text-sm font-semibold text-slate-700">Guarantor type <x-required-badge /><select name="type" required><option value="existing_client">Existing client</option><option value="external">External</option></select></label>
+                        <label class="text-sm font-semibold text-slate-700">Existing client <x-required-badge label="Required for existing" class="bg-amber-50 text-amber-700" /><select name="guarantor_client_id"><option value="">Select member</option>@foreach($guarantorClients as $guarantorClient)<option value="{{ $guarantorClient->id }}">{{ $guarantorClient->client_number }} - {{ $guarantorClient->full_name }}</option>@endforeach</select></label>
+                        <label class="text-sm font-semibold text-slate-700">Name <x-required-badge /><input name="name" placeholder="Name" required></label>
+                        <input name="phone" placeholder="Phone">
+                        <input name="national_id" placeholder="National ID">
+                        <input name="relationship" placeholder="Relationship">
+                        <label class="text-sm font-semibold text-slate-700">Guaranteed amount <x-required-badge /><input name="guaranteed_amount" type="number" step="0.01" placeholder="Guaranteed amount" required></label>
+                        <select name="status"><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option></select>
+                        <textarea name="address" class="md:col-span-2" placeholder="Address"></textarea>
+                        <button class="df-action-secondary md:col-span-2">Add guarantor</button>
+                    </form>
+                    <div class="mt-4 divide-y divide-slate-200 text-sm">
+                        @forelse($loan->loanGuarantors as $guarantor)
+                            <div class="flex flex-wrap items-center justify-between gap-3 py-3">
+                                <div><div class="font-semibold">{{ $guarantor->name }}</div><div class="text-slate-500">UGX {{ number_format((float) $guarantor->guaranteed_amount, 2) }} · {{ str($guarantor->status)->headline() }}</div></div>
+                                <form method="POST" action="{{ route('loans.guarantors.status', [$loan, $guarantor]) }}" class="flex gap-2">@csrf @method('PUT')<select name="status" class="text-sm"><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="released">Released</option></select><button class="df-action-secondary px-3 py-1 text-xs">Update</button></form>
+                            </div>
+                        @empty
+                            <div class="py-3 text-sm text-slate-500">No guarantors recorded.</div>
+                        @endforelse
+                    </div>
+                </div>
 
-    <section data-df-tab-panel="security" class="grid gap-5 xl:grid-cols-2">
-        <div class="df-panel p-5">
-            <h2 class="font-semibold text-slate-950">Guarantors</h2>
-            <form method="POST" action="{{ route('loans.guarantors.store', $loan) }}" class="mt-4 grid gap-3 md:grid-cols-2">
-                @csrf
-                <select name="type"><option value="existing_client">Existing client</option><option value="external">External</option></select>
-                <select name="guarantor_client_id"><option value="">Select member</option>@foreach($guarantorClients as $client)<option value="{{ $client->id }}">{{ $client->client_number }} - {{ $client->full_name }}</option>@endforeach</select>
-                <input name="name" placeholder="Name"><input name="phone" placeholder="Phone"><input name="national_id" placeholder="National ID"><input name="relationship" placeholder="Relationship"><input name="guaranteed_amount" type="number" step="0.01" placeholder="Guaranteed amount"><select name="status"><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option></select>
-                <textarea name="address" class="md:col-span-2" placeholder="Address"></textarea>
-                <button class="df-action-secondary md:col-span-2">Add guarantor</button>
-            </form>
-            <div class="mt-4 divide-y divide-slate-200 text-sm">@forelse($loan->loanGuarantors as $guarantor)<div class="flex items-center justify-between gap-3 py-3"><div><div class="font-semibold">{{ $guarantor->name }}</div><div class="text-slate-500">UGX {{ number_format($guarantor->guaranteed_amount, 2) }} · {{ str($guarantor->status)->headline() }}</div></div><form method="POST" action="{{ route('loans.guarantors.status', [$loan, $guarantor]) }}" class="flex gap-2">@csrf @method('PUT')<select name="status" class="text-sm"><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="released">Released</option></select><button class="df-action-secondary px-3 py-1 text-xs">Update</button></form></div>@empty<div class="py-3 text-sm text-slate-500">No guarantors recorded.</div>@endforelse</div>
+                <div class="df-panel p-5">
+                    <h2 class="font-semibold text-slate-950">Collateral</h2>
+                    <form method="POST" action="{{ route('loans.collaterals.store', $loan) }}" class="mt-4 grid gap-3 md:grid-cols-2">
+                        @csrf
+                        <label class="text-sm font-semibold text-slate-700">Collateral type <x-required-badge /><select name="type" required>@foreach(['land','vehicle','electronics','household_item','business_asset','livestock','salary','other'] as $type)<option value="{{ $type }}">{{ str($type)->headline() }}</option>@endforeach</select></label>
+                        <label class="text-sm font-semibold text-slate-700">Estimated value <x-required-badge /><input name="estimated_value" type="number" step="0.01" placeholder="Estimated value" required></label>
+                        <input name="forced_sale_value" type="number" step="0.01" placeholder="Forced sale value">
+                        <input name="ownership_proof" placeholder="Ownership proof">
+                        <input name="valuation_date" type="date">
+                        <select name="status"><option value="pending_verification">Pending verification</option><option value="verified">Verified</option><option value="rejected">Rejected</option></select>
+                        <textarea name="description" class="md:col-span-2" placeholder="Description"></textarea>
+                        <button class="df-action-secondary md:col-span-2">Add collateral</button>
+                    </form>
+                    <div class="mt-4 divide-y divide-slate-200 text-sm">
+                        @forelse($loan->collaterals as $collateral)
+                            <div class="flex flex-wrap items-center justify-between gap-3 py-3">
+                                <div><div class="font-semibold">{{ str($collateral->type)->headline() }}</div><div class="text-slate-500">UGX {{ number_format((float) $collateral->estimated_value, 2) }} · {{ str($collateral->status)->headline() }}</div></div>
+                                <form method="POST" action="{{ route('loans.collaterals.status', [$loan, $collateral]) }}" class="flex gap-2">@csrf @method('PUT')<select name="status" class="text-sm"><option value="verified">Verified</option><option value="rejected">Rejected</option><option value="released">Released</option><option value="seized">Seized</option></select><button class="df-action-secondary px-3 py-1 text-xs">Update</button></form>
+                            </div>
+                        @empty
+                            <div class="py-3 text-sm text-slate-500">No collateral recorded.</div>
+                        @endforelse
+                    </div>
+                </div>
+            </section>
         </div>
-
-        <div class="df-panel p-5">
-            <h2 class="font-semibold text-slate-950">Collateral</h2>
-            <form method="POST" action="{{ route('loans.collaterals.store', $loan) }}" class="mt-4 grid gap-3 md:grid-cols-2">
-                @csrf
-                <select name="type">@foreach(['land','vehicle','electronics','household_item','business_asset','livestock','salary','other'] as $type)<option value="{{ $type }}">{{ str($type)->headline() }}</option>@endforeach</select>
-                <input name="estimated_value" type="number" step="0.01" placeholder="Estimated value"><input name="forced_sale_value" type="number" step="0.01" placeholder="Forced sale value"><input name="ownership_proof" placeholder="Ownership proof"><input name="valuation_date" type="date"><select name="status"><option value="pending_verification">Pending verification</option><option value="verified">Verified</option><option value="rejected">Rejected</option></select>
-                <textarea name="description" class="md:col-span-2" placeholder="Description"></textarea>
-                <button class="df-action-secondary md:col-span-2">Add collateral</button>
-            </form>
-            <div class="mt-4 divide-y divide-slate-200 text-sm">@foreach($loan->collaterals as $collateral)<div class="flex items-center justify-between gap-3 py-3"><div><div class="font-semibold">{{ str($collateral->type)->headline() }}</div><div class="text-slate-500">UGX {{ number_format($collateral->estimated_value, 2) }} · {{ str($collateral->status)->headline() }}</div></div><form method="POST" action="{{ route('loans.collaterals.status', [$loan, $collateral]) }}" class="flex gap-2">@csrf @method('PUT')<select name="status" class="text-sm"><option value="verified">Verified</option><option value="rejected">Rejected</option><option value="released">Released</option><option value="seized">Seized</option></select><button class="df-action-secondary px-3 py-1 text-xs">Update</button></form></div>@endforeach</div>
-        </div>
-    </section>
-
-    <section data-df-tab-panel="schedule" class="df-panel p-5">
-        <h2 class="font-semibold text-slate-950">Repayment Schedule</h2>
-        <div class="mt-3 max-h-96 overflow-auto rounded-lg border border-slate-200"><table class="w-full text-left text-sm"><thead class="bg-slate-50"><tr><th class="p-2">#</th><th>Due date</th><th>Principal</th><th>Interest</th><th>Penalty</th><th>Paid</th><th>Outstanding</th><th>Status</th></tr></thead><tbody>@foreach($loan->schedules as $schedule)<tr class="border-t border-slate-200"><td class="p-2">{{ $schedule->installment_number }}</td><td>{{ $schedule->due_date->toDateString() }}</td><td>{{ number_format($schedule->principal_due, 2) }}</td><td>{{ number_format($schedule->interest_due, 2) }}</td><td>{{ number_format($schedule->penalty_due, 2) }}</td><td>{{ number_format($schedule->total_paid, 2) }}</td><td>{{ number_format($schedule->outstanding_amount, 2) }}</td><td>{{ str($schedule->status)->headline() }}</td></tr>@endforeach</tbody></table></div>
-    </section>
-
-    <section data-df-tab-panel="activity" class="df-panel p-5">
-        <h2 class="font-semibold text-slate-950">Activity</h2>
-        <div class="mt-3 grid gap-4 lg:grid-cols-3">
-            <div><h3 class="text-sm font-semibold">Approvals</h3><div class="mt-2 divide-y divide-slate-200 text-sm">@foreach($loan->approvals as $approval)<div class="py-2">{{ str($approval->status)->headline() }} by {{ optional($approval->approver)->name ?? 'System' }}<div class="text-slate-500">{{ $approval->acted_at?->format('d M Y H:i') }}</div></div>@endforeach</div></div>
-            <div><h3 class="text-sm font-semibold">Disbursements</h3><div class="mt-2 divide-y divide-slate-200 text-sm">@foreach($loan->disbursements as $disbursement)<div class="py-2">UGX {{ number_format($disbursement->net_amount, 2) }} via {{ str($disbursement->payment_method)->headline() }}<div class="text-slate-500">{{ $disbursement->transaction_reference }}</div></div>@endforeach</div></div>
-            <div><h3 class="text-sm font-semibold">Repayments</h3><div class="mt-2 divide-y divide-slate-200 text-sm">@foreach($loan->repayments as $repayment)<div class="py-2"><a class="font-semibold text-blue-700" href="{{ route('loan-repayments.receipt', $repayment) }}">UGX {{ number_format($repayment->amount, 2) }}</a><div class="text-slate-500">{{ $repayment->paid_at->format('d M Y') }} · {{ optional($repayment->receivedBy)->name }}</div></div>@endforeach</div></div>
-        </div>
-    </section>
+    </main>
 </div>
 @endsection

@@ -12,6 +12,13 @@ class StoreSavingsAccountRequest extends FormRequest
         return $this->user()?->canPerform('manage-accounts') ?? false;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'status' => $this->input('status', 'active'),
+        ]);
+    }
+
     /**
      * @return array<string, array<int, mixed>>
      */
@@ -22,7 +29,7 @@ class StoreSavingsAccountRequest extends FormRequest
             'branch_id' => ['required', 'exists:branches,id'],
             'savings_product_id' => ['required', 'exists:savings_products,id'],
             'opening_date' => ['required', 'date'],
-            'status' => ['required', 'in:pending,active,frozen,dormant,closed'],
+            'status' => ['nullable', 'in:pending,active,frozen,dormant,closed'],
             'opening_deposit' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
         ];
     }

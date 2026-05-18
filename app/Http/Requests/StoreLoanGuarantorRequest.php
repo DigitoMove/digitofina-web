@@ -13,6 +13,13 @@ class StoreLoanGuarantorRequest extends FormRequest
         return $this->user()?->canPerform('manage-loans') ?? false;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'status' => $this->input('status', 'pending'),
+        ]);
+    }
+
     /**
      * Get the validation rules that apply to the request.
      *
@@ -29,7 +36,7 @@ class StoreLoanGuarantorRequest extends FormRequest
             'address' => ['nullable', 'string'],
             'relationship' => ['nullable', 'string', 'max:255'],
             'guaranteed_amount' => ['required', 'numeric', 'min:1'],
-            'status' => ['required', Rule::in(['pending', 'accepted', 'rejected'])],
+            'status' => ['nullable', Rule::in(['pending', 'accepted', 'rejected'])],
         ];
     }
 }

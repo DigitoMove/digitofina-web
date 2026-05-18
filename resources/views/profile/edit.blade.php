@@ -21,13 +21,13 @@
         @csrf
         @method('PUT')
         <h2 class="text-lg font-semibold text-slate-950">Change password</h2>
-        <label class="mt-4 block text-sm font-medium text-slate-700">Current password
+        <label class="mt-4 block text-sm font-medium text-slate-700">Current password <x-required-badge />
             <input name="current_password" type="password" class="mt-1 w-full rounded border-slate-300" required>
         </label>
-        <label class="mt-4 block text-sm font-medium text-slate-700">New password
+        <label class="mt-4 block text-sm font-medium text-slate-700">New password <x-required-badge />
             <input name="password" type="password" class="mt-1 w-full rounded border-slate-300" required>
         </label>
-        <label class="mt-4 block text-sm font-medium text-slate-700">Confirm new password
+        <label class="mt-4 block text-sm font-medium text-slate-700">Confirm new password <x-required-badge />
             <input name="password_confirmation" type="password" class="mt-1 w-full rounded border-slate-300" required>
         </label>
         <button class="mt-5 w-full rounded bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800">Update Password</button>

@@ -1,25 +1,25 @@
 @csrf
 <div class="grid gap-4 md:grid-cols-2">
-    <label class="block text-sm font-medium text-slate-700">Full name
+    <label class="block text-sm font-medium text-slate-700">Full name <x-required-badge />
         <input name="name" value="{{ old('name', $user->name) }}" class="mt-1 w-full rounded border-slate-300" required>
     </label>
-    <label class="block text-sm font-medium text-slate-700">Email
+    <label class="block text-sm font-medium text-slate-700">Email <x-required-badge />
         <input name="email" value="{{ old('email', $user->email) }}" class="mt-1 w-full rounded border-slate-300" required>
     </label>
-    <label class="block text-sm font-medium text-slate-700">Phone
+    <label class="block text-sm font-medium text-slate-700">Phone <x-required-badge />
         <input name="phone" value="{{ old('phone', $user->phone) }}" class="mt-1 w-full rounded border-slate-300" required>
     </label>
     <label class="block text-sm font-medium text-slate-700">Position
         <input name="position" value="{{ old('position', $user->position) }}" class="mt-1 w-full rounded border-slate-300">
     </label>
-    <label class="block text-sm font-medium text-slate-700">Role
+    <label class="block text-sm font-medium text-slate-700">Role <x-required-badge />
         <select name="role_id" class="mt-1 w-full rounded border-slate-300" required>
             @foreach ($roles as $role)
                 <option value="{{ $role->id }}" @selected((string) old('role_id', $user->role_id) === (string) $role->id)>{{ $role->name }}</option>
             @endforeach
         </select>
     </label>
-    <label class="block text-sm font-medium text-slate-700">Branch
+    <label class="block text-sm font-medium text-slate-700">Branch <x-required-badge />
         <select name="branch_id" class="mt-1 w-full rounded border-slate-300" required>
             <option value="">Select branch</option>
             @foreach ($branches as $branch)
@@ -35,10 +35,10 @@
         </select>
     </label>
     <div></div>
-    <label class="block text-sm font-medium text-slate-700">Password
+    <label class="block text-sm font-medium text-slate-700">Password @unless($user->exists)<x-required-badge label="Required on create" />@endunless
         <input name="password" type="password" class="mt-1 w-full rounded border-slate-300" @required(! $user->exists)>
     </label>
-    <label class="block text-sm font-medium text-slate-700">Confirm password
+    <label class="block text-sm font-medium text-slate-700">Confirm password @unless($user->exists)<x-required-badge label="Required on create" />@endunless
         <input name="password_confirmation" type="password" class="mt-1 w-full rounded border-slate-300" @required(! $user->exists)>
     </label>
 </div>

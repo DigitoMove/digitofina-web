@@ -12,6 +12,13 @@ class UpdateBranchRequest extends FormRequest
         return $this->user()?->canPerform('manage-branches') ?? false;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'status' => $this->input('status', $this->route('branch')?->status ?? 'active'),
+        ]);
+    }
+
     /**
      * @return array<string, array<int, mixed>>
      */
@@ -23,7 +30,7 @@ class UpdateBranchRequest extends FormRequest
             'manager_user_id' => ['nullable', 'exists:users,id'],
             'phone' => ['nullable', 'string', 'max:40'],
             'address' => ['nullable', 'string', 'max:191'],
-            'status' => ['required', 'in:active,inactive,suspended'],
+            'status' => ['nullable', 'in:active,inactive,suspended'],
         ];
     }
 }

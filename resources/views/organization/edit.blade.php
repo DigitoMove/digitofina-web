@@ -11,10 +11,10 @@
     @method('PUT')
     <section class="rounded border border-slate-200 bg-white p-5 shadow-sm">
         <div class="grid gap-4 md:grid-cols-2">
-            <label class="block text-sm font-medium text-slate-700">Organization name
+            <label class="block text-sm font-medium text-slate-700">Organization name <x-required-badge />
                 <input name="name" value="{{ old('name', $organization->name) }}" class="mt-1 w-full rounded border-slate-300" required>
             </label>
-            <label class="block text-sm font-medium text-slate-700">Slug
+            <label class="block text-sm font-medium text-slate-700">Slug <x-required-badge />
                 <input name="slug" value="{{ old('slug', $organization->slug) }}" class="mt-1 w-full rounded border-slate-300" required>
             </label>
             <label class="block text-sm font-medium text-slate-700">Registration number
@@ -29,7 +29,7 @@
             <label class="block text-sm font-medium text-slate-700">Email
                 <input name="email" value="{{ old('email', $organization->email) }}" class="mt-1 w-full rounded border-slate-300">
             </label>
-            <label class="block text-sm font-medium text-slate-700">Currency
+            <label class="block text-sm font-medium text-slate-700">Currency <x-required-badge />
                 <input name="currency" value="{{ old('currency', $organization->currency) }}" class="mt-1 w-full rounded border-slate-300" required>
             </label>
             <label class="block text-sm font-medium text-slate-700">Financial year starts
