@@ -40,6 +40,10 @@ class ClientPolicy
 
     private function canAccessBranch(User $user, Client $client): bool
     {
+        if ($user->hasRole('super-admin') || $user->canPerform('manage-organization') || $user->canPerform('audit-system')) {
+            return true;
+        }
+
         if ($user->organization_id !== null && $client->organization_id !== null && $user->organization_id !== $client->organization_id) {
             return false;
         }

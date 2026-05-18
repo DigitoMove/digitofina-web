@@ -16,7 +16,11 @@
     <input name="search" value="{{ request('search') }}" class="rounded border-slate-300" placeholder="Search name, client number, phone or national ID">
     <select name="client_type" class="rounded border-slate-300"><option value="">All types</option>@foreach(['individual', 'group', 'business', 'institution'] as $type)<option value="{{ $type }}" @selected(request('client_type') === $type)>{{ str($type)->headline() }}</option>@endforeach</select>
     <select name="status" class="rounded border-slate-300"><option value="">All status</option>@foreach(['pending','active','dormant','suspended','blacklisted','closed'] as $status)<option value="{{ $status }}" @selected(request('status') === $status)>{{ str($status)->headline() }}</option>@endforeach</select>
-    <select name="branch_id" class="rounded border-slate-300"><option value="">All branches</option>@foreach($branches as $branch)<option value="{{ $branch->id }}" @selected(request('branch_id') == $branch->id)>{{ $branch->name }}</option>@endforeach</select>
+    @if($canViewAllBranches)
+        <select name="branch_id" class="rounded border-slate-300"><option value="">All branches</option>@foreach($branches as $branch)<option value="{{ $branch->id }}" @selected(request('branch_id') == $branch->id)>{{ $branch->name }}</option>@endforeach</select>
+    @else
+        <select class="rounded border-slate-300" disabled>@foreach($branches as $branch)<option>{{ $branch->name }}</option>@endforeach</select>
+    @endif
     <select name="officer_id" class="rounded border-slate-300"><option value="">All officers</option>@foreach($officers as $officer)<option value="{{ $officer->id }}" @selected(request('officer_id') == $officer->id)>{{ $officer->name }}</option>@endforeach</select>
     <button class="rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white">Filter</button>
 </form>
@@ -38,14 +42,14 @@
             @empty
                 <tr>
                     <td class="p-6 text-center text-slate-500" colspan="7">
-                        {{ $hasClientSearch ? 'No clients found for this search.' : 'Search for a client by name, client number, phone, national ID, or use a filter to show results.' }}
+                        {{ $hasClientSearch || $canBrowseClientList ? 'No clients found for this search.' : 'Search for a client by name, client number, phone, national ID, or use a filter to show branch results.' }}
                     </td>
                 </tr>
             @endforelse
         </tbody>
     </table>
 </div>
-@if($hasClientSearch)
+@if($hasClientSearch || $canBrowseClientList)
     <div class="mt-4">{{ $clients->links() }}</div>
 @endif
 @endsection

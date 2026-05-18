@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Branch;
 use App\Models\LoanSchedule;
 use App\Services\LoanVisibilityService;
 use Carbon\CarbonImmutable;
@@ -17,11 +18,16 @@ class DueRepaymentController extends Controller
 
         $data = $request->validate([
             'date' => ['nullable', 'date'],
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
         ]);
         $date = CarbonImmutable::parse($data['date'] ?? today()->toDateString());
+        $canFilterBranch = $request->user()->hasRole('super-admin') || $request->user()->canPerform('manage-organization') || $request->user()->canPerform('audit-system');
+        $branchId = $canFilterBranch ? (int) ($data['branch_id'] ?? 0) : (int) $request->user()->branch_id;
         $scheduleQuery = LoanSchedule::query()
             ->with(['loan.client', 'loan.product'])
-            ->whereHas('loan', fn (Builder $query): Builder => $visibility->scopeRepaymentCalendar($query, $request->user()))
+            ->whereHas('loan', fn (Builder $query): Builder => $visibility
+                ->scopeRepaymentCalendar($query, $request->user())
+                ->when($branchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId)))
             ->whereDate('due_date', $date->toDateString());
         $totalAmount = (float) (clone $scheduleQuery)
             ->where('outstanding_amount', '>', 0)
@@ -38,6 +44,9 @@ class DueRepaymentController extends Controller
             'schedules' => $schedules,
             'scheduledCount' => $schedules->total(),
             'totalAmount' => $totalAmount,
+            'branches' => Branch::orderBy('name')->get(),
+            'canFilterBranch' => $canFilterBranch,
+            'selectedBranchId' => $branchId,
         ]);
     }
 }

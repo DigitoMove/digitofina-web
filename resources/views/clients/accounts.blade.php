@@ -35,7 +35,7 @@
     </div>
 
     <div class="df-panel overflow-hidden">
-        <h2 class="px-5 py-4 font-semibold text-slate-950">Savings Accounts</h2>
+        <h2 class="px-5 py-4 font-semibold text-slate-950">Savings Product Packages</h2>
         <div class="overflow-x-auto">
             <table class="min-w-full text-left text-sm">
                 <thead class="bg-slate-700 text-xs uppercase text-white"><tr><th class="px-4 py-3">Account</th><th class="px-4 py-3">Product</th><th class="px-4 py-3 text-right">Balance</th><th class="px-4 py-3">Status</th></tr></thead>
@@ -48,7 +48,7 @@
                             <td class="px-4 py-3">{{ str($account->status)->headline() }}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="4" class="px-4 py-8 text-center text-slate-500">No savings account found.</td></tr>
+                        <tr><td colspan="4" class="px-4 py-8 text-center text-slate-500">No savings product package found.</td></tr>
                     @endforelse
                 </tbody>
             </table>

@@ -1,6 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
+@php($canRemoveSavingsPackage = auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-accounts'))
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div>
         <h1 class="df-title">{{ $account->account_number }}</h1>
@@ -11,6 +12,13 @@
         <a href="{{ route('savings-transactions.withdrawal.create', $account) }}" class="df-action-secondary">Withdraw</a>
         <a href="{{ route('savings-transfers.create', ['from' => $account->id]) }}" class="df-action-secondary">Transfer</a>
         <a href="{{ route('savings-accounts.statement', $account) }}" class="df-action-secondary">Statement</a>
+        @if($canRemoveSavingsPackage)
+            <form method="POST" action="{{ route('savings-accounts.destroy', $account) }}" onsubmit="return confirm('Remove this savings product package? The client basic savings account will remain.');">
+                @csrf
+                @method('DELETE')
+                <button class="df-action-danger">Remove Package</button>
+            </form>
+        @endif
     </div>
 </div>
 

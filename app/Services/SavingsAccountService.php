@@ -36,8 +36,8 @@ class SavingsAccountService
             throw ValidationException::withMessages(['client_id' => 'A client must be active before opening a savings account.']);
         }
 
-        if ($client->savingsAccounts()->exists() || $client->accounts()->whereHas('accountType', fn ($query) => $query->where('category', 'savings'))->exists()) {
-            throw ValidationException::withMessages(['client_id' => 'This client already has a savings account. Each client can only have one savings account.']);
+        if ($client->savingsAccounts()->exists()) {
+            throw ValidationException::withMessages(['client_id' => 'This client already has a savings product package. Remove it before opening another package.']);
         }
 
         if ($openingDeposit > 0 && $openingDeposit < (float) $product->minimum_opening_balance) {

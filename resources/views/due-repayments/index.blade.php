@@ -13,6 +13,16 @@
     <label class="text-sm font-medium text-slate-700">Repayment date
         <input name="date" value="{{ $date->toDateString() }}" type="date" class="mt-1 rounded border-slate-300">
     </label>
+    @if($canFilterBranch)
+        <label class="text-sm font-medium text-slate-700">Branch
+            <select name="branch_id" class="mt-1 rounded border-slate-300">
+                <option value="">All branches</option>
+                @foreach($branches as $branch)
+                    <option value="{{ $branch->id }}" @selected((int) $selectedBranchId === (int) $branch->id)>{{ $branch->name }}</option>
+                @endforeach
+            </select>
+        </label>
+    @endif
     <button class="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white">View Date</button>
     <div class="ml-auto text-sm text-slate-500">{{ $scheduledCount }} scheduled · Open total: <span class="font-semibold text-slate-950">UGX {{ number_format($totalAmount, 2) }}</span></div>
 </form>

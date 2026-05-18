@@ -4,13 +4,14 @@
 @php
     $displayName = $client->full_name ?: $client->business_name ?: $client->client_number;
     $profilePhotoDocument = $client->documents->firstWhere('type', 'profile_photo');
-    $legacySavingsAccounts = $client->accounts->filter(fn ($account) => $account->accountType?->category === 'savings');
-    $hasSavingsAccount = ($client->savingsAccounts->count() + $legacySavingsAccounts->count()) > 0;
+    $basicSavingsAccounts = $client->accounts->filter(fn ($account) => $account->accountType?->category === 'savings');
+    $savingsPackages = $client->savingsAccounts;
+    $hasSavingsAccount = $basicSavingsAccounts->isNotEmpty();
     $loanAccounts = $client->accounts->filter(fn ($account) => $account->accountType?->category === 'loan');
     $currentAccounts = $client->accounts->filter(fn ($account) => $account->accountType?->category === 'current');
     $otherAccounts = $client->accounts->reject(fn ($account) => in_array($account->accountType?->category, ['savings', 'loan', 'current'], true));
-    $activeSavings = $client->savingsAccounts->where('status', 'active')->count() + $legacySavingsAccounts->where('status', 'active')->count();
-    $dormantSavings = $client->savingsAccounts->where('status', 'dormant')->count() + $legacySavingsAccounts->where('status', 'dormant')->count();
+    $activeSavings = $basicSavingsAccounts->where('status', 'active')->count();
+    $dormantSavings = $basicSavingsAccounts->where('status', 'dormant')->count();
     $activeCurrent = $currentAccounts->where('status', 'active')->count();
     $dormantCurrent = $currentAccounts->where('status', 'dormant')->count();
     $goodLoans = $client->loans->whereIn('status', ['active', 'fully_paid', 'closed'])->count();
@@ -23,7 +24,7 @@
     $accountTiles = [
         [
             'title' => 'Savings Accounts',
-            'count' => $client->savingsAccounts->count() + $legacySavingsAccounts->count(),
+            'count' => $basicSavingsAccounts->count(),
             'tone' => 'bg-emerald-600 text-white',
             'icon' => 'SA',
             'leftLabel' => 'Active',
@@ -93,7 +94,7 @@
         ['Transaction Authorisation Details', route('audit-logs.index', ['search' => $client->client_number]), 'TA', 0],
         ['Edit Client Details', route('clients.edit', $client), 'ED', null],
         ['Open Account', route('accounts.create', ['client_id' => $client->id]), 'OA', $client->accounts->count()],
-        ['Savings Account', route('clients.savings-accounts', $client), 'SA', $client->savingsAccounts->count() + $legacySavingsAccounts->count()],
+        ['Savings Account', route('clients.savings-accounts', $client), 'SA', $basicSavingsAccounts->count()],
         ['Account Queries', route('clients.accounts', $client), 'AQ', $client->accounts->count()],
         ['Loan Prospects', route('loans.create', ['client_id' => $client->id]), 'LP', $newApplications->count()],
         ['Due Repayments', route('due-repayments.index', ['search' => $client->client_number]), 'DR', $arrearsLoans],
@@ -281,14 +282,19 @@
                         @endif
                     </div>
                     <div class="mt-4 grid gap-3">
-                        @forelse($client->savingsAccounts as $account)
-                            <a href="{{ route('savings-accounts.show', $account) }}" class="df-soft-panel df-hover-lift flex items-center justify-between gap-3 p-4 text-sm">
-                                <span><span class="font-semibold text-slate-950">{{ $account->account_number }}</span><span class="ml-2 text-slate-500">{{ $account->product?->name }}</span></span>
-                                <span class="font-semibold">UGX {{ number_format((float) $account->current_balance, 2) }}</span>
+                        @forelse($basicSavingsAccounts as $account)
+                            <a href="{{ route('accounts.show', $account) }}" class="df-soft-panel df-hover-lift flex items-center justify-between gap-3 p-4 text-sm">
+                                <span><span class="font-semibold text-slate-950">{{ $account->account_number }}</span><span class="ml-2 text-slate-500">{{ $account->accountType?->name }}</span></span>
+                                <span class="font-semibold">UGX {{ number_format((float) $account->balance, 2) }}</span>
                             </a>
                         @empty
                             <p class="text-sm text-slate-500">No savings accounts opened.</p>
                         @endforelse
+                        @if($savingsPackages->isNotEmpty())
+                            <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">
+                                {{ $savingsPackages->count() }} savings product package(s) attached. Use Client Savings Account to remove package attachments.
+                            </div>
+                        @endif
                     </div>
                 </div>
 

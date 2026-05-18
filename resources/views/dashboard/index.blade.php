@@ -72,7 +72,19 @@
                 <h2 class="text-lg font-semibold text-slate-950">Repayment Calendar</h2>
                 <p class="text-sm text-slate-500">{{ $calendarMonth->format('F Y') }} next repayments distributed by scheduled due date.</p>
             </div>
-            <a href="{{ route('due-repayments.index') }}" class="df-action-secondary">Today</a>
+            <div class="flex flex-wrap items-center gap-2">
+                @if($canFilterCalendarBranch)
+                    <form method="GET" action="{{ route('dashboard') }}" class="flex items-center gap-2">
+                        <select name="calendar_branch_id" class="h-10 rounded-lg border-slate-300 text-sm" onchange="this.form.submit()">
+                            <option value="">All branches</option>
+                            @foreach($calendarBranches as $branch)
+                                <option value="{{ $branch->id }}" @selected((int) $selectedCalendarBranchId === (int) $branch->id)>{{ $branch->name }}</option>
+                            @endforeach
+                        </select>
+                    </form>
+                @endif
+                <a href="{{ route('due-repayments.index', array_filter(['branch_id' => $selectedCalendarBranchId])) }}" class="df-action-secondary">Today</a>
+            </div>
         </div>
         <div class="mt-5 grid grid-cols-7 overflow-hidden rounded-t-lg bg-slate-800 text-center text-xs font-semibold uppercase tracking-wide text-white">
             @foreach(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as $weekday)
@@ -81,7 +93,7 @@
         </div>
         <div class="grid grid-cols-7 overflow-hidden rounded-b-lg border border-t-0 border-slate-200">
             @foreach($calendarDays as $day)
-                <a href="{{ route('due-repayments.index', ['date' => $day['date']->toDateString()]) }}" class="min-h-24 border-b border-r border-slate-200 p-2 text-left transition hover:bg-brand-50 {{ $day['upcoming_count'] > 0 ? 'bg-brand-600 text-white hover:text-slate-950' : ($day['overdue_count'] > 0 ? 'bg-red-600 text-white hover:text-slate-950' : 'bg-white text-slate-700') }} {{ $day['is_today'] ? 'bg-sky-100 text-slate-950 ring-2 ring-inset ring-brand-600' : '' }} {{ $day['is_current_month'] ? '' : 'opacity-40' }}">
+                <a href="{{ route('due-repayments.index', array_filter(['date' => $day['date']->toDateString(), 'branch_id' => $selectedCalendarBranchId])) }}" class="min-h-24 border-b border-r border-slate-200 p-2 text-left transition hover:bg-brand-50 {{ $day['upcoming_count'] > 0 ? 'bg-brand-600 text-white hover:text-slate-950' : ($day['overdue_count'] > 0 ? 'bg-red-600 text-white hover:text-slate-950' : 'bg-white text-slate-700') }} {{ $day['is_today'] ? 'bg-sky-100 text-slate-950 ring-2 ring-inset ring-brand-600' : '' }} {{ $day['is_current_month'] ? '' : 'opacity-40' }}">
                     <div class="flex items-center justify-between gap-2">
                         <span class="text-sm font-semibold">{{ $day['date']->day }}</span>
                         @if($day['date']->isSunday())
@@ -136,7 +148,7 @@
                 <div class="py-10 text-center text-sm text-slate-500">No upcoming repayments are scheduled.</div>
             @endforelse
         </div>
-        <a href="{{ route('due-repayments.index') }}" class="mt-4 inline-flex text-sm font-semibold text-brand-700">View due today</a>
+        <a href="{{ route('due-repayments.index', array_filter(['branch_id' => $selectedCalendarBranchId])) }}" class="mt-4 inline-flex text-sm font-semibold text-brand-700">View due today</a>
     </section>
 </div>
 

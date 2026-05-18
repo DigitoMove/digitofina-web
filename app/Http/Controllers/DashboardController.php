@@ -18,12 +18,13 @@ use Carbon\CarbonInterface;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function __invoke(LoanVisibilityService $visibility): View|RedirectResponse
+    public function __invoke(Request $request, LoanVisibilityService $visibility): View|RedirectResponse
     {
         if (Auth::user()->isMember()) {
             return redirect()->route('member.dashboard');
@@ -36,8 +37,12 @@ class DashboardController extends Controller
         $today = CarbonImmutable::today();
         $monthStart = $today->startOfMonth();
         $monthEnd = $today->endOfMonth();
+        $canFilterCalendarBranch = $user->hasRole('super-admin') || $user->canPerform('manage-organization') || $user->canPerform('audit-system');
+        $selectedCalendarBranchId = $canFilterCalendarBranch ? $request->integer('calendar_branch_id') : (int) $user->branch_id;
         $scheduleScope = fn (Builder $query): Builder => $visibility->scope($query, $user);
-        $calendarScope = fn (Builder $query): Builder => $visibility->scopeRepaymentCalendar($query, $user);
+        $calendarScope = fn (Builder $query): Builder => $visibility
+            ->scopeRepaymentCalendar($query, $user)
+            ->when($selectedCalendarBranchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
         $dueToday = LoanSchedule::query()
             ->with(['loan.client', 'loan.product'])
             ->whereHas('loan', $calendarScope)
@@ -132,6 +137,9 @@ class DashboardController extends Controller
             'arrearsCount' => $arrearsCount,
             'arrearsAmount' => $arrearsAmount,
             'loanApplications' => $loanApplications,
+            'canFilterCalendarBranch' => $canFilterCalendarBranch,
+            'calendarBranches' => Branch::orderBy('name')->get(),
+            'selectedCalendarBranchId' => $selectedCalendarBranchId,
             'alerts' => [
                 'Loans in arrears' => $arrearsCount,
                 'Open drawer' => $drawer ? $drawer->name : 'No active teller drawer',

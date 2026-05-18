@@ -12,7 +12,6 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 
 class ClientService
 {
@@ -57,10 +56,6 @@ class ClientService
 
             if ($existing) {
                 return $existing;
-            }
-
-            if ($client->savingsAccounts()->exists()) {
-                throw ValidationException::withMessages(['client_id' => 'This client already has a savings package account. Remove that package before generating a basic savings account.']);
             }
 
             $type = AccountType::query()->where('category', 'savings')->where('is_active', true)->firstOrFail();

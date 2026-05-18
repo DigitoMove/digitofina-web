@@ -18,6 +18,9 @@ class ClientController extends Controller
     public function index(Request $request): View
     {
         Gate::authorize('viewAny', Client::class);
+        $user = $request->user();
+        $canViewAllBranches = $user->hasRole('super-admin') || $user->canPerform('manage-organization') || $user->canPerform('audit-system');
+        $canBrowseClientList = $canViewAllBranches || $user->hasRole('supervisor') || $user->canPerform('manage-users') || $user->canPerform('disburse-loans');
 
         $hasClientSearch = $request->filled('search')
             || $request->filled('branch_id')
@@ -25,11 +28,15 @@ class ClientController extends Controller
             || $request->filled('officer_id')
             || $request->filled('client_type');
 
+        $selectedBranchId = $canViewAllBranches
+            ? $request->integer('branch_id')
+            : (int) $user->branch_id;
+
         $clients = Client::query()
             ->with(['branch', 'officer'])
-            ->when(! $hasClientSearch, fn ($query) => $query->whereRaw('1 = 0'))
+            ->when(! $canBrowseClientList && ! $hasClientSearch, fn ($query) => $query->whereRaw('1 = 0'))
             ->when($request->search, fn ($query, $search) => $query->whereAny(['client_number', 'first_name', 'last_name', 'phone', 'national_id'], 'like', "%{$search}%"))
-            ->when($request->branch_id, fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($selectedBranchId, fn ($query, int $branchId) => $query->where('branch_id', $branchId))
             ->when($request->status, fn ($query, $status) => $query->where('status', $status))
             ->when($request->officer_id, fn ($query, $officerId) => $query->where('officer_id', $officerId))
             ->when($request->client_type, fn ($query, $type) => $query->where('client_type', $type))
@@ -40,8 +47,16 @@ class ClientController extends Controller
         return view('clients.index', [
             'clients' => $clients,
             'hasClientSearch' => $hasClientSearch,
-            'branches' => Branch::orderBy('name')->get(),
-            'officers' => User::whereHas('role', fn ($query) => $query->where('slug', 'loan-officer'))->orderBy('name')->get(),
+            'canBrowseClientList' => $canBrowseClientList,
+            'canViewAllBranches' => $canViewAllBranches,
+            'branches' => Branch::query()
+                ->when(! $canViewAllBranches && $user->branch_id, fn ($query) => $query->whereKey($user->branch_id))
+                ->orderBy('name')
+                ->get(),
+            'officers' => User::whereHas('role', fn ($query) => $query->where('slug', 'loan-officer'))
+                ->when(! $canViewAllBranches && $user->branch_id, fn ($query) => $query->where('branch_id', $user->branch_id))
+                ->orderBy('name')
+                ->get(),
         ]);
     }
 

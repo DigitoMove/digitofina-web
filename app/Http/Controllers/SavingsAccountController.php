@@ -46,11 +46,7 @@ class SavingsAccountController extends Controller
             $existingSavingsAccount = $selectedClient->savingsAccounts->first();
 
             if ($existingSavingsAccount) {
-                return redirect()->route('savings-accounts.show', $existingSavingsAccount)->with('status', 'This client already has a savings account.');
-            }
-
-            if ($selectedClient->accounts->first(fn ($account) => $account->accountType?->category === 'savings')) {
-                return redirect()->route('clients.show', $selectedClient)->with('status', 'This client already has a savings account.');
+                return redirect()->route('savings-accounts.show', $existingSavingsAccount)->with('status', 'This client already has a savings product package.');
             }
         }
 
@@ -58,7 +54,6 @@ class SavingsAccountController extends Controller
             'account' => new SavingsAccount(['status' => 'active', 'opening_date' => today()]),
             'clients' => Client::where('status', 'active')
                 ->whereDoesntHave('savingsAccounts')
-                ->whereDoesntHave('accounts', fn ($query) => $query->whereHas('accountType', fn ($query) => $query->where('category', 'savings')))
                 ->orderBy('first_name')
                 ->orderBy('last_name')
                 ->get(),
@@ -90,6 +85,17 @@ class SavingsAccountController extends Controller
             'account' => $savingsAccount->load(['client', 'branch', 'product', 'transactions.teller']),
             'recentTransactions' => $savingsAccount->transactions()->latest()->paginate(15),
         ]);
+    }
+
+    public function destroy(Request $request, SavingsAccount $savingsAccount): RedirectResponse
+    {
+        abort_unless($request->user()->hasRole('super-admin') || $request->user()->canPerform('manage-accounts'), 403);
+
+        $client = $savingsAccount->client;
+        $savingsAccount->update(['status' => 'removed']);
+        $savingsAccount->delete();
+
+        return redirect()->route('clients.savings-accounts', $client)->with('status', 'Savings product package removed. The client basic savings account was not deleted.');
     }
 
     public function statement(Request $request, SavingsAccount $savingsAccount): View

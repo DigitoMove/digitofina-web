@@ -1,10 +1,11 @@
 @extends('layouts.app')
 
 @section('content')
+@php($canRemoveSavingsPackage = auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-accounts'))
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div>
-        <h1 class="text-2xl font-semibold text-slate-950">Savings Accounts</h1>
-        <p class="text-sm text-slate-500">Account balances, status, branch, and product filters.</p>
+        <h1 class="text-2xl font-semibold text-slate-950">Savings Product Packages</h1>
+        <p class="text-sm text-slate-500">Optional investment-style savings products, separate from loan disbursement savings accounts.</p>
     </div>
     <a href="{{ route('savings-accounts.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Open Account</a>
 </div>
@@ -16,11 +17,29 @@
     <button class="rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white">Filter</button>
 </form>
 <div class="overflow-hidden rounded border border-slate-200 bg-white shadow-sm">
-    <table class="w-full text-left text-sm"><thead class="bg-slate-50 text-slate-600"><tr><th class="p-3">Account</th><th>Client</th><th>Product</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>
+    <table class="w-full text-left text-sm"><thead class="bg-slate-50 text-slate-600"><tr><th class="p-3">Package Account</th><th>Client</th><th>Product</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>
         @forelse($accounts as $account)
-            <tr class="border-t"><td class="p-3 font-medium">{{ $account->account_number }}<div class="text-slate-500">{{ $account->branch->name }}</div></td><td>{{ $account->client->full_name }}<div class="text-slate-500">{{ $account->client->client_number }}</div></td><td>{{ $account->product->name }}</td><td class="font-semibold">{{ number_format($account->current_balance, 2) }} UGX</td><td>{{ str($account->status)->headline() }}</td><td><a href="{{ route('savings-accounts.show', $account) }}" class="font-medium text-blue-700">View</a></td></tr>
+            <tr class="border-t">
+                <td class="p-3 font-medium">{{ $account->account_number }}<div class="text-slate-500">{{ $account->branch->name }}</div></td>
+                <td>{{ $account->client->full_name }}<div class="text-slate-500">{{ $account->client->client_number }}</div></td>
+                <td>{{ $account->product->name }}</td>
+                <td class="font-semibold">{{ number_format($account->current_balance, 2) }} UGX</td>
+                <td>{{ str($account->status)->headline() }}</td>
+                <td>
+                    <div class="flex items-center gap-3">
+                        <a href="{{ route('savings-accounts.show', $account) }}" class="font-medium text-blue-700">View</a>
+                        @if($canRemoveSavingsPackage)
+                            <form method="POST" action="{{ route('savings-accounts.destroy', $account) }}" onsubmit="return confirm('Remove this savings product package?');">
+                                @csrf
+                                @method('DELETE')
+                                <button class="font-medium text-red-700">Remove</button>
+                            </form>
+                        @endif
+                    </div>
+                </td>
+            </tr>
         @empty
-            <tr><td colspan="6" class="p-4 text-slate-500">No savings accounts found.</td></tr>
+            <tr><td colspan="6" class="p-4 text-slate-500">No savings product packages found.</td></tr>
         @endforelse
     </tbody></table>
 </div>

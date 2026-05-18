@@ -17,7 +17,7 @@
     $unpaidInstallments = max(0, $totalInstallments - $paidInstallments);
     $arrearsDays = (int) $loan->schedules->max('days_overdue');
     $isNonPerforming = in_array($loan->status, ['in_arrears', 'written_off'], true);
-    $hasSavingsAccount = $client->savingsAccounts->isNotEmpty() || $client->accounts->contains(fn ($account) => $account->accountType?->category === 'savings');
+    $hasSavingsAccount = $client->accounts->contains(fn ($account) => $account->accountType?->category === 'savings');
     $canCancel = (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans')) && ! in_array($loan->status, ['cancelled', 'rejected', 'disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true);
     $workflow = ['Draft', 'Appraisal', 'Approval', 'Approved', 'Disbursed', 'Closed'];
     $statusIndex = match (true) {
@@ -83,7 +83,7 @@
         ['Account Notifications', route('loans.show', $loan), 'NO', 0],
     ];
     $accountMenus = [
-        ['Savings Accounts', array_filter([! $hasSavingsAccount ? ['Open savings account', route('savings-accounts.create', ['client_id' => $client->id])] : null, ['View accounts', route('clients.savings-accounts', $client)]])],
+        ['Savings Accounts', array_filter([! $hasSavingsAccount ? ['Generate savings account', route('clients.savings-accounts.generate', $client), 'post'] : null, ['View accounts', route('clients.savings-accounts', $client), 'get']])],
         ['Loan Accounts', [['New application', route('loans.create', ['client_id' => $client->id])], ['View loans', route('clients.loans', $client)]]],
         ['Current Accounts', [['Open current account', route('accounts.create', ['client_id' => $client->id])], ['View accounts', route('clients.accounts', $client)]]],
         ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]],
@@ -153,8 +153,20 @@
                 <details class="group relative">
                     <summary class="df-action-primary min-h-10 cursor-pointer list-none rounded-lg px-3 py-2">{{ $label }} <span class="ml-1 text-xs">▾</span></summary>
                     <div class="absolute right-0 z-20 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-2 text-sm shadow-xl">
-                        @foreach($links as [$linkLabel, $href])
-                            <a href="{{ $href }}" class="block rounded px-3 py-2 font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-800">{{ $linkLabel }}</a>
+                        @foreach($links as $link)
+                            @php
+                                $linkLabel = $link[0];
+                                $href = $link[1];
+                                $method = $link[2] ?? 'get';
+                            @endphp
+                            @if($method === 'post')
+                                <form method="POST" action="{{ $href }}">
+                                    @csrf
+                                    <button class="block w-full rounded px-3 py-2 text-left font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-800">{{ $linkLabel }}</button>
+                                </form>
+                            @else
+                                <a href="{{ $href }}" class="block rounded px-3 py-2 font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-800">{{ $linkLabel }}</a>
+                            @endif
                         @endforeach
                     </div>
                 </details>

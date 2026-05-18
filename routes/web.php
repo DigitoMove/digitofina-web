@@ -87,7 +87,7 @@ Route::middleware('auth')->group(function () {
     Route::put('/clients/{client}/kyc', [ClientKycController::class, 'update'])->name('clients.kyc.update');
     Route::resource('accounts', AccountController::class)->only(['index', 'create', 'store', 'show']);
     Route::resource('savings-products', SavingsProductController::class)->except(['show', 'destroy']);
-    Route::resource('savings-accounts', SavingsAccountController::class)->only(['index', 'create', 'store', 'show']);
+    Route::resource('savings-accounts', SavingsAccountController::class)->only(['index', 'create', 'store', 'show', 'destroy']);
     Route::get('/savings-accounts/{savingsAccount}/statement', [SavingsAccountController::class, 'statement'])->name('savings-accounts.statement');
     Route::get('/savings-accounts/{savingsAccount}/deposit', [SavingsTransactionController::class, 'depositForm'])->name('savings-transactions.deposit.create');
     Route::post('/savings-accounts/{savingsAccount}/deposit', [SavingsTransactionController::class, 'deposit'])->name('savings-transactions.deposit.store');
