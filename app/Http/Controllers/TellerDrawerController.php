@@ -17,6 +17,7 @@ use App\Services\FinancialControlService;
 use App\Services\TellerService;
 use App\Services\TransactionPostingService;
 use App\Support\CurrencyDenomination;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -214,6 +215,7 @@ class TellerDrawerController extends Controller
             'chart_account_id' => ['required', 'exists:chart_accounts,id'],
             'drawer_direction' => ['required', Rule::in(['cash_in', 'cash_out'])],
             'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+            'transaction_date' => ['required', 'date', 'before_or_equal:today'],
             'description' => ['nullable', 'string', 'max:1000'],
         ]);
 
@@ -227,13 +229,13 @@ class TellerDrawerController extends Controller
                 throw new InvalidArgumentException('Select a ledger account from the same branch as the drawer.');
             }
 
-            $entryType = $chartAccount->drawerEntryType($data['drawer_direction']);
+            $entryType = $this->ledgerEntryType($chartAccount, $data['drawer_direction']);
 
             if (! $entryType) {
                 throw new InvalidArgumentException('Select whether this posting adds to or takes from the drawer.');
             }
 
-            $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], $request->user(), $data['description'] ?? null);
+            $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], $request->user(), $data['description'] ?? null, CarbonImmutable::parse($data['transaction_date']));
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['managed_drawer_posting' => $exception->getMessage()])->withInput();
         }
@@ -345,14 +347,16 @@ class TellerDrawerController extends Controller
             'account_scope' => ['required', 'in:client_account,general_ledger'],
             'account_number' => ['nullable', 'required_if:account_scope,client_account', 'exists:accounts,account_number'],
             'chart_account_id' => ['nullable', 'required_if:account_scope,general_ledger', 'exists:chart_accounts,id'],
-            'gl_entry_type' => ['nullable', 'required_if:account_scope,general_ledger', 'in:debit,credit'],
+            'gl_entry_type' => ['nullable', 'in:debit,credit'],
             'transaction_type_id' => ['nullable', 'required_if:account_scope,client_account', 'exists:transaction_types,id'],
             'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+            'transaction_date' => ['required', 'date', 'before_or_equal:today'],
             'cheque_number' => ['nullable', 'string', 'max:191'],
             'description' => ['nullable', 'string'],
         ]);
 
         $session = DrawerSession::where('user_id', auth()->id())->where('status', 'open')->latest()->firstOrFail();
+        $postedAt = CarbonImmutable::parse($data['transaction_date']);
 
         try {
             if ($data['account_scope'] === 'general_ledger') {
@@ -361,14 +365,20 @@ class TellerDrawerController extends Controller
                     ->where('branch_id', $session->drawer->branch_id)
                     ->firstOrFail();
 
-                $posting->postGeneralLedgerCash($chartAccount, $session, $data['gl_entry_type'], (float) $data['amount'], auth()->user(), $data['description'] ?? null);
+                $entryType = $this->ledgerEntryType($chartAccount, $data['gl_entry_type'] ?? null);
+
+                if (! $entryType) {
+                    throw new InvalidArgumentException('Select whether the money is coming in or going out.');
+                }
+
+                $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $postedAt);
 
                 return back()->with('status', 'General ledger transaction posted.');
             }
 
             $account = Account::where('account_number', $data['account_number'])->firstOrFail();
             $type = TransactionType::findOrFail($data['transaction_type_id']);
-            $transaction = $posting->postCash($account, $session, $type, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $data['cheque_number'] ?? null);
+            $transaction = $posting->postCash($account, $session, $type, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $data['cheque_number'] ?? null, $postedAt);
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['amount' => $exception->getMessage()])->withInput();
         }
@@ -470,6 +480,23 @@ class TellerDrawerController extends Controller
     {
         return $request->user()->canPerform('manage-accounting')
             || ($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'));
+    }
+
+    private function ledgerEntryType(ChartAccount $chartAccount, ?string $requestedDirection): ?string
+    {
+        if (in_array($chartAccount->drawer_direction, ['cash_in', 'cash_out'], true)) {
+            return $chartAccount->drawerEntryType($chartAccount->drawer_direction);
+        }
+
+        if (in_array($requestedDirection, ['debit', 'credit'], true)) {
+            return $requestedDirection;
+        }
+
+        if (in_array($requestedDirection, ['cash_in', 'cash_out'], true)) {
+            return $chartAccount->drawerEntryType($requestedDirection);
+        }
+
+        return null;
     }
 
     private function assertAssignedTellerBelongsToBranch(?int $tellerUserId, Branch $branch): void

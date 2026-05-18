@@ -8,6 +8,7 @@ use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
+use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
@@ -21,9 +22,11 @@ class TransactionPostingService
 {
     public function __construct(private AuditLogger $auditLogger) {}
 
-    public function postCash(Account $account, DrawerSession $session, TransactionType $type, float $amount, User $user, ?string $description = null, ?string $chequeNumber = null): Transaction
+    public function postCash(Account $account, DrawerSession $session, TransactionType $type, float $amount, User $user, ?string $description = null, ?string $chequeNumber = null, ?CarbonInterface $postedAt = null): Transaction
     {
-        return DB::transaction(function () use ($account, $session, $type, $amount, $user, $description, $chequeNumber) {
+        $postedAt ??= now();
+
+        return DB::transaction(function () use ($account, $session, $type, $amount, $user, $description, $chequeNumber, $postedAt) {
             $account = Account::query()->with(['accountType', 'client.loans'])->whereKey($account->id)->lockForUpdate()->firstOrFail();
             $session = DrawerSession::query()->with('drawer')->whereKey($session->id)->lockForUpdate()->firstOrFail();
             $drawer = $session->drawer()->lockForUpdate()->firstOrFail();
@@ -43,13 +46,13 @@ class TransactionPostingService
             CurrencyDenomination::assertValid($amount);
 
             $financialControls = app(FinancialControlService::class);
-            $businessDate = $financialControls->ensureFinancialDayOpen($user, (int) $drawer->branch_id, now());
+            $businessDate = $financialControls->ensureFinancialDayOpen($user, (int) $drawer->branch_id, $postedAt);
             $financialControls->enforceTransactionLimit($user, $amount, $businessDate);
 
             $direction = $type->direction;
 
             if ($account->accountType?->category === 'loan' && $type->code === 'loan_repayment') {
-                return $this->postLoanRepayment($account, $session, $drawer, $type, $amount, $user, $description, $chequeNumber);
+                return $this->postLoanRepayment($account, $session, $drawer, $type, $amount, $user, $description, $chequeNumber, $postedAt);
             }
 
             if ($account->accountType?->category === 'loan') {
@@ -92,6 +95,9 @@ class TransactionPostingService
                 'amount' => $amount,
                 'balance_after' => $account->balance,
                 'description' => $description,
+                'posted_at' => $postedAt,
+                'created_at' => $postedAt,
+                'updated_at' => now(),
             ]);
 
             DrawerMovement::create([
@@ -102,6 +108,8 @@ class TransactionPostingService
                 'balance_after' => $drawer->current_balance,
                 'reference' => $transaction->reference,
                 'description' => $description,
+                'created_at' => $postedAt,
+                'updated_at' => now(),
             ]);
 
             $this->auditLogger->record('transaction.posted', $transaction, [
@@ -114,7 +122,7 @@ class TransactionPostingService
         });
     }
 
-    private function postLoanRepayment(Account $account, DrawerSession $session, TellerDrawer $drawer, TransactionType $type, float $amount, User $user, ?string $description, ?string $chequeNumber): Transaction
+    private function postLoanRepayment(Account $account, DrawerSession $session, TellerDrawer $drawer, TransactionType $type, float $amount, User $user, ?string $description, ?string $chequeNumber, CarbonInterface $postedAt): Transaction
     {
         $loan = $account->client->loans()
             ->where('loan_account_id', $account->id)
@@ -139,9 +147,12 @@ class TransactionPostingService
             'amount' => $amount,
             'balance_after' => max(0, (float) $account->balance - $amount),
             'description' => $description,
+            'posted_at' => $postedAt,
+            'created_at' => $postedAt,
+            'updated_at' => now(),
         ]);
 
-        app(LoanService::class)->repay($loan, $amount, $user, $transaction->id, 'cash', $transaction->reference);
+        app(LoanService::class)->repay($loan, $amount, $user, $transaction->id, 'cash', $transaction->reference, $postedAt);
 
         $loan->refresh();
         $account->update(['balance' => max(0, (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance)]);
@@ -155,6 +166,8 @@ class TransactionPostingService
             'balance_after' => $drawer->current_balance,
             'reference' => $transaction->reference,
             'description' => $description ?: 'Loan repayment',
+            'created_at' => $postedAt,
+            'updated_at' => now(),
         ]);
 
         $this->auditLogger->record('transaction.loan_repayment_posted', $transaction, [
@@ -220,15 +233,17 @@ class TransactionPostingService
         });
     }
 
-    public function postGeneralLedgerCash(ChartAccount $chartAccount, DrawerSession $session, string $entryType, float $amount, User $user, ?string $description = null): JournalEntry
+    public function postGeneralLedgerCash(ChartAccount $chartAccount, DrawerSession $session, string $entryType, float $amount, User $user, ?string $description = null, ?CarbonInterface $postedAt = null): JournalEntry
     {
+        $postedAt ??= now();
+
         if (! in_array($entryType, ['debit', 'credit'], true)) {
             throw new InvalidArgumentException('General ledger posting must be debit or credit.');
         }
 
         CurrencyDenomination::assertValid($amount);
 
-        return DB::transaction(function () use ($chartAccount, $session, $entryType, $amount, $user, $description): JournalEntry {
+        return DB::transaction(function () use ($chartAccount, $session, $entryType, $amount, $user, $description, $postedAt): JournalEntry {
             $chartAccount = ChartAccount::query()->whereKey($chartAccount->id)->lockForUpdate()->firstOrFail();
             $session = DrawerSession::query()->with('drawer')->whereKey($session->id)->lockForUpdate()->firstOrFail();
             $drawer = $session->drawer()->lockForUpdate()->firstOrFail();
@@ -258,7 +273,7 @@ class TransactionPostingService
             }
 
             $financialControls = app(FinancialControlService::class);
-            $businessDate = $financialControls->ensureFinancialDayOpen($user, (int) $drawer->branch_id, now());
+            $businessDate = $financialControls->ensureFinancialDayOpen($user, (int) $drawer->branch_id, $postedAt);
             $financialControls->enforceTransactionLimit($user, $amount, $businessDate);
 
             if ($entryType === 'debit' && (float) $drawer->current_balance < $amount) {
@@ -276,16 +291,18 @@ class TransactionPostingService
                 'created_by' => $user->id,
                 'posted_by' => $user->id,
                 'journal_number' => 'TJ'.now()->format('ymdHis').Str::upper(Str::random(4)),
-                'journal_date' => now()->toDateString(),
+                'journal_date' => $postedAt->toDateString(),
                 'description' => $description ?: 'Teller general ledger cash posting',
                 'status' => 'posted',
-                'posted_at' => now(),
+                'posted_at' => $postedAt,
                 'chart_account_id' => $chartAccount->id,
                 'reference' => $this->reference(),
                 'account_name' => $chartAccount->name,
                 'entry_type' => $entryType,
                 'amount' => $amount,
                 'memo' => $description,
+                'created_at' => $postedAt,
+                'updated_at' => now(),
             ]);
 
             $cashAccount = ChartAccount::query()->where('code', '1010')->first();
@@ -319,6 +336,8 @@ class TransactionPostingService
                 'balance_after' => $drawer->current_balance,
                 'reference' => $journal->reference,
                 'description' => $description ?: $chartAccount->name,
+                'created_at' => $postedAt,
+                'updated_at' => now(),
             ]);
 
             $this->auditLogger->record('transaction.general_ledger_cash_posted', $journal, [

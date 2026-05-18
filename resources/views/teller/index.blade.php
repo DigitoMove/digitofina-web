@@ -9,6 +9,11 @@
         ['Cash Out Today', number_format($cashOut, 2).' UGX', 'bg-amber-500', 'M12 19V5m0 14 5-5m-5 5-5-5'],
         ['Due Collections', number_format($dueToday->count()), 'bg-red-600', 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
     ];
+    $isLedgerPosting = filled($selectedChartAccount);
+    $selectedLedgerEntryType = $isLedgerPosting && in_array($selectedChartAccount->drawer_direction, ['cash_in', 'cash_out'], true)
+        ? $selectedChartAccount->drawerEntryType($selectedChartAccount->drawer_direction)
+        : null;
+    $needsLedgerDirection = $isLedgerPosting && ! $selectedLedgerEntryType;
 @endphp
 
 <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
@@ -314,6 +319,9 @@
                     <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge />
                         <input name="amount" type="number" min="100" step="100" value="{{ old('amount') }}" class="mt-1" required>
                     </label>
+                    <label class="text-sm font-semibold text-slate-700 md:col-span-2">Transaction Date <x-required-badge />
+                        <input name="transaction_date" type="date" max="{{ today()->toDateString() }}" value="{{ old('transaction_date', today()->toDateString()) }}" class="mt-1" required>
+                    </label>
                     <label class="text-sm font-semibold text-slate-700 md:col-span-2">Narration
                         <textarea name="description" rows="3" class="mt-1" placeholder="Float from bank, float from William, transport paid from drawer">{{ old('description') }}</textarea>
                     </label>
@@ -493,18 +501,20 @@
             <input type="hidden" name="account_scope" value="{{ $selectedChartAccount ? 'general_ledger' : 'client_account' }}">
             <input type="hidden" name="account_number" value="{{ $account?->account_number ?? request('account_number') }}">
             <input type="hidden" name="chart_account_id" value="{{ $selectedChartAccount?->id ?? request('chart_account_id') }}">
-            <label class="text-sm font-semibold text-slate-700">Client Money Direction <x-required-badge label="For savings or loan accounts" class="bg-amber-50 text-amber-700" />
-                <select name="transaction_type_id" class="mt-1">
-                    @foreach($transactionTypes as $type)
-                        <option value="{{ $type->id }}">{{ $type->name }}</option>
-                    @endforeach
-                </select>
-            </label>
+            @if(! $isLedgerPosting)
+                <label class="text-sm font-semibold text-slate-700">Client Money Direction <x-required-badge />
+                    <select name="transaction_type_id" class="mt-1">
+                        @foreach($transactionTypes as $type)
+                            <option value="{{ $type->id }}">{{ $type->name }}</option>
+                        @endforeach
+                    </select>
+                </label>
+            @endif
             <div class="rounded border border-slate-200 bg-slate-50 p-3 text-sm md:col-span-2">
                 <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected posting target</div>
                 @if($selectedChartAccount)
                     <div class="mt-1 font-semibold text-slate-950">{{ $selectedChartAccount->code }} · {{ $selectedChartAccount->name }}</div>
-                    <div class="text-slate-500">General Ledger Account</div>
+                    <div class="text-slate-500">General Ledger Account · {{ $selectedLedgerEntryType === 'credit' ? 'Money coming in / receipt' : ($selectedLedgerEntryType === 'debit' ? 'Money going out / payment' : 'Choose direction below') }}</div>
                 @elseif($account)
                     <div class="mt-1 font-semibold text-slate-950">{{ $account->account_number }} · {{ $account->account_name }}</div>
                     <div class="text-slate-500">{{ $account->accountType?->name }} · {{ $account->client?->full_name ?: $account->client?->business_name }}</div>
@@ -512,17 +522,26 @@
                     <div class="mt-1 text-slate-500">Search and select an account above before posting.</div>
                 @endif
             </div>
-            <label class="text-sm font-semibold text-slate-700">General Ledger Money Direction <x-required-badge label="For GL accounts" class="bg-amber-50 text-amber-700" />
-                <select name="gl_entry_type" class="mt-1">
-                    <option value="credit" @selected(old('gl_entry_type') === 'credit')>Money coming in / receipt</option>
-                    <option value="debit" @selected(old('gl_entry_type') === 'debit')>Money going out / payment</option>
-                </select>
-            </label>
+            @if($isLedgerPosting)
+                @if($selectedLedgerEntryType)
+                    <input type="hidden" name="gl_entry_type" value="{{ $selectedLedgerEntryType }}">
+                @else
+                    <label class="text-sm font-semibold text-slate-700">Money Direction <x-required-badge />
+                        <select name="gl_entry_type" class="mt-1">
+                            <option value="credit" @selected(old('gl_entry_type') === 'credit')>Money coming in / receipt</option>
+                            <option value="debit" @selected(old('gl_entry_type') === 'debit')>Money going out / payment</option>
+                        </select>
+                    </label>
+                @endif
+            @endif
             <label class="text-sm font-semibold text-slate-700">Cheque No
                 <input name="cheque_number" class="mt-1">
             </label>
             <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge />
                 <input name="amount" type="number" min="100" step="100" class="mt-1" required>
+            </label>
+            <label class="text-sm font-semibold text-slate-700">Transaction Date <x-required-badge />
+                <input name="transaction_date" type="date" max="{{ today()->toDateString() }}" value="{{ old('transaction_date', today()->toDateString()) }}" class="mt-1" required>
             </label>
             <label class="text-sm font-semibold text-slate-700 md:col-span-2">Transaction Description
                 <textarea name="description" rows="3" class="mt-1"></textarea>
