@@ -29,7 +29,7 @@
             'leftValue' => $activeSavings,
             'rightLabel' => 'Dormant',
             'rightValue' => $dormantSavings,
-            'href' => $client->savingsAccounts->first() ? route('savings-accounts.show', $client->savingsAccounts->first()) : route('accounts.create', ['client_id' => $client->id]),
+            'href' => route('clients.savings-accounts', $client),
         ],
         [
             'title' => 'Loan Accounts',
@@ -40,7 +40,7 @@
             'leftValue' => $goodLoans,
             'rightLabel' => 'In Arrears',
             'rightValue' => $arrearsLoans,
-            'href' => $client->loans->first() ? route('loans.show', $client->loans->first()) : route('loans.create', ['client_id' => $client->id]),
+            'href' => route('clients.loans', $client),
         ],
         [
             'title' => 'New Applications',
@@ -62,7 +62,7 @@
             'leftValue' => $activeCurrent,
             'rightLabel' => 'Dormant',
             'rightValue' => $dormantCurrent,
-            'href' => $currentAccounts->first() ? route('accounts.show', $currentAccounts->first()) : route('accounts.create', ['client_id' => $client->id]),
+            'href' => route('clients.accounts', $client),
         ],
         [
             'title' => 'Term Deposits',

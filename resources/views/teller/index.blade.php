@@ -50,7 +50,7 @@
                 <label class="text-sm font-semibold text-slate-700">Drawer <x-required-badge />
                     <select name="teller_drawer_id" class="mt-1" required>
                         @foreach($drawers as $openDrawer)
-                            <option value="{{ $openDrawer->id }}" @selected((int) old('teller_drawer_id') === $openDrawer->id)>{{ $openDrawer->code }} {{ $openDrawer->name }}</option>
+                            <option value="{{ $openDrawer->id }}" @selected((int) old('teller_drawer_id') === $openDrawer->id)>{{ $openDrawer->branch?->name }} · {{ $openDrawer->code }} {{ $openDrawer->name }} · {{ str($openDrawer->status)->headline() }}</option>
                         @endforeach
                     </select>
                 </label>
@@ -86,6 +86,103 @@
             </div>
         @endunless
     </section>
+
+    @if($canOpenForTellers)
+        <section class="df-panel p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h2 class="font-semibold text-slate-950">Drawer Management</h2>
+                    <p class="df-muted">Create branch drawers, assign tellers/cashiers, open, close, or delete unused drawers.</p>
+                </div>
+                <span class="df-badge">Branch scoped</span>
+            </div>
+
+            @if($errors->has('drawer_management'))
+                <div class="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ $errors->first('drawer_management') }}</div>
+            @endif
+
+            <form method="POST" action="{{ route('teller.drawers.store') }}" class="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
+                @csrf
+                <label class="text-sm font-semibold text-slate-700">Branch <x-required-badge />
+                    <select name="branch_id" class="mt-1" required>
+                        @foreach($branches as $branch)
+                            <option value="{{ $branch->id }}" @selected((int) old('branch_id') === $branch->id)>{{ $branch->name }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label class="text-sm font-semibold text-slate-700">Assigned teller/cashier
+                    <select name="assigned_user_id" class="mt-1">
+                        <option value="">Unassigned</option>
+                        @foreach($tellers as $teller)
+                            <option value="{{ $teller->id }}" @selected((int) old('assigned_user_id') === $teller->id)>{{ $teller->name }} · {{ $teller->branch?->name ?? 'No branch' }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label class="text-sm font-semibold text-slate-700">Drawer name <x-required-badge />
+                    <input name="name" value="{{ old('name') }}" class="mt-1" placeholder="Main Drawer, Teller 2 Drawer" required>
+                </label>
+                <label class="text-sm font-semibold text-slate-700">Drawer code <x-required-badge />
+                    <input name="code" value="{{ old('code') }}" class="mt-1" placeholder="BR01-TD-02" required>
+                </label>
+                <button class="df-action-primary md:col-span-2">Create Drawer</button>
+            </form>
+
+            <div class="mt-5 max-h-[28rem] overflow-auto rounded-lg border border-slate-200">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-800 text-white">
+                        <tr><th class="p-3">Branch</th><th>Drawer</th><th>Assigned</th><th class="text-right">Balance</th><th>Status</th><th class="text-right">Actions</th></tr>
+                    </thead>
+                    <tbody>
+                        @forelse($drawers->groupBy('branch_id') as $branchDrawers)
+                            @foreach($branchDrawers as $managedDrawer)
+                                <tr class="border-t border-slate-200 align-top">
+                                    <td class="p-3">{{ $managedDrawer->branch?->name ?? 'No branch' }}</td>
+                                    <td>
+                                        <div class="font-semibold text-slate-950">{{ $managedDrawer->code }}</div>
+                                        <div class="text-slate-500">{{ $managedDrawer->name }}</div>
+                                    </td>
+                                    <td>{{ $managedDrawer->assignedUser?->name ?? 'Unassigned' }}</td>
+                                    <td class="text-right">UGX {{ number_format((float) $managedDrawer->current_balance, 2) }}</td>
+                                    <td><span class="rounded px-2 py-1 text-xs font-semibold {{ $managedDrawer->status === 'open' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700' }}">{{ str($managedDrawer->status)->headline() }}</span></td>
+                                    <td class="p-3">
+                                        <div class="flex flex-wrap justify-end gap-2">
+                                            @if($managedDrawer->status === 'open')
+                                                <form method="POST" action="{{ route('teller.drawers.close', $managedDrawer) }}" class="flex gap-2">
+                                                    @csrf
+                                                    <input name="closing_balance" type="number" min="0" step="100" value="{{ $managedDrawer->current_balance }}" class="w-28 rounded border-slate-300 text-sm" required>
+                                                    <button class="rounded bg-red-600 px-3 py-1 text-xs font-semibold text-white">Close</button>
+                                                </form>
+                                            @else
+                                                <form method="POST" action="{{ route('teller.open') }}" class="flex flex-wrap justify-end gap-2">
+                                                    @csrf
+                                                    <input type="hidden" name="teller_drawer_id" value="{{ $managedDrawer->id }}">
+                                                    <select name="teller_user_id" class="w-40 rounded border-slate-300 text-sm" required>
+                                                        <option value="">Teller</option>
+                                                        @foreach($tellers as $teller)
+                                                            <option value="{{ $teller->id }}" @selected($managedDrawer->assigned_user_id === $teller->id)>{{ $teller->name }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                    <input name="opening_balance" type="number" min="0" step="100" value="{{ $managedDrawer->current_balance }}" class="w-28 rounded border-slate-300 text-sm" required>
+                                                    <button class="rounded bg-brand-700 px-3 py-1 text-xs font-semibold text-white">Open</button>
+                                                </form>
+                                                <form method="POST" action="{{ route('teller.drawers.destroy', $managedDrawer) }}" onsubmit="return confirm('Delete this drawer? Only unused closed drawers can be deleted.');">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button class="rounded border border-red-200 px-3 py-1 text-xs font-semibold text-red-700">Delete</button>
+                                                </form>
+                                            @endif
+                                        </div>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        @empty
+                            <tr><td colspan="6" class="p-8 text-center text-slate-500">No drawers configured yet.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    @endif
 
     <section class="df-panel p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">

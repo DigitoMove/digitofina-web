@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Account;
 use App\Models\AccountType;
+use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
@@ -59,12 +60,19 @@ class TellerDrawerController extends Controller
             'session' => $session,
             'drawer' => $session?->drawer,
             'drawers' => TellerDrawer::query()
+                ->with(['branch', 'assignedUser'])
                 ->when(! $canOpenForTellers, fn ($query) => $query->where('assigned_user_id', auth()->id())->orWhereNull('assigned_user_id'))
+                ->orderBy('branch_id')
                 ->orderBy('code')
+                ->get(),
+            'branches' => Branch::query()
+                ->where('is_active', true)
+                ->when(! $request->user()->canPerform('manage-organization'), fn ($query) => $query->where('id', $request->user()->branch_id))
+                ->orderBy('name')
                 ->get(),
             'tellers' => $canOpenForTellers
                 ? User::query()
-                    ->with('role')
+                    ->with(['branch', 'role'])
                     ->where('organization_id', $request->user()->organization_id)
                     ->where('status', 'active')
                     ->whereHas('role', fn ($query) => $query->where('slug', 'teller-cashier'))
@@ -98,6 +106,41 @@ class TellerDrawerController extends Controller
         ]);
     }
 
+    public function storeDrawer(Request $request, AuditLogger $auditLogger): RedirectResponse
+    {
+        abort_unless($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'), 403);
+
+        $data = $request->validate([
+            'branch_id' => ['required', 'exists:branches,id'],
+            'name' => ['required', 'string', 'max:191'],
+            'code' => ['required', 'string', 'max:40', 'unique:teller_drawers,code'],
+            'assigned_user_id' => ['nullable', 'exists:users,id'],
+        ]);
+
+        $branch = Branch::query()->findOrFail($data['branch_id']);
+
+        try {
+            $this->authorizeDrawerBranch($request, $branch);
+            $this->assertAssignedTellerBelongsToBranch($data['assigned_user_id'] ?? null, $branch);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['drawer_management' => $exception->getMessage()])->withInput();
+        }
+
+        $drawer = TellerDrawer::create([
+            'branch_id' => $branch->id,
+            'assigned_user_id' => $data['assigned_user_id'] ?? null,
+            'name' => $data['name'],
+            'code' => $data['code'],
+            'currency' => 'UGX',
+            'current_balance' => 0,
+            'status' => 'closed',
+        ]);
+
+        $auditLogger->record('drawer.created', $drawer, $drawer->toArray());
+
+        return back()->with('status', 'Drawer created.');
+    }
+
     public function open(Request $request, TellerService $tellers, FinancialControlService $financialControls, AuditLogger $auditLogger): RedirectResponse
     {
         $data = $request->validate([
@@ -110,6 +153,7 @@ class TellerDrawerController extends Controller
             $drawer = TellerDrawer::query()->findOrFail($data['teller_drawer_id']);
             $financialControls->ensureFinancialDayOpen($request->user(), (int) $drawer->branch_id, today());
             $teller = $this->resolveOpeningTeller($request, $data['teller_user_id'] ?? null);
+            $this->assertAssignedTellerBelongsToBranch($teller->id, $drawer->branch);
             $session = $tellers->openDrawer($drawer, $teller, (float) $data['opening_balance'], $request->user());
             $auditLogger->record('drawer.opened', $session, $session->toArray() + ['opened_by' => $request->user()->id]);
         } catch (InvalidArgumentException $exception) {
@@ -170,6 +214,43 @@ class TellerDrawerController extends Controller
         return back()->with('status', 'Drawer closed.');
     }
 
+    public function closeDrawer(Request $request, TellerDrawer $drawer, FinancialControlService $financialControls): RedirectResponse
+    {
+        abort_unless($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'), 403);
+
+        $data = $request->validate(['closing_balance' => ['required', 'numeric', 'min:0', CurrencyDenomination::validationRule()]]);
+
+        try {
+            $this->authorizeDrawerBranch($request, $drawer->branch);
+            $session = $drawer->sessions()->where('status', 'open')->latest()->firstOrFail();
+            $financialControls->closeDrawer($session, $request->user(), (float) $data['closing_balance']);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['drawer_management' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Drawer closed.');
+    }
+
+    public function destroyDrawer(Request $request, TellerDrawer $drawer, AuditLogger $auditLogger): RedirectResponse
+    {
+        abort_unless($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'), 403);
+
+        $this->authorizeDrawerBranch($request, $drawer->branch);
+
+        if ($drawer->status === 'open') {
+            return back()->withErrors(['drawer_management' => 'Close the drawer before deleting it.']);
+        }
+
+        if ($drawer->sessions()->exists()) {
+            return back()->withErrors(['drawer_management' => 'This drawer has session history and cannot be deleted. Keep it closed instead.']);
+        }
+
+        $auditLogger->record('drawer.deleted', $drawer, $drawer->toArray());
+        $drawer->delete();
+
+        return back()->with('status', 'Drawer deleted.');
+    }
+
     private function resolveOpeningTeller(Request $request, ?int $tellerUserId): User
     {
         $canOpenForTellers = $request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users');
@@ -187,7 +268,7 @@ class TellerDrawerController extends Controller
         }
 
         $teller = User::query()
-            ->with('role')
+            ->with(['branch', 'role'])
             ->whereKey($tellerUserId)
             ->where('organization_id', $request->user()->organization_id)
             ->where('status', 'active')
@@ -198,5 +279,27 @@ class TellerDrawerController extends Controller
         }
 
         return $teller;
+    }
+
+    private function authorizeDrawerBranch(Request $request, Branch $branch): void
+    {
+        if ($request->user()->canPerform('manage-organization')) {
+            return;
+        }
+
+        abort_unless((int) $request->user()->branch_id === (int) $branch->id, 403);
+    }
+
+    private function assertAssignedTellerBelongsToBranch(?int $tellerUserId, Branch $branch): void
+    {
+        if (! $tellerUserId) {
+            return;
+        }
+
+        $teller = User::query()->findOrFail($tellerUserId);
+
+        if ($teller->branch_id && (int) $teller->branch_id !== (int) $branch->id) {
+            throw new InvalidArgumentException('Select a teller/cashier from the drawer branch.');
+        }
     }
 }

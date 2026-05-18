@@ -117,9 +117,12 @@ Route::middleware('auth')->group(function () {
     Route::post('/arrears/apply-penalties', [ArrearsController::class, 'applyPenalties'])->name('arrears.apply-penalties');
     Route::get('/due-repayments', [DueRepaymentController::class, 'index'])->name('due-repayments.index');
     Route::get('/teller-drawer', [TellerDrawerController::class, 'index'])->name('teller.index');
+    Route::post('/teller-drawer/drawers', [TellerDrawerController::class, 'storeDrawer'])->name('teller.drawers.store');
     Route::post('/teller-drawer/open', [TellerDrawerController::class, 'open'])->name('teller.open');
     Route::post('/teller-drawer/post', [TellerDrawerController::class, 'post'])->name('teller.post');
     Route::post('/teller-drawer/close', [TellerDrawerController::class, 'close'])->name('teller.close');
+    Route::post('/teller-drawer/{drawer}/close', [TellerDrawerController::class, 'closeDrawer'])->name('teller.drawers.close');
+    Route::delete('/teller-drawer/{drawer}', [TellerDrawerController::class, 'destroyDrawer'])->name('teller.drawers.destroy');
     Route::get('/end-of-day', [EndOfDayController::class, 'index'])->name('end-of-day.index');
     Route::post('/end-of-day/reconcile', [EndOfDayController::class, 'reconcile'])->name('end-of-day.reconcile');
     Route::post('/end-of-day/process', [EndOfDayController::class, 'process'])->name('end-of-day.process');

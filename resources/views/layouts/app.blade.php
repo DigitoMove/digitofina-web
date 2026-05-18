@@ -47,22 +47,12 @@
                             ],
                         ],
                         [
-                            'label' => 'Accounts & Savings',
-                            'icon' => 'M3 7h18v12H3z M7 7V5h10v2',
-                            'items' => [
-                                ['Accounts', 'accounts.index', 'M3 7h18v12H3z M7 7V5h10v2'],
-                                ['Savings Products', 'savings-products.index', 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
-                                ['Savings Accounts', 'savings-accounts.index', 'M4 7h16v10H4z M7 11h10 M7 15h6'],
-                                ['Savings Transfer', 'savings-transfers.create', 'M7 7h12m0 0-4-4m4 4-4 4 M17 17H5m0 0 4-4m-4 4 4 4'],
-                            ],
-                        ],
-                        [
                             'label' => 'Loans',
                             'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5',
                             'items' => [
-                                ['Loan Products', 'loan-products.index', 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
                                 ['Loans', 'loans.index', 'M4 6h16v12H4z M8 10h8 M8 14h5'],
                                 ['Arrears', 'arrears.index', 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
+                                ['Loan Products', 'loan-products.index', 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
                             ],
                         ],
                         [
@@ -72,6 +62,15 @@
                                 ['Teller Drawer', 'teller.index', 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10'],
                                 ['End of Day', 'end-of-day.index', 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'],
                                 ['Data Imports', 'imports.index', 'M12 3v12m0 0 4-4m-4 4-4-4 M5 19h14 M5 15v4 M19 15v4'],
+                            ],
+                        ],
+                        [
+                            'label' => 'Accounts',
+                            'icon' => 'M3 7h18v12H3z M7 7V5h10v2',
+                            'items' => [
+                                ['Accounts Register', 'accounts.index', 'M3 7h18v12H3z M7 7V5h10v2'],
+                                ['Savings Products', 'savings-products.index', 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
+                                ['Savings Transfer', 'savings-transfers.create', 'M7 7h12m0 0-4-4m4 4-4 4 M17 17H5m0 0 4-4m-4 4 4 4'],
                             ],
                         ],
                     ];
