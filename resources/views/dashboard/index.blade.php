@@ -70,7 +70,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h2 class="text-lg font-semibold text-slate-950">Repayment Calendar</h2>
-                <p class="text-sm text-slate-500">{{ $calendarMonth->format('F Y') }} schedules from all loan officers by repayment date.</p>
+                <p class="text-sm text-slate-500">{{ $calendarMonth->format('F Y') }} next repayments distributed by scheduled due date.</p>
             </div>
             <a href="{{ route('due-repayments.index') }}" class="df-action-secondary">Today</a>
         </div>
@@ -81,7 +81,7 @@
         </div>
         <div class="grid grid-cols-7 overflow-hidden rounded-b-lg border border-t-0 border-slate-200">
             @foreach($calendarDays as $day)
-                <a href="{{ route('due-repayments.index', ['date' => $day['date']->toDateString()]) }}" class="min-h-24 border-b border-r border-slate-200 p-2 text-left transition hover:bg-brand-50 {{ $day['count'] > 0 ? 'bg-brand-600 text-white hover:text-slate-950' : 'bg-white text-slate-700' }} {{ $day['is_today'] ? 'bg-sky-100 text-slate-950 ring-2 ring-inset ring-brand-600' : '' }} {{ $day['is_current_month'] ? '' : 'opacity-40' }}">
+                <a href="{{ route('due-repayments.index', ['date' => $day['date']->toDateString()]) }}" class="min-h-24 border-b border-r border-slate-200 p-2 text-left transition hover:bg-brand-50 {{ $day['upcoming_count'] > 0 ? 'bg-brand-600 text-white hover:text-slate-950' : ($day['overdue_count'] > 0 ? 'bg-red-600 text-white hover:text-slate-950' : 'bg-white text-slate-700') }} {{ $day['is_today'] ? 'bg-sky-100 text-slate-950 ring-2 ring-inset ring-brand-600' : '' }} {{ $day['is_current_month'] ? '' : 'opacity-40' }}">
                     <div class="flex items-center justify-between gap-2">
                         <span class="text-sm font-semibold">{{ $day['date']->day }}</span>
                         @if($day['date']->isSunday())
@@ -89,8 +89,15 @@
                         @endif
                     </div>
                     @if($day['count'] > 0)
-                        <div class="mt-3 rounded bg-cyan-300/80 px-2 py-1 text-xs font-semibold text-slate-950">{{ $day['count'] }} scheduled</div>
-                        <div class="mt-1 text-[11px] {{ $day['is_today'] ? 'text-slate-500' : 'text-white/80' }}">{{ $day['open_count'] }} open · UGX {{ number_format($day['amount'], 0) }}</div>
+                        <div class="mt-3 rounded bg-cyan-300/80 px-2 py-1 text-xs font-semibold text-slate-950">{{ $day['upcoming_count'] > 0 ? $day['upcoming_count'].' next' : $day['count'].' scheduled' }}</div>
+                        <div class="mt-1 text-[11px] {{ $day['is_today'] ? 'text-slate-500' : ($day['open_count'] > 0 ? 'text-white/80' : 'text-slate-500') }}">
+                            {{ $day['open_count'] }} open · UGX {{ number_format($day['amount'], 0) }}
+                        </div>
+                        @if($day['overdue_count'] > 0)
+                            <div class="mt-1 rounded bg-white/20 px-2 py-0.5 text-[10px] font-semibold">{{ $day['overdue_count'] }} overdue</div>
+                        @elseif($day['open_count'] === 0)
+                            <div class="mt-1 rounded bg-white/20 px-2 py-0.5 text-[10px] font-semibold">Cleared</div>
+                        @endif
                     @else
                         <div class="mt-3 text-xs text-slate-400">No schedules</div>
                     @endif
@@ -102,16 +109,16 @@
     <section class="df-panel p-5">
         <div class="flex items-center justify-between gap-3">
             <div>
-                <h2 class="text-lg font-semibold text-slate-950">Scheduled Today</h2>
-                <p class="text-sm text-slate-500">Clients expected to pay today.</p>
+                <h2 class="text-lg font-semibold text-slate-950">Next Repayments</h2>
+                <p class="text-sm text-slate-500">Upcoming clients expected to pay.</p>
             </div>
             <div class="text-right">
-                <div class="text-2xl font-semibold text-slate-950">{{ $dueTodayCount }}</div>
-                <div class="text-xs text-slate-500">UGX {{ number_format($dueTodayAmount, 0) }}</div>
+                <div class="text-2xl font-semibold text-slate-950">{{ $nextRepayments->count() }}</div>
+                <div class="text-xs text-slate-500">Upcoming</div>
             </div>
         </div>
         <div class="mt-5 divide-y divide-slate-200">
-            @forelse($dueToday as $schedule)
+            @forelse($nextRepayments as $schedule)
                 <div class="py-3">
                     <div class="flex items-start justify-between gap-3">
                         <div>
@@ -120,13 +127,16 @@
                         </div>
                         <div class="text-right text-sm font-semibold text-slate-950">UGX {{ number_format($schedule->outstanding_amount, 0) }}</div>
                     </div>
-                    <div class="mt-1 text-xs text-slate-500">{{ $schedule->loan->loan_number }} · Installment #{{ $schedule->installment_number }}</div>
+                    <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span>{{ $schedule->due_date?->format('d M Y') }}</span>
+                        <span>{{ $schedule->loan->loan_number }} · Installment #{{ $schedule->installment_number }}</span>
+                    </div>
                 </div>
             @empty
-                <div class="py-10 text-center text-sm text-slate-500">No clients are scheduled to pay today.</div>
+                <div class="py-10 text-center text-sm text-slate-500">No upcoming repayments are scheduled.</div>
             @endforelse
         </div>
-        <a href="{{ route('due-repayments.index') }}" class="mt-4 inline-flex text-sm font-semibold text-brand-700">View all due today</a>
+        <a href="{{ route('due-repayments.index') }}" class="mt-4 inline-flex text-sm font-semibold text-brand-700">View due today</a>
     </section>
 </div>
 

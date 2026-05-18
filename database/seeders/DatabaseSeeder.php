@@ -91,7 +91,7 @@ class DatabaseSeeder extends Seeder
             'organization-admin' => $permissions->whereNotIn('slug', ['view-own-accounts'])->pluck('id')->all(),
             'branch-manager' => $permissions->whereIn('slug', ['manage-branches', 'manage-users', 'manage-clients', 'verify-kyc', 'manage-accounts', 'approve-transactions', 'approve-reversals', 'approve-maker-checker', 'view-approvals', 'manage-loans', 'approve-loans', 'disburse-loans', 'waive-penalties', 'manage-end-of-day', 'import-data', 'view-reports', 'view-audit-logs'])->pluck('id')->all(),
             'accountant' => $permissions->whereIn('slug', ['manage-accounts', 'approve-transactions', 'approve-reversals', 'approve-maker-checker', 'view-approvals', 'manage-accounting', 'post-journal-entries', 'manage-end-of-day', 'import-data', 'view-reports', 'export-reports', 'post-repayments'])->pluck('id')->all(),
-            'loan-officer' => $permissions->whereIn('slug', ['manage-clients', 'verify-kyc', 'manage-loans', 'post-repayments', 'view-reports'])->pluck('id')->all(),
+            'loan-officer' => $permissions->whereIn('slug', ['manage-clients', 'verify-kyc', 'manage-loans', 'approve-loans', 'post-repayments', 'view-reports'])->pluck('id')->all(),
             'teller-cashier' => $permissions->whereIn('slug', ['manage-clients', 'manage-accounts', 'post-transactions', 'request-reversals', 'manage-drawers', 'post-repayments'])->pluck('id')->all(),
             'auditor' => $permissions->whereIn('slug', ['view-reports', 'export-reports', 'view-audit-logs', 'audit-system'])->pluck('id')->all(),
             'data-entry-clerk' => $permissions->whereIn('slug', ['manage-clients', 'verify-kyc', 'import-data'])->pluck('id')->all(),

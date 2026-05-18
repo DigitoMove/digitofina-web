@@ -1,3 +1,19 @@
+@php
+    $currentUser = auth()->user();
+    $canManageLoanWorkflow = $currentUser->canPerform('manage-loans');
+    $canManageLoanAccounts = $currentUser->canPerform('manage-accounts') || $currentUser->canPerform('manage-loans');
+    $canApproveLoan = $currentUser->canPerform('approve-loans');
+    $canDisburseLoan = $currentUser->canPerform('disburse-loans');
+    $canPostLoanRepayment = $currentUser->canPerform('post-repayments');
+    $hasVisibleWorkflowAction = $canAssignOfficer
+        || $canCancel
+        || ($canManageLoanAccounts && $loan->status === 'draft')
+        || ($canManageLoanWorkflow && $loan->status === 'under_review')
+        || ($canApproveLoan && in_array($loan->status, ['submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true))
+        || ($canDisburseLoan && $loan->status === 'approved')
+        || ($canPostLoanRepayment && in_array($loan->status, ['active', 'in_arrears'], true));
+@endphp
+
 <section class="df-panel p-5">
     <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -35,7 +51,7 @@
         </form>
     @endif
 
-    @if($loan->status === 'draft')
+    @if($canManageLoanAccounts && $loan->status === 'draft')
         <div class="mt-4 grid gap-4 lg:grid-cols-4">
             <form method="POST" action="{{ route('loans.generate-savings-account', $loan) }}" class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
                 @csrf
@@ -58,7 +74,7 @@
         </div>
     @endif
 
-    @if($loan->status === 'under_review')
+    @if($canManageLoanWorkflow && $loan->status === 'under_review')
         <form method="POST" action="{{ route('loans.submit-approval', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 md:grid-cols-[1fr_auto]">
             @csrf
             <div>
@@ -69,7 +85,7 @@
         </form>
     @endif
 
-    @if(in_array($loan->status, ['submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true))
+    @if($canApproveLoan && in_array($loan->status, ['submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true))
         <div class="mt-4 grid gap-4 lg:grid-cols-2">
             <form method="POST" action="{{ route('loans.approve', $loan) }}" class="grid gap-3 rounded-lg border border-forest-500/20 bg-forest-50 p-4">
                 @csrf
@@ -85,7 +101,7 @@
         </div>
     @endif
 
-    @if($loan->status === 'approved')
+    @if($canDisburseLoan && $loan->status === 'approved')
         <form method="POST" action="{{ route('loans.disburse', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 md:grid-cols-[240px_1fr_auto]">
             @csrf
             <label class="text-sm font-semibold text-slate-700">Payment method <x-required-badge /><select name="payment_method" class="mt-1" required><option value="transfer_to_savings">Transfer to savings</option><option value="cash">Cash</option><option value="mobile_money">Mobile money</option><option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option></select></label>
@@ -94,7 +110,7 @@
         </form>
     @endif
 
-    @if(in_array($loan->status, ['active', 'in_arrears'], true))
+    @if($canPostLoanRepayment && in_array($loan->status, ['active', 'in_arrears'], true))
         <form method="POST" action="{{ route('loans.repayments.store', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-5">
             @csrf
             <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge /><input name="amount" type="number" min="100" step="100" placeholder="Amount" required></label>
@@ -105,7 +121,7 @@
         </form>
     @endif
 
-    @unless($canAssignOfficer || $canCancel || in_array($loan->status, ['draft', 'under_review', 'submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved', 'active', 'in_arrears'], true))
+    @unless($hasVisibleWorkflowAction)
         <p class="mt-4 text-sm text-slate-500">There are no workflow actions available for this loan at the current status.</p>
     @endunless
 </section>

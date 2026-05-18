@@ -54,6 +54,16 @@ class DashboardController extends Controller
             ->whereDate('due_date', $today->toDateString())
             ->selectRaw('count(*) as total, coalesce(sum(outstanding_amount), 0) as amount')
             ->first();
+        $nextRepayments = LoanSchedule::query()
+            ->with(['loan.client', 'loan.product'])
+            ->whereHas('loan', $calendarScope)
+            ->where('outstanding_amount', '>', 0)
+            ->where('status', '!=', 'paid')
+            ->whereDate('due_date', '>=', $today->toDateString())
+            ->orderBy('due_date')
+            ->orderBy('installment_number')
+            ->limit(10)
+            ->get();
         $calendarCounts = LoanSchedule::query()
             ->whereHas('loan', $calendarScope)
             ->whereBetween('due_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
@@ -61,8 +71,10 @@ class DashboardController extends Controller
                 due_date,
                 count(*) as total,
                 sum(case when outstanding_amount > 0 and status != 'paid' then 1 else 0 end) as open_total,
+                sum(case when due_date >= ? and outstanding_amount > 0 and status != 'paid' then 1 else 0 end) as upcoming_total,
+                sum(case when due_date < ? and outstanding_amount > 0 and status != 'paid' then 1 else 0 end) as overdue_total,
                 coalesce(sum(case when outstanding_amount > 0 and status != 'paid' then outstanding_amount else 0 end), 0) as amount
-            ")
+            ", [$today->toDateString(), $today->toDateString()])
             ->groupBy('due_date')
             ->get()
             ->keyBy(fn (LoanSchedule $schedule): string => $schedule->due_date->toDateString());
@@ -78,6 +90,8 @@ class DashboardController extends Controller
                     'is_past' => $date->lt($today),
                     'count' => (int) ($count?->total ?? 0),
                     'open_count' => (int) ($count?->open_total ?? 0),
+                    'upcoming_count' => (int) ($count?->upcoming_total ?? 0),
+                    'overdue_count' => (int) ($count?->overdue_total ?? 0),
                     'amount' => (float) ($count?->amount ?? 0),
                 ];
             });
@@ -112,6 +126,7 @@ class DashboardController extends Controller
             'dueToday' => $dueToday,
             'dueTodayCount' => (int) ($dueTodayTotals?->total ?? 0),
             'dueTodayAmount' => (float) ($dueTodayTotals?->amount ?? 0),
+            'nextRepayments' => $nextRepayments,
             'calendarDays' => $calendarDays,
             'calendarMonth' => $today,
             'arrearsCount' => $arrearsCount,
