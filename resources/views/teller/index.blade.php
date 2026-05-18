@@ -148,40 +148,6 @@
                                     <td><span class="rounded px-2 py-1 text-xs font-semibold {{ $managedDrawer->status === 'open' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700' }}">{{ str($managedDrawer->status)->headline() }}</span></td>
                                     <td class="p-3">
                                         <div class="flex flex-wrap justify-end gap-2">
-                                            <details class="w-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-left">
-                                                <summary class="cursor-pointer list-none text-xs font-semibold text-brand-700">Edit drawer details</summary>
-                                                <form method="POST" action="{{ route('teller.drawers.update', $managedDrawer) }}" class="mt-3 grid gap-3 md:grid-cols-2">
-                                                    @csrf
-                                                    @method('PUT')
-                                                    <label class="text-xs font-semibold text-slate-600">Branch
-                                                        <select name="branch_id" class="mt-1 w-full rounded border-slate-300 text-sm" required>
-                                                            @foreach($branches as $branch)
-                                                                <option value="{{ $branch->id }}" @selected((int) old('branch_id', $managedDrawer->branch_id) === $branch->id)>{{ $branch->name }}</option>
-                                                            @endforeach
-                                                        </select>
-                                                    </label>
-                                                    <label class="text-xs font-semibold text-slate-600">Assigned teller/cashier
-                                                        <select name="assigned_user_id" class="mt-1 w-full rounded border-slate-300 text-sm">
-                                                            <option value="">Unassigned</option>
-                                                            @foreach($tellers as $teller)
-                                                                <option value="{{ $teller->id }}" @selected((int) old('assigned_user_id', $managedDrawer->assigned_user_id) === $teller->id)>{{ $teller->name }} · {{ $teller->branch?->name ?? 'No branch' }}</option>
-                                                            @endforeach
-                                                        </select>
-                                                    </label>
-                                                    <label class="text-xs font-semibold text-slate-600">Drawer name
-                                                        <input name="name" value="{{ old('name', $managedDrawer->name) }}" class="mt-1 w-full rounded border-slate-300 text-sm" required>
-                                                    </label>
-                                                    <label class="text-xs font-semibold text-slate-600">Drawer code
-                                                        <input name="code" value="{{ old('code', $managedDrawer->code) }}" class="mt-1 w-full rounded border-slate-300 text-sm" required>
-                                                    </label>
-                                                    <label class="text-xs font-semibold text-slate-600">Currency
-                                                        <input name="currency" value="{{ old('currency', $managedDrawer->currency) }}" class="mt-1 w-full rounded border-slate-300 text-sm" maxlength="10" required>
-                                                    </label>
-                                                    <div class="flex items-end justify-end">
-                                                        <button class="rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Save Details</button>
-                                                    </div>
-                                                </form>
-                                            </details>
                                             @if($managedDrawer->status === 'open')
                                                 <form method="POST" action="{{ route('teller.drawers.close', $managedDrawer) }}" class="flex gap-2">
                                                     @csrf
@@ -208,6 +174,47 @@
                                                 </form>
                                             @endif
                                         </div>
+                                    </td>
+                                </tr>
+                                <tr class="border-t border-slate-100 bg-slate-50/60">
+                                    <td colspan="6" class="p-3">
+                                        <details class="rounded-lg border border-slate-200 bg-white p-3">
+                                            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-brand-700">
+                                                <span>Edit drawer details for {{ $managedDrawer->code }} · {{ $managedDrawer->name }}</span>
+                                                <span class="text-slate-400">Expand</span>
+                                            </summary>
+                                            <form method="POST" action="{{ route('teller.drawers.update', $managedDrawer) }}" class="mt-4 grid gap-3 md:grid-cols-3">
+                                                @csrf
+                                                @method('PUT')
+                                                <label class="text-xs font-semibold text-slate-600">Branch
+                                                    <select name="branch_id" class="mt-1 w-full rounded border-slate-300 text-sm" required>
+                                                        @foreach($branches as $branch)
+                                                            <option value="{{ $branch->id }}" @selected((int) old('branch_id', $managedDrawer->branch_id) === $branch->id)>{{ $branch->name }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                </label>
+                                                <label class="text-xs font-semibold text-slate-600">Assigned teller/cashier
+                                                    <select name="assigned_user_id" class="mt-1 w-full rounded border-slate-300 text-sm">
+                                                        <option value="">Unassigned</option>
+                                                        @foreach($tellers as $teller)
+                                                            <option value="{{ $teller->id }}" @selected((int) old('assigned_user_id', $managedDrawer->assigned_user_id) === $teller->id)>{{ $teller->name }} · {{ $teller->branch?->name ?? 'No branch' }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                </label>
+                                                <label class="text-xs font-semibold text-slate-600">Drawer name
+                                                    <input name="name" value="{{ old('name', $managedDrawer->name) }}" class="mt-1 w-full rounded border-slate-300 text-sm" required>
+                                                </label>
+                                                <label class="text-xs font-semibold text-slate-600">Drawer code
+                                                    <input name="code" value="{{ old('code', $managedDrawer->code) }}" class="mt-1 w-full rounded border-slate-300 text-sm" required>
+                                                </label>
+                                                <label class="text-xs font-semibold text-slate-600">Currency
+                                                    <input name="currency" value="{{ old('currency', $managedDrawer->currency) }}" class="mt-1 w-full rounded border-slate-300 text-sm" maxlength="10" required>
+                                                </label>
+                                                <div class="flex items-end justify-end">
+                                                    <button class="rounded bg-slate-900 px-4 py-2 text-xs font-semibold text-white">Save Details</button>
+                                                </div>
+                                            </form>
+                                        </details>
                                     </td>
                                 </tr>
                             @endforeach
@@ -346,20 +353,49 @@
             </div>
             <a href="{{ route('due-repayments.index') }}" class="df-action-secondary">Due Repayments</a>
         </div>
-        <form method="GET" action="{{ route('teller.index') }}" class="mt-4 grid gap-3 md:grid-cols-[240px_1fr_auto]">
-            <select name="lookup_scope" required>
+        <div class="mt-4 grid gap-3 md:grid-cols-[260px_1fr_auto]">
+            <select name="lookup_scope" data-teller-lookup-scope required>
                 <option value="">Select account type</option>
                 @foreach($accountTypes as $type)
                     <option value="account_type:{{ $type->id }}" @selected($lookupScope === 'account_type:'.$type->id || ($selectedAccountTypeId === $type->id && ! $isGeneralLedgerLookup))>{{ $type->name }}</option>
                 @endforeach
                 <option value="general_ledger" @selected($isGeneralLedgerLookup)>General Ledger Account</option>
             </select>
-            <input name="account_search" value="{{ request('account_search', request('account_number')) }}" placeholder="Type name, phone, account number, ledger name, or code">
-            <input type="hidden" name="account_number" value="{{ request('account_number') }}">
-            <input type="hidden" name="chart_account_id" value="{{ request('chart_account_id') }}">
-            <button class="df-action-primary">Search</button>
-        </form>
-        <div class="mt-4 grid gap-4">
+            <div class="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                @if($selectedChartAccount)
+                    <div class="font-semibold text-slate-950">{{ $selectedChartAccount->code }} · {{ $selectedChartAccount->name }}</div>
+                    <div class="text-slate-500">General Ledger Account</div>
+                @elseif($account)
+                    <div class="font-semibold text-slate-950">{{ $account->account_number }} · {{ $account->account_name }}</div>
+                    <div class="text-slate-500">{{ $account->accountType?->name }} · {{ $account->client?->full_name ?: $account->client?->business_name }}</div>
+                @else
+                    <div class="font-semibold text-slate-500">No account selected</div>
+                    <div class="text-slate-500">Choose an account type, then search.</div>
+                @endif
+            </div>
+            <button type="button" class="df-action-primary justify-center" data-teller-lookup-open>
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="m21 21-4.3-4.3M10 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16z"/></svg>
+                Search
+            </button>
+        </div>
+        <div class="fixed inset-0 z-50 {{ $hasLookupSearch ? 'flex' : 'hidden' }} items-center justify-center bg-slate-950/55 p-4" data-teller-lookup-modal data-open="{{ $hasLookupSearch ? '1' : '0' }}">
+            <div class="w-full max-w-4xl overflow-hidden rounded-xl bg-white shadow-2xl">
+                <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+                    <h3 class="text-lg font-semibold text-slate-950">Search Account</h3>
+                    <button type="button" class="rounded border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600" data-teller-lookup-close>Close</button>
+                </div>
+                <form method="GET" action="{{ route('teller.index') }}" class="grid gap-3 border-b border-slate-200 bg-slate-50 p-5 md:grid-cols-[220px_1fr_auto]">
+                    <select name="lookup_scope" data-teller-lookup-modal-scope required>
+                        <option value="">Select account type</option>
+                        @foreach($accountTypes as $type)
+                            <option value="account_type:{{ $type->id }}" @selected($lookupScope === 'account_type:'.$type->id || ($selectedAccountTypeId === $type->id && ! $isGeneralLedgerLookup))>{{ $type->name }}</option>
+                        @endforeach
+                        <option value="general_ledger" @selected($isGeneralLedgerLookup)>General Ledger Account</option>
+                    </select>
+                    <input name="account_search" value="{{ request('account_search') }}" placeholder="Type a name, phone, account number, ledger name, or code" autofocus>
+                    <button class="df-action-primary justify-center">Go</button>
+                </form>
+                <div class="max-h-[60vh] overflow-auto p-5">
             @if(! $isGeneralLedgerLookup)
             <div class="rounded border border-slate-200 bg-slate-50 p-4">
                 <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Client account results</div>
@@ -417,6 +453,8 @@
                 </div>
             </div>
             @endif
+                </div>
+            </div>
         </div>
         <div class="mt-4 grid gap-4 md:grid-cols-2">
             <div class="rounded border border-slate-200 bg-slate-50 p-4">
@@ -452,15 +490,10 @@
             @if($errors->any())
                 <div class="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700 md:col-span-2">{{ $errors->first() }}</div>
             @endif
-            <label class="text-sm font-semibold text-slate-700">Posting Account <x-required-badge />
-                <select name="account_scope" class="mt-1" required>
-                    <option value="client_account" @selected(old('account_scope', request('chart_account_id') ? 'general_ledger' : 'client_account') === 'client_account')>Savings / Loan / Other Client Account</option>
-                    <option value="general_ledger" @selected(old('account_scope', request('chart_account_id') ? 'general_ledger' : 'client_account') === 'general_ledger')>General Ledger Account</option>
-                </select>
-            </label>
+            <input type="hidden" name="account_scope" value="{{ $selectedChartAccount ? 'general_ledger' : 'client_account' }}">
             <input type="hidden" name="account_number" value="{{ $account?->account_number ?? request('account_number') }}">
             <input type="hidden" name="chart_account_id" value="{{ $selectedChartAccount?->id ?? request('chart_account_id') }}">
-            <label class="text-sm font-semibold text-slate-700">Transaction Type <x-required-badge label="Required for client account" class="bg-amber-50 text-amber-700" />
+            <label class="text-sm font-semibold text-slate-700">Client Money Direction <x-required-badge label="For savings or loan accounts" class="bg-amber-50 text-amber-700" />
                 <select name="transaction_type_id" class="mt-1">
                     @foreach($transactionTypes as $type)
                         <option value="{{ $type->id }}">{{ $type->name }}</option>
@@ -479,10 +512,10 @@
                     <div class="mt-1 text-slate-500">Search and select an account above before posting.</div>
                 @endif
             </div>
-            <label class="text-sm font-semibold text-slate-700">GL Side <x-required-badge label="Required for GL" class="bg-amber-50 text-amber-700" />
+            <label class="text-sm font-semibold text-slate-700">General Ledger Money Direction <x-required-badge label="For GL accounts" class="bg-amber-50 text-amber-700" />
                 <select name="gl_entry_type" class="mt-1">
-                    <option value="debit" @selected(old('gl_entry_type') === 'debit')>Cash out: debit selected GL account</option>
-                    <option value="credit" @selected(old('gl_entry_type') === 'credit')>Cash in: credit selected GL account</option>
+                    <option value="credit" @selected(old('gl_entry_type') === 'credit')>Money coming in / receipt</option>
+                    <option value="debit" @selected(old('gl_entry_type') === 'debit')>Money going out / payment</option>
                 </select>
             </label>
             <label class="text-sm font-semibold text-slate-700">Cheque No

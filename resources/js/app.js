@@ -330,6 +330,50 @@ const initReportLauncher = () => {
     });
 };
 
+const initTellerLookup = () => {
+    const modal = document.querySelector('[data-teller-lookup-modal]');
+    const openButton = document.querySelector('[data-teller-lookup-open]');
+    const closeButtons = document.querySelectorAll('[data-teller-lookup-close]');
+    const pageScope = document.querySelector('[data-teller-lookup-scope]');
+    const modalScope = document.querySelector('[data-teller-lookup-modal-scope]');
+
+    if (!modal || !openButton) {
+        return;
+    }
+
+    const open = () => {
+        if (pageScope && modalScope) {
+            modalScope.value = pageScope.value;
+        }
+
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        modal.querySelector('input[name="account_search"]')?.focus();
+    };
+
+    const close = () => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    };
+
+    openButton.addEventListener('click', open);
+    closeButtons.forEach((button) => button.addEventListener('click', close));
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            close();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            close();
+        }
+    });
+
+    if (modal.dataset.open === '1') {
+        open();
+    }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     initSteps();
@@ -338,4 +382,5 @@ document.addEventListener('DOMContentLoaded', () => {
     initSidebar();
     initLoanSchedulePreview();
     initReportLauncher();
+    initTellerLookup();
 });
