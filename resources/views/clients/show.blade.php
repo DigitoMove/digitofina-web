@@ -92,8 +92,8 @@
         ['Transaction Authorisation Details', route('audit-logs.index', ['search' => $client->client_number]), 'TA', 0],
         ['Edit Client Details', route('clients.edit', $client), 'ED', null],
         ['Open Account', route('accounts.create', ['client_id' => $client->id]), 'OA', $client->accounts->count()],
-        ['Savings Account', $client->savingsAccounts->first() ? route('savings-accounts.show', $client->savingsAccounts->first()) : route('savings-accounts.create', ['client_id' => $client->id]), 'SA', $client->savingsAccounts->count() + $legacySavingsAccounts->count()],
-        ['Account Queries', route('accounts.index', ['search' => $client->client_number]), 'AQ', $client->accounts->count()],
+        ['Savings Account', route('clients.savings-accounts', $client), 'SA', $client->savingsAccounts->count() + $legacySavingsAccounts->count()],
+        ['Account Queries', route('clients.accounts', $client), 'AQ', $client->accounts->count()],
         ['Loan Prospects', route('loans.create', ['client_id' => $client->id]), 'LP', $newApplications->count()],
         ['Due Repayments', route('due-repayments.index', ['search' => $client->client_number]), 'DR', $arrearsLoans],
     ];
@@ -127,9 +127,9 @@
     </div>
     <div class="flex flex-wrap gap-2">
         @foreach ([
-            ['Savings Accounts', [['Open savings account', route('savings-accounts.create', ['client_id' => $client->id])], ['View accounts', route('savings-accounts.index', ['search' => $client->client_number])]]],
-            ['Loan Accounts', [['New application', route('loans.create', ['client_id' => $client->id])], ['View loans', route('loans.index', ['search' => $client->client_number])]]],
-            ['Current Accounts', [['Open current account', route('accounts.create', ['client_id' => $client->id])], ['View accounts', route('accounts.index', ['search' => $client->client_number])]]],
+            ['Savings Accounts', array_filter([($client->savingsAccounts->count() + $legacySavingsAccounts->count()) === 0 ? ['Open savings account', route('savings-accounts.create', ['client_id' => $client->id])] : null, ['View accounts', route('clients.savings-accounts', $client)]])],
+            ['Loan Accounts', [['New application', route('loans.create', ['client_id' => $client->id])], ['View loans', route('clients.loans', $client)]]],
+            ['Current Accounts', [['Open current account', route('accounts.create', ['client_id' => $client->id])], ['View accounts', route('clients.accounts', $client)]]],
             ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]],
             ['Term Deposits', [['Maturity report', route('reports.show', 'term-deposits-maturity-report')], ['Funded term deposits', route('reports.show', 'funded-term-deposit-accounts')]]],
         ] as [$label, $links])
@@ -260,7 +260,9 @@
                 <div class="df-panel p-5">
                     <div class="flex items-center justify-between gap-3">
                         <h2 class="font-semibold text-slate-950">Savings Accounts</h2>
-                        <a class="df-action-secondary min-h-9 px-3 py-1.5" href="{{ route('savings-accounts.create', ['client_id' => $client->id]) }}">Open</a>
+                        @if(($client->savingsAccounts->count() + $legacySavingsAccounts->count()) === 0)
+                            <a class="df-action-secondary min-h-9 px-3 py-1.5" href="{{ route('savings-accounts.create', ['client_id' => $client->id]) }}">Open</a>
+                        @endif
                     </div>
                     <div class="mt-4 grid gap-3">
                         @forelse($client->savingsAccounts as $account)

@@ -71,6 +71,8 @@ class LoanService
                 'approved_at' => now()->toDateString(),
             ]);
 
+            $this->generateSchedule($loan->refresh()->load('product'), now());
+
             Approval::create([
                 'approvable_type' => $loan->getMorphClass(),
                 'approvable_id' => $loan->id,
@@ -403,14 +405,16 @@ class LoanService
 
     public function generateSchedule(Loan $loan, CarbonInterface $startDate): void
     {
+        $loan->loadMissing('product');
         $loan->schedules()->delete();
 
         $periods = max(1, $loan->term_periods);
         $periodicRate = $this->periodicRate((float) $loan->interest_rate, $loan->repayment_frequency);
+        $principal = (float) ($loan->approved_amount ?: $loan->requested_amount);
         $rows = match ($loan->product->interest_method) {
-            'flat' => $this->calculator->flatRate((float) $loan->approved_amount, $periodicRate, $periods),
-            'reducing_balance_equal_installments' => $this->calculator->reducingBalanceEqualInstallments((float) $loan->approved_amount, $periodicRate, $periods),
-            default => $this->calculator->decliningBalance((float) $loan->approved_amount, $periodicRate, $periods),
+            'flat' => $this->calculator->flatRate($principal, $periodicRate, $periods),
+            'reducing_balance_equal_installments' => $this->calculator->reducingBalanceEqualInstallments($principal, $periodicRate, $periods),
+            default => $this->calculator->decliningBalance($principal, $periodicRate, $periods),
         };
         $totalInterest = 0;
 

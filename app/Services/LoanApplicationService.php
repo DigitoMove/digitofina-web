@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\Client;
 use App\Models\Loan;
 use App\Models\LoanProduct;
+use App\Models\LoanSchedule;
 use App\Models\User;
 use App\Support\CurrencyDenomination;
 use Illuminate\Validation\ValidationException;
@@ -15,6 +16,7 @@ class LoanApplicationService
     public function __construct(
         private AccountNumberGenerator $numbers,
         private AuditLogger $auditLogger,
+        private LoanScheduleService $schedules,
     ) {}
 
     /**
@@ -51,6 +53,7 @@ class LoanApplicationService
             'status' => 'draft',
         ]);
 
+        $this->writePreviewSchedule($loan->refresh()->load('product'), $requestedAmount);
         $this->auditLogger->record('loan.created', $loan, $loan->toArray());
 
         return $loan->refresh();
@@ -86,5 +89,46 @@ class LoanApplicationService
         }
 
         return $assignedOfficer;
+    }
+
+    private function writePreviewSchedule(Loan $loan, float $principal): void
+    {
+        $rows = $this->schedules->preview(
+            $principal,
+            $this->periodicRate((float) $loan->interest_rate, $loan->repayment_frequency),
+            max(1, (int) $loan->term_periods),
+            $loan->product?->interest_method ?: 'reducing_balance_equal_installments',
+            now(),
+            $loan->repayment_frequency,
+        );
+
+        $loan->schedules()->delete();
+
+        foreach ($rows as $row) {
+            LoanSchedule::create([
+                'loan_id' => $loan->id,
+                'installment_number' => $row['installment'],
+                'due_date' => $row['due_date'],
+                'principal_due' => $row['principal'],
+                'interest_due' => $row['interest'],
+                'total_due' => $row['total'],
+                'outstanding_amount' => $row['total'],
+                'balance_due' => $row['total'],
+                'status' => 'preview',
+            ]);
+        }
+
+        $loan->update(['interest_balance' => round(collect($rows)->sum('interest'), 2)]);
+    }
+
+    private function periodicRate(float $annualRate, string $frequency): float
+    {
+        return match ($frequency) {
+            'daily' => $annualRate / 365,
+            'weekly' => $annualRate / 52,
+            'bi-weekly' => $annualRate / 26,
+            'quarterly' => $annualRate / 4,
+            default => $annualRate / 12,
+        };
     }
 }

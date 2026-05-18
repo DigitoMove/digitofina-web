@@ -75,6 +75,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/audit-logs', [AuditLogController::class, 'index'])->name('audit-logs.index');
     Route::get('/audit-logs/{auditLog}', [AuditLogController::class, 'show'])->name('audit-logs.show');
     Route::resource('clients', ClientController::class)->except('destroy');
+    Route::get('/clients/{client}/accounts', [ClientController::class, 'accounts'])->name('clients.accounts');
+    Route::get('/clients/{client}/savings-accounts', [ClientController::class, 'savingsAccounts'])->name('clients.savings-accounts');
+    Route::get('/clients/{client}/loans', [ClientController::class, 'loans'])->name('clients.loans');
     Route::resource('client-groups', ClientGroupController::class)->except('destroy');
     Route::post('/clients/{client}/documents', [ClientDocumentController::class, 'store'])->name('clients.documents.store');
     Route::get('/clients/{client}/documents/{document}', [ClientDocumentController::class, 'download'])->name('clients.documents.download');

@@ -8,7 +8,6 @@ use App\Models\Client;
 use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
 use App\Services\SavingsAccountService;
-use App\Services\SavingsTransactionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -39,12 +38,32 @@ class SavingsAccountController extends Controller
 
     public function create(Request $request): View
     {
+        $selectedClientId = $request->integer('client_id');
+
+        if ($selectedClientId) {
+            $selectedClient = Client::query()->with(['savingsAccounts', 'accounts.accountType'])->findOrFail($selectedClientId);
+            $existingSavingsAccount = $selectedClient->savingsAccounts->first();
+
+            if ($existingSavingsAccount) {
+                return redirect()->route('savings-accounts.show', $existingSavingsAccount)->with('status', 'This client already has a savings account.');
+            }
+
+            if ($selectedClient->accounts->first(fn ($account) => $account->accountType?->category === 'savings')) {
+                return redirect()->route('clients.show', $selectedClient)->with('status', 'This client already has a savings account.');
+            }
+        }
+
         return view('savings-accounts.create', [
             'account' => new SavingsAccount(['status' => 'active', 'opening_date' => today()]),
-            'clients' => Client::where('status', 'active')->orderBy('first_name')->orderBy('last_name')->get(),
+            'clients' => Client::where('status', 'active')
+                ->whereDoesntHave('savingsAccounts')
+                ->whereDoesntHave('accounts', fn ($query) => $query->whereHas('accountType', fn ($query) => $query->where('category', 'savings')))
+                ->orderBy('first_name')
+                ->orderBy('last_name')
+                ->get(),
             'branches' => Branch::where('is_active', true)->orderBy('name')->get(),
             'products' => SavingsProduct::where('status', 'active')->orderBy('name')->get(),
-            'selectedClient' => $request->integer('client_id'),
+            'selectedClient' => $selectedClientId,
         ]);
     }
 

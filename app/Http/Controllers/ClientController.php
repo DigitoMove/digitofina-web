@@ -75,6 +75,46 @@ class ClientController extends Controller
         return view('clients.show', compact('client'));
     }
 
+    public function accounts(Client $client): View
+    {
+        Gate::authorize('view', $client);
+
+        $client->load([
+            'branch',
+            'accounts.accountType',
+            'savingsAccounts.product',
+            'loans.branch',
+            'loans.loanAccount.accountType',
+            'loans.product',
+        ]);
+
+        return view('clients.accounts', compact('client'));
+    }
+
+    public function savingsAccounts(Client $client): View
+    {
+        Gate::authorize('view', $client);
+
+        $client->load(['branch', 'accounts.accountType', 'savingsAccounts.product']);
+
+        return view('clients.savings-accounts', compact('client'));
+    }
+
+    public function loans(Client $client): View
+    {
+        Gate::authorize('view', $client);
+
+        $client->load([
+            'branch',
+            'loans.branch',
+            'loans.loanAccount.accountType',
+            'loans.product',
+            'loans.officer',
+        ]);
+
+        return view('clients.loans', compact('client'));
+    }
+
     public function edit(Client $client): View
     {
         Gate::authorize('update', $client);

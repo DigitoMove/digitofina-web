@@ -17,6 +17,7 @@
     $unpaidInstallments = max(0, $totalInstallments - $paidInstallments);
     $arrearsDays = (int) $loan->schedules->max('days_overdue');
     $isNonPerforming = in_array($loan->status, ['in_arrears', 'written_off'], true);
+    $hasSavingsAccount = $client->savingsAccounts->isNotEmpty() || $client->accounts->contains(fn ($account) => $account->accountType?->category === 'savings');
     $canCancel = (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans')) && ! in_array($loan->status, ['cancelled', 'rejected', 'disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true);
     $workflow = ['Draft', 'Appraisal', 'Approval', 'Approved', 'Disbursed', 'Closed'];
     $statusIndex = match (true) {
@@ -82,9 +83,9 @@
         ['Account Notifications', route('loans.show', $loan), 'NO', 0],
     ];
     $accountMenus = [
-        ['Savings Accounts', [['Open savings account', route('savings-accounts.create', ['client_id' => $client->id])], ['View accounts', route('savings-accounts.index', ['search' => $client->client_number])]]],
-        ['Loan Accounts', [['New application', route('loans.create', ['client_id' => $client->id])], ['View loans', route('loans.index', ['search' => $client->client_number])]]],
-        ['Current Accounts', [['Open current account', route('accounts.create', ['client_id' => $client->id])], ['View accounts', route('accounts.index', ['search' => $client->client_number])]]],
+        ['Savings Accounts', array_filter([! $hasSavingsAccount ? ['Open savings account', route('savings-accounts.create', ['client_id' => $client->id])] : null, ['View accounts', route('clients.savings-accounts', $client)]])],
+        ['Loan Accounts', [['New application', route('loans.create', ['client_id' => $client->id])], ['View loans', route('clients.loans', $client)]]],
+        ['Current Accounts', [['Open current account', route('accounts.create', ['client_id' => $client->id])], ['View accounts', route('clients.accounts', $client)]]],
         ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]],
         ['Term Deposits', [['Maturity report', route('reports.show', 'term-deposits-maturity-report')], ['Funded term deposits', route('reports.show', 'funded-term-deposit-accounts')]]],
     ];

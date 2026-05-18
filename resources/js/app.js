@@ -217,6 +217,13 @@ const initLoanSchedulePreview = () => {
         };
 
         const preview = async () => {
+            const requestedAmount = form.querySelector('[name="requested_amount"]')?.value;
+            const termPeriods = form.querySelector('[name="term_periods"]')?.value;
+
+            if (!requestedAmount || !termPeriods || !product?.value || !frequency?.value) {
+                return;
+            }
+
             setError('');
             button.disabled = true;
             button.textContent = 'Previewing...';
@@ -248,9 +255,17 @@ const initLoanSchedulePreview = () => {
         };
 
         setUnit();
+        syncProductInterestRateDisplay();
         frequency?.addEventListener('change', setUnit);
-        product?.addEventListener('change', syncProductInterestRateDisplay);
+        frequency?.addEventListener('change', preview);
+        product?.addEventListener('change', () => {
+            syncProductInterestRateDisplay();
+            preview();
+        });
+        form.querySelector('[name="requested_amount"]')?.addEventListener('change', preview);
+        form.querySelector('[name="term_periods"]')?.addEventListener('change', preview);
         button?.addEventListener('click', preview);
+        preview();
     });
 };
 

@@ -7,11 +7,10 @@ use App\Http\Requests\StoreLoanApplicationRequest;
 use App\Models\Client;
 use App\Models\Loan;
 use App\Models\LoanProduct;
-use App\Services\BusinessCalendarService;
 use App\Services\LoanApplicationService;
 use App\Services\LoanApprovalService;
-use App\Services\LoanCalculatorService;
 use App\Services\LoanDisbursementService;
+use App\Services\LoanScheduleService;
 use App\Services\LoanService;
 use App\Services\LoanVisibilityService;
 use App\Support\CurrencyDenomination;
@@ -61,6 +60,7 @@ class LoanController extends Controller
             'products' => LoanProduct::where('is_active', true)->where('status', 'active')->orderBy('name')->get(),
             'assignableOfficers' => $visibility->assignableOfficers($request->user())->get(),
             'canAssignOfficer' => $visibility->canAssignOfficer($request->user()),
+            'selectedClient' => $request->integer('client_id'),
         ]);
     }
 
@@ -71,7 +71,7 @@ class LoanController extends Controller
         return redirect()->route('loans.show', $loan)->with('status', 'Loan application created.');
     }
 
-    public function schedulePreview(Request $request, LoanCalculatorService $calculator, BusinessCalendarService $calendar): JsonResponse
+    public function schedulePreview(Request $request, LoanScheduleService $schedules): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-loans'), 403);
 
@@ -87,24 +87,15 @@ class LoanController extends Controller
         $periods = (int) $data['term_periods'];
         $periodicRate = $this->periodicRate((float) $product->annual_interest_rate, $data['repayment_frequency']);
 
-        $rows = match ($product->interest_method) {
-            'flat' => $calculator->flatRate($principal, $periodicRate, $periods),
-            'reducing_balance_equal_installments' => $calculator->reducingBalanceEqualInstallments($principal, $periodicRate, $periods),
-            default => $calculator->decliningBalance($principal, $periodicRate, $periods),
-        };
-
-        $schedule = collect($rows)->map(function (array $row) use ($calendar, $data): array {
-            $dueDate = $calendar->dueDate(today(), $row['installment'], $data['repayment_frequency']);
-
-            return [
+        $schedule = collect($schedules->preview($principal, $periodicRate, $periods, $product->interest_method, today(), $data['repayment_frequency']))
+            ->map(fn (array $row): array => [
                 'installment' => $row['installment'],
-                'due_date' => $dueDate->toDateString(),
+                'due_date' => $row['due_date'],
                 'principal' => round($row['principal'], 2),
                 'interest' => round($row['interest'], 2),
                 'total' => round($row['total'], 2),
                 'balance' => round($row['balance'], 2),
-            ];
-        });
+            ]);
 
         return response()->json([
             'summary' => [
@@ -118,8 +109,12 @@ class LoanController extends Controller
         ]);
     }
 
-    public function show(Loan $loan, LoanVisibilityService $visibility): View
+    public function show(Loan $loan, LoanVisibilityService $visibility, LoanService $service): View
     {
+        if (! $loan->schedules()->exists() && (float) $loan->requested_amount > 0) {
+            $service->generateSchedule($loan->load('product'), now());
+        }
+
         return view('loans.show', [
             'loan' => $loan->load([
                 'branch',
