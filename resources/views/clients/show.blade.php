@@ -138,11 +138,15 @@
                 <summary class="df-action-primary min-h-10 cursor-pointer list-none rounded-lg px-3 py-2">{{ $label }} <span class="ml-1 text-xs">▾</span></summary>
                 <div class="absolute right-0 z-20 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-2 text-sm shadow-xl">
                     @foreach($links as $link)
-                        @php([$linkLabel, $href, $method] = [$link[0], $link[1], $link[2] ?? 'get'])
+                        @php
+                            $linkLabel = $link[0];
+                            $href = $link[1];
+                            $method = $link[2] ?? 'get';
+                        @endphp
                         @if($method === 'post')
                             <form method="POST" action="{{ $href }}">
                                 @csrf
-                                <button class="block w-full rounded px-3 py-2 text-left font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-800">Generate savings account</button>
+                                <button class="block w-full rounded px-3 py-2 text-left font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-800">{{ $linkLabel }}</button>
                             </form>
                         @else
                             <a href="{{ $href }}" class="block rounded px-3 py-2 font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-800">{{ $linkLabel }}</a>
