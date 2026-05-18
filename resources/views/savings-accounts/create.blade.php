@@ -1,6 +1,10 @@
 @extends('layouts.app')
 
 @section('content')
+@php
+    $cancelUrl = $selectedClient ? route('clients.savings-accounts', $selectedClient) : route('accounts.index');
+@endphp
+
 <div class="mb-5">
     <h1 class="text-2xl font-semibold text-slate-950">Open Savings Account</h1>
     <p class="text-sm text-slate-500">Create an account for an active client and optionally post an opening deposit.</p>
@@ -15,6 +19,6 @@
         <label class="text-sm font-medium text-slate-700">Status<select name="status" class="mt-1 w-full rounded border-slate-300"><option value="active" @selected(old('status', 'active') === 'active')>Active</option><option value="pending" @selected(old('status') === 'pending')>Pending</option><option value="frozen" @selected(old('status') === 'frozen')>Frozen</option></select></label>
         <label class="text-sm font-medium text-slate-700">Opening deposit<input type="number" min="0" step="100" name="opening_deposit" value="{{ old('opening_deposit', 0) }}" class="mt-1 w-full rounded border-slate-300"></label>
     </div>
-    <div class="mt-6 flex justify-end gap-3"><a href="{{ route('savings-accounts.index') }}" class="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</a><button class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Open Account</button></div>
+    <div class="mt-6 flex justify-end gap-3"><a href="{{ $cancelUrl }}" class="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</a><button class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Open Account</button></div>
 </form>
 @endsection

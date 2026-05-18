@@ -70,7 +70,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h2 class="text-lg font-semibold text-slate-950">Repayment Calendar</h2>
-                <p class="text-sm text-slate-500">{{ $calendarMonth->format('F Y') }} scheduled repayments by day.</p>
+                <p class="text-sm text-slate-500">{{ $calendarMonth->format('F Y') }} schedules from all loan officers by repayment date.</p>
             </div>
             <a href="{{ route('due-repayments.index') }}" class="df-action-secondary">Today</a>
         </div>
@@ -89,10 +89,10 @@
                         @endif
                     </div>
                     @if($day['count'] > 0)
-                        <div class="mt-3 rounded bg-cyan-300/80 px-2 py-1 text-xs font-semibold text-slate-950">{{ $day['count'] }} due</div>
-                        <div class="mt-1 text-[11px] {{ $day['is_today'] ? 'text-slate-500' : 'text-white/80' }}">UGX {{ number_format($day['amount'], 0) }}</div>
+                        <div class="mt-3 rounded bg-cyan-300/80 px-2 py-1 text-xs font-semibold text-slate-950">{{ $day['count'] }} scheduled</div>
+                        <div class="mt-1 text-[11px] {{ $day['is_today'] ? 'text-slate-500' : 'text-white/80' }}">{{ $day['open_count'] }} open · UGX {{ number_format($day['amount'], 0) }}</div>
                     @else
-                        <div class="mt-3 text-xs text-slate-400">No dues</div>
+                        <div class="mt-3 text-xs text-slate-400">No schedules</div>
                     @endif
                 </a>
             @endforeach

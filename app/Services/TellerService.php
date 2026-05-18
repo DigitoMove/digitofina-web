@@ -28,6 +28,15 @@ class TellerService
                 throw new InvalidArgumentException('Drawer is already open.');
             }
 
+            $drawerHasOpenSession = DrawerSession::query()
+                ->where('teller_drawer_id', $drawer->id)
+                ->where('status', 'open')
+                ->exists();
+
+            if ($drawerHasOpenSession) {
+                throw new InvalidArgumentException('Drawer already has an open session. Close it before opening it again.');
+            }
+
             if ($drawer->assigned_user_id && (int) $drawer->assigned_user_id !== (int) $teller->id && ! $openedBy?->canPerform('manage-users')) {
                 throw new InvalidArgumentException('This drawer is assigned to another teller.');
             }

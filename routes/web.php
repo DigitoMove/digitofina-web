@@ -122,6 +122,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/teller-drawer/post', [TellerDrawerController::class, 'post'])->name('teller.post');
     Route::post('/teller-drawer/close', [TellerDrawerController::class, 'close'])->name('teller.close');
     Route::post('/teller-drawer/{drawer}/close', [TellerDrawerController::class, 'closeDrawer'])->name('teller.drawers.close');
+    Route::put('/teller-drawer/{drawer}', [TellerDrawerController::class, 'updateDrawer'])->name('teller.drawers.update');
     Route::delete('/teller-drawer/{drawer}', [TellerDrawerController::class, 'destroyDrawer'])->name('teller.drawers.destroy');
     Route::get('/end-of-day', [EndOfDayController::class, 'index'])->name('end-of-day.index');
     Route::post('/end-of-day/reconcile', [EndOfDayController::class, 'reconcile'])->name('end-of-day.reconcile');

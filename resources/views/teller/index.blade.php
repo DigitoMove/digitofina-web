@@ -49,9 +49,11 @@
                 @csrf
                 <label class="text-sm font-semibold text-slate-700">Drawer <x-required-badge />
                     <select name="teller_drawer_id" class="mt-1" required>
-                        @foreach($drawers as $openDrawer)
+                        @forelse($drawers->where('status', 'closed') as $openDrawer)
                             <option value="{{ $openDrawer->id }}" @selected((int) old('teller_drawer_id') === $openDrawer->id)>{{ $openDrawer->branch?->name }} · {{ $openDrawer->code }} {{ $openDrawer->name }} · {{ str($openDrawer->status)->headline() }}</option>
-                        @endforeach
+                        @empty
+                            <option value="">No closed drawers available</option>
+                        @endforelse
                     </select>
                 </label>
                 @if($canOpenForTellers)
@@ -92,7 +94,7 @@
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
                     <h2 class="font-semibold text-slate-950">Drawer Management</h2>
-                    <p class="df-muted">Create branch drawers, assign tellers/cashiers, open, close, or delete unused drawers.</p>
+                    <p class="df-muted">Create branch drawers, edit drawer details, assign tellers/cashiers, open, close, or delete unused drawers.</p>
                 </div>
                 <span class="df-badge">Branch scoped</span>
             </div>
@@ -146,6 +148,40 @@
                                     <td><span class="rounded px-2 py-1 text-xs font-semibold {{ $managedDrawer->status === 'open' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700' }}">{{ str($managedDrawer->status)->headline() }}</span></td>
                                     <td class="p-3">
                                         <div class="flex flex-wrap justify-end gap-2">
+                                            <details class="w-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-left">
+                                                <summary class="cursor-pointer list-none text-xs font-semibold text-brand-700">Edit drawer details</summary>
+                                                <form method="POST" action="{{ route('teller.drawers.update', $managedDrawer) }}" class="mt-3 grid gap-3 md:grid-cols-2">
+                                                    @csrf
+                                                    @method('PUT')
+                                                    <label class="text-xs font-semibold text-slate-600">Branch
+                                                        <select name="branch_id" class="mt-1 w-full rounded border-slate-300 text-sm" required>
+                                                            @foreach($branches as $branch)
+                                                                <option value="{{ $branch->id }}" @selected((int) old('branch_id', $managedDrawer->branch_id) === $branch->id)>{{ $branch->name }}</option>
+                                                            @endforeach
+                                                        </select>
+                                                    </label>
+                                                    <label class="text-xs font-semibold text-slate-600">Assigned teller/cashier
+                                                        <select name="assigned_user_id" class="mt-1 w-full rounded border-slate-300 text-sm">
+                                                            <option value="">Unassigned</option>
+                                                            @foreach($tellers as $teller)
+                                                                <option value="{{ $teller->id }}" @selected((int) old('assigned_user_id', $managedDrawer->assigned_user_id) === $teller->id)>{{ $teller->name }} · {{ $teller->branch?->name ?? 'No branch' }}</option>
+                                                            @endforeach
+                                                        </select>
+                                                    </label>
+                                                    <label class="text-xs font-semibold text-slate-600">Drawer name
+                                                        <input name="name" value="{{ old('name', $managedDrawer->name) }}" class="mt-1 w-full rounded border-slate-300 text-sm" required>
+                                                    </label>
+                                                    <label class="text-xs font-semibold text-slate-600">Drawer code
+                                                        <input name="code" value="{{ old('code', $managedDrawer->code) }}" class="mt-1 w-full rounded border-slate-300 text-sm" required>
+                                                    </label>
+                                                    <label class="text-xs font-semibold text-slate-600">Currency
+                                                        <input name="currency" value="{{ old('currency', $managedDrawer->currency) }}" class="mt-1 w-full rounded border-slate-300 text-sm" maxlength="10" required>
+                                                    </label>
+                                                    <div class="flex items-end justify-end">
+                                                        <button class="rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Save Details</button>
+                                                    </div>
+                                                </form>
+                                            </details>
                                             @if($managedDrawer->status === 'open')
                                                 <form method="POST" action="{{ route('teller.drawers.close', $managedDrawer) }}" class="flex gap-2">
                                                     @csrf

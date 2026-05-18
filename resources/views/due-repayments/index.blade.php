@@ -14,7 +14,7 @@
         <input name="date" value="{{ $date->toDateString() }}" type="date" class="mt-1 rounded border-slate-300">
     </label>
     <button class="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white">View Date</button>
-    <div class="ml-auto text-sm text-slate-500">Visible total: <span class="font-semibold text-slate-950">UGX {{ number_format($totalAmount, 2) }}</span></div>
+    <div class="ml-auto text-sm text-slate-500">{{ $scheduledCount }} scheduled · Open total: <span class="font-semibold text-slate-950">UGX {{ number_format($totalAmount, 2) }}</span></div>
 </form>
 
 <div class="overflow-hidden rounded border bg-white">

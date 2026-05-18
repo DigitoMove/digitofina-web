@@ -19,20 +19,25 @@ class DueRepaymentController extends Controller
             'date' => ['nullable', 'date'],
         ]);
         $date = CarbonImmutable::parse($data['date'] ?? today()->toDateString());
-        $schedules = LoanSchedule::query()
+        $scheduleQuery = LoanSchedule::query()
             ->with(['loan.client', 'loan.product'])
-            ->whereHas('loan', fn (Builder $query): Builder => $visibility->scope($query, $request->user()))
+            ->whereHas('loan', fn (Builder $query): Builder => $visibility->scopeRepaymentCalendar($query, $request->user()))
+            ->whereDate('due_date', $date->toDateString());
+        $totalAmount = (float) (clone $scheduleQuery)
             ->where('outstanding_amount', '>', 0)
             ->where('status', '!=', 'paid')
-            ->whereDate('due_date', $date->toDateString())
+            ->sum('outstanding_amount');
+        $schedules = $scheduleQuery
             ->orderBy('due_date')
+            ->orderBy('installment_number')
             ->paginate(25)
             ->withQueryString();
 
         return view('due-repayments.index', [
             'date' => $date,
             'schedules' => $schedules,
-            'totalAmount' => (float) $schedules->getCollection()->sum('outstanding_amount'),
+            'scheduledCount' => $schedules->total(),
+            'totalAmount' => $totalAmount,
         ]);
     }
 }

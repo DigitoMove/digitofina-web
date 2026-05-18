@@ -20,6 +20,7 @@ use App\Support\CurrencyDenomination;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
@@ -29,10 +30,36 @@ class TellerDrawerController extends Controller
     {
         $canOpenForTellers = $request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users');
         $session = DrawerSession::with('drawer')->where('user_id', auth()->id())->where('status', 'open')->latest()->first();
+        $branchId = $session?->drawer?->branch_id ?? $request->user()->branch_id;
+        $accountSearch = $request->string('account_search')->trim()->toString();
+        $glSearch = $request->string('gl_search')->trim()->toString();
         $account = $request->account_number
             ? Account::with(['client', 'accountType'])
                 ->where('account_number', $request->account_number)
+                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
                 ->when($request->integer('account_type_id'), fn ($query, int $typeId) => $query->where('account_type_id', $typeId))
+                ->first()
+            : null;
+        $accountResults = Account::query()
+            ->with(['client', 'accountType'])
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when($request->integer('account_type_id'), fn (Builder $query, int $typeId): Builder => $query->where('account_type_id', $typeId))
+            ->when($accountSearch, function (Builder $query, string $search): void {
+                $query->where(function (Builder $query) use ($search): void {
+                    $query->whereAny(['account_number', 'account_name', 'status'], 'like', "%{$search}%")
+                        ->orWhereHas('client', function (Builder $query) use ($search): void {
+                            $query->whereAny(['client_number', 'first_name', 'middle_name', 'last_name', 'business_name', 'phone', 'alternative_phone'], 'like', "%{$search}%");
+                        });
+                });
+            })
+            ->when(! $accountSearch && ! $request->account_number, fn (Builder $query): Builder => $query->limit(8))
+            ->orderBy('account_number')
+            ->limit(12)
+            ->get();
+        $selectedChartAccount = $request->integer('chart_account_id')
+            ? ChartAccount::query()
+                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->whereKey($request->integer('chart_account_id'))
                 ->first()
             : null;
         $todayMovements = $session
@@ -43,11 +70,10 @@ class TellerDrawerController extends Controller
             : collect();
         $cashIn = (float) $todayMovements->where('type', 'cash_in')->sum('amount');
         $cashOut = (float) $todayMovements->where('type', 'cash_out')->sum('amount');
-        $branchId = $session?->drawer?->branch_id ?? $request->user()->branch_id;
         $dueToday = LoanSchedule::query()
             ->with(['loan.client', 'loan.loanAccount'])
             ->whereHas('loan', function (Builder $query) use ($branchId): void {
-                $query->where('branch_id', $branchId);
+                $query->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId));
             })
             ->where('outstanding_amount', '>', 0)
             ->where('status', '!=', 'paid')
@@ -82,18 +108,21 @@ class TellerDrawerController extends Controller
             'canOpenForTellers' => $canOpenForTellers,
             'accountTypes' => AccountType::where('is_active', true)->get(),
             'chartAccounts' => ChartAccount::query()
-                ->where('branch_id', $request->user()->branch_id)
+                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
                 ->where('is_active', true)
                 ->where('is_cash_account', false)
                 ->whereIn('type', ['expense', 'income', 'asset', 'liability'])
-                ->when($request->string('gl_search')->toString(), function ($query, string $search): void {
+                ->when($glSearch, function (Builder $query, string $search): void {
                     $query->whereAny(['code', 'name', 'type'], 'like', "%{$search}%");
                 })
                 ->orderBy('type')
                 ->orderBy('name')
+                ->limit(25)
                 ->get(),
             'transactionTypes' => TransactionType::where('is_active', true)->get(),
             'account' => $account,
+            'accountResults' => $accountResults,
+            'selectedChartAccount' => $selectedChartAccount,
             'recentMovements' => $session
                 ? DrawerMovement::query()->with('session.drawer')->where('drawer_session_id', $session->id)->latest()->limit(8)->get()
                 : collect(),
@@ -139,6 +168,47 @@ class TellerDrawerController extends Controller
         $auditLogger->record('drawer.created', $drawer, $drawer->toArray());
 
         return back()->with('status', 'Drawer created.');
+    }
+
+    public function updateDrawer(Request $request, TellerDrawer $drawer, AuditLogger $auditLogger): RedirectResponse
+    {
+        abort_unless($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'), 403);
+
+        $data = $request->validate([
+            'branch_id' => ['required', 'exists:branches,id'],
+            'name' => ['required', 'string', 'max:191'],
+            'code' => ['required', 'string', 'max:40', Rule::unique('teller_drawers', 'code')->ignore($drawer->id)],
+            'currency' => ['required', 'string', 'max:10'],
+            'assigned_user_id' => ['nullable', 'exists:users,id'],
+        ]);
+
+        $branch = Branch::query()->findOrFail($data['branch_id']);
+        $old = $drawer->only(['branch_id', 'assigned_user_id', 'name', 'code', 'currency']);
+
+        try {
+            $this->authorizeDrawerBranch($request, $drawer->branch);
+            $this->authorizeDrawerBranch($request, $branch);
+            $this->assertBranchCanChange($drawer, $branch);
+            $this->assertAssignmentCanChange($drawer, $data['assigned_user_id'] ?? null);
+            $this->assertAssignedTellerBelongsToBranch($data['assigned_user_id'] ?? null, $branch);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['drawer_management' => $exception->getMessage()])->withInput();
+        }
+
+        $drawer->update([
+            'branch_id' => $branch->id,
+            'assigned_user_id' => $data['assigned_user_id'] ?? null,
+            'name' => $data['name'],
+            'code' => $data['code'],
+            'currency' => strtoupper($data['currency']),
+        ]);
+
+        $auditLogger->record('drawer.updated', $drawer, [
+            'old' => $old,
+            'new' => $drawer->fresh()->only(['branch_id', 'assigned_user_id', 'name', 'code', 'currency']),
+        ]);
+
+        return back()->with('status', 'Drawer updated.');
     }
 
     public function open(Request $request, TellerService $tellers, FinancialControlService $financialControls, AuditLogger $auditLogger): RedirectResponse
@@ -300,6 +370,32 @@ class TellerDrawerController extends Controller
 
         if ($teller->branch_id && (int) $teller->branch_id !== (int) $branch->id) {
             throw new InvalidArgumentException('Select a teller/cashier from the drawer branch.');
+        }
+    }
+
+    private function assertBranchCanChange(TellerDrawer $drawer, Branch $branch): void
+    {
+        if ((int) $drawer->branch_id === (int) $branch->id) {
+            return;
+        }
+
+        if ($drawer->status === 'open') {
+            throw new InvalidArgumentException('Close the drawer before moving it to another branch.');
+        }
+
+        if ($drawer->sessions()->exists()) {
+            throw new InvalidArgumentException('This drawer has session history, so its branch cannot be changed. Create a new drawer for the other branch instead.');
+        }
+    }
+
+    private function assertAssignmentCanChange(TellerDrawer $drawer, ?int $assignedUserId): void
+    {
+        if ((int) $drawer->assigned_user_id === (int) $assignedUserId) {
+            return;
+        }
+
+        if ($drawer->status === 'open' || $drawer->sessions()->where('status', 'open')->exists()) {
+            throw new InvalidArgumentException('Close the drawer before assigning it to another teller/cashier.');
         }
     }
 }

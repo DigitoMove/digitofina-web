@@ -37,6 +37,22 @@ class LoanVisibilityService
     }
 
     /**
+     * Repayment calendars are shared operational views, so they should show
+     * every officer's schedules inside the user's branch or global access.
+     *
+     * @param  Builder<Loan>  $query
+     * @return Builder<Loan>
+     */
+    public function scopeRepaymentCalendar(Builder $query, User $user): Builder
+    {
+        if ($user->hasRole('super-admin') || $user->canPerform('manage-organization') || $user->canPerform('audit-system')) {
+            return $query;
+        }
+
+        return $user->branch_id ? $query->where('branch_id', $user->branch_id) : $query;
+    }
+
+    /**
      * @return Builder<User>
      */
     public function assignableOfficers(User $user): Builder
