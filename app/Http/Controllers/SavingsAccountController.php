@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Models\Client;
 use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
+use App\Services\ClientService;
 use App\Services\SavingsAccountService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -74,11 +75,13 @@ class SavingsAccountController extends Controller
         return redirect()->route('savings-accounts.show', $account)->with('status', 'Savings account opened.');
     }
 
-    public function generate(Request $request, Client $client, SavingsAccountService $accounts): RedirectResponse
+    public function generate(Request $request, Client $client, ClientService $clients): RedirectResponse
     {
-        $account = $accounts->generateForClient($client->load(['branch', 'savingsAccounts', 'accounts.accountType']), $request->user());
+        abort_unless($request->user()->canPerform('manage-accounts') || $request->user()->canPerform('manage-loans'), 403);
 
-        return redirect()->route('savings-accounts.show', $account)->with('status', 'Savings account generated.');
+        $clients->ensureBasicSavingsAccount($client, $request->user());
+
+        return redirect()->route('clients.savings-accounts', $client)->with('status', 'Basic savings account generated.');
     }
 
     public function show(SavingsAccount $savingsAccount): View

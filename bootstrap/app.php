@@ -60,7 +60,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(function (AuthorizationException $exception, Request $request) {
             if (! $request->is('api/*')) {
-                return null;
+                return redirect()
+                    ->to($request->headers->get('referer') && $request->headers->get('referer') !== $request->fullUrl() ? $request->headers->get('referer') : route('dashboard'))
+                    ->with('warning', $exception->getMessage() ?: 'You are not authorized to perform that action.');
             }
 
             return ApiResponse::error($exception->getMessage() ?: 'This action is unauthorized.', [], 403);
@@ -75,10 +77,6 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (HttpExceptionInterface $exception, Request $request) {
-            if (! $request->is('api/*')) {
-                return null;
-            }
-
             $status = $exception->getStatusCode();
             $message = $exception->getMessage() ?: match ($status) {
                 401 => 'Unauthenticated.',
@@ -88,6 +86,16 @@ return Application::configure(basePath: dirname(__DIR__))
                 422 => 'Validation failed',
                 default => 'Request failed.',
             };
+
+            if (! $request->is('api/*')) {
+                if ($status !== 403) {
+                    return null;
+                }
+
+                return redirect()
+                    ->to($request->headers->get('referer') && $request->headers->get('referer') !== $request->fullUrl() ? $request->headers->get('referer') : route('dashboard'))
+                    ->with('warning', $message);
+            }
 
             return ApiResponse::error($message, [], $status);
         });

@@ -73,31 +73,6 @@ class SavingsAccountService
         });
     }
 
-    public function generateForClient(Client $client, User $user): SavingsAccount
-    {
-        abort_unless($user->canPerform('manage-accounts') || $user->canPerform('manage-loans'), 403);
-
-        $product = SavingsProduct::query()
-            ->where('status', 'active')
-            ->where(fn ($query) => $query->where('organization_id', $client->organization_id)->orWhereNull('organization_id'))
-            ->orderByRaw('organization_id is null')
-            ->orderBy('id')
-            ->first();
-
-        if (! $product) {
-            throw ValidationException::withMessages(['savings_product_id' => 'Create an active savings product before generating savings accounts.']);
-        }
-
-        return $this->open([
-            'client_id' => $client->id,
-            'branch_id' => $client->branch_id,
-            'savings_product_id' => $product->id,
-            'opening_date' => today()->toDateString(),
-            'status' => 'active',
-            'opening_deposit' => 0,
-        ], $user);
-    }
-
     private function accountNumber(int|string $branchId, SavingsProduct $product): string
     {
         $branch = Branch::findOrFail($branchId);

@@ -2,13 +2,17 @@
 
 namespace App\Services;
 
+use App\Models\Account;
+use App\Models\AccountType;
 use App\Models\Branch;
 use App\Models\Client;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class ClientService
 {
@@ -22,21 +26,65 @@ class ClientService
      */
     public function register(array $data, User $officer, ?UploadedFile $profilePhoto = null): Client
     {
-        $branch = Branch::findOrFail($data['branch_id']);
-        $memberUser = $this->memberUser($data, $branch, $officer);
+        $client = DB::transaction(function () use ($data, $officer): Client {
+            $branch = Branch::findOrFail($data['branch_id']);
+            $memberUser = $this->memberUser($data, $branch, $officer);
 
-        $client = Client::create($data + [
-            'organization_id' => $officer->organization_id,
-            'officer_id' => $officer->id,
-            'user_id' => $memberUser?->id,
-            'client_number' => $this->numbers->clientNumber($branch),
-            'registered_at' => now()->toDateString(),
-        ]);
+            $client = Client::create($data + [
+                'organization_id' => $officer->organization_id,
+                'officer_id' => $officer->id,
+                'user_id' => $memberUser?->id,
+                'client_number' => $this->numbers->clientNumber($branch),
+                'registered_at' => now()->toDateString(),
+            ]);
+
+            $this->ensureBasicSavingsAccount($client->load('branch'), $officer);
+            $this->auditLogger->record('client.created', $client, $client->toArray());
+
+            return $client;
+        });
 
         $this->storeProfilePhoto($client, $profilePhoto);
-        $this->auditLogger->record('client.created', $client, $client->toArray());
 
         return $client->refresh();
+    }
+
+    public function ensureBasicSavingsAccount(Client $client, User $user): Account
+    {
+        return DB::transaction(function () use ($client, $user): Account {
+            $client = Client::query()->with(['branch', 'accounts.accountType'])->whereKey($client->id)->lockForUpdate()->firstOrFail();
+            $existing = $client->accounts->first(fn (Account $account): bool => $account->accountType?->category === 'savings');
+
+            if ($existing) {
+                return $existing;
+            }
+
+            if ($client->savingsAccounts()->exists()) {
+                throw ValidationException::withMessages(['client_id' => 'This client already has a savings package account. Remove that package before generating a basic savings account.']);
+            }
+
+            $type = AccountType::query()->where('category', 'savings')->where('is_active', true)->firstOrFail();
+            $accountName = trim(($client->full_name ?: $client->business_name ?: $client->client_number).' Savings Account');
+
+            $account = Account::create([
+                'organization_id' => $client->organization_id ?? $user->organization_id,
+                'client_id' => $client->id,
+                'branch_id' => $client->branch_id,
+                'account_type_id' => $type->id,
+                'account_number' => $this->numbers->accountNumber($client->branch, $type),
+                'account_name' => $accountName,
+                'status' => 'active',
+                'balance' => 0,
+                'opened_at' => now()->toDateString(),
+            ]);
+
+            $this->auditLogger->record('client.basic_savings_account_generated', $account, [
+                'client_id' => $client->id,
+                'account_number' => $account->account_number,
+            ]);
+
+            return $account;
+        });
     }
 
     /**

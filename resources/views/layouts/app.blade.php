@@ -183,12 +183,17 @@
             </header>
 
             <main class="df-page flex-1 p-4 sm:p-6">
-                @if (session('status'))
-                    <div class="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 shadow-sm">{{ session('status') }}</div>
-                @endif
-                @if ($errors->any())
-                    <div class="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 shadow-sm">{{ $errors->first() }}</div>
-                @endif
+                <div class="fixed right-4 top-20 z-50 grid w-[min(24rem,calc(100vw-2rem))] gap-3">
+                    @if (session('status'))
+                        <div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-lg">{{ session('status') }}</div>
+                    @endif
+                    @if (session('warning'))
+                        <div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 shadow-lg">{{ session('warning') }}</div>
+                    @endif
+                    @if ($errors->any())
+                        <div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 shadow-lg">{{ $errors->first() }}</div>
+                    @endif
+                </div>
                 {{ $slot ?? '' }}
                 @yield('content')
             </main>

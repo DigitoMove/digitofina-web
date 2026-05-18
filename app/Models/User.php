@@ -86,6 +86,10 @@ class User extends Authenticatable
 
     public function canPerform(string $permission): bool
     {
+        if ($this->hasRole('super-admin')) {
+            return true;
+        }
+
         $hasRolePermission = $this->role?->permissions()->where('slug', $permission)->exists() ?? false;
 
         if (! $hasRolePermission) {
