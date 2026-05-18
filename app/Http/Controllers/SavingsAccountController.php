@@ -74,6 +74,13 @@ class SavingsAccountController extends Controller
         return redirect()->route('savings-accounts.show', $account)->with('status', 'Savings account opened.');
     }
 
+    public function generate(Request $request, Client $client, SavingsAccountService $accounts): RedirectResponse
+    {
+        $account = $accounts->generateForClient($client->load(['branch', 'savingsAccounts', 'accounts.accountType']), $request->user());
+
+        return redirect()->route('savings-accounts.show', $account)->with('status', 'Savings account generated.');
+    }
+
     public function show(SavingsAccount $savingsAccount): View
     {
         return view('savings-accounts.show', [

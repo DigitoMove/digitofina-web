@@ -5,6 +5,7 @@
     $displayName = $client->full_name ?: $client->business_name ?: $client->client_number;
     $profilePhotoDocument = $client->documents->firstWhere('type', 'profile_photo');
     $legacySavingsAccounts = $client->accounts->filter(fn ($account) => $account->accountType?->category === 'savings');
+    $hasSavingsAccount = ($client->savingsAccounts->count() + $legacySavingsAccounts->count()) > 0;
     $loanAccounts = $client->accounts->filter(fn ($account) => $account->accountType?->category === 'loan');
     $currentAccounts = $client->accounts->filter(fn ($account) => $account->accountType?->category === 'current');
     $otherAccounts = $client->accounts->reject(fn ($account) => in_array($account->accountType?->category, ['savings', 'loan', 'current'], true));
@@ -127,7 +128,7 @@
     </div>
     <div class="flex flex-wrap gap-2">
         @foreach ([
-            ['Savings Accounts', array_filter([($client->savingsAccounts->count() + $legacySavingsAccounts->count()) === 0 ? ['Open savings account', route('savings-accounts.create', ['client_id' => $client->id])] : null, ['View accounts', route('clients.savings-accounts', $client)]])],
+            ['Savings Accounts', array_filter([! $hasSavingsAccount ? ['Generate savings account', route('clients.savings-accounts.generate', $client), 'post'] : null, ['View accounts', route('clients.savings-accounts', $client), 'get']])],
             ['Loan Accounts', [['New application', route('loans.create', ['client_id' => $client->id])], ['View loans', route('clients.loans', $client)]]],
             ['Current Accounts', [['Open current account', route('accounts.create', ['client_id' => $client->id])], ['View accounts', route('clients.accounts', $client)]]],
             ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]],
@@ -136,8 +137,16 @@
             <details class="group relative">
                 <summary class="df-action-primary min-h-10 cursor-pointer list-none rounded-lg px-3 py-2">{{ $label }} <span class="ml-1 text-xs">▾</span></summary>
                 <div class="absolute right-0 z-20 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-2 text-sm shadow-xl">
-                    @foreach($links as [$linkLabel, $href])
-                        <a href="{{ $href }}" class="block rounded px-3 py-2 font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-800">{{ $linkLabel }}</a>
+                    @foreach($links as $link)
+                        @php([$linkLabel, $href, $method] = [$link[0], $link[1], $link[2] ?? 'get'])
+                        @if($method === 'post')
+                            <form method="POST" action="{{ $href }}">
+                                @csrf
+                                <button class="block w-full rounded px-3 py-2 text-left font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-800">Generate savings account</button>
+                            </form>
+                        @else
+                            <a href="{{ $href }}" class="block rounded px-3 py-2 font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-800">{{ $linkLabel }}</a>
+                        @endif
                     @endforeach
                 </div>
             </details>
@@ -260,8 +269,11 @@
                 <div class="df-panel p-5">
                     <div class="flex items-center justify-between gap-3">
                         <h2 class="font-semibold text-slate-950">Savings Accounts</h2>
-                        @if(($client->savingsAccounts->count() + $legacySavingsAccounts->count()) === 0)
-                            <a class="df-action-secondary min-h-9 px-3 py-1.5" href="{{ route('savings-accounts.create', ['client_id' => $client->id]) }}">Open</a>
+                        @if(! $hasSavingsAccount)
+                            <form method="POST" action="{{ route('clients.savings-accounts.generate', $client) }}">
+                                @csrf
+                                <button class="df-action-secondary min-h-9 px-3 py-1.5">Generate</button>
+                            </form>
                         @endif
                     </div>
                     <div class="mt-4 grid gap-3">

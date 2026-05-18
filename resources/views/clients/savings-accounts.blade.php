@@ -14,7 +14,10 @@
     <div class="flex flex-wrap gap-2">
         <a href="{{ route('clients.show', $client) }}" class="df-action-secondary">Client Dashboard</a>
         @unless($hasSavingsAccount)
-            <a href="{{ route('savings-accounts.create', ['client_id' => $client->id]) }}" class="df-action-primary">Open Savings Account</a>
+            <form method="POST" action="{{ route('clients.savings-accounts.generate', $client) }}">
+                @csrf
+                <button class="df-action-primary">Generate Savings Account</button>
+            </form>
         @endunless
     </div>
 </div>

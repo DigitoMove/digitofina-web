@@ -77,6 +77,7 @@ Route::middleware('auth')->group(function () {
     Route::resource('clients', ClientController::class)->except('destroy');
     Route::get('/clients/{client}/accounts', [ClientController::class, 'accounts'])->name('clients.accounts');
     Route::get('/clients/{client}/savings-accounts', [ClientController::class, 'savingsAccounts'])->name('clients.savings-accounts');
+    Route::post('/clients/{client}/savings-accounts/generate', [SavingsAccountController::class, 'generate'])->name('clients.savings-accounts.generate');
     Route::get('/clients/{client}/loans', [ClientController::class, 'loans'])->name('clients.loans');
     Route::resource('client-groups', ClientGroupController::class)->except('destroy');
     Route::post('/clients/{client}/documents', [ClientDocumentController::class, 'store'])->name('clients.documents.store');

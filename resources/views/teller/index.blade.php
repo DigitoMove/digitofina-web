@@ -235,24 +235,73 @@
                     <option value="{{ $type->id }}" @selected((int) request('account_type_id') === $type->id)>{{ $type->name }}</option>
                 @endforeach
             </select>
-            <input name="account_number" value="{{ request('account_number') }}" placeholder="Account number">
+            <input name="account_search" value="{{ request('account_search', request('account_number')) }}" placeholder="Search client name, phone, client number or account">
             <input name="gl_search" value="{{ request('gl_search') }}" placeholder="Search GL: welfare, transport, travel">
             <button class="df-action-primary">Search</button>
         </form>
-        <div class="mt-4 rounded border border-slate-200 bg-slate-50 p-4">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected account</div>
-                    <div class="mt-1 font-semibold text-slate-950">{{ $account?->account_name ?? 'Search an active account' }}</div>
-                    @if($account)
-                        <div class="text-sm text-slate-500">{{ $account->account_number }} · {{ $account->accountType?->name }}</div>
-                    @endif
+        <div class="mt-4 grid gap-4 xl:grid-cols-2">
+            <div class="rounded border border-slate-200 bg-slate-50 p-4">
+                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Client account results</div>
+                <div class="mt-3 max-h-72 divide-y divide-slate-200 overflow-auto rounded bg-white">
+                    @forelse($accountResults as $resultAccount)
+                        <div class="grid gap-3 p-3 sm:grid-cols-[1fr_auto]">
+                            <div>
+                                <div class="font-semibold text-slate-950">{{ $resultAccount->account_number }} · {{ $resultAccount->account_name }}</div>
+                                <div class="text-sm text-slate-500">{{ $resultAccount->client?->full_name ?: $resultAccount->client?->business_name ?: 'No client' }} · {{ $resultAccount->client?->client_number }} · {{ $resultAccount->client?->phone }}</div>
+                                <div class="mt-1 text-xs text-slate-500">{{ $resultAccount->accountType?->name }} · {{ str($resultAccount->status)->headline() }} · Balance UGX {{ number_format((float) $resultAccount->balance, 2) }}</div>
+                            </div>
+                            <form method="GET" action="{{ route('teller.index') }}" class="flex items-start justify-end">
+                                <input type="hidden" name="account_type_id" value="{{ request('account_type_id') }}">
+                                <input type="hidden" name="account_search" value="{{ request('account_search') }}">
+                                <input type="hidden" name="gl_search" value="{{ request('gl_search') }}">
+                                <input type="hidden" name="account_number" value="{{ $resultAccount->account_number }}">
+                                <button class="rounded bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white">Select</button>
+                            </form>
+                        </div>
+                    @empty
+                        <div class="p-5 text-sm text-slate-500">No client accounts matched this search.</div>
+                    @endforelse
                 </div>
+            </div>
+
+            <div class="rounded border border-slate-200 bg-slate-50 p-4">
+                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">General ledger results</div>
+                <div class="mt-3 max-h-72 divide-y divide-slate-200 overflow-auto rounded bg-white">
+                    @forelse($chartAccounts as $chartAccount)
+                        <div class="grid gap-3 p-3 sm:grid-cols-[1fr_auto]">
+                            <div>
+                                <div class="font-semibold text-slate-950">{{ $chartAccount->code }} · {{ $chartAccount->name }}</div>
+                                <div class="text-sm text-slate-500">{{ str($chartAccount->type)->headline() }} · {{ $chartAccount->normal_balance ? str($chartAccount->normal_balance)->headline().' normal balance' : 'Normal balance not set' }}</div>
+                            </div>
+                            <form method="GET" action="{{ route('teller.index') }}" class="flex items-start justify-end">
+                                <input type="hidden" name="account_type_id" value="{{ request('account_type_id') }}">
+                                <input type="hidden" name="account_search" value="{{ request('account_search') }}">
+                                <input type="hidden" name="gl_search" value="{{ request('gl_search') }}">
+                                <input type="hidden" name="account_number" value="{{ request('account_number') }}">
+                                <input type="hidden" name="chart_account_id" value="{{ $chartAccount->id }}">
+                                <button class="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">Select</button>
+                            </form>
+                        </div>
+                    @empty
+                        <div class="p-5 text-sm text-slate-500">No general ledger accounts matched this search.</div>
+                    @endforelse
+                </div>
+            </div>
+        </div>
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+            <div class="rounded border border-slate-200 bg-slate-50 p-4">
+                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected client account</div>
+                <div class="mt-1 font-semibold text-slate-950">{{ $account?->account_name ?? 'Select a client account above' }}</div>
                 @if($account)
-                    <div class="text-right">
-                        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $account->accountType?->category === 'loan' ? 'Outstanding' : 'Available' }}</div>
-                        <div class="text-xl font-semibold text-brand-800">UGX {{ number_format($account->balance, 2) }}</div>
-                    </div>
+                    <div class="text-sm text-slate-500">{{ $account->account_number }} · {{ $account->accountType?->name }} · {{ $account->client?->full_name ?: $account->client?->business_name }}</div>
+                    <div class="mt-2 text-xl font-semibold text-brand-800">UGX {{ number_format((float) $account->balance, 2) }}</div>
+                @endif
+            </div>
+            <div class="rounded border border-slate-200 bg-slate-50 p-4">
+                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected general ledger account</div>
+                <div class="mt-1 font-semibold text-slate-950">{{ $selectedChartAccount?->name ?? 'Select a GL account above' }}</div>
+                @if($selectedChartAccount)
+                    <div class="text-sm text-slate-500">{{ $selectedChartAccount->code }} · {{ str($selectedChartAccount->type)->headline() }} · {{ str($selectedChartAccount->normal_balance)->headline() }} normal balance</div>
                 @endif
             </div>
         </div>
@@ -275,8 +324,8 @@
             @endif
             <label class="text-sm font-semibold text-slate-700">Posting Account <x-required-badge />
                 <select name="account_scope" class="mt-1" required>
-                    <option value="client_account" @selected(old('account_scope', 'client_account') === 'client_account')>Savings / Loan / Other Client Account</option>
-                    <option value="general_ledger" @selected(old('account_scope') === 'general_ledger')>General Ledger Account</option>
+                    <option value="client_account" @selected(old('account_scope', request('chart_account_id') ? 'general_ledger' : 'client_account') === 'client_account')>Savings / Loan / Other Client Account</option>
+                    <option value="general_ledger" @selected(old('account_scope', request('chart_account_id') ? 'general_ledger' : 'client_account') === 'general_ledger')>General Ledger Account</option>
                 </select>
             </label>
             <input type="hidden" name="account_number" value="{{ $account?->account_number ?? request('account_number') }}">
@@ -293,7 +342,7 @@
                     @foreach($chartAccounts->groupBy('type') as $type => $accounts)
                         <optgroup label="{{ str($type)->headline() }}">
                             @foreach($accounts as $chartAccount)
-                                <option value="{{ $chartAccount->id }}" @selected((int) old('chart_account_id') === $chartAccount->id)>{{ $chartAccount->code }} · {{ $chartAccount->name }}</option>
+                                <option value="{{ $chartAccount->id }}" @selected((int) old('chart_account_id', $selectedChartAccount?->id ?? request('chart_account_id')) === $chartAccount->id)>{{ $chartAccount->code }} · {{ $chartAccount->name }}</option>
                             @endforeach
                         </optgroup>
                     @endforeach
