@@ -33,6 +33,7 @@ use App\Http\Controllers\SavingsProductController;
 use App\Http\Controllers\SavingsTransactionController;
 use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\TellerDrawerController;
+use App\Http\Controllers\TransactionReversalController;
 use App\Http\Controllers\UserManagementController;
 use Illuminate\Support\Facades\Route;
 
@@ -79,6 +80,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/clients/{client}/savings-accounts', [ClientController::class, 'savingsAccounts'])->name('clients.savings-accounts');
     Route::post('/clients/{client}/savings-accounts/generate', [SavingsAccountController::class, 'generate'])->name('clients.savings-accounts.generate');
     Route::get('/clients/{client}/loans', [ClientController::class, 'loans'])->name('clients.loans');
+    Route::post('/clients/{client}/assign-officer', [ClientController::class, 'assignOfficer'])->name('clients.assign-officer');
     Route::resource('client-groups', ClientGroupController::class)->except('destroy');
     Route::post('/clients/{client}/documents', [ClientDocumentController::class, 'store'])->name('clients.documents.store');
     Route::get('/clients/{client}/documents/{document}', [ClientDocumentController::class, 'download'])->name('clients.documents.download');
@@ -140,6 +142,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/imports/{import}/commit', [DataImportController::class, 'commit'])->name('imports.commit');
     Route::post('/imports/{import}/rollback', [DataImportController::class, 'rollback'])->name('imports.rollback');
     Route::get('/receipts/{transaction}', [ReceiptController::class, 'show'])->name('receipts.show');
+    Route::post('/receipts/{transaction}/reversal-request', [TransactionReversalController::class, 'store'])->name('transactions.reversal-requests.store');
+    Route::post('/transaction-reversal-requests/{makerCheckerRequest}/approve', [TransactionReversalController::class, 'approve'])->name('transactions.reversal-requests.approve');
+    Route::post('/transaction-reversal-requests/{makerCheckerRequest}/reject', [TransactionReversalController::class, 'reject'])->name('transactions.reversal-requests.reject');
     Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
     Route::get('/reports/{report}', [ReportController::class, 'show'])->name('reports.show');
 });

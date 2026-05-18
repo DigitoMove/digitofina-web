@@ -4,12 +4,18 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class UpdateClientRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->canPerform('manage-clients') ?? false;
+        $user = $this->user();
+
+        return $user !== null
+            && ! $user->isTellerCashier()
+            && ! $user->isMember()
+            && $user->canPerform('manage-clients');
     }
 
     protected function prepareForValidation(): void
@@ -65,6 +71,26 @@ class UpdateClientRequest extends FormRequest
             'kyc_checklist' => ['array'],
             'kyc_checklist.*' => ['string', 'max:80'],
             'profile_photo' => ['nullable', 'image', 'max:2048'],
+        ];
+    }
+
+    /**
+     * @return array<int, callable(Validator): void>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                $user = $this->user();
+
+                if (! $user || $user->canPerform('manage-organization') || $user->hasRole('super-admin')) {
+                    return;
+                }
+
+                if ((int) $this->input('branch_id') !== (int) $user->branch_id) {
+                    $validator->errors()->add('branch_id', 'You can only keep clients in your branch.');
+                }
+            },
         ];
     }
 }

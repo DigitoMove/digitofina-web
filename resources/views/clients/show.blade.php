@@ -246,6 +246,9 @@
             <section data-df-tab-panel="overview" class="grid gap-5 xl:grid-cols-3">
                 <div class="df-panel p-5 xl:col-span-2">
                     <h2 class="font-semibold text-slate-950">Biodata</h2>
+                    @if($errors->has('client_officer_id'))
+                        <div class="mt-4 rounded border border-coral-500/20 bg-coral-50 p-3 text-sm text-coral-700">{{ $errors->first('client_officer_id') }}</div>
+                    @endif
                     <dl class="mt-4 grid gap-4 text-sm md:grid-cols-2">
                         <div class="df-soft-panel p-3"><dt class="text-slate-500">Phone</dt><dd class="mt-1 font-semibold">{{ $client->phone }}</dd></div>
                         <div class="df-soft-panel p-3"><dt class="text-slate-500">Alternative phone</dt><dd class="mt-1">{{ $client->alternative_phone ?: 'N/A' }}</dd></div>
@@ -256,6 +259,19 @@
                         <div class="df-soft-panel p-3"><dt class="text-slate-500">Occupation</dt><dd class="mt-1">{{ $client->occupation ?: 'N/A' }}</dd></div>
                         <div class="df-soft-panel p-3"><dt class="text-slate-500">Next of kin</dt><dd class="mt-1">{{ $client->next_of_kin_name ?: 'N/A' }} {{ $client->next_of_kin_phone ? '· '.$client->next_of_kin_phone : '' }}</dd></div>
                     </dl>
+                    @if($canAssignClientOfficer)
+                        <form method="POST" action="{{ route('clients.assign-officer', $client) }}" class="mt-5 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_auto]">
+                            @csrf
+                            <label class="text-sm font-semibold text-slate-700">Assigned Loan Officer <x-required-badge />
+                                <select name="officer_id" class="mt-1 w-full rounded border-slate-300" required>
+                                    @foreach($assignableOfficers as $officer)
+                                        <option value="{{ $officer->id }}" @selected((int) old('officer_id', $client->officer_id) === $officer->id)>{{ $officer->name }} · {{ $officer->role?->name }} · {{ $officer->branch?->name ?? 'No branch' }}</option>
+                                    @endforeach
+                                </select>
+                            </label>
+                            <button class="df-action-secondary self-end">Update Officer</button>
+                        </form>
+                    @endif
                 </div>
 
                 <div class="df-panel p-5">

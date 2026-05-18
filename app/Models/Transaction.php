@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Transaction extends Model
 {
@@ -15,6 +16,7 @@ class Transaction extends Model
             'amount' => 'decimal:2',
             'balance_after' => 'decimal:2',
             'posted_at' => 'datetime',
+            'reversed_at' => 'datetime',
         ];
     }
 
@@ -36,5 +38,22 @@ class Transaction extends Model
     public function drawerSession(): BelongsTo
     {
         return $this->belongsTo(DrawerSession::class);
+    }
+
+    public function reversal(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'reversed_by');
+    }
+
+    public function originalTransaction(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'reversal_of_id');
+    }
+
+    public function reversalRequests(): HasMany
+    {
+        return $this->hasMany(MakerCheckerRequest::class, 'subject_id')
+            ->where('subject_type', $this->getMorphClass())
+            ->where('action', 'transaction_reversal');
     }
 }

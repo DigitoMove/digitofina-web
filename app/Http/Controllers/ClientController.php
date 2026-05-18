@@ -8,10 +8,12 @@ use App\Models\Branch;
 use App\Models\Client;
 use App\Models\User;
 use App\Services\ClientService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
+use InvalidArgumentException;
 
 class ClientController extends Controller
 {
@@ -60,11 +62,19 @@ class ClientController extends Controller
         ]);
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
         Gate::authorize('create', Client::class);
 
-        return view('clients.create', ['client' => new Client(['status' => 'active', 'kyc_status' => 'pending', 'client_type' => 'individual']), 'branches' => Branch::where('is_active', true)->get()]);
+        return view('clients.create', [
+            'client' => new Client([
+                'status' => 'active',
+                'kyc_status' => 'pending',
+                'client_type' => 'individual',
+                'branch_id' => $request->user()->branch_id,
+            ]),
+            'branches' => $this->assignableBranches($request)->get(),
+        ]);
     }
 
     public function store(StoreClientRequest $request, ClientService $clients): RedirectResponse
@@ -95,7 +105,11 @@ class ClientController extends Controller
             'groups',
         ]);
 
-        return view('clients.show', compact('client'));
+        return view('clients.show', [
+            'client' => $client,
+            'canAssignClientOfficer' => $this->canAssignClientOfficer(request()),
+            'assignableOfficers' => $this->assignableOfficers(request(), $client->branch_id)->get(),
+        ]);
     }
 
     public function accounts(Client $client): View
@@ -142,7 +156,7 @@ class ClientController extends Controller
     {
         Gate::authorize('update', $client);
 
-        return view('clients.edit', ['client' => $client, 'branches' => Branch::where('is_active', true)->get()]);
+        return view('clients.edit', ['client' => $client, 'branches' => $this->assignableBranches(request())->get()]);
     }
 
     public function update(UpdateClientRequest $request, Client $client, ClientService $clients): RedirectResponse
@@ -154,6 +168,23 @@ class ClientController extends Controller
         return redirect()->route('clients.show', $client)->with('status', 'Client updated.');
     }
 
+    public function assignOfficer(Request $request, Client $client, ClientService $clients): RedirectResponse
+    {
+        abort_unless($this->canAssignClientOfficer($request), 403);
+
+        $data = $request->validate([
+            'officer_id' => ['required', 'exists:users,id'],
+        ]);
+
+        try {
+            $clients->assignOfficer($client, $request->user(), (int) $data['officer_id']);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['client_officer_id' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Client officer updated.');
+    }
+
     private function clientPayload(StoreClientRequest|UpdateClientRequest $request): array
     {
         $data = $request->safe()->except(['profile_photo', 'kyc_checklist']);
@@ -162,5 +193,38 @@ class ClientController extends Controller
             ->all();
 
         return $data + ['kyc_documents' => $checklist];
+    }
+
+    /**
+     * @return Builder<Branch>
+     */
+    private function assignableBranches(Request $request): Builder
+    {
+        return Branch::query()
+            ->where('is_active', true)
+            ->when(! $request->user()->canPerform('manage-organization') && ! $request->user()->hasRole('super-admin'), fn (Builder $query): Builder => $query->whereKey($request->user()->branch_id))
+            ->orderBy('name');
+    }
+
+    /**
+     * @return Builder<User>
+     */
+    private function assignableOfficers(Request $request, ?int $branchId = null): Builder
+    {
+        return User::query()
+            ->with(['branch', 'role'])
+            ->where('status', 'active')
+            ->when($request->user()->organization_id, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
+            ->when($branchId && ! $request->user()->canPerform('manage-organization') && ! $request->user()->hasRole('super-admin'), fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->whereHas('role', fn (Builder $query): Builder => $query->whereIn('slug', ['branch-manager', 'loan-officer']))
+            ->orderBy('name');
+    }
+
+    private function canAssignClientOfficer(Request $request): bool
+    {
+        return $request->user()->hasRole('super-admin')
+            || $request->user()->canPerform('manage-users')
+            || $request->user()->canPerform('disburse-loans')
+            || $request->user()->canPerform('manage-organization');
     }
 }

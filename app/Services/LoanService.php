@@ -13,6 +13,7 @@ use App\Models\LoanApproval;
 use App\Models\LoanDisbursement;
 use App\Models\LoanPenalty;
 use App\Models\LoanRepayment;
+use App\Models\LoanRepaymentAllocation;
 use App\Models\LoanSchedule;
 use App\Models\RoleFinancialLimit;
 use App\Models\SystemSetting;
@@ -507,13 +508,6 @@ class LoanService
                 'status' => $isSettled ? 'fully_paid' : $loan->status,
             ]);
 
-            $this->allocateSchedulePayments($loan, [
-                'penalty' => $penaltyPaid,
-                'fees' => $feesPaid,
-                'interest' => $interestPaid,
-                'principal' => $principalPaid,
-            ]);
-
             $repayment = LoanRepayment::create([
                 'organization_id' => $loan->organization_id,
                 'loan_id' => $loan->id,
@@ -531,6 +525,15 @@ class LoanService
                 'principal_paid' => $principalPaid,
                 'paid_at' => $paymentDate->toDateString(),
             ]);
+
+            foreach ($this->allocateSchedulePayments($loan, [
+                'penalty' => $penaltyPaid,
+                'fees' => $feesPaid,
+                'interest' => $interestPaid,
+                'principal' => $principalPaid,
+            ]) as $allocation) {
+                LoanRepaymentAllocation::create($allocation + ['loan_repayment_id' => $repayment->id]);
+            }
 
             foreach ([
                 ['1000', 'debit', $penaltyPaid + $feesPaid + $interestPaid + $principalPaid],
@@ -640,10 +643,12 @@ class LoanService
 
     /**
      * @param  array{penalty:float, fees:float, interest:float, principal:float}  $amounts
+     * @return list<array{loan_schedule_id:int, penalty_paid:float, fees_paid:float, interest_paid:float, principal_paid:float, total_paid:float}>
      */
-    private function allocateSchedulePayments(Loan $loan, array $amounts): void
+    private function allocateSchedulePayments(Loan $loan, array $amounts): array
     {
         $remaining = $amounts;
+        $allocations = [];
 
         foreach ($loan->schedules()->where('status', '!=', 'paid')->orderBy('due_date')->lockForUpdate()->get() as $schedule) {
             if (array_sum($remaining) <= 0) {
@@ -655,6 +660,10 @@ class LoanService
             $interestPaid = $this->allocateBucket($remaining['interest'], (float) $schedule->interest_due - (float) $schedule->interest_paid);
             $principalPaid = $this->allocateBucket($remaining['principal'], (float) $schedule->principal_due - (float) $schedule->principal_paid);
             $totalPaid = $penaltyPaid + $feesPaid + $interestPaid + $principalPaid;
+            if ($totalPaid <= 0) {
+                continue;
+            }
+
             $outstanding = max(0, (float) $schedule->outstanding_amount - $totalPaid);
 
             $schedule->update([
@@ -668,7 +677,18 @@ class LoanService
                 'balance_due' => $outstanding,
                 'status' => $outstanding <= 0 ? 'paid' : 'partially_paid',
             ]);
+
+            $allocations[] = [
+                'loan_schedule_id' => $schedule->id,
+                'penalty_paid' => $penaltyPaid,
+                'fees_paid' => $feesPaid,
+                'interest_paid' => $interestPaid,
+                'principal_paid' => $principalPaid,
+                'total_paid' => $totalPaid,
+            ];
         }
+
+        return $allocations;
     }
 
     private function allocateBucket(float &$remaining, float $due): float

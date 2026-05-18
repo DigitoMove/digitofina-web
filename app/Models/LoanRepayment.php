@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class LoanRepayment extends Model
 {
@@ -39,5 +40,10 @@ class LoanRepayment extends Model
     public function receivedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'received_by');
+    }
+
+    public function allocations(): HasMany
+    {
+        return $this->hasMany(LoanRepaymentAllocation::class);
     }
 }

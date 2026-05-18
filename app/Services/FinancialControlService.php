@@ -29,6 +29,7 @@ class FinancialControlService
     public const SENSITIVE_ACTIONS = [
         'savings_withdrawal',
         'savings_transaction_reversal',
+        'transaction_reversal',
         'loan_approval',
         'loan_disbursement',
         'journal_posting',
@@ -44,6 +45,7 @@ class FinancialControlService
         private AuditLogger $auditLogger,
         private LoanService $loans,
         private JournalEntryService $journals,
+        private TransactionReversalService $transactionReversals,
     ) {}
 
     public function requiresMakerChecker(User $user, string $action, ?float $amount = null): bool
@@ -384,6 +386,7 @@ class FinancialControlService
         match ($request->action) {
             'savings_withdrawal' => $this->performSavingsWithdrawal($request, $checker),
             'savings_transaction_reversal' => $this->performSavingsReversal($request, $checker),
+            'transaction_reversal' => $this->transactionReversals->approve($request, $checker),
             'loan_approval' => $this->performLoanApproval($request, $checker),
             'loan_disbursement' => $this->loans->disburseToSavings(Loan::findOrFail($request->subject_id), $checker, $request->payload['payment_method'] ?? 'transfer_to_savings'),
             'journal_posting' => $this->performJournalPosting($request, $checker),

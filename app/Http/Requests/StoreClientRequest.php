@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class StoreClientRequest extends FormRequest
 {
@@ -66,6 +67,26 @@ class StoreClientRequest extends FormRequest
             'kyc_checklist' => ['array'],
             'kyc_checklist.*' => ['string', 'max:80'],
             'profile_photo' => ['nullable', 'image', 'max:2048'],
+        ];
+    }
+
+    /**
+     * @return array<int, callable(Validator): void>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                $user = $this->user();
+
+                if (! $user || $user->canPerform('manage-organization') || $user->hasRole('super-admin')) {
+                    return;
+                }
+
+                if ((int) $this->input('branch_id') !== (int) $user->branch_id) {
+                    $validator->errors()->add('branch_id', 'You can only create clients in your branch.');
+                }
+            },
         ];
     }
 }

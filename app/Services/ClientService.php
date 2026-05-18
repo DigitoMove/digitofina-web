@@ -12,6 +12,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class ClientService
 {
@@ -93,6 +94,43 @@ class ClientService
         $this->auditLogger->record('client.updated', $client, $client->fresh()->toArray(), $old);
 
         return $client->refresh();
+    }
+
+    public function assignOfficer(Client $client, User $user, int $officerId): Client
+    {
+        abort_unless($user->hasRole('super-admin') || $user->canPerform('manage-users') || $user->canPerform('disburse-loans') || $user->canPerform('manage-organization'), 403);
+
+        return DB::transaction(function () use ($client, $user, $officerId): Client {
+            $client = Client::query()->whereKey($client->id)->lockForUpdate()->firstOrFail();
+            $assignedOfficer = User::query()
+                ->with('role')
+                ->where('status', 'active')
+                ->whereKey($officerId)
+                ->firstOrFail();
+
+            if (! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer'], true)) {
+                throw new InvalidArgumentException('Select an active branch head or Loan Officer.');
+            }
+
+            if ($client->organization_id && $assignedOfficer->organization_id && (int) $client->organization_id !== (int) $assignedOfficer->organization_id) {
+                throw new InvalidArgumentException('The assigned officer must belong to this organization.');
+            }
+
+            if ($client->branch_id && $assignedOfficer->branch_id && (int) $client->branch_id !== (int) $assignedOfficer->branch_id && ! $user->canPerform('manage-organization') && ! $user->hasRole('super-admin')) {
+                throw new InvalidArgumentException('The assigned officer must belong to this branch.');
+            }
+
+            $oldOfficerId = $client->officer_id;
+            $client->update(['officer_id' => $assignedOfficer->id]);
+
+            $this->auditLogger->record('client.officer_assigned', $client, [
+                'old_officer_id' => $oldOfficerId,
+                'new_officer_id' => $assignedOfficer->id,
+                'assigned_by' => $user->id,
+            ]);
+
+            return $client->refresh();
+        });
     }
 
     /**
