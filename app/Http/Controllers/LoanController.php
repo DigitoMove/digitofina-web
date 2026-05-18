@@ -14,6 +14,7 @@ use App\Services\LoanScheduleService;
 use App\Services\LoanService;
 use App\Services\LoanVisibilityService;
 use App\Support\CurrencyDenomination;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -77,6 +78,7 @@ class LoanController extends Controller
 
         $data = $request->validate([
             'loan_product_id' => ['required', 'exists:loan_products,id'],
+            'application_date' => ['nullable', 'date', 'before_or_equal:today'],
             'requested_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'term_periods' => ['required', 'integer', 'min:1', 'max:730'],
             'repayment_frequency' => ['required', 'in:daily,weekly,monthly'],
@@ -86,8 +88,9 @@ class LoanController extends Controller
         $principal = (float) $data['requested_amount'];
         $periods = (int) $data['term_periods'];
         $periodicRate = $this->periodicRate((float) $product->annual_interest_rate, $data['repayment_frequency']);
+        $applicationDate = CarbonImmutable::parse($data['application_date'] ?? today()->toDateString());
 
-        $schedule = collect($schedules->preview($principal, $periodicRate, $periods, $product->interest_method, today(), $data['repayment_frequency']))
+        $schedule = collect($schedules->preview($principal, $periodicRate, $periods, $product->interest_method, $applicationDate, $data['repayment_frequency']))
             ->map(fn (array $row): array => [
                 'installment' => $row['installment'],
                 'due_date' => $row['due_date'],
@@ -112,7 +115,7 @@ class LoanController extends Controller
     public function show(Loan $loan, LoanVisibilityService $visibility, LoanService $service): View
     {
         if (! $loan->schedules()->exists() && (float) $loan->requested_amount > 0) {
-            $service->generateSchedule($loan->load('product'), now());
+            $service->generateSchedule($loan->load('product'), CarbonImmutable::parse(($loan->disbursed_at ?? $loan->application_date ?? today())->toDateString()));
         }
 
         return view('loans.show', [

@@ -19,6 +19,7 @@
             @if($canAssignOfficer)
                 <label class="text-sm font-medium">Assigned officer {!! $commercialRequiredBadge !!}<select name="assigned_officer_id" class="mt-1 w-full rounded border-slate-300"><option value="">Use me as officer</option>@foreach($assignableOfficers as $officer)<option value="{{ $officer->id }}" @selected(old('assigned_officer_id') == $officer->id)>{{ $officer->name }} · {{ $officer->role?->name }}</option>@endforeach</select></label>
             @endif
+            <label class="text-sm font-medium">Application date {!! $requiredBadge !!}<input name="application_date" value="{{ old('application_date', today()->toDateString()) }}" type="date" max="{{ today()->toDateString() }}" class="mt-1 w-full rounded border-slate-300" required></label>
             <label class="text-sm font-medium">Requested amount {!! $requiredBadge !!}<input name="requested_amount" value="{{ old('requested_amount') }}" type="number" min="100" step="100" class="mt-1 w-full rounded border-slate-300" required></label>
             <div class="text-sm font-medium">Package interest per annum
                 <div class="mt-1 rounded border border-slate-200 bg-slate-50 px-3 py-2 font-semibold text-slate-950" data-package-interest-rate>{{ number_format((float) ($selectedProduct?->annual_interest_rate ?? 0), 4) }}%</div>

@@ -36,10 +36,16 @@
                     <td><a class="font-medium text-blue-700" href="{{ route('clients.show', $client) }}">View</a></td>
                 </tr>
             @empty
-                <tr><td class="p-4 text-slate-500" colspan="7">No clients found.</td></tr>
+                <tr>
+                    <td class="p-6 text-center text-slate-500" colspan="7">
+                        {{ $hasClientSearch ? 'No clients found for this search.' : 'Search for a client by name, client number, phone, national ID, or use a filter to show results.' }}
+                    </td>
+                </tr>
             @endforelse
         </tbody>
     </table>
 </div>
-<div class="mt-4">{{ $clients->links() }}</div>
+@if($hasClientSearch)
+    <div class="mt-4">{{ $clients->links() }}</div>
+@endif
 @endsection

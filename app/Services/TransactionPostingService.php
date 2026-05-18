@@ -12,6 +12,7 @@ use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Support\CurrencyDenomination;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -165,9 +166,10 @@ class TransactionPostingService
         return $transaction->refresh();
     }
 
-    public function postNonCashCredit(Account $account, TransactionType $type, float $amount, User $user, string $description, array $journals = []): Transaction
+    public function postNonCashCredit(Account $account, TransactionType $type, float $amount, User $user, string $description, array $journals = [], ?CarbonInterface $postedAt = null): Transaction
     {
-        return DB::transaction(function () use ($account, $type, $amount, $user, $description, $journals) {
+        return DB::transaction(function () use ($account, $type, $amount, $user, $description, $journals, $postedAt) {
+            $postedAt ??= now();
             $account = Account::query()->whereKey($account->id)->lockForUpdate()->firstOrFail();
             $account->increment('balance', $amount);
             $account->refresh();
@@ -181,6 +183,7 @@ class TransactionPostingService
                 'amount' => $amount,
                 'balance_after' => $account->balance,
                 'description' => $description,
+                'posted_at' => $postedAt,
             ]);
 
             foreach ($journals as $journal) {
@@ -200,10 +203,10 @@ class TransactionPostingService
                     'created_by' => $user->id,
                     'posted_by' => $user->id,
                     'journal_number' => 'JE'.now()->format('ymdHis').Str::upper(Str::random(4)),
-                    'journal_date' => now()->toDateString(),
+                    'journal_date' => $postedAt->toDateString(),
                     'description' => $description,
                     'status' => 'posted',
-                    'posted_at' => now(),
+                    'posted_at' => $postedAt,
                     'chart_account_id' => $chartAccount?->id,
                     'account_name' => $journal['account_name'] ?? $chartAccount?->name,
                     'transaction_id' => $transaction->id,

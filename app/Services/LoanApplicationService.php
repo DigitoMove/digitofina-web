@@ -9,6 +9,7 @@ use App\Models\LoanProduct;
 use App\Models\LoanSchedule;
 use App\Models\User;
 use App\Support\CurrencyDenomination;
+use Carbon\CarbonImmutable;
 use Illuminate\Validation\ValidationException;
 
 class LoanApplicationService
@@ -28,6 +29,7 @@ class LoanApplicationService
         $product = LoanProduct::findOrFail($data['loan_product_id']);
         $savings = Account::where('client_id', $client->id)->whereHas('accountType', fn ($query) => $query->where('category', 'savings'))->first();
         $requestedAmount = (float) $data['requested_amount'];
+        $applicationDate = CarbonImmutable::parse($data['application_date'] ?? today()->toDateString())->toDateString();
         $assignedOfficer = $this->assignedOfficer($data, $officer);
         CurrencyDenomination::assertValid($requestedAmount, 'Requested amount');
 
@@ -39,7 +41,7 @@ class LoanApplicationService
             throw ValidationException::withMessages(['term_periods' => 'Loan term is outside the selected product limits.']);
         }
 
-        $loan = Loan::create(collect($data)->except('assigned_officer_id')->all() + [
+        $loan = Loan::create(collect($data)->except('assigned_officer_id', 'application_date', 'savings_account_id')->all() + [
             'organization_id' => $officer->organization_id,
             'branch_id' => $client->branch_id,
             'officer_id' => $assignedOfficer->id,
@@ -49,7 +51,7 @@ class LoanApplicationService
             'interest_rate' => $product->annual_interest_rate,
             'savings_balance_at_application' => (float) ($savings?->balance ?? 0),
             'required_savings_amount' => round($requestedAmount * ((float) $product->required_savings_percentage / 100), 2),
-            'application_date' => now()->toDateString(),
+            'application_date' => $applicationDate,
             'status' => 'draft',
         ]);
 
@@ -98,7 +100,7 @@ class LoanApplicationService
             $this->periodicRate((float) $loan->interest_rate, $loan->repayment_frequency),
             max(1, (int) $loan->term_periods),
             $loan->product?->interest_method ?: 'reducing_balance_equal_installments',
-            now(),
+            CarbonImmutable::parse($loan->application_date?->toDateString() ?? today()->toDateString()),
             $loan->repayment_frequency,
         );
 

@@ -19,6 +19,7 @@ use App\Models\SystemSetting;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Support\CurrencyDenomination;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -63,15 +64,17 @@ class LoanService
                 throw new InvalidArgumentException('This product requires verified collateral before approval.');
             }
 
+            $workflowDate = $this->effectiveWorkflowDate($loan);
+
             $loan->update([
                 'approved_amount' => $approvedAmount,
                 'principal_balance' => $approvedAmount,
                 'status' => 'approved',
                 'approved_by' => $approver->id,
-                'approved_at' => now()->toDateString(),
+                'approved_at' => $workflowDate->toDateString(),
             ]);
 
-            $this->generateSchedule($loan->refresh()->load('product'), now());
+            $this->generateSchedule($loan->refresh()->load('product'), $workflowDate);
 
             Approval::create([
                 'approvable_type' => $loan->getMorphClass(),
@@ -81,7 +84,7 @@ class LoanService
                 'level' => 'Supervisor / Final Approver',
                 'status' => 'approved',
                 'comments' => $comments,
-                'acted_at' => now(),
+                'acted_at' => $workflowDate,
             ]);
 
             LoanApproval::create([
@@ -92,7 +95,7 @@ class LoanService
                 'role_required' => $this->approvalRole($approvedAmount),
                 'status' => 'approved',
                 'notes' => $comments,
-                'acted_at' => now(),
+                'acted_at' => $workflowDate,
             ]);
 
             $this->auditLogger->record('loan.approved', $loan, ['approved_amount' => $approvedAmount]);
@@ -290,9 +293,12 @@ class LoanService
                 throw new InvalidArgumentException('Generate the savings and loan accounts before appraisal.');
             }
 
+            $workflowDate = $this->effectiveWorkflowDate($loan);
+
             $loan->update([
                 'status' => 'under_review',
                 'reviewed_by' => $user->id,
+                'submitted_at' => $workflowDate->toDateString(),
             ]);
 
             $this->auditLogger->record('loan.submitted_for_appraisal', $loan);
@@ -318,9 +324,11 @@ class LoanService
                 default => 'submitted',
             };
 
+            $workflowDate = $this->effectiveWorkflowDate($loan);
+
             $loan->update([
                 'status' => $status,
-                'submitted_at' => now()->toDateString(),
+                'submitted_at' => $workflowDate->toDateString(),
             ]);
 
             $this->auditLogger->record('loan.submitted_for_approval', $loan);
@@ -372,7 +380,8 @@ class LoanService
                 $journals[] = ['account_code' => $applicationFeeIncomeCode, 'entry_type' => 'credit', 'amount' => $fees, 'memo' => 'Loan application fee deducted'];
             }
 
-            $transaction = $this->transactions->postNonCashCredit($savings, $type, $netAmount, $user, 'Loan disbursement to savings account', $journals);
+            $disbursementDate = $this->effectiveWorkflowDate($loan);
+            $transaction = $this->transactions->postNonCashCredit($savings, $type, $netAmount, $user, 'Loan disbursement to savings account', $journals, $disbursementDate);
 
             LoanDisbursement::create([
                 'organization_id' => $loan->organization_id,
@@ -384,7 +393,7 @@ class LoanService
                 'net_amount' => $netAmount,
                 'payment_method' => $paymentMethod,
                 'transaction_reference' => $transaction->reference,
-                'disbursement_date' => now()->toDateString(),
+                'disbursement_date' => $disbursementDate->toDateString(),
                 'status' => 'successful',
             ]);
 
@@ -393,10 +402,10 @@ class LoanService
                 'loan_account_id' => $loanAccount->id,
                 'status' => 'active',
                 'fees_balance' => 0,
-                'disbursed_at' => now()->toDateString(),
+                'disbursed_at' => $disbursementDate->toDateString(),
             ]);
 
-            $this->generateSchedule($loan->refresh(), now());
+            $this->generateSchedule($loan->refresh(), $disbursementDate);
             $this->auditLogger->record('loan.disbursed_to_savings', $loan, ['amount' => $loan->approved_amount]);
 
             return $loan->refresh();
@@ -674,6 +683,19 @@ class LoanService
             'quarterly' => $annualRate / 4,
             default => $annualRate / 12,
         };
+    }
+
+    private function effectiveWorkflowDate(Loan $loan): CarbonInterface
+    {
+        $applicationDate = $loan->application_date
+            ? CarbonImmutable::parse($loan->application_date->toDateString())
+            : null;
+
+        if ($applicationDate && $applicationDate->lt(today())) {
+            return $applicationDate;
+        }
+
+        return CarbonImmutable::parse(today()->toDateString());
     }
 
     private function approvalLevel(float $amount): int

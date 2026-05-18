@@ -264,6 +264,7 @@ const initLoanSchedulePreview = () => {
         });
         form.querySelector('[name="requested_amount"]')?.addEventListener('change', preview);
         form.querySelector('[name="term_periods"]')?.addEventListener('change', preview);
+        form.querySelector('[name="application_date"]')?.addEventListener('change', preview);
         button?.addEventListener('click', preview);
         preview();
     });

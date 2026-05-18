@@ -19,8 +19,15 @@ class ClientController extends Controller
     {
         Gate::authorize('viewAny', Client::class);
 
+        $hasClientSearch = $request->filled('search')
+            || $request->filled('branch_id')
+            || $request->filled('status')
+            || $request->filled('officer_id')
+            || $request->filled('client_type');
+
         $clients = Client::query()
             ->with(['branch', 'officer'])
+            ->when(! $hasClientSearch, fn ($query) => $query->whereRaw('1 = 0'))
             ->when($request->search, fn ($query, $search) => $query->whereAny(['client_number', 'first_name', 'last_name', 'phone', 'national_id'], 'like', "%{$search}%"))
             ->when($request->branch_id, fn ($query, $branchId) => $query->where('branch_id', $branchId))
             ->when($request->status, fn ($query, $status) => $query->where('status', $status))
@@ -32,6 +39,7 @@ class ClientController extends Controller
 
         return view('clients.index', [
             'clients' => $clients,
+            'hasClientSearch' => $hasClientSearch,
             'branches' => Branch::orderBy('name')->get(),
             'officers' => User::whereHas('role', fn ($query) => $query->where('slug', 'loan-officer'))->orderBy('name')->get(),
         ]);
