@@ -25,6 +25,12 @@
         ['Branches', $branchCount, 'bg-slate-100 text-slate-700', 'from-slate-500 to-brand-600', [44, 50, 54, 58, 62], route('branches.index')],
         ['Active staff', $staffCount, 'bg-lime-50 text-lime-700', 'from-lime-500 to-emerald-500', [32, 43, 52, 68, 73], route('users.index')],
         ['Audit events today', $auditEventsToday, 'bg-slate-100 text-slate-700', 'from-slate-600 to-slate-800', [20, 42, 30, 56, 48], route('audit-logs.index')],
+        ['Total investors', $totalInvestors, 'bg-cyan-50 text-cyan-700', 'from-cyan-500 to-teal-500', [35, 48, 52, 70, 82], route('reports.index')],
+        ['Active investments', $totalActiveInvestments, 'bg-teal-50 text-teal-700', 'from-teal-500 to-emerald-500', [30, 42, 55, 63, 76], route('reports.index')],
+        ['Investment balance', number_format($totalInvestmentBalance, 2).' UGX', 'bg-indigo-50 text-indigo-700', 'from-indigo-500 to-sky-500', [40, 46, 66, 72, 88], route('reports.index')],
+        ['Returns posted', number_format($totalReturnsPosted, 2).' UGX', 'bg-lime-50 text-lime-700', 'from-lime-500 to-green-500', [26, 45, 50, 62, 78], route('reports.index')],
+        ['Maturing this month', $investmentsMaturingThisMonth, 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [28, 36, 48, 60, 74], route('reports.index')],
+        ['Investment withdrawals', number_format($investmentWithdrawalsThisMonth, 2).' UGX', 'bg-rose-50 text-rose-700', 'from-rose-500 to-red-500', [18, 34, 46, 42, 58], route('reports.index')],
     ];
 
     $cashRows = [
@@ -37,6 +43,7 @@
     $portfolioRows = [
         ['Savings', $totalSavings, 'bg-teal-500'],
         ['Loans', $totalLoans, 'bg-brand-700'],
+        ['Investments', $totalInvestmentBalance, 'bg-cyan-600'],
         ['Drawer cash', $drawerBalance, 'bg-amber-500'],
     ];
     $portfolioTotal = max(1, $totalSavings + $totalLoans + $drawerBalance);
@@ -64,6 +71,26 @@
         </a>
     @endforeach
 </div>
+
+<section class="df-panel mt-6 p-5">
+    <div class="flex items-center justify-between gap-4">
+        <div>
+            <h2 class="text-lg font-semibold text-slate-950">Top Investment Plans</h2>
+            <p class="text-sm text-slate-500">Plans ranked by current invested balance.</p>
+        </div>
+    </div>
+    <div class="mt-4 grid gap-3 md:grid-cols-3">
+        @forelse($topInvestmentPlans as $plan)
+            <div class="df-soft-panel p-4">
+                <div class="text-sm font-semibold text-slate-950">{{ $plan->name }}</div>
+                <div class="mt-1 text-xs text-slate-500">{{ $plan->code }} · {{ str($plan->risk_level)->headline() }} risk</div>
+                <div class="mt-3 text-lg font-semibold text-cyan-700">UGX {{ number_format($plan->investment_accounts_sum_current_balance ?? 0, 0) }}</div>
+            </div>
+        @empty
+            <div class="df-soft-panel p-4 text-sm text-slate-500">No investment plan performance yet.</div>
+        @endforelse
+    </div>
+</section>
 
 <div class="mt-6 grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
     <section class="df-panel p-5">

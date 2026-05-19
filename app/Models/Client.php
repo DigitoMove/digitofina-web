@@ -86,6 +86,16 @@ class Client extends Model
         return $this->hasMany(ShareAccount::class);
     }
 
+    public function investorAccounts(): HasMany
+    {
+        return $this->hasMany(InvestorAccount::class);
+    }
+
+    public function investmentAccounts(): HasMany
+    {
+        return $this->hasMany(InvestmentAccount::class);
+    }
+
     public function getFullNameAttribute(): string
     {
         return trim($this->first_name.' '.($this->middle_name ? $this->middle_name.' ' : '').$this->last_name);

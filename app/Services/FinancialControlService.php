@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\BranchCashReconciliation;
 use App\Models\DrawerSession;
 use App\Models\FinancialDay;
+use App\Models\InvestmentAccount;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\MakerCheckerRequest;
@@ -33,6 +34,7 @@ class FinancialControlService
         'loan_approval',
         'loan_disbursement',
         'journal_posting',
+        'investment_approval',
         'loan_write_off',
         'settings_update',
         'loan_product_update',
@@ -390,6 +392,7 @@ class FinancialControlService
             'loan_approval' => $this->performLoanApproval($request, $checker),
             'loan_disbursement' => $this->loans->disburseToSavings(Loan::findOrFail($request->subject_id), $checker, $request->payload['payment_method'] ?? 'transfer_to_savings'),
             'journal_posting' => $this->performJournalPosting($request, $checker),
+            'investment_approval' => app(InvestmentService::class)->approveInvestment(InvestmentAccount::findOrFail($request->subject_id), $checker, $request->payload['payment_method'] ?? 'cash', $request->payload['narration'] ?? null),
             'loan_write_off' => $this->performLoanWriteOff($request, $checker),
             'settings_update' => $this->performSettingsUpdate($request, $checker),
             'loan_product_update', 'interest_rate_change' => $this->performProductUpdate(LoanProduct::findOrFail($request->subject_id), $request, $checker),

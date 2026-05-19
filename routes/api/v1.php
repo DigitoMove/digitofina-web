@@ -7,6 +7,10 @@ use App\Http\Controllers\Api\V1\ClientController;
 use App\Http\Controllers\Api\V1\ClientDocumentController;
 use App\Http\Controllers\Api\V1\DeviceTokenController;
 use App\Http\Controllers\Api\V1\FinancialControlController;
+use App\Http\Controllers\Api\V1\InvestmentAccountController;
+use App\Http\Controllers\Api\V1\InvestmentPlanController;
+use App\Http\Controllers\Api\V1\InvestmentTransactionController;
+use App\Http\Controllers\Api\V1\InvestorAccountController;
 use App\Http\Controllers\Api\V1\LoanController;
 use App\Http\Controllers\Api\V1\LoanProductController;
 use App\Http\Controllers\Api\V1\LoanRepaymentController;
@@ -92,6 +96,18 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::post('/loans/{loan}/write-off', [LoanWorkflowController::class, 'writeOff'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('loans.write-off');
     Route::post('/loans/{loan}/penalties/waive', [LoanWorkflowController::class, 'waivePenalty'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('loans.penalties.waive');
 
+    Route::apiResource('investment-plans', InvestmentPlanController::class)->only(['index', 'store', 'show']);
+    Route::apiResource('investor-accounts', InvestorAccountController::class)->only(['index', 'store', 'show']);
+    Route::apiResource('investment-accounts', InvestmentAccountController::class)->only(['index', 'show']);
+    Route::post('/investment-accounts', [InvestmentAccountController::class, 'store'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('investment-accounts.store');
+    Route::post('/investment-deposits', [InvestmentAccountController::class, 'store'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('investment-deposits.store');
+    Route::post('/investment-accounts/{investmentAccount}/approve', [InvestmentAccountController::class, 'approve'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('investment-accounts.approve');
+    Route::get('/investment-accounts/{investmentAccount}/statement', [InvestmentAccountController::class, 'statement'])->name('investment-accounts.statement');
+    Route::post('/investment-accounts/{investmentAccount}/top-ups', [InvestmentTransactionController::class, 'topUp'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('investment-accounts.top-ups.store');
+    Route::post('/investment-accounts/{investmentAccount}/withdrawals', [InvestmentTransactionController::class, 'withdraw'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('investment-accounts.withdrawals.store');
+    Route::post('/investment-accounts/{investmentAccount}/returns', [InvestmentTransactionController::class, 'postReturn'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('investment-accounts.returns.store');
+    Route::post('/investment-accounts/{investmentAccount}/reinvestments', [InvestmentTransactionController::class, 'reinvest'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('investment-accounts.reinvestments.store');
+
     Route::get('/financial-controls/approvals', [FinancialControlController::class, 'approvals'])->name('financial-controls.approvals.index');
     Route::post('/financial-controls/approvals/{makerCheckerRequest}/approve', [FinancialControlController::class, 'approve'])->middleware('throttle:api-sensitive')->name('financial-controls.approvals.approve');
     Route::post('/financial-controls/approvals/{makerCheckerRequest}/reject', [FinancialControlController::class, 'reject'])->middleware('throttle:api-sensitive')->name('financial-controls.approvals.reject');
@@ -111,6 +127,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::get('/reports/arrears', [ReportController::class, 'arrears'])->name('reports.arrears');
     Route::get('/reports/tellers', [ReportController::class, 'tellers'])->name('reports.tellers');
     Route::get('/reports/branch-performance', [ReportController::class, 'branchPerformance'])->name('reports.branch-performance');
+    Route::get('/reports/investments', [ReportController::class, 'investments'])->name('reports.investments');
     Route::post('/reports/exports', [ReportController::class, 'export'])->middleware('throttle:api-sensitive')->name('reports.exports.store');
 
     Route::get('/settings', [SettingController::class, 'index'])->name('settings.index');

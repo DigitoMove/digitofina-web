@@ -7,6 +7,10 @@ use App\Models\Approval;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\InvestmentAccount;
+use App\Models\InvestmentPlan;
+use App\Models\InvestmentTransaction;
+use App\Models\InvestorAccount;
 use App\Models\Loan;
 use App\Models\LoanSchedule;
 use App\Models\Transaction;
@@ -128,6 +132,17 @@ class DashboardController extends Controller
             'branchCount' => Branch::count(),
             'staffCount' => User::where('status', 'active')->count(),
             'auditEventsToday' => AuditLog::whereDate('created_at', today())->count(),
+            'totalInvestors' => InvestorAccount::where('status', 'active')->count(),
+            'totalActiveInvestments' => InvestmentAccount::where('status', 'active')->count(),
+            'totalInvestmentBalance' => InvestorAccount::sum('current_investment_balance'),
+            'totalReturnsPosted' => InvestmentTransaction::where('type', 'return_posting')->sum('amount'),
+            'investmentsMaturingThisMonth' => InvestmentAccount::whereIn('status', ['active', 'matured'])->whereBetween('maturity_date', [$monthStart->toDateString(), $monthEnd->toDateString()])->count(),
+            'investmentWithdrawalsThisMonth' => InvestmentTransaction::where('type', 'withdrawal')->whereBetween('transaction_date', [$monthStart->toDateString(), $monthEnd->toDateString()])->sum('amount'),
+            'topInvestmentPlans' => InvestmentPlan::query()
+                ->withSum('investmentAccounts', 'current_balance')
+                ->orderByDesc('investment_accounts_sum_current_balance')
+                ->limit(3)
+                ->get(),
             'dueToday' => $dueToday,
             'dueTodayCount' => (int) ($dueTodayTotals?->total ?? 0),
             'dueTodayAmount' => (float) ($dueTodayTotals?->amount ?? 0),

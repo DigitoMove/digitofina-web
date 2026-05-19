@@ -11,6 +11,10 @@ use App\Jobs\GenerateReportExport;
 use App\Models\Branch;
 use App\Models\Client;
 use App\Models\DrawerMovement;
+use App\Models\InvestmentAccount;
+use App\Models\InvestmentPlan;
+use App\Models\InvestmentTransaction;
+use App\Models\InvestorAccount;
 use App\Models\Loan;
 use App\Models\LoanSchedule;
 use App\Models\ReportExport;
@@ -35,6 +39,10 @@ class ReportController extends Controller
             'arrears' => (float) LoanSchedule::whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->sum('outstanding_amount'),
             'deposits_today' => (float) ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user())->where('type', 'deposit')->whereDate('transaction_date', today())->sum('amount'),
             'withdrawals_today' => (float) ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user())->where('type', 'withdrawal')->whereDate('transaction_date', today())->sum('amount'),
+            'total_investors' => ApiSecurity::scopeTenant(InvestorAccount::query(), $request->user())->where('status', 'active')->count(),
+            'active_investments' => ApiSecurity::scopeTenant(InvestmentAccount::query(), $request->user())->where('status', 'active')->count(),
+            'investment_balance' => (float) ApiSecurity::scopeTenant(InvestorAccount::query(), $request->user())->sum('current_investment_balance'),
+            'returns_posted' => (float) ApiSecurity::scopeTenant(InvestmentTransaction::query(), $request->user())->where('type', 'return_posting')->sum('amount'),
             'branches' => ApiSecurity::scopeTenant(Branch::query(), $request->user())->count(),
         ], 'Dashboard summary retrieved.');
     }
@@ -123,6 +131,50 @@ class ReportController extends Controller
             BranchPerformanceResource::collection(ApiSecurity::scopeTenant(Branch::query(), $request->user())->withCount(['clients'])->withSum('savingsAccounts', 'current_balance')->paginate($request->integer('per_page', 20))),
             'Branch performance retrieved.'
         );
+    }
+
+    public function investments(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->canPerform('view-reports'), 403);
+
+        $accounts = ApiSecurity::scopeTenant(InvestmentAccount::query(), $request->user());
+        $transactions = ApiSecurity::scopeTenant(InvestmentTransaction::query(), $request->user());
+
+        $plans = ApiSecurity::scopeTenant(InvestmentPlan::query(), $request->user())
+            ->withCount(['investmentAccounts'])
+            ->withSum('investmentAccounts', 'current_balance')
+            ->orderByDesc('investment_accounts_sum_current_balance')
+            ->limit(10)
+            ->get()
+            ->map(fn (InvestmentPlan $plan): array => [
+                'plan' => $plan->name,
+                'code' => $plan->code,
+                'investment_accounts' => (int) $plan->investment_accounts_count,
+                'balance' => (float) $plan->investment_accounts_sum_current_balance,
+            ]);
+
+        $byBranch = ApiSecurity::scopeTenant(InvestmentAccount::query(), $request->user())
+            ->selectRaw('branch_id, count(*) as total, coalesce(sum(current_balance), 0) as balance, coalesce(sum(actual_return_amount), 0) as returns')
+            ->groupBy('branch_id')
+            ->get();
+
+        $byOfficer = ApiSecurity::scopeTenant(InvestorAccount::query(), $request->user())
+            ->selectRaw('assigned_officer_id, count(*) as investors, coalesce(sum(current_investment_balance), 0) as balance')
+            ->groupBy('assigned_officer_id')
+            ->get();
+
+        return ApiResponse::data([
+            'active_investments' => (clone $accounts)->where('status', 'active')->count(),
+            'matured_investments' => (clone $accounts)->where('status', 'matured')->count(),
+            'investment_contributions' => (float) (clone $transactions)->whereIn('type', ['new_investment_deposit', 'top_up'])->sum('amount'),
+            'investment_withdrawals' => (float) (clone $transactions)->where('type', 'withdrawal')->sum('amount'),
+            'returns_earned' => (float) (clone $transactions)->where('type', 'return_posting')->sum('amount'),
+            'expected_returns' => (float) (clone $accounts)->sum('expected_return_amount'),
+            'actual_returns' => (float) (clone $accounts)->sum('actual_return_amount'),
+            'plan_performance' => $plans,
+            'branch_performance' => $byBranch,
+            'officer_performance' => $byOfficer,
+        ], 'Investment report retrieved.');
     }
 
     public function export(Request $request): JsonResponse
