@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\Client;
 use App\Services\AccountNumberGenerator;
 use App\Services\AuditLogger;
+use App\Services\InAppNotificationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -32,7 +33,7 @@ class AccountController extends Controller
         ]);
     }
 
-    public function store(Request $request, AccountNumberGenerator $numbers, AuditLogger $auditLogger): RedirectResponse
+    public function store(Request $request, AccountNumberGenerator $numbers, AuditLogger $auditLogger, InAppNotificationService $notifications): RedirectResponse
     {
         $data = $request->validate([
             'client_id' => ['required', 'exists:clients,id'],
@@ -59,6 +60,14 @@ class AccountController extends Controller
         ]);
 
         $auditLogger->record('account.created', $account, $account->toArray());
+        $notifications->notifyAccountClient(
+            $account,
+            'Account opened',
+            "Account {$account->account_number} has been opened.",
+            route('accounts.show', $account),
+            'account',
+            'success',
+        );
 
         return redirect()->route('accounts.show', $account)->with('status', 'Account opened.');
     }

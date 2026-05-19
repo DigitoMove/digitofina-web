@@ -20,7 +20,10 @@ use InvalidArgumentException;
 
 class TransactionPostingService
 {
-    public function __construct(private AuditLogger $auditLogger) {}
+    public function __construct(
+        private AuditLogger $auditLogger,
+        private InAppNotificationService $notifications,
+    ) {}
 
     public function postCash(Account $account, DrawerSession $session, TransactionType $type, float $amount, User $user, ?string $description = null, ?string $chequeNumber = null, ?CarbonInterface $postedAt = null): Transaction
     {
@@ -117,6 +120,15 @@ class TransactionPostingService
                 'amount' => $amount,
                 'type' => $type->code,
             ]);
+            $this->notifications->notifyAccountClient(
+                $account,
+                'Account transaction posted',
+                number_format($amount, 2).' was '.(in_array($direction, ['debit', 'withdrawal'], true) ? 'withdrawn from' : 'deposited into')." account {$account->account_number}.",
+                route('accounts.show', $account),
+                'account',
+                'info',
+                ['transaction_id' => $transaction->id, 'reference' => $transaction->reference],
+            );
 
             return $transaction;
         });
@@ -228,6 +240,15 @@ class TransactionPostingService
             }
 
             $this->auditLogger->record('transaction.non_cash_credit_posted', $transaction, ['amount' => $amount]);
+            $this->notifications->notifyAccountClient(
+                $account->refresh()->loadMissing('client.user'),
+                'Account credited',
+                number_format($amount, 2)." was credited to account {$account->account_number}.",
+                route('accounts.show', $account),
+                'account',
+                'success',
+                ['transaction_id' => $transaction->id, 'reference' => $transaction->reference],
+            );
 
             return $transaction;
         });
@@ -321,6 +342,15 @@ class TransactionPostingService
                 'amount' => $amount,
                 'type' => $type->code,
             ]);
+            $this->notifications->notifyAccountClient(
+                $account,
+                'Non-cash transaction posted',
+                number_format($amount, 2).' was '.(in_array($direction, ['debit', 'withdrawal'], true) ? 'debited from' : 'credited to')." account {$account->account_number}.",
+                route('accounts.show', $account),
+                'account',
+                'info',
+                ['transaction_id' => $transaction->id, 'reference' => $transaction->reference],
+            );
 
             return $transaction;
         });
@@ -479,6 +509,17 @@ class TransactionPostingService
                 'entry_type' => $entryType,
                 'amount' => $amount,
             ]);
+            $this->notifications->notifyStaffByPermission(
+                ['manage-drawers', 'approve-reversals', 'view-reports'],
+                $drawer->branch_id,
+                $user->organization_id,
+                'Drawer ledger posting',
+                number_format($amount, 2).' was '.($entryType === 'debit' ? 'paid from' : 'received into').' the drawer for '.$chartAccount->name.'.',
+                route('teller.index'),
+                'drawer',
+                'info',
+                ['journal_entry_id' => $journal->id, 'reference' => $journal->reference],
+            );
 
             return $journal->refresh();
         });

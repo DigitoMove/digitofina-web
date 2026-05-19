@@ -19,6 +19,7 @@ class ClientService
     public function __construct(
         private AccountNumberGenerator $numbers,
         private AuditLogger $auditLogger,
+        private InAppNotificationService $notifications,
     ) {}
 
     /**
@@ -40,6 +41,24 @@ class ClientService
 
             $this->ensureBasicSavingsAccount($client->load('branch'), $officer);
             $this->auditLogger->record('client.created', $client, $client->toArray());
+            $this->notifications->notifyUser(
+                $officer,
+                'Client registered',
+                "{$client->full_name} has been registered under your branch.",
+                route('clients.show', $client),
+                'client',
+                'success',
+                ['client_id' => $client->id, 'client_number' => $client->client_number],
+            );
+            $this->notifications->notifyClient(
+                $client->loadMissing('user'),
+                'Client account created',
+                'Your client profile has been created.',
+                route('clients.show', $client),
+                'client',
+                'success',
+                ['client_id' => $client->id, 'client_number' => $client->client_number],
+            );
 
             return $client;
         });
@@ -87,6 +106,14 @@ class ClientService
                 'client_id' => $client->id,
                 'account_number' => $account->account_number,
             ]);
+            $this->notifications->notifyAccountClient(
+                $account,
+                'Savings account generated',
+                "Savings account {$account->account_number} has been generated.",
+                route('clients.accounts', $client),
+                'account',
+                'success',
+            );
 
             return $account;
         });
@@ -101,6 +128,15 @@ class ClientService
         $client->update($data);
         $this->storeProfilePhoto($client, $profilePhoto);
         $this->auditLogger->record('client.updated', $client, $client->fresh()->toArray(), $old);
+        $this->notifications->notifyClient(
+            $client->loadMissing('user'),
+            'Client profile updated',
+            'Your client profile details have been updated.',
+            route('clients.show', $client),
+            'client',
+            'info',
+            ['client_id' => $client->id, 'client_number' => $client->client_number],
+        );
 
         return $client->refresh();
     }
@@ -137,6 +173,15 @@ class ClientService
                 'new_officer_id' => $assignedOfficer->id,
                 'assigned_by' => $user->id,
             ]);
+            $this->notifications->notifyUser(
+                $assignedOfficer,
+                'Client assigned to you',
+                "{$client->full_name} has been assigned to you.",
+                route('clients.show', $client),
+                'client',
+                'info',
+                ['client_id' => $client->id, 'client_number' => $client->client_number],
+            );
 
             return $client->refresh();
         });

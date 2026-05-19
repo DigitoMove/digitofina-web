@@ -18,6 +18,7 @@ class LoanApplicationService
         private AccountNumberGenerator $numbers,
         private AuditLogger $auditLogger,
         private LoanScheduleService $schedules,
+        private InAppNotificationService $notifications,
     ) {}
 
     /**
@@ -57,8 +58,26 @@ class LoanApplicationService
 
         $this->writePreviewSchedule($loan->refresh()->load('product'), $requestedAmount);
         $this->auditLogger->record('loan.created', $loan, $loan->toArray());
+        $freshLoan = $loan->refresh()->loadMissing('client', 'officer');
+        $loanUrl = route('loans.show', $freshLoan);
+        $this->notifications->notifyLoanOfficer(
+            $freshLoan,
+            'Loan application created',
+            "Loan {$freshLoan->loan_number} for {$freshLoan->client?->full_name} has been created.",
+            $loanUrl,
+            'loan',
+            'info',
+        );
+        $this->notifications->notifyLoanClient(
+            $freshLoan,
+            'Loan application created',
+            'A loan application has been opened on your account.',
+            $loanUrl,
+            'loan',
+            'info',
+        );
 
-        return $loan->refresh();
+        return $freshLoan;
     }
 
     /**

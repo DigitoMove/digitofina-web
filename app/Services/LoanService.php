@@ -36,6 +36,7 @@ class LoanService
         private PenaltyCalculationService $penalties,
         private LoanApplicationFeeService $applicationFees,
         private BusinessCalendarService $calendar,
+        private InAppNotificationService $notifications,
     ) {}
 
     public function approve(Loan $loan, User $approver, float $approvedAmount, ?string $comments = null): Loan
@@ -100,8 +101,37 @@ class LoanService
             ]);
 
             $this->auditLogger->record('loan.approved', $loan, ['approved_amount' => $approvedAmount]);
+            $freshLoan = $loan->refresh()->loadMissing('client', 'officer');
+            $loanUrl = route('loans.show', $freshLoan);
+            $this->notifications->notifyLoanOfficer(
+                $freshLoan,
+                'Loan approved',
+                "{$freshLoan->client?->full_name}'s loan {$freshLoan->loan_number} has been approved for ".number_format($approvedAmount, 2).'.',
+                $loanUrl,
+                'loan',
+                'success',
+            );
+            $this->notifications->notifyLoanClient(
+                $freshLoan,
+                'Your loan has been approved',
+                'Your loan application has been approved and is waiting for disbursement.',
+                $loanUrl,
+                'loan',
+                'success',
+            );
+            $this->notifications->notifyStaffByPermission(
+                ['disburse-loans'],
+                $freshLoan->branch_id,
+                $freshLoan->organization_id,
+                'Loan ready for disbursement',
+                "Loan {$freshLoan->loan_number} for {$freshLoan->client?->full_name} has been approved and is ready for disbursement.",
+                $loanUrl,
+                'loan',
+                'warning',
+                ['loan_id' => $freshLoan->id, 'loan_number' => $freshLoan->loan_number],
+            );
 
-            return $loan->refresh();
+            return $freshLoan;
         });
     }
 
@@ -131,8 +161,25 @@ class LoanService
             ]);
 
             $this->auditLogger->record('loan.rejected', $loan, ['reason' => $reason]);
+            $freshLoan = $loan->refresh()->loadMissing('client');
+            $this->notifications->notifyLoanOfficer(
+                $freshLoan,
+                'Loan rejected',
+                "Loan {$freshLoan->loan_number} was rejected. Reason: {$reason}",
+                route('loans.show', $freshLoan),
+                'loan',
+                'danger',
+            );
+            $this->notifications->notifyLoanClient(
+                $freshLoan,
+                'Your loan was not approved',
+                'Your loan application was rejected. Please contact your Loan Officer for details.',
+                route('loans.show', $freshLoan),
+                'loan',
+                'danger',
+            );
 
-            return $loan->refresh();
+            return $freshLoan;
         });
     }
 
@@ -164,8 +211,25 @@ class LoanService
             ]);
 
             $this->auditLogger->record('loan.cancelled', $loan, ['reason' => $reason]);
+            $freshLoan = $loan->refresh()->loadMissing('client');
+            $this->notifications->notifyLoanOfficer(
+                $freshLoan,
+                'Loan cancelled',
+                "Loan {$freshLoan->loan_number} was cancelled. Reason: {$reason}",
+                route('loans.show', $freshLoan),
+                'loan',
+                'warning',
+            );
+            $this->notifications->notifyLoanClient(
+                $freshLoan,
+                'Your loan was cancelled',
+                'Your loan application was cancelled. Please contact your Loan Officer for details.',
+                route('loans.show', $freshLoan),
+                'loan',
+                'warning',
+            );
 
-            return $loan->refresh();
+            return $freshLoan;
         });
     }
 
@@ -201,8 +265,18 @@ class LoanService
                 'new_officer_id' => $assignedOfficer->id,
                 'assigned_by' => $user->id,
             ]);
+            $freshLoan = $loan->refresh()->loadMissing('client');
+            $this->notifications->notifyUser(
+                $assignedOfficer,
+                'Loan assigned to you',
+                "Loan {$freshLoan->loan_number} for {$freshLoan->client?->full_name} has been assigned to you.",
+                route('loans.show', $freshLoan),
+                'loan',
+                'info',
+                ['loan_id' => $freshLoan->id, 'loan_number' => $freshLoan->loan_number],
+            );
 
-            return $loan->refresh();
+            return $freshLoan;
         });
     }
 
@@ -242,6 +316,14 @@ class LoanService
 
             $loan->update(['savings_account_id' => $account->id]);
             $this->auditLogger->record('loan.savings_account_generated', $loan, ['account_number' => $account->account_number]);
+            $this->notifications->notifyAccountClient(
+                $account,
+                'Savings account generated',
+                "Savings account {$account->account_number} was generated for loan processing.",
+                route('clients.accounts', $loan->client),
+                'account',
+                'success',
+            );
 
             return $account;
         });
@@ -274,6 +356,15 @@ class LoanService
 
             $loan->update(['loan_account_id' => $account->id]);
             $this->auditLogger->record('loan.loan_account_generated', $loan, ['account_number' => $account->account_number]);
+            $this->notifications->notifyAccountClient(
+                $account,
+                'Loan account generated',
+                "Loan account {$account->account_number} was generated for {$loan->loan_number}.",
+                route('loans.show', $loan),
+                'loan',
+                'success',
+                ['loan_id' => $loan->id, 'loan_number' => $loan->loan_number],
+            );
 
             return $account;
         });
@@ -303,8 +394,17 @@ class LoanService
             ]);
 
             $this->auditLogger->record('loan.submitted_for_appraisal', $loan);
+            $freshLoan = $loan->refresh()->loadMissing('client');
+            $this->notifications->notifyLoanOfficer(
+                $freshLoan,
+                'Loan submitted for appraisal',
+                "Loan {$freshLoan->loan_number} is now under appraisal.",
+                route('loans.show', $freshLoan),
+                'loan',
+                'info',
+            );
 
-            return $loan->refresh();
+            return $freshLoan;
         });
     }
 
@@ -333,8 +433,20 @@ class LoanService
             ]);
 
             $this->auditLogger->record('loan.submitted_for_approval', $loan);
+            $freshLoan = $loan->refresh()->loadMissing('client');
+            $this->notifications->notifyStaffByPermission(
+                ['approve-loans'],
+                $freshLoan->branch_id,
+                $freshLoan->organization_id,
+                'Loan waiting for approval',
+                "Loan {$freshLoan->loan_number} for {$freshLoan->client?->full_name} has been submitted for approval.",
+                route('loans.show', $freshLoan),
+                'loan',
+                'warning',
+                ['loan_id' => $freshLoan->id, 'loan_number' => $freshLoan->loan_number],
+            );
 
-            return $loan->refresh();
+            return $freshLoan;
         });
     }
 
@@ -413,8 +525,36 @@ class LoanService
                 'application_fee_basis' => $requestedAmountForFee,
                 'application_fee' => $fees,
             ]);
+            $freshLoan = $loan->refresh()->loadMissing('client', 'officer');
+            $loanUrl = route('loans.show', $freshLoan);
+            $this->notifications->notifyLoanOfficer(
+                $freshLoan,
+                'Loan disbursed',
+                "Loan {$freshLoan->loan_number} has been disbursed to the client's savings account.",
+                $loanUrl,
+                'loan',
+                'success',
+            );
+            $this->notifications->notifyLoanClient(
+                $freshLoan,
+                'Loan disbursed',
+                'Your loan has been disbursed. Net amount credited: '.number_format($netAmount, 2).'.',
+                $loanUrl,
+                'loan',
+                'success',
+            );
+            $this->notifications->notifyCashiers(
+                $freshLoan->branch_id,
+                $freshLoan->organization_id,
+                'Loan disbursed to savings',
+                "Loan {$freshLoan->loan_number} for {$freshLoan->client?->full_name} is now in savings and can be withdrawn from the cashier drawer.",
+                $loanUrl,
+                'drawer',
+                'warning',
+                ['loan_id' => $freshLoan->id, 'loan_number' => $freshLoan->loan_number],
+            );
 
-            return $loan->refresh();
+            return $freshLoan;
         });
     }
 
@@ -485,16 +625,16 @@ class LoanService
             $paymentDate = $paidAt ?: now();
             $this->ensureRepaymentBusinessDateOpen($user, (int) $loan->branch_id, $paymentDate);
 
-            $remaining = $amount;
+            $scheduleAllocation = $this->allocateSchedulePayments($loan, $amount);
+            $penaltyPaid = $scheduleAllocation['totals']['penalty'];
+            $feesPaid = $scheduleAllocation['totals']['fees'];
+            $interestPaid = $scheduleAllocation['totals']['interest'];
+            $principalPaid = $scheduleAllocation['totals']['principal'];
 
-            $penaltyPaid = min($remaining, (float) $loan->penalty_balance);
-            $remaining -= $penaltyPaid;
-            $feesPaid = min($remaining, (float) $loan->fees_balance);
-            $remaining -= $feesPaid;
-            $interestPaid = min($remaining, (float) $loan->interest_balance);
-            $remaining -= $interestPaid;
-            $principalPaid = min($remaining, (float) $loan->principal_balance);
-            $remaining -= $principalPaid;
+            if ($scheduleAllocation['applied'] <= 0) {
+                throw new InvalidArgumentException('There are no outstanding installments to receive this repayment.');
+            }
+
             $isSettled = ((float) $loan->principal_balance - $principalPaid) <= 0
                 && ((float) $loan->interest_balance - $interestPaid) <= 0
                 && ((float) $loan->fees_balance - $feesPaid) <= 0
@@ -536,12 +676,7 @@ class LoanService
                 'paid_at' => $paymentDate->toDateString(),
             ]);
 
-            foreach ($this->allocateSchedulePayments($loan, [
-                'penalty' => $penaltyPaid,
-                'fees' => $feesPaid,
-                'interest' => $interestPaid,
-                'principal' => $principalPaid,
-            ]) as $allocation) {
+            foreach ($scheduleAllocation['allocations'] as $allocation) {
                 LoanRepaymentAllocation::create($allocation + ['loan_repayment_id' => $repayment->id]);
             }
 
@@ -572,6 +707,27 @@ class LoanService
             }
 
             $this->auditLogger->record('loan.repayment_posted', $loan, ['amount' => $amount]);
+            $freshLoan = $loan->refresh()->loadMissing('client');
+            $loanUrl = route('loans.show', $freshLoan);
+            $this->notifications->notifyLoanOfficer(
+                $freshLoan,
+                'Loan repayment posted',
+                'A repayment of '.number_format($amount, 2)." was posted to loan {$freshLoan->loan_number}.",
+                $loanUrl,
+                'loan',
+                $isSettled ? 'success' : 'info',
+            );
+            $this->notifications->notifyLoanClient(
+                $freshLoan,
+                $isSettled ? 'Loan fully cleared' : 'Loan repayment received',
+                $isSettled
+                    ? 'Your loan has been fully cleared and closed.'
+                    : 'Your loan repayment has been received.',
+                $loanUrl,
+                'loan',
+                $isSettled ? 'success' : 'info',
+                ['repayment_id' => $repayment->id, 'amount' => $amount],
+            );
 
             return $repayment;
         });
@@ -652,24 +808,30 @@ class LoanService
     }
 
     /**
-     * @param  array{penalty:float, fees:float, interest:float, principal:float}  $amounts
-     * @return list<array{loan_schedule_id:int, penalty_paid:float, fees_paid:float, interest_paid:float, principal_paid:float, total_paid:float}>
+     * @return array{allocations:list<array{loan_schedule_id:int, penalty_paid:float, fees_paid:float, interest_paid:float, principal_paid:float, total_paid:float}>, totals:array{penalty:float, fees:float, interest:float, principal:float}, applied:float}
      */
-    private function allocateSchedulePayments(Loan $loan, array $amounts): array
+    private function allocateSchedulePayments(Loan $loan, float $amount): array
     {
-        $remaining = $amounts;
+        $remaining = $amount;
         $allocations = [];
+        $totals = [
+            'penalty' => 0.0,
+            'fees' => 0.0,
+            'interest' => 0.0,
+            'principal' => 0.0,
+        ];
 
         foreach ($loan->schedules()->where('status', '!=', 'paid')->orderBy('due_date')->lockForUpdate()->get() as $schedule) {
-            if (array_sum($remaining) <= 0) {
+            if ($remaining <= 0) {
                 break;
             }
 
-            $penaltyPaid = $this->allocateBucket($remaining['penalty'], (float) $schedule->penalty_due - (float) $schedule->penalty_paid);
-            $feesPaid = $this->allocateBucket($remaining['fees'], (float) $schedule->fees_due - (float) $schedule->fees_paid);
-            $interestPaid = $this->allocateBucket($remaining['interest'], (float) $schedule->interest_due - (float) $schedule->interest_paid);
-            $principalPaid = $this->allocateBucket($remaining['principal'], (float) $schedule->principal_due - (float) $schedule->principal_paid);
+            $penaltyPaid = $this->allocateBucket($remaining, (float) $schedule->penalty_due - (float) $schedule->penalty_paid);
+            $feesPaid = $this->allocateBucket($remaining, (float) $schedule->fees_due - (float) $schedule->fees_paid);
+            $interestPaid = $this->allocateBucket($remaining, (float) $schedule->interest_due - (float) $schedule->interest_paid);
+            $principalPaid = $this->allocateBucket($remaining, (float) $schedule->principal_due - (float) $schedule->principal_paid);
             $totalPaid = $penaltyPaid + $feesPaid + $interestPaid + $principalPaid;
+
             if ($totalPaid <= 0) {
                 continue;
             }
@@ -696,9 +858,18 @@ class LoanService
                 'principal_paid' => $principalPaid,
                 'total_paid' => $totalPaid,
             ];
+
+            $totals['penalty'] += $penaltyPaid;
+            $totals['fees'] += $feesPaid;
+            $totals['interest'] += $interestPaid;
+            $totals['principal'] += $principalPaid;
         }
 
-        return $allocations;
+        return [
+            'allocations' => $allocations,
+            'totals' => $totals,
+            'applied' => array_sum($totals),
+        ];
     }
 
     private function allocateBucket(float &$remaining, float $due): float
