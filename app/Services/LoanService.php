@@ -505,8 +505,18 @@ class LoanService
                 'fees_balance' => max(0, (float) $loan->fees_balance - $feesPaid),
                 'interest_balance' => max(0, (float) $loan->interest_balance - $interestPaid),
                 'principal_balance' => max(0, (float) $loan->principal_balance - $principalPaid),
-                'status' => $isSettled ? 'fully_paid' : $loan->status,
+                'status' => $isSettled ? 'closed' : $loan->status,
             ]);
+
+            if ($isSettled && $loan->loan_account_id) {
+                Account::query()
+                    ->whereKey($loan->loan_account_id)
+                    ->lockForUpdate()
+                    ->update([
+                        'balance' => 0,
+                        'status' => 'closed',
+                    ]);
+            }
 
             $repayment = LoanRepayment::create([
                 'organization_id' => $loan->organization_id,
@@ -590,7 +600,7 @@ class LoanService
             DB::transaction(function () use ($schedule, $asOf, &$count) {
                 $schedule = LoanSchedule::query()->whereKey($schedule->id)->lockForUpdate()->firstOrFail();
                 $loan = Loan::query()->with('product')->whereKey($schedule->loan_id)->lockForUpdate()->firstOrFail();
-                $days = (int) $schedule->due_date->diffInDays($asOf);
+                $days = $this->calendar->businessDaysBetween($schedule->due_date, $asOf);
                 $penaltyType = $loan->product?->penalty_type ?: 'percentage';
                 $penaltyRate = (float) ($loan->product?->penalty_rate ?? 0);
                 $penaltyRate = $penaltyRate > 0 ? $penaltyRate : (float) SystemSetting::value('loan_arrears_penalty_rate', 2);

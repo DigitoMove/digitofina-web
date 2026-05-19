@@ -202,9 +202,10 @@ it('allocates repayments and releases loan guarantees when fully paid', function
     $response->assertRedirect();
     $loan->refresh();
 
-    expect($loan->status)->toBe('fully_paid')
+    expect($loan->status)->toBe('closed')
         ->and((float) $loan->principal_balance)->toBe(0.0)
         ->and((float) $loan->interest_balance)->toBe(0.0)
+        ->and($loan->loanAccount()->value('status'))->toBe('closed')
         ->and($loan->loanGuarantors()->first()->status)->toBe('released');
 });
 

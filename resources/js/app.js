@@ -177,6 +177,17 @@ const initLoanSchedulePreview = () => {
             packageInterestRate.textContent = `${Number(selectedRate).toFixed(4)}%`;
         };
 
+        const syncProductRepaymentFrequency = () => {
+            const productFrequency = product?.selectedOptions?.[0]?.dataset?.repaymentFrequency;
+
+            if (!frequency || !['daily', 'weekly', 'monthly'].includes(productFrequency)) {
+                return;
+            }
+
+            frequency.value = productFrequency;
+            setUnit();
+        };
+
         const setError = (message) => {
             if (!error) {
                 return;
@@ -260,6 +271,7 @@ const initLoanSchedulePreview = () => {
         frequency?.addEventListener('change', preview);
         product?.addEventListener('change', () => {
             syncProductInterestRateDisplay();
+            syncProductRepaymentFrequency();
             preview();
         });
         form.querySelector('[name="requested_amount"]')?.addEventListener('change', preview);

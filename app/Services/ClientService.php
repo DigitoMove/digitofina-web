@@ -59,7 +59,16 @@ class ClientService
                 return $existing;
             }
 
-            $type = AccountType::query()->where('category', 'savings')->where('is_active', true)->firstOrFail();
+            $type = AccountType::query()->firstOrCreate(
+                ['code' => 'SAV'],
+                [
+                    'organization_id' => $client->organization_id ?? $user->organization_id,
+                    'name' => 'Savings Account',
+                    'category' => 'savings',
+                    'minimum_balance' => 0,
+                    'is_active' => true,
+                ],
+            );
             $accountName = trim(($client->full_name ?: $client->business_name ?: $client->client_number).' Savings Account');
 
             $account = Account::create([

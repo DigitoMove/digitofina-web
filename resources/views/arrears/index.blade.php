@@ -18,7 +18,7 @@
                     <td class="p-3">{{ $schedule->loan->client->full_name }}</td>
                     <td><a class="font-semibold text-blue-700" href="{{ route('loans.show', $schedule->loan) }}">{{ $schedule->loan->loan_number }}</a><div class="text-slate-500">{{ $schedule->loan->product->name }}</div></td>
                     <td>{{ $schedule->due_date->format('d M Y') }}</td>
-                    <td>{{ $schedule->days_overdue ?: (int) $schedule->due_date->diffInDays(now()) }}</td>
+                    <td>{{ $schedule->days_overdue ?: $calendar->businessDaysBetween($schedule->due_date, now()) }}</td>
                     <td>UGX {{ number_format($schedule->outstanding_amount, 2) }}</td>
                     <td>UGX {{ number_format($cumulative?->cumulative_due ?? $schedule->outstanding_amount, 2) }}</td>
                     <td>UGX {{ number_format($schedule->penalty_due, 2) }}</td>

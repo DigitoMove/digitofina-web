@@ -9,6 +9,7 @@ use App\Models\ChartAccount;
 use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
 use App\Models\LoanSchedule;
+use App\Models\MakerCheckerRequest;
 use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\TransactionType;
@@ -32,6 +33,7 @@ class TellerDrawerController extends Controller
     public function index(Request $request): View
     {
         $canOpenForTellers = $request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users');
+        $canApproveReversals = $request->user()->canPerform('approve-reversals') || $request->user()->canPerform('override-maker-checker');
         $session = DrawerSession::with('drawer')->where('user_id', auth()->id())->where('status', 'open')->latest()->first();
         $branchId = $session?->drawer?->branch_id ?? $request->user()->branch_id;
         $lookupScope = $request->string('lookup_scope')->toString();
@@ -115,6 +117,7 @@ class TellerDrawerController extends Controller
                     ->get()
                 : collect(),
             'canOpenForTellers' => $canOpenForTellers,
+            'canApproveReversals' => $canApproveReversals,
             'canManageLedgerAccounts' => $this->canManageLedgerAccounts($request),
             'accountTypes' => AccountType::where('is_active', true)->get(),
             'chartAccounts' => ChartAccount::query()
@@ -157,6 +160,26 @@ class TellerDrawerController extends Controller
             'hasLookupSearch' => $accountSearch !== '',
             'recentMovements' => $session
                 ? DrawerMovement::query()->with('session.drawer')->where('drawer_session_id', $session->id)->latest()->limit(8)->get()
+                : collect(),
+            'recentTransactions' => Transaction::query()
+                ->with([
+                    'account.client',
+                    'type',
+                    'reversalRequests' => fn ($query) => $query->where('status', 'pending')->latest(),
+                ])
+                ->where('user_id', $request->user()->id)
+                ->latest('posted_at')
+                ->limit(10)
+                ->get(),
+            'pendingReversalRequests' => $canApproveReversals
+                ? MakerCheckerRequest::query()
+                    ->with(['requestedBy', 'branch', 'subject'])
+                    ->where('action', 'transaction_reversal')
+                    ->where('status', 'pending')
+                    ->when(! $request->user()->canPerform('manage-organization'), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
+                    ->latest()
+                    ->limit(10)
+                    ->get()
                 : collect(),
             'cashIn' => $cashIn,
             'cashOut' => $cashOut,

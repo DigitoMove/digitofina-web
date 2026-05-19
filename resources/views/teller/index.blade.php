@@ -604,6 +604,62 @@
         </table>
     </section>
 
+    <section class="df-panel overflow-hidden">
+        <div class="border-b border-slate-200 px-5 py-4">
+            <h2 class="font-semibold text-slate-950">My Posted Transactions</h2>
+            <p class="df-muted">Your latest postings. Open the receipt or request a reversal for admin approval.</p>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-50 text-slate-600">
+                    <tr><th class="p-3">Time</th><th>Reference</th><th>Account</th><th>Type</th><th class="text-right">Amount</th><th>Status</th><th class="text-right">Action</th></tr>
+                </thead>
+                <tbody>
+                    @forelse($recentTransactions as $transaction)
+                        @php($pendingReversal = $transaction->reversalRequests->first())
+                        <tr class="border-t border-slate-200 align-top">
+                            <td class="p-3">{{ $transaction->posted_at?->format('d M H:i') ?? $transaction->created_at->format('d M H:i') }}</td>
+                            <td><a class="font-semibold text-blue-700" href="{{ route('receipts.show', $transaction) }}">{{ $transaction->reference }}</a></td>
+                            <td>
+                                <div class="font-medium text-slate-950">{{ $transaction->account?->account_number ?? 'N/A' }}</div>
+                                <div class="text-xs text-slate-500">{{ $transaction->account?->client?->full_name }}</div>
+                            </td>
+                            <td>{{ $transaction->type?->name ?? 'Transaction' }}</td>
+                            <td class="text-right font-semibold">UGX {{ number_format((float) $transaction->amount, 2) }}</td>
+                            <td>
+                                @if($pendingReversal)
+                                    <span class="rounded bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">Reversal pending</span>
+                                @elseif($transaction->status === 'reversed')
+                                    <span class="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">Reversed</span>
+                                @else
+                                    <span class="rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">{{ str($transaction->status)->headline() }}</span>
+                                @endif
+                            </td>
+                            <td class="text-right">
+                                @if($transaction->status === 'posted' && ! $pendingReversal && ! $transaction->reversed_by)
+                                    <details class="relative inline-block text-left">
+                                        <summary class="cursor-pointer list-none rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white">Request reversal</summary>
+                                        <form method="POST" action="{{ route('transactions.reversal-requests.store', $transaction) }}" class="absolute right-0 z-20 mt-2 grid w-72 gap-2 rounded-lg border border-amber-200 bg-white p-3 text-left shadow-xl">
+                                            @csrf
+                                            <label class="text-xs font-semibold text-slate-700">Reason
+                                                <textarea name="reason" rows="3" class="mt-1 w-full rounded border-slate-300 text-sm" required></textarea>
+                                            </label>
+                                            <button class="rounded bg-amber-700 px-3 py-2 text-xs font-semibold text-white">Submit request</button>
+                                        </form>
+                                    </details>
+                                @else
+                                    <a class="text-sm font-semibold text-blue-700" href="{{ route('receipts.show', $transaction) }}">Receipt</a>
+                                @endif
+                            </td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="7" class="p-8 text-center text-slate-500">No posted transactions yet.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </section>
+
     <aside class="df-panel p-5">
         <h2 class="font-semibold text-slate-950">Close & Reconcile</h2>
         <p class="df-muted">Confirm counted cash before ending the session.</p>
@@ -621,6 +677,57 @@
         </div>
     </aside>
 </div>
+
+@if($canApproveReversals)
+    <section class="df-panel mt-6 overflow-hidden">
+        <div class="border-b border-slate-200 px-5 py-4">
+            <h2 class="font-semibold text-slate-950">Pending Transaction Reversals</h2>
+            <p class="df-muted">Cashier reversal requests waiting for admin or supervisor approval.</p>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-50 text-slate-600">
+                    <tr><th class="p-3">Requested</th><th>Transaction</th><th>Cashier</th><th>Reason</th><th class="text-right">Amount</th><th class="text-right">Decision</th></tr>
+                </thead>
+                <tbody>
+                    @forelse($pendingReversalRequests as $approval)
+                        @php($transaction = $approval->subject)
+                        <tr class="border-t border-slate-200 align-top">
+                            <td class="p-3">{{ $approval->created_at->format('d M H:i') }}</td>
+                            <td>
+                                @if($transaction)
+                                    <a class="font-semibold text-blue-700" href="{{ route('receipts.show', $transaction) }}">{{ $transaction->reference }}</a>
+                                @else
+                                    <span class="text-slate-500">Transaction removed</span>
+                                @endif
+                                <div class="text-xs text-slate-500">{{ $approval->branch?->name }}</div>
+                            </td>
+                            <td>{{ $approval->requestedBy?->name ?? 'N/A' }}</td>
+                            <td class="max-w-md">{{ $approval->reason }}</td>
+                            <td class="text-right font-semibold">UGX {{ number_format((float) $approval->amount, 2) }}</td>
+                            <td class="text-right">
+                                <div class="grid gap-2 md:grid-cols-2">
+                                    <form method="POST" action="{{ route('transactions.reversal-requests.approve', $approval) }}" class="grid gap-1">
+                                        @csrf
+                                        <input name="comments" class="rounded border-slate-300 text-xs" placeholder="Approval note">
+                                        <button class="rounded bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white">Approve</button>
+                                    </form>
+                                    <form method="POST" action="{{ route('transactions.reversal-requests.reject', $approval) }}" class="grid gap-1">
+                                        @csrf
+                                        <input name="comments" class="rounded border-slate-300 text-xs" placeholder="Reason" required>
+                                        <button class="rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white">Reject</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="6" class="p-8 text-center text-slate-500">No reversal requests pending.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </section>
+@endif
 
 <x-transaction-receipt-modal :transaction="$receiptTransaction" :close-url="route('teller.index')" />
 @endsection

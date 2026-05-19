@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Loan;
 use App\Models\LoanSchedule;
+use App\Services\BusinessCalendarService;
 use App\Services\LoanService;
 use App\Services\LoanVisibilityService;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,7 +14,7 @@ use Illuminate\View\View;
 
 class ArrearsController extends Controller
 {
-    public function index(Request $request, LoanVisibilityService $visibility): View
+    public function index(Request $request, LoanVisibilityService $visibility, BusinessCalendarService $calendar): View
     {
         abort_unless(auth()->user()->canPerform('manage-loans') || auth()->user()->canPerform('view-reports'), 403);
 
@@ -51,6 +52,7 @@ class ArrearsController extends Controller
         return view('arrears.index', [
             'schedules' => $schedules,
             'loanArrears' => $loanArrears,
+            'calendar' => $calendar,
         ]);
     }
 

@@ -19,7 +19,10 @@ use InvalidArgumentException;
 
 class TransactionReversalService
 {
-    public function __construct(private AuditLogger $auditLogger) {}
+    public function __construct(
+        private AuditLogger $auditLogger,
+        private BusinessCalendarService $calendar,
+    ) {}
 
     public function approve(MakerCheckerRequest $request, User $checker): Transaction
     {
@@ -155,6 +158,10 @@ class TransactionReversalService
 
         $loan = Loan::query()->whereKey($repayment->loan_id)->lockForUpdate()->firstOrFail();
 
+        if ($loan->status === 'closed') {
+            throw new InvalidArgumentException('This repayment closed the loan account and cannot be reversed.');
+        }
+
         $loan->increment('penalty_balance', (float) $repayment->penalty_paid);
         $loan->increment('fees_balance', (float) $repayment->fees_paid);
         $loan->increment('interest_balance', (float) $repayment->interest_paid);
@@ -262,7 +269,7 @@ class TransactionReversalService
 
         $schedule->update([
             'status' => $status,
-            'days_overdue' => $status === 'overdue' ? (int) $schedule->due_date->diffInDays(today()) : 0,
+            'days_overdue' => $status === 'overdue' ? $this->calendar->businessDaysBetween($schedule->due_date, today()) : 0,
         ]);
     }
 
@@ -271,7 +278,7 @@ class TransactionReversalService
         $balance = (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance;
 
         if ($balance <= 0) {
-            return 'fully_paid';
+            return 'closed';
         }
 
         return $loan->schedules()

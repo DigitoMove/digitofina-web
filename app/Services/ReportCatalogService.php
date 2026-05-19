@@ -28,6 +28,8 @@ use Illuminate\Support\Str;
 
 class ReportCatalogService
 {
+    public function __construct(private BusinessCalendarService $calendar) {}
+
     /**
      * @return Collection<string, Collection<int, array<string, mixed>>>
      */
@@ -97,7 +99,7 @@ class ReportCatalogService
             $this->report('loan-book', 'Loan Accounts', 'Loan Book', 'loan_book', [], false),
             $this->report('loan-recovery', 'Loan Accounts', 'Loan Recovery', 'loan_repayments'),
             $this->report('loan-repayments-by-relations-officer', 'Loan Accounts', 'Loan Repayments By Relations Officer', 'loan_repayments'),
-            $this->report('loan-accounts-paid-up', 'Loan Accounts', 'Loan Accounts Paid Up', 'loans', ['status' => 'fully_paid']),
+            $this->report('loan-accounts-paid-up', 'Loan Accounts', 'Loan Accounts Paid Up', 'loans', ['status_in' => ['closed', 'fully_paid']]),
             $this->report('closed-rescheduled-loans', 'Loan Accounts', 'Closed Rescheduled Loans', 'loans', ['status' => 'closed_rescheduled']),
             $this->report('opened-rescheduled-loans', 'Loan Accounts', 'Opened Rescheduled Loans', 'loans', ['status' => 'restructured']),
             $this->report('loans-written-off', 'Loan Accounts', 'Loans Written-Off', 'loans', ['status' => 'written_off']),
@@ -547,6 +549,7 @@ class ReportCatalogService
         $query = Loan::query()
             ->with(['client', 'product', 'officer'])
             ->when($payload['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
+            ->when($payload['status_in'] ?? null, fn (Builder $query, array $statuses): Builder => $query->whereIn('status', $statuses))
             ->when($dateColumn, fn (Builder $query, string $column): Builder => $query->whereBetween($column, [$from, $to]))
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user));
 
@@ -623,7 +626,7 @@ class ReportCatalogService
 
         $loans = Loan::query()
             ->with(['client', 'product', 'loanAccount', 'officer', 'schedules'])
-            ->whereIn('status', ['approved', 'disbursed', 'active', 'in_arrears', 'restructured', 'fully_paid'])
+            ->whereIn('status', ['approved', 'disbursed', 'active', 'in_arrears', 'restructured', 'fully_paid', 'closed'])
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
             ->orderBy('loan_product_id')
             ->orderBy('loan_number')
@@ -635,7 +638,7 @@ class ReportCatalogService
             $overdueSchedules = $schedules
                 ->where('outstanding_amount', '>', 0)
                 ->filter(fn (LoanSchedule $schedule): bool => $schedule->status === 'overdue' || $schedule->due_date?->lt(today()));
-            $arrearsDays = (int) $overdueSchedules->max(fn (LoanSchedule $schedule): int => (int) ($schedule->days_overdue ?: max(0, $schedule->due_date?->diffInDays(today()) ?? 0)));
+            $arrearsDays = (int) $overdueSchedules->max(fn (LoanSchedule $schedule): int => (int) ($schedule->days_overdue ?: ($schedule->due_date ? $this->calendar->businessDaysBetween($schedule->due_date, today()) : 0)));
             $isArrears = $overdueSchedules->isNotEmpty() || $loan->status === 'in_arrears';
             $principalDue = (float) $schedules->sum('principal_due');
             $interestDue = (float) $schedules->sum('interest_due');
@@ -712,7 +715,7 @@ class ReportCatalogService
             'Client' => $schedule->loan?->client?->full_name ?? 'N/A',
             'Installment' => '#'.$schedule->installment_number,
             'Outstanding' => $this->money((float) $schedule->outstanding_amount),
-            'Days Due' => number_format((int) ($schedule->days_overdue ?: max(0, (int) $schedule->due_date?->diffInDays(now())))),
+            'Days Due' => number_format((int) ($schedule->days_overdue ?: ($schedule->due_date ? $this->calendar->businessDaysBetween($schedule->due_date, now()) : 0))),
             'Status' => Str::headline($schedule->status),
         ]);
 

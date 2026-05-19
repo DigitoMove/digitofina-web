@@ -55,6 +55,10 @@ class TransactionReversalController extends Controller
             return back()->with('warning', 'This approval request is not a transaction reversal.');
         }
 
+        if (! $this->canCheck($request, $makerCheckerRequest)) {
+            return back()->with('warning', 'You are not allowed to approve this reversal request.');
+        }
+
         $data = $request->validate([
             'comments' => ['nullable', 'string', 'max:1000'],
         ]);
@@ -72,6 +76,10 @@ class TransactionReversalController extends Controller
     {
         if ($makerCheckerRequest->action !== 'transaction_reversal') {
             return back()->with('warning', 'This approval request is not a transaction reversal.');
+        }
+
+        if (! $this->canCheck($request, $makerCheckerRequest)) {
+            return back()->with('warning', 'You are not allowed to reject this reversal request.');
         }
 
         $data = $request->validate([
@@ -98,5 +106,18 @@ class TransactionReversalController extends Controller
         return $user->canPerform('post-transactions')
             || $user->canPerform('approve-reversals')
             || (int) $transaction->user_id === (int) $user->id;
+    }
+
+    private function canCheck(Request $request, MakerCheckerRequest $makerCheckerRequest): bool
+    {
+        $user = $request->user();
+
+        if (! ($user->canPerform('approve-reversals') || $user->canPerform('override-maker-checker'))) {
+            return false;
+        }
+
+        return (int) $makerCheckerRequest->branch_id === (int) $user->branch_id
+            || $user->canPerform('manage-organization')
+            || $user->canPerform('override-maker-checker');
     }
 }

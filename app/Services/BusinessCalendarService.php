@@ -47,6 +47,29 @@ class BusinessCalendarService
         return $cursor;
     }
 
+    public function businessDaysBetween(CarbonInterface $from, CarbonInterface $to): int
+    {
+        $start = $from->copy()->startOfDay();
+        $end = $to->copy()->startOfDay();
+
+        if ($end->lessThanOrEqualTo($start)) {
+            return 0;
+        }
+
+        $days = 0;
+        $cursor = $start->copy();
+
+        while ($cursor->lessThan($end)) {
+            $cursor->addDay();
+
+            if ($cursor->lessThanOrEqualTo($end) && $this->isBusinessDay($cursor)) {
+                $days++;
+            }
+        }
+
+        return $days;
+    }
+
     public function isBusinessDay(CarbonInterface $date): bool
     {
         return ! $date->isSunday() && ! $this->holidayDates()->contains($date->toDateString());
