@@ -76,7 +76,7 @@ Route::middleware('auth')->group(function () {
     Route::put('/settings', [SystemSettingController::class, 'update'])->name('settings.update');
     Route::get('/audit-logs', [AuditLogController::class, 'index'])->name('audit-logs.index');
     Route::get('/audit-logs/{auditLog}', [AuditLogController::class, 'show'])->name('audit-logs.show');
-    Route::resource('clients', ClientController::class)->except('destroy');
+    Route::resource('clients', ClientController::class);
     Route::get('/clients/{client}/accounts', [ClientController::class, 'accounts'])->name('clients.accounts');
     Route::get('/clients/{client}/savings-accounts', [ClientController::class, 'savingsAccounts'])->name('clients.savings-accounts');
     Route::post('/clients/{client}/savings-accounts/generate', [SavingsAccountController::class, 'generate'])->name('clients.savings-accounts.generate');

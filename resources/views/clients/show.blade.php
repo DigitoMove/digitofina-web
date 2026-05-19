@@ -11,6 +11,7 @@
     $currentAccounts = $client->accounts->filter(fn ($account) => $account->accountType?->category === 'current');
     $otherAccounts = $client->accounts->reject(fn ($account) => in_array($account->accountType?->category, ['savings', 'loan', 'current'], true));
     $canCreateLoan = auth()->user()->can('create', \App\Models\Loan::class);
+    $canDeleteClient = auth()->user()->can('delete', $client);
     $activeSavings = $basicSavingsAccounts->where('status', 'active')->count();
     $dormantSavings = $basicSavingsAccounts->where('status', 'dormant')->count();
     $activeCurrent = $currentAccounts->where('status', 'active')->count();
@@ -157,6 +158,24 @@
                 </div>
             </details>
         @endforeach
+        @if($canDeleteClient)
+            <details class="group relative">
+                <summary class="min-h-10 cursor-pointer list-none rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800">Delete Client <span class="ml-1 text-xs">▾</span></summary>
+                <form method="POST" action="{{ route('clients.destroy', $client) }}" class="absolute right-0 z-20 mt-2 grid w-80 gap-3 rounded-lg border border-red-200 bg-white p-4 text-sm shadow-xl">
+                    @csrf
+                    @method('DELETE')
+                    <div>
+                        <div class="font-semibold text-red-700">Permanent deletion</div>
+                        <p class="mt-1 text-slate-600">This removes the client and connected accounts, loans, schedules, repayments, transactions, documents, notes, and related records.</p>
+                    </div>
+                    <label class="grid gap-1 font-medium text-slate-700">
+                        Type client number to confirm
+                        <input name="confirmation" class="rounded-lg border-slate-200 text-sm focus:border-red-500 focus:ring-red-100" placeholder="{{ $client->client_number }}" required>
+                    </label>
+                    <button class="rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800">Delete permanently</button>
+                </form>
+            </details>
+        @endif
     </div>
 </div>
 

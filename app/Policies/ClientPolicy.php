@@ -30,6 +30,12 @@ class ClientPolicy
         return $user->canPerform('manage-clients') && $this->canAccessBranch($user, $client);
     }
 
+    public function delete(User $user, Client $client): bool
+    {
+        return ($user->hasRole('super-admin') || $user->canPerform('manage-organization'))
+            && $this->canAccessBranch($user, $client);
+    }
+
     public function uploadDocument(User $user, Client $client): bool
     {
         return $this->update($user, $client);

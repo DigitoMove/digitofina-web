@@ -75,6 +75,12 @@ return new class extends Migration
 
     private function indexExists(string $name): bool
     {
+        if (DB::getDriverName() === 'sqlite') {
+            return collect(DB::select('PRAGMA index_list(loan_repayment_allocations)'))->contains(
+                fn (object $index): bool => $index->name === $name,
+            );
+        }
+
         return collect(DB::select('SHOW INDEX FROM loan_repayment_allocations'))->contains(
             fn (object $index): bool => $index->Key_name === $name,
         );
@@ -82,6 +88,12 @@ return new class extends Migration
 
     private function foreignKeyExists(string $name, string $column): bool
     {
+        if (DB::getDriverName() === 'sqlite') {
+            return collect(DB::select('PRAGMA foreign_key_list(loan_repayment_allocations)'))->contains(
+                fn (object $foreign): bool => $foreign->from === $column,
+            );
+        }
+
         $database = DB::getDatabaseName();
 
         $hasNamedConstraint = DB::table('information_schema.TABLE_CONSTRAINTS')

@@ -7,6 +7,7 @@ use App\Http\Requests\UpdateClientRequest;
 use App\Models\Branch;
 use App\Models\Client;
 use App\Models\User;
+use App\Services\ClientDeletionService;
 use App\Services\ClientService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -183,6 +184,23 @@ class ClientController extends Controller
         }
 
         return back()->with('status', 'Client officer updated.');
+    }
+
+    public function destroy(Request $request, Client $client, ClientDeletionService $deletions): RedirectResponse
+    {
+        Gate::authorize('delete', $client);
+
+        $data = $request->validate([
+            'confirmation' => ['required', 'string'],
+        ]);
+
+        if ($data['confirmation'] !== $client->client_number) {
+            return back()->with('warning', 'Type the exact client number before deleting this client.');
+        }
+
+        $deletions->delete($client);
+
+        return redirect()->route('clients.index')->with('status', 'Client and all connected records deleted.');
     }
 
     private function clientPayload(StoreClientRequest|UpdateClientRequest $request): array
