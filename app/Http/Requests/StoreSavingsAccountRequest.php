@@ -28,6 +28,7 @@ class StoreSavingsAccountRequest extends FormRequest
             'client_id' => ['required', 'exists:clients,id'],
             'branch_id' => ['required', 'exists:branches,id'],
             'savings_product_id' => ['required', 'exists:savings_products,id'],
+            'savings_type' => ['nullable', 'in:ordinary,target,fixed,group,emergency,child_student,business'],
             'opening_date' => ['required', 'date'],
             'status' => ['nullable', 'in:pending,active,frozen,dormant,closed'],
             'opening_deposit' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],

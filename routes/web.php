@@ -106,6 +106,7 @@ Route::middleware('auth')->group(function () {
     Route::resource('loan-products', LoanProductController::class)->except(['show', 'destroy']);
     Route::post('/loans/schedule-preview', [LoanController::class, 'schedulePreview'])->name('loans.schedule-preview');
     Route::resource('loans', LoanController::class)->only(['index', 'create', 'store', 'show']);
+    Route::post('/loans/{loan}/draft-terms', [LoanController::class, 'updateDraftTerms'])->name('loans.update-draft-terms');
     Route::post('/loans/{loan}/generate-savings-account', [LoanController::class, 'generateSavingsAccount'])->name('loans.generate-savings-account');
     Route::post('/loans/{loan}/generate-loan-account', [LoanController::class, 'generateLoanAccount'])->name('loans.generate-loan-account');
     Route::post('/loans/{loan}/submit-appraisal', [LoanController::class, 'submitForAppraisal'])->name('loans.submit-appraisal');

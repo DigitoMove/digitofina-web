@@ -18,7 +18,7 @@ class ApiSecurity
     {
         $model = $query->getModel();
 
-        if ($user->organization_id !== null && self::hasColumn($model, 'organization_id')) {
+        if (! $user->hasGlobalOrganizationAccess() && $user->organization_id !== null && self::hasColumn($model, 'organization_id')) {
             $query->where($model->qualifyColumn('organization_id'), $user->organization_id);
         }
 
@@ -40,7 +40,7 @@ class ApiSecurity
 
     public static function canAccessTenant(User $user, Model $model): bool
     {
-        if (self::hasColumn($model, 'organization_id') && $user->organization_id !== null && $model->getAttribute('organization_id') !== null && (int) $model->getAttribute('organization_id') !== (int) $user->organization_id) {
+        if (self::hasColumn($model, 'organization_id') && ! $user->hasGlobalOrganizationAccess() && $user->organization_id !== null && $model->getAttribute('organization_id') !== null && (int) $model->getAttribute('organization_id') !== (int) $user->organization_id) {
             return false;
         }
 
@@ -63,8 +63,7 @@ class ApiSecurity
     public static function hasGlobalBranchAccess(User $user): bool
     {
         return $user->branch_id === null
-            || $user->canPerform('manage-organization')
-            || $user->canPerform('manage-branches')
+            || $user->hasOrganizationBranchAccess()
             || $user->canPerform('audit-system');
     }
 

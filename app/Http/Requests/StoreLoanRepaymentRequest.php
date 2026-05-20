@@ -23,7 +23,7 @@ class StoreLoanRepaymentRequest extends FormRequest
     {
         return [
             'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
-            'payment_method' => ['required', Rule::in(['cash', 'mobile_money', 'bank', 'savings_deduction', 'cheque', 'internal_transfer'])],
+            'payment_method' => ['required', Rule::in(['cash', 'mobile_money', 'bank', 'savings_deduction', 'investment_return', 'cheque', 'internal_transfer'])],
             'reference' => ['nullable', 'string', 'max:80'],
             'paid_at' => ['required', 'date'],
         ];

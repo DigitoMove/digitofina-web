@@ -3,11 +3,15 @@
 use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\Client;
+use App\Models\GroupSavingsAccount;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\SavingsAccount;
+use App\Models\SavingsGoal;
 use App\Models\SavingsProduct;
 use App\Models\User;
+use App\Services\GroupSavingsService;
+use App\Services\SavingsGoalService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -123,4 +127,46 @@ it('transfers funds between savings accounts', function () {
     $response->assertRedirect();
     expect($from->fresh()->current_balance)->toBe('75000.00')
         ->and($to->fresh()->current_balance)->toBe('35000.00');
+});
+
+it('tracks savings goal progress after contributions', function () {
+    $user = savingsAdmin();
+    $product = savingsProduct();
+    $account = SavingsAccount::create(['branch_id' => $user->branch_id, 'client_id' => savingsClient($user, '+256700000004')->id, 'savings_product_id' => $product->id, 'account_number' => '1001-SAV-0000004', 'savings_type' => 'target', 'opening_date' => today(), 'current_balance' => 0, 'available_balance' => 0, 'status' => 'active']);
+    $goal = app(SavingsGoalService::class)->create([
+        'name' => 'School fees',
+        'client_id' => $account->client_id,
+        'branch_id' => $user->branch_id,
+        'savings_account_id' => $account->id,
+        'target_amount' => 100_000,
+        'target_date' => today()->addMonths(5)->toDateString(),
+        'contribution_frequency' => 'monthly',
+        'expected_contribution_amount' => 20_000,
+    ], $user);
+
+    app(SavingsGoalService::class)->contribute($goal, 25_000, $user, 'cash', 'Goal contribution');
+
+    $goal = SavingsGoal::first();
+    expect($goal->current_saved_amount)->toBe('25000.00')
+        ->and($goal->percentage_achieved)->toBe(25.0)
+        ->and($goal->remaining_amount)->toBe(75_000.0)
+        ->and($account->fresh()->current_balance)->toBe('25000.00');
+});
+
+it('tracks group savings member contributions', function () {
+    $user = savingsAdmin();
+    $client = savingsClient($user, '+256700000005');
+    $group = GroupSavingsAccount::create([
+        'branch_id' => $user->branch_id,
+        'name' => 'Market Vendors',
+        'contribution_amount' => 10_000,
+        'contribution_frequency' => 'weekly',
+        'meeting_day' => 'friday',
+        'status' => 'active',
+    ]);
+
+    $contribution = app(GroupSavingsService::class)->contribute($group, $client->id, 15_000, $user, 'cash', 'Weekly group savings');
+
+    expect($contribution->amount)->toBe('15000.00')
+        ->and($group->fresh()->group_savings_balance)->toBe('15000.00');
 });

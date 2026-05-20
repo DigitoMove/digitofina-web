@@ -122,6 +122,16 @@
         'mobile_money_proof' => 'Mobile Money Proof',
         'other' => 'Other',
     ];
+    $financialMetrics = [
+        ['label' => 'Total Savings', 'value' => $financialOverview['total_savings'] ?? 0, 'tone' => 'text-emerald-700'],
+        ['label' => 'Total Investments', 'value' => $financialOverview['total_investments'] ?? 0, 'tone' => 'text-sky-700'],
+        ['label' => 'Total Shares', 'value' => $financialOverview['total_shares'] ?? 0, 'tone' => 'text-blue-700'],
+        ['label' => 'Outstanding Loans', 'value' => $financialOverview['outstanding_loan_balance'] ?? 0, 'tone' => 'text-red-700'],
+        ['label' => 'Available Balance', 'value' => $financialOverview['available_balance'] ?? 0, 'tone' => 'text-slate-900'],
+        ['label' => 'Locked Savings', 'value' => $financialOverview['locked_savings'] ?? 0, 'tone' => 'text-amber-700'],
+        ['label' => 'Locked Investments', 'value' => $financialOverview['locked_investment_amount'] ?? 0, 'tone' => 'text-violet-700'],
+        ['label' => 'Net Position', 'value' => $financialOverview['net_financial_position'] ?? 0, 'tone' => (($financialOverview['net_financial_position'] ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-700')],
+    ];
 @endphp
 
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
@@ -263,6 +273,23 @@
             </div>
 
             <section data-df-tab-panel="overview" class="grid gap-5 xl:grid-cols-3">
+                <div class="df-panel p-5 xl:col-span-3">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h2 class="font-semibold text-slate-950">Financial Overview</h2>
+                            <p class="mt-1 text-sm text-slate-500">{{ number_format($financialOverview['active_loans'] ?? 0) }} active loan(s) included in this position.</p>
+                        </div>
+                    </div>
+                    <dl class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        @foreach($financialMetrics as $metric)
+                            <div class="df-soft-panel p-4">
+                                <dt class="text-xs font-semibold uppercase text-slate-500">{{ $metric['label'] }}</dt>
+                                <dd class="mt-2 text-xl font-semibold {{ $metric['tone'] }}">UGX {{ number_format((float) $metric['value'], 2) }}</dd>
+                            </div>
+                        @endforeach
+                    </dl>
+                </div>
+
                 <div class="df-panel p-5 xl:col-span-2">
                     <h2 class="font-semibold text-slate-950">Biodata</h2>
                     @if($errors->has('client_officer_id'))

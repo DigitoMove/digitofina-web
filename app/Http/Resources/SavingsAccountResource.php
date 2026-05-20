@@ -18,10 +18,14 @@ class SavingsAccountResource extends JsonResource
         $data = [
             'id' => $this->id,
             'account_number' => $this->account_number,
+            'savings_type' => $this->savings_type,
             'current_balance' => (float) $this->current_balance,
             'available_balance' => (float) $this->available_balance,
+            'locked_amount' => (float) $this->locked_amount,
             'status' => $this->status,
             'opening_date' => $this->opening_date?->toDateString(),
+            'last_activity_at' => $this->last_activity_at?->toIso8601String(),
+            'dormant_at' => $this->dormant_at?->toIso8601String(),
             'client' => $this->whenLoaded('client', fn () => [
                 'id' => $this->client->id,
                 'client_number' => $this->client->client_number,

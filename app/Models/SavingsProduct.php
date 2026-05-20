@@ -23,6 +23,9 @@ class SavingsProduct extends Model
             'deposit_charge' => 'decimal:2',
             'monthly_maintenance_fee' => 'decimal:2',
             'allows_overdraft' => 'boolean',
+            'supports_goals' => 'boolean',
+            'supports_fixed_savings' => 'boolean',
+            'supports_group_savings' => 'boolean',
         ];
     }
 

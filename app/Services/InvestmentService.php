@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Client;
 use App\Models\InvestmentAccount;
 use App\Models\InvestmentPlan;
+use App\Models\InvestmentReturn;
 use App\Models\InvestmentTransaction;
 use App\Models\InvestorAccount;
 use App\Models\SystemSetting;
@@ -27,7 +28,22 @@ class InvestmentService
     {
         $plan = InvestmentPlan::create($data + [
             'organization_id' => $user->organization_id,
+            'branch_id' => $data['branch_id'] ?? $user->branch_id,
             'created_by' => $user->id,
+            'updated_by' => $user->id,
+            'min_amount' => $data['min_amount'] ?? $data['minimum_amount'] ?? 0,
+            'max_amount' => $data['max_amount'] ?? $data['maximum_amount'] ?? null,
+            'minimum_amount' => $data['minimum_amount'] ?? $data['min_amount'] ?? 0,
+            'maximum_amount' => $data['maximum_amount'] ?? $data['max_amount'] ?? null,
+            'return_method' => $data['return_method'] ?? $data['return_calculation_method'] ?? 'fixed_percentage',
+            'return_calculation_method' => $data['return_calculation_method'] ?? $data['return_method'] ?? 'fixed_percentage',
+            'allow_topups' => $data['allow_topups'] ?? $data['allow_top_ups'] ?? false,
+            'allow_top_ups' => $data['allow_top_ups'] ?? $data['allow_topups'] ?? false,
+            'early_withdrawal_penalty_type' => $data['early_withdrawal_penalty_type'] ?? 'percentage',
+            'early_withdrawal_penalty_value' => $data['early_withdrawal_penalty_value'] ?? $data['early_withdrawal_penalty'] ?? 0,
+            'early_withdrawal_penalty' => $data['early_withdrawal_penalty'] ?? $data['early_withdrawal_penalty_value'] ?? 0,
+            'auto_reinvest' => $data['auto_reinvest'] ?? $data['auto_reinvest_returns'] ?? false,
+            'auto_reinvest_returns' => $data['auto_reinvest_returns'] ?? $data['auto_reinvest'] ?? false,
             'status' => $data['status'] ?? 'active',
         ]);
 
@@ -51,6 +67,7 @@ class InvestmentService
                 'branch_id' => $data['branch_id'] ?? $client->branch_id,
                 'assigned_officer_id' => $data['assigned_officer_id'] ?? $client->officer_id,
                 'created_by' => $user->id,
+                'updated_by' => $user->id,
                 'account_number' => $this->investorAccountNumber($client),
                 'status' => $data['status'] ?? 'active',
             ]);
@@ -92,6 +109,7 @@ class InvestmentService
                 'investment_plan_id' => $plan->id,
                 'branch_id' => $investor->branch_id,
                 'created_by' => $user->id,
+                'updated_by' => $user->id,
                 'investment_number' => $this->investmentNumber($investor),
                 'principal_amount' => $principal,
                 'start_date' => $startDate->toDateString(),
@@ -181,9 +199,25 @@ class InvestmentService
             $investor->update([
                 'total_returns_earned' => (float) $investor->total_returns_earned + $amount,
                 'current_investment_balance' => (float) $investor->current_investment_balance + $amount,
+                'current_balance' => (float) $investor->current_balance + $amount,
             ]);
 
             $transaction = $this->createTransaction($investor, $investment, $user, 'return_posting', $amount, $balanceBefore, $balanceAfter, 'internal_transfer', $narration, $idempotencyKey);
+            InvestmentReturn::create([
+                'organization_id' => $investment->organization_id,
+                'branch_id' => $investment->branch_id,
+                'investment_account_id' => $investment->id,
+                'client_id' => $investment->client_id,
+                'expected_amount' => (float) $investment->expected_return_amount,
+                'actual_amount' => $amount,
+                'return_rate' => $investment->return_rate,
+                'period_start' => $investment->start_date,
+                'period_end' => today()->toDateString(),
+                'posting_date' => today()->toDateString(),
+                'status' => 'posted',
+                'posted_by' => $user->id,
+                'narration' => $narration,
+            ]);
             $this->journalEntryService->post([
                 ['account_code' => '5000', 'debit' => $amount, 'narration' => 'Investment return expense'],
                 ['account_code' => '2200', 'credit' => $amount, 'narration' => 'Investment returns payable'],
@@ -223,6 +257,10 @@ class InvestmentService
                 throw new InvalidArgumentException('Withdrawal exceeds the current investment balance.');
             }
 
+            if ($totalDebit > ($balanceBefore - (float) $investment->locked_amount)) {
+                throw new InvalidArgumentException('Withdrawal exceeds the unlocked investment balance.');
+            }
+
             $balanceAfter = $balanceBefore - $totalDebit;
             $investment->update([
                 'current_balance' => $balanceAfter,
@@ -232,6 +270,7 @@ class InvestmentService
             $investor->update([
                 'total_withdrawn' => (float) $investor->total_withdrawn + $amount,
                 'current_investment_balance' => (float) $investor->current_investment_balance - $totalDebit,
+                'current_balance' => (float) $investor->current_balance - $totalDebit,
             ]);
 
             if ($penalty > 0) {
@@ -326,6 +365,7 @@ class InvestmentService
         $investor->update([
             'total_invested' => (float) $investor->total_invested + $amount,
             'current_investment_balance' => (float) $investor->current_investment_balance + $amount,
+            'current_balance' => (float) $investor->current_balance + $amount,
         ]);
 
         $transaction = $this->createTransaction($investor, $investment, $user, $type, $amount, $balanceBefore, $balanceAfter, $paymentMethod, $narration, $idempotencyKey);
@@ -341,16 +381,23 @@ class InvestmentService
 
     private function createTransaction(InvestorAccount $investor, ?InvestmentAccount $investment, User $user, string $type, float $amount, float $balanceBefore, float $balanceAfter, string $paymentMethod, ?string $narration, ?string $idempotencyKey): InvestmentTransaction
     {
+        $reference = 'IV'.now()->format('ymdHis').Str::upper(Str::random(5));
+
         return InvestmentTransaction::create([
             'organization_id' => $investor->organization_id,
             'investor_account_id' => $investor->id,
             'investment_account_id' => $investment?->id,
+            'client_id' => $investor->client_id,
             'branch_id' => $investor->branch_id,
             'created_by' => $user->id,
-            'reference' => 'IV'.now()->format('ymdHis').Str::upper(Str::random(5)),
+            'reference' => $reference,
+            'transaction_reference' => $reference,
             'idempotency_key' => $idempotencyKey,
             'type' => $type,
+            'transaction_type' => $type,
             'amount' => $amount,
+            'charges' => 0,
+            'penalty_amount' => $type === 'penalty_deduction' ? $amount : 0,
             'balance_before' => $balanceBefore,
             'balance_after' => $balanceAfter,
             'payment_method' => $paymentMethod,

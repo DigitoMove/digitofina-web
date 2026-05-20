@@ -11,6 +11,8 @@ use App\Jobs\GenerateReportExport;
 use App\Models\Branch;
 use App\Models\Client;
 use App\Models\DrawerMovement;
+use App\Models\FixedSavingsAccount;
+use App\Models\GroupSavingsContribution;
 use App\Models\InvestmentAccount;
 use App\Models\InvestmentPlan;
 use App\Models\InvestmentTransaction;
@@ -19,6 +21,7 @@ use App\Models\Loan;
 use App\Models\LoanSchedule;
 use App\Models\ReportExport;
 use App\Models\SavingsAccount;
+use App\Models\SavingsGoal;
 use App\Models\SavingsTransaction;
 use App\Support\ApiResponse;
 use App\Support\ApiSecurity;
@@ -84,6 +87,52 @@ class ReportController extends Controller
             'accounts_by_status' => $accountsByStatus,
             'transactions_by_type' => $transactionsByType,
         ], 'Savings report retrieved.');
+    }
+
+    public function savingsAnalytics(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->canPerform('view-reports'), 403);
+
+        $monthStart = today()->startOfMonth();
+        $monthEnd = today()->endOfMonth();
+
+        $goals = ApiSecurity::scopeTenant(SavingsGoal::query(), $request->user());
+        $fixedSavings = ApiSecurity::scopeTenant(FixedSavingsAccount::query(), $request->user());
+        $savingsAccounts = ApiSecurity::scopeTenant(SavingsAccount::query(), $request->user());
+        $transactions = ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user());
+
+        return ApiResponse::data([
+            'goal_progress_report' => (clone $goals)
+                ->selectRaw('status, count(*) as goals, coalesce(sum(target_amount), 0) as target_amount, coalesce(sum(current_saved_amount), 0) as saved_amount')
+                ->groupBy('status')
+                ->get(),
+            'fixed_savings_maturity_report' => (clone $fixedSavings)
+                ->whereIn('status', ['active', 'matured'])
+                ->orderBy('maturity_date')
+                ->limit(30)
+                ->get(['account_number', 'client_id', 'principal_amount', 'maturity_date', 'expected_interest', 'status']),
+            'group_savings_contribution_report' => ApiSecurity::scopeTenant(GroupSavingsContribution::query(), $request->user())
+                ->selectRaw('group_savings_account_id, count(*) as contributions, coalesce(sum(amount), 0) as amount')
+                ->groupBy('group_savings_account_id')
+                ->get(),
+            'member_contribution_report' => ApiSecurity::scopeTenant(GroupSavingsContribution::query(), $request->user())
+                ->selectRaw('client_id, count(*) as contributions, coalesce(sum(amount), 0) as amount')
+                ->groupBy('client_id')
+                ->orderByDesc('amount')
+                ->limit(30)
+                ->get(),
+            'savings_growth_report' => [
+                'deposits_this_month' => (float) (clone $transactions)->whereIn('type', ['deposit', 'transfer_in'])->whereBetween('transaction_date', [$monthStart, $monthEnd])->sum('amount'),
+                'withdrawals_this_month' => (float) (clone $transactions)->whereIn('type', ['withdrawal', 'transfer_out'])->whereBetween('transaction_date', [$monthStart, $monthEnd])->sum('amount'),
+            ],
+            'dormant_savings_report' => (clone $savingsAccounts)
+                ->where(function ($query): void {
+                    $query->where('status', 'dormant')
+                        ->orWhereDate('last_activity_at', '<=', today()->subMonths(6));
+                })
+                ->count(),
+            'savings_withdrawal_report' => (float) (clone $transactions)->whereIn('type', ['withdrawal', 'transfer_out'])->sum('amount'),
+        ], 'Savings analytics report retrieved.');
     }
 
     public function loans(Request $request): JsonResponse

@@ -6,6 +6,16 @@
     <label class="block text-sm font-medium text-slate-700">Branch name <x-required-badge />
         <input name="name" value="{{ old('name', $branch->name) }}" class="mt-1 w-full rounded border-slate-300" required>
     </label>
+    @if(auth()->user()->hasGlobalOrganizationAccess())
+        <label class="block text-sm font-medium text-slate-700">Organization
+            <select name="organization_id" class="mt-1 w-full rounded border-slate-300">
+                <option value="">No organization</option>
+                @foreach ($organizations as $organization)
+                    <option value="{{ $organization->id }}" @selected((string) old('organization_id', $branch->organization_id) === (string) $organization->id)>{{ $organization->name }}</option>
+                @endforeach
+            </select>
+        </label>
+    @endif
     <label class="block text-sm font-medium text-slate-700">Branch manager
         <select name="manager_user_id" class="mt-1 w-full rounded border-slate-300">
             <option value="">Unassigned</option>

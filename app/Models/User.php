@@ -89,6 +89,39 @@ class User extends Authenticatable
         return in_array($this->role?->slug, ['teller-cashier', 'cashier', 'teller'], true);
     }
 
+    public function hasGlobalOrganizationAccess(): bool
+    {
+        return $this->hasRole('super-admin');
+    }
+
+    public function hasOrganizationBranchAccess(): bool
+    {
+        return $this->hasGlobalOrganizationAccess()
+            || $this->hasRole('organization-admin')
+            || $this->canPerform('manage-organization')
+            || $this->canPerform('manage-branches');
+    }
+
+    public function canAccessOrganization(?int $organizationId): bool
+    {
+        return $organizationId === null
+            || $this->hasGlobalOrganizationAccess()
+            || $this->organization_id === null
+            || (int) $this->organization_id === $organizationId;
+    }
+
+    public function canAccessBranch(?int $branchId, ?int $organizationId = null): bool
+    {
+        if (! $this->canAccessOrganization($organizationId)) {
+            return false;
+        }
+
+        return $branchId === null
+            || $this->hasOrganizationBranchAccess()
+            || $this->branch_id === null
+            || (int) $this->branch_id === $branchId;
+    }
+
     public function canPerform(string $permission): bool
     {
         if ($this->hasRole('super-admin')) {

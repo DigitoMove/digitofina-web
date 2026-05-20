@@ -44,15 +44,11 @@ class ImportBatchPolicy
 
     private function sameOrganization(User $user, ImportBatch $importBatch): bool
     {
-        return $user->organization_id === null
-            || $importBatch->organization_id === null
-            || (int) $user->organization_id === (int) $importBatch->organization_id;
+        return $user->canAccessOrganization($importBatch->organization_id);
     }
 
     private function sameBranch(User $user, ImportBatch $importBatch): bool
     {
-        return $user->branch_id === null
-            || $importBatch->branch_id === null
-            || (int) $user->branch_id === (int) $importBatch->branch_id;
+        return $user->canAccessBranch($importBatch->branch_id, $importBatch->organization_id);
     }
 }

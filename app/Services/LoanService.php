@@ -12,6 +12,7 @@ use App\Models\Loan;
 use App\Models\LoanApproval;
 use App\Models\LoanDisbursement;
 use App\Models\LoanPenalty;
+use App\Models\LoanProduct;
 use App\Models\LoanRepayment;
 use App\Models\LoanRepaymentAllocation;
 use App\Models\LoanSchedule;
@@ -277,6 +278,54 @@ class LoanService
             );
 
             return $freshLoan;
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function updateDraftTerms(Loan $loan, User $user, array $data): Loan
+    {
+        abort_unless($user->hasRole('super-admin') || $user->canPerform('manage-users') || $user->canPerform('disburse-loans'), 403);
+
+        return DB::transaction(function () use ($loan, $data): Loan {
+            $loan = Loan::query()->with(['client.branch'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+
+            if ($loan->status !== 'draft') {
+                throw new InvalidArgumentException('Only draft loan applications can be adjusted.');
+            }
+
+            $product = LoanProduct::query()->whereKey($data['loan_product_id'])->firstOrFail();
+            $requestedAmount = (float) $data['requested_amount'];
+            $termPeriods = (int) $data['term_periods'];
+            CurrencyDenomination::assertValid($requestedAmount, 'Requested amount');
+
+            if ($requestedAmount < (float) $product->min_amount || $requestedAmount > (float) $product->max_amount) {
+                throw new InvalidArgumentException('Requested amount is outside the selected product limits.');
+            }
+
+            if ($termPeriods < (int) $product->min_term || $termPeriods > (int) $product->max_term) {
+                throw new InvalidArgumentException('Installments are outside the selected product term limits.');
+            }
+
+            $loan->update([
+                'loan_product_id' => $product->id,
+                'requested_amount' => $requestedAmount,
+                'interest_rate' => $product->annual_interest_rate,
+                'term_periods' => $termPeriods,
+                'repayment_frequency' => $product->repayment_frequency,
+                'required_savings_amount' => round($requestedAmount * ((float) $product->required_savings_percentage / 100), 2),
+                'application_date' => $data['application_date'] ?? $loan->application_date,
+            ]);
+
+            $this->generateSchedule($loan->refresh()->load('product'), CarbonImmutable::parse($loan->application_date?->toDateString() ?? today()->toDateString()));
+            $this->auditLogger->record('loan.draft_terms_updated', $loan, [
+                'requested_amount' => $requestedAmount,
+                'loan_product_id' => $product->id,
+                'term_periods' => $termPeriods,
+            ]);
+
+            return $loan->refresh();
         });
     }
 
@@ -587,6 +636,7 @@ class LoanService
                 'total_due' => $totalDue,
                 'outstanding_amount' => $totalDue,
                 'balance_due' => $totalDue,
+                'status' => $loan->status === 'draft' ? 'preview' : 'pending',
             ]);
 
             $totalInterest += $row['interest'];

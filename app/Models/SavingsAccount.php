@@ -17,8 +17,11 @@ class SavingsAccount extends Model
     {
         return [
             'opening_date' => 'date',
+            'last_activity_at' => 'datetime',
+            'dormant_at' => 'datetime',
             'current_balance' => 'decimal:2',
             'available_balance' => 'decimal:2',
+            'locked_amount' => 'decimal:2',
         ];
     }
 
@@ -45,5 +48,20 @@ class SavingsAccount extends Model
     public function transactions(): HasMany
     {
         return $this->hasMany(SavingsTransaction::class);
+    }
+
+    public function goals(): HasMany
+    {
+        return $this->hasMany(SavingsGoal::class);
+    }
+
+    public function fixedSavingsAccounts(): HasMany
+    {
+        return $this->hasMany(FixedSavingsAccount::class);
+    }
+
+    public function loanSecurities(): HasMany
+    {
+        return $this->hasMany(LoanSecurity::class);
     }
 }

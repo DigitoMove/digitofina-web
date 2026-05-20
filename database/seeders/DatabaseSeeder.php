@@ -306,6 +306,7 @@ class DatabaseSeeder extends Seeder
         SavingsProduct::firstOrCreate(['code' => 'SAV-REG'], [
             'organization_id' => $organization->id,
             'name' => 'Regular Member Savings',
+            'savings_type' => 'ordinary',
             'minimum_opening_balance' => 10000,
             'minimum_balance' => 5000,
             'interest_rate' => 2.5,

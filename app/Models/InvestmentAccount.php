@@ -5,9 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class InvestmentAccount extends Model
 {
+    use SoftDeletes;
+
     protected $guarded = [];
 
     protected function casts(): array
@@ -19,6 +22,7 @@ class InvestmentAccount extends Model
             'expected_return_amount' => 'decimal:2',
             'actual_return_amount' => 'decimal:2',
             'current_balance' => 'decimal:2',
+            'locked_amount' => 'decimal:2',
             'return_rate' => 'decimal:4',
             'approved_at' => 'datetime',
             'closed_at' => 'datetime',
@@ -48,5 +52,15 @@ class InvestmentAccount extends Model
     public function transactions(): HasMany
     {
         return $this->hasMany(InvestmentTransaction::class);
+    }
+
+    public function returns(): HasMany
+    {
+        return $this->hasMany(InvestmentReturn::class);
+    }
+
+    public function loanSecurities(): HasMany
+    {
+        return $this->hasMany(LoanSecurity::class);
     }
 }

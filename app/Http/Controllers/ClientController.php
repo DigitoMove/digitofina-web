@@ -9,6 +9,7 @@ use App\Models\Client;
 use App\Models\User;
 use App\Services\ClientDeletionService;
 use App\Services\ClientService;
+use App\Services\FinancialRelationshipService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -87,7 +88,7 @@ class ClientController extends Controller
         return redirect()->route('clients.show', $client)->with('status', 'Client registered.');
     }
 
-    public function show(Client $client): View
+    public function show(Client $client, FinancialRelationshipService $financialRelationships): View
     {
         Gate::authorize('view', $client);
 
@@ -96,6 +97,7 @@ class ClientController extends Controller
             'officer',
             'accounts.accountType',
             'savingsAccounts.product',
+            'investmentAccounts.plan',
             'shareAccounts.product',
             'loans.branch',
             'loans.loanAccount.accountType',
@@ -108,6 +110,7 @@ class ClientController extends Controller
 
         return view('clients.show', [
             'client' => $client,
+            'financialOverview' => $financialRelationships->clientOverview($client),
             'canAssignClientOfficer' => $this->canAssignClientOfficer(request()),
             'assignableOfficers' => $this->assignableOfficers(request(), $client->branch_id)->get(),
         ]);

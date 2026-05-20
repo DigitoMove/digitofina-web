@@ -48,7 +48,7 @@ class SavingsTransactionService
 
             $account->update([
                 'current_balance' => $transaction->balance_before,
-                'available_balance' => $transaction->balance_before,
+                'available_balance' => max(0, (float) $transaction->balance_before - (float) $account->locked_amount),
             ]);
 
             $transaction->update([
@@ -108,11 +108,15 @@ class SavingsTransactionService
                 throw new InvalidArgumentException('Transfer would breach the source account minimum balance.');
             }
 
+            if ($amount > ($fromBefore - (float) $from->locked_amount)) {
+                throw new InvalidArgumentException('Transfer exceeds the unlocked savings balance.');
+            }
+
             $toAfter = $toBefore + $amount;
             $reference = 'TR'.now()->format('ymdHis').Str::upper(Str::random(5));
 
-            $from->update(['current_balance' => $fromAfter, 'available_balance' => $fromAfter]);
-            $to->update(['current_balance' => $toAfter, 'available_balance' => $toAfter]);
+            $from->update(['current_balance' => $fromAfter, 'available_balance' => max(0, $fromAfter - (float) $from->locked_amount)]);
+            $to->update(['current_balance' => $toAfter, 'available_balance' => max(0, $toAfter - (float) $to->locked_amount)]);
 
             $out = $this->createTransaction($from, $user, $reference.'O', 'transfer_out', $amount, 0, $fromBefore, $fromAfter, 'internal_transfer', $narration);
             $in = $this->createTransaction($to, $user, $reference.'I', 'transfer_in', $amount, 0, $toBefore, $toAfter, 'internal_transfer', $narration);
@@ -166,9 +170,15 @@ class SavingsTransactionService
                 throw new InvalidArgumentException('Withdrawal would breach the minimum balance.');
             }
 
+            if ($type === 'withdrawal' && $movement > ($balanceBefore - (float) $account->locked_amount)) {
+                throw new InvalidArgumentException('Withdrawal exceeds the unlocked savings balance.');
+            }
+
             $account->update([
                 'current_balance' => $balanceAfter,
-                'available_balance' => $balanceAfter,
+                'available_balance' => max(0, $balanceAfter - (float) $account->locked_amount),
+                'last_activity_at' => now(),
+                'dormant_at' => null,
             ]);
 
             $transaction = $this->createTransaction(

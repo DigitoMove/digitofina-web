@@ -17,6 +17,12 @@
         ['Loans in arrears', $arrearsCount, 'bg-red-50 text-red-700', 'from-red-500 to-rose-600', [20, 34, 48, 42, 60], route('arrears.index')],
         ['Due today', $dueTodayCount, 'bg-violet-50 text-violet-700', 'from-violet-500 to-indigo-600', [24, 38, 50, 70, 64], route('due-repayments.index')],
         ['Total savings', number_format($totalSavings, 2).' UGX', 'bg-brand-50 text-brand-800', 'from-brand-500 to-forest-500', [42, 55, 61, 76, 84], route('accounts.index')],
+        ['Savings balance', number_format($savingsLedgerBalance, 2).' UGX', 'bg-teal-50 text-teal-700', 'from-teal-500 to-cyan-500', [40, 50, 58, 70, 86], route('savings-accounts.index')],
+        ['Savings growth', number_format($savingsGrowthThisMonth, 2).' UGX', 'bg-emerald-50 text-emerald-700', 'from-emerald-500 to-green-500', [26, 39, 44, 60, 79], route('reports.index')],
+        ['Active savers', $activeSavers, 'bg-cyan-50 text-cyan-700', 'from-cyan-500 to-sky-500', [34, 48, 58, 63, 75], route('savings-accounts.index')],
+        ['Target progress', ($targetSavingsAmount > 0 ? number_format(($targetSavingsProgress / $targetSavingsAmount) * 100, 1) : '0.0').'%', 'bg-indigo-50 text-indigo-700', 'from-indigo-500 to-blue-500', [18, 30, 44, 58, 70], route('reports.index')],
+        ['Fixed maturing soon', $fixedSavingsMaturingSoon, 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [22, 34, 48, 62, 80], route('reports.index')],
+        ['Dormant savings', $dormantSavingsAccounts, 'bg-slate-100 text-slate-700', 'from-slate-500 to-slate-700', [16, 28, 35, 46, 55], route('savings-accounts.index', ['status' => 'dormant'])],
         ['Total loans', number_format($totalLoans, 2).' UGX', 'bg-brand-50 text-brand-800', 'from-brand-600 to-sun-400', [35, 48, 65, 62, 80], route('loans.index')],
         ["Today's deposits", number_format($todayDeposits, 2).' UGX', 'bg-green-50 text-green-700', 'from-green-500 to-emerald-500', [28, 44, 50, 72, 88], route('reports.index')],
         ["Today's withdrawals", number_format($todayWithdrawals, 2).' UGX', 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [24, 40, 38, 52, 46], route('reports.index')],
@@ -42,6 +48,7 @@
 
     $portfolioRows = [
         ['Savings', $totalSavings, 'bg-teal-500'],
+        ['Tracked savings', $savingsLedgerBalance, 'bg-cyan-600'],
         ['Loans', $totalLoans, 'bg-brand-700'],
         ['Investments', $totalInvestmentBalance, 'bg-cyan-600'],
         ['Drawer cash', $drawerBalance, 'bg-amber-500'],

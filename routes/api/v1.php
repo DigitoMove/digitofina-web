@@ -7,6 +7,9 @@ use App\Http\Controllers\Api\V1\ClientController;
 use App\Http\Controllers\Api\V1\ClientDocumentController;
 use App\Http\Controllers\Api\V1\DeviceTokenController;
 use App\Http\Controllers\Api\V1\FinancialControlController;
+use App\Http\Controllers\Api\V1\FinancialRelationshipController;
+use App\Http\Controllers\Api\V1\FixedSavingsController;
+use App\Http\Controllers\Api\V1\GroupSavingsController;
 use App\Http\Controllers\Api\V1\InvestmentAccountController;
 use App\Http\Controllers\Api\V1\InvestmentPlanController;
 use App\Http\Controllers\Api\V1\InvestmentTransactionController;
@@ -20,6 +23,7 @@ use App\Http\Controllers\Api\V1\OfflineSyncController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\SavingsAccountController;
+use App\Http\Controllers\Api\V1\SavingsGoalController;
 use App\Http\Controllers\Api\V1\SavingsProductController;
 use App\Http\Controllers\Api\V1\SavingsTransactionController;
 use App\Http\Controllers\Api\V1\SettingController;
@@ -50,6 +54,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::get('/clients/{client}/accounts', [ClientController::class, 'accounts'])->name('clients.accounts');
     Route::get('/clients/{client}/loans', [ClientController::class, 'loans'])->name('clients.loans');
     Route::get('/clients/{client}/statements', [ClientController::class, 'statements'])->name('clients.statements');
+    Route::get('/clients/{client}/financial-overview', [FinancialRelationshipController::class, 'clientOverview'])->name('clients.financial-overview');
+    Route::get('/clients/{client}/combined-statement', [FinancialRelationshipController::class, 'combinedStatement'])->name('clients.combined-statement');
 
     Route::get('/savings/products', [SavingsProductController::class, 'index'])->name('savings.products.index');
     Route::put('/savings/products/{savingsProduct}', [SavingsProductController::class, 'update'])->middleware('throttle:api-sensitive')->name('savings.products.update');
@@ -73,6 +79,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::post('/savings-accounts/{savingsAccount}/withdraw', [SavingsTransactionController::class, 'withdraw'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings-accounts.withdraw');
     Route::post('/savings-transfers', [SavingsTransactionController::class, 'transfer'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings-transfers.store');
     Route::post('/savings-transactions/{savingsTransaction}/reverse', [SavingsTransactionController::class, 'reverse'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings-transactions.reverse');
+    Route::apiResource('savings-goals', SavingsGoalController::class)->only(['index', 'store', 'show']);
+    Route::post('/savings-goals/{savingsGoal}/transactions', [SavingsGoalController::class, 'transact'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings-goals.transactions.store');
+    Route::apiResource('fixed-savings', FixedSavingsController::class)->only(['index', 'store']);
+    Route::apiResource('group-savings', GroupSavingsController::class)->only(['index', 'store']);
+    Route::post('/group-savings/{groupSavingsAccount}/contributions', [GroupSavingsController::class, 'contribute'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('group-savings.contributions.store');
 
     Route::get('/loan-products', [LoanProductController::class, 'index'])->name('loan-products.index');
     Route::put('/loan-products/{loanProduct}', [LoanProductController::class, 'update'])->middleware('throttle:api-sensitive')->name('loan-products.update');
@@ -108,6 +119,13 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::post('/investment-accounts/{investmentAccount}/returns', [InvestmentTransactionController::class, 'postReturn'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('investment-accounts.returns.store');
     Route::post('/investment-accounts/{investmentAccount}/reinvestments', [InvestmentTransactionController::class, 'reinvest'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('investment-accounts.reinvestments.store');
 
+    Route::post('/financial-relationships/savings-to-investment', [FinancialRelationshipController::class, 'transferSavingsToInvestment'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('financial-relationships.savings-to-investment');
+    Route::post('/financial-relationships/investment-accounts/{investmentAccount}/returns', [FinancialRelationshipController::class, 'postInvestmentReturn'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('financial-relationships.investment-returns');
+    Route::post('/financial-relationships/loans/{loan}/security/savings', [FinancialRelationshipController::class, 'lockSavingsForLoan'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('financial-relationships.loan-security.savings');
+    Route::post('/financial-relationships/loans/{loan}/security/investments', [FinancialRelationshipController::class, 'lockInvestmentForLoan'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('financial-relationships.loan-security.investments');
+    Route::post('/financial-relationships/loans/{loan}/repay-from-savings', [FinancialRelationshipController::class, 'repayLoanFromSavings'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('financial-relationships.loan-repayments.savings');
+    Route::post('/financial-relationships/loans/{loan}/repay-from-investment-returns', [FinancialRelationshipController::class, 'repayLoanFromInvestmentReturns'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('financial-relationships.loan-repayments.investment-returns');
+
     Route::get('/financial-controls/approvals', [FinancialControlController::class, 'approvals'])->name('financial-controls.approvals.index');
     Route::post('/financial-controls/approvals/{makerCheckerRequest}/approve', [FinancialControlController::class, 'approve'])->middleware('throttle:api-sensitive')->name('financial-controls.approvals.approve');
     Route::post('/financial-controls/approvals/{makerCheckerRequest}/reject', [FinancialControlController::class, 'reject'])->middleware('throttle:api-sensitive')->name('financial-controls.approvals.reject');
@@ -128,6 +146,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::get('/reports/tellers', [ReportController::class, 'tellers'])->name('reports.tellers');
     Route::get('/reports/branch-performance', [ReportController::class, 'branchPerformance'])->name('reports.branch-performance');
     Route::get('/reports/investments', [ReportController::class, 'investments'])->name('reports.investments');
+    Route::get('/reports/savings-analytics', [ReportController::class, 'savingsAnalytics'])->name('reports.savings-analytics');
     Route::post('/reports/exports', [ReportController::class, 'export'])->middleware('throttle:api-sensitive')->name('reports.exports.store');
 
     Route::get('/settings', [SettingController::class, 'index'])->name('settings.index');

@@ -24,6 +24,9 @@ class Loan extends Model
             'credit_score' => 'decimal:2',
             'savings_balance_at_application' => 'decimal:2',
             'required_savings_amount' => 'decimal:2',
+            'locked_savings_amount' => 'decimal:2',
+            'locked_investment_amount' => 'decimal:2',
+            'auto_repay_from_investment_returns' => 'boolean',
             'guarantors' => 'array',
             'documents' => 'array',
             'appraisal' => 'array',
@@ -112,5 +115,10 @@ class Loan extends Model
     public function repayments(): HasMany
     {
         return $this->hasMany(LoanRepayment::class);
+    }
+
+    public function securities(): HasMany
+    {
+        return $this->hasMany(LoanSecurity::class);
     }
 }

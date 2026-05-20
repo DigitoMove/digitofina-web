@@ -7,12 +7,16 @@ use App\Models\Approval;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\FixedSavingsAccount;
 use App\Models\InvestmentAccount;
 use App\Models\InvestmentPlan;
 use App\Models\InvestmentTransaction;
 use App\Models\InvestorAccount;
 use App\Models\Loan;
 use App\Models\LoanSchedule;
+use App\Models\SavingsAccount;
+use App\Models\SavingsGoal;
+use App\Models\SavingsTransaction;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
@@ -124,6 +128,19 @@ class DashboardController extends Controller
             'totalClients' => Client::count(),
             'activeAccounts' => Account::where('status', 'active')->count(),
             'totalSavings' => Account::whereHas('accountType', fn ($query) => $query->where('category', 'savings'))->sum('balance'),
+            'savingsLedgerBalance' => SavingsAccount::sum('current_balance'),
+            'savingsGrowthThisMonth' => SavingsTransaction::whereIn('type', ['deposit', 'transfer_in'])
+                ->whereBetween('transaction_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+                ->sum('amount') - SavingsTransaction::whereIn('type', ['withdrawal', 'transfer_out'])
+                ->whereBetween('transaction_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+                ->sum('amount'),
+            'activeSavers' => SavingsAccount::where('status', 'active')->distinct('client_id')->count('client_id'),
+            'targetSavingsProgress' => (float) SavingsGoal::where('status', 'active')->sum('current_saved_amount'),
+            'targetSavingsAmount' => (float) SavingsGoal::where('status', 'active')->sum('target_amount'),
+            'fixedSavingsMaturingSoon' => FixedSavingsAccount::where('status', 'active')->whereBetween('maturity_date', [$today->toDateString(), $today->addDays(30)->toDateString()])->count(),
+            'dormantSavingsAccounts' => SavingsAccount::where('status', 'dormant')
+                ->orWhereDate('last_activity_at', '<=', $today->subMonths(6)->toDateString())
+                ->count(),
             'totalLoans' => Loan::whereIn('status', ['approved', 'active'])->sum('principal_balance'),
             'todayDeposits' => $depositType ? Transaction::whereDate('posted_at', today())->where('transaction_type_id', $depositType->id)->sum('amount') : 0,
             'todayWithdrawals' => $withdrawalType ? Transaction::whereDate('posted_at', today())->where('transaction_type_id', $withdrawalType->id)->sum('amount') : 0,

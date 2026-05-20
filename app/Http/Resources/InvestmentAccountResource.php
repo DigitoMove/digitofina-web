@@ -21,6 +21,7 @@ class InvestmentAccountResource extends JsonResource
             'expected_return_amount' => (float) $this->expected_return_amount,
             'actual_return_amount' => (float) $this->actual_return_amount,
             'current_balance' => (float) $this->current_balance,
+            'locked_amount' => (float) $this->locked_amount,
             'return_rate' => (float) $this->return_rate,
             'return_method' => $this->return_method,
             'status' => $this->status,

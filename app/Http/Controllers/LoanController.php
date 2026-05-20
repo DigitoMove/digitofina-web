@@ -142,7 +142,28 @@ class LoanController extends Controller
             'guarantorClients' => Client::where('status', 'active')->where('id', '!=', $loan->client_id)->orderBy('first_name')->get(),
             'assignableOfficers' => $visibility->assignableOfficers(request()->user())->get(),
             'canAssignOfficer' => $visibility->canAssignOfficer(request()->user()),
+            'products' => LoanProduct::where('is_active', true)->where('status', 'active')->orderBy('name')->get(),
         ]);
+    }
+
+    public function updateDraftTerms(Request $request, Loan $loan, LoanService $service): RedirectResponse
+    {
+        abort_unless($request->user()->hasRole('super-admin') || $request->user()->canPerform('manage-users') || $request->user()->canPerform('disburse-loans'), 403);
+
+        $data = $request->validate([
+            'loan_product_id' => ['required', 'exists:loan_products,id'],
+            'requested_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+            'term_periods' => ['required', 'integer', 'min:1'],
+            'application_date' => ['nullable', 'date', 'before_or_equal:today'],
+        ]);
+
+        try {
+            $service->updateDraftTerms($loan, $request->user(), $data);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['draft_terms' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Draft loan terms updated and schedule recalculated.');
     }
 
     public function generateSavingsAccount(Loan $loan, LoanService $service): RedirectResponse

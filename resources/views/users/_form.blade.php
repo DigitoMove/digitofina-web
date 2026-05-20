@@ -19,13 +19,24 @@
             @endforeach
         </select>
     </label>
-    <label class="block text-sm font-medium text-slate-700">Branch <x-required-badge />
-        <select name="branch_id" class="mt-1 w-full rounded border-slate-300" required>
-            <option value="">Select branch</option>
+    @if(auth()->user()->hasGlobalOrganizationAccess())
+        <label class="block text-sm font-medium text-slate-700">Organization
+            <select name="organization_id" class="mt-1 w-full rounded border-slate-300">
+                <option value="">Global / no organization</option>
+                @foreach ($organizations as $organization)
+                    <option value="{{ $organization->id }}" @selected((string) old('organization_id', $user->organization_id) === (string) $organization->id)>{{ $organization->name }}</option>
+                @endforeach
+            </select>
+        </label>
+    @endif
+    <label class="block text-sm font-medium text-slate-700">Branch
+        <select name="branch_id" class="mt-1 w-full rounded border-slate-300">
+            <option value="">No branch / all branches</option>
             @foreach ($branches as $branch)
-                <option value="{{ $branch->id }}" @selected((string) old('branch_id', $user->branch_id) === (string) $branch->id)>{{ $branch->name }}</option>
+                <option value="{{ $branch->id }}" @selected((string) old('branch_id', $user->branch_id) === (string) $branch->id)>{{ $branch->organization?->name ? $branch->organization->name.' · ' : '' }}{{ $branch->name }}</option>
             @endforeach
         </select>
+        <span class="mt-1 block text-xs text-slate-500">Leave blank for Super Admin or Organization Admin. Other roles require a branch.</span>
     </label>
     <label class="block text-sm font-medium text-slate-700">Status
         <select name="status" class="mt-1 w-full rounded border-slate-300">

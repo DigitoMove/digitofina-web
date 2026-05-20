@@ -30,6 +30,7 @@ class SavingsProductController extends Controller
         return view('savings-products.create', ['product' => new SavingsProduct([
             'interest_posting_frequency' => 'monthly',
             'account_number_prefix' => 'SAV',
+            'savings_type' => 'ordinary',
             'status' => 'active',
         ])]);
     }
@@ -39,6 +40,9 @@ class SavingsProductController extends Controller
         $product = SavingsProduct::create($request->validated() + [
             'organization_id' => $request->user()->organization_id,
             'allows_overdraft' => $request->boolean('allows_overdraft'),
+            'supports_goals' => $request->boolean('supports_goals'),
+            'supports_fixed_savings' => $request->boolean('supports_fixed_savings'),
+            'supports_group_savings' => $request->boolean('supports_group_savings'),
         ]);
 
         $auditLogger->record('savings_product.created', $product, $product->toArray());
@@ -56,6 +60,9 @@ class SavingsProductController extends Controller
         $old = $savingsProduct->toArray();
         $savingsProduct->update($request->validated() + [
             'allows_overdraft' => $request->boolean('allows_overdraft'),
+            'supports_goals' => $request->boolean('supports_goals'),
+            'supports_fixed_savings' => $request->boolean('supports_fixed_savings'),
+            'supports_group_savings' => $request->boolean('supports_group_savings'),
         ]);
         $auditLogger->record('savings_product.updated', $savingsProduct, $savingsProduct->fresh()->toArray(), $old);
 

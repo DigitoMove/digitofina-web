@@ -422,7 +422,11 @@ class FinancialControlService
             throw new InvalidArgumentException('Withdrawal would breach the minimum balance.');
         }
 
-        $account->update(['current_balance' => $balanceAfter, 'available_balance' => $balanceAfter]);
+        if (($amount + $charge) > ($balanceBefore - (float) $account->locked_amount)) {
+            throw new InvalidArgumentException('Withdrawal exceeds the unlocked savings balance.');
+        }
+
+        $account->update(['current_balance' => $balanceAfter, 'available_balance' => max(0, $balanceAfter - (float) $account->locked_amount)]);
         $transaction = SavingsTransaction::create([
             'organization_id' => $account->organization_id,
             'branch_id' => $account->branch_id,
@@ -473,7 +477,7 @@ class FinancialControlService
         }
 
         $this->ensureFinancialDayOpen($checker, (int) $transaction->branch_id, today());
-        $account->update(['current_balance' => $transaction->balance_before, 'available_balance' => $transaction->balance_before]);
+        $account->update(['current_balance' => $transaction->balance_before, 'available_balance' => max(0, (float) $transaction->balance_before - (float) $account->locked_amount)]);
         $transaction->update(['status' => 'reversed', 'reversed_by' => $checker->id, 'reversal_reason' => $request->reason]);
     }
 

@@ -96,6 +96,16 @@ class Client extends Model
         return $this->hasMany(InvestmentAccount::class);
     }
 
+    public function savingsGoals(): HasMany
+    {
+        return $this->hasMany(SavingsGoal::class);
+    }
+
+    public function fixedSavingsAccounts(): HasMany
+    {
+        return $this->hasMany(FixedSavingsAccount::class);
+    }
+
     public function getFullNameAttribute(): string
     {
         return trim($this->first_name.' '.($this->middle_name ? $this->middle_name.' ' : '').$this->last_name);

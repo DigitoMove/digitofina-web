@@ -20,6 +20,7 @@
     $hasSavingsAccount = $client->accounts->contains(fn ($account) => $account->accountType?->category === 'savings');
     $canCreateLoan = auth()->user()->can('create', \App\Models\Loan::class);
     $canCancel = (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans')) && ! in_array($loan->status, ['cancelled', 'rejected', 'disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true);
+    $canUpdateDraftTerms = $loan->status === 'draft' && (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans'));
     $workflow = ['Draft', 'Appraisal', 'Approval', 'Approved', 'Disbursed', 'Closed'];
     $statusIndex = match (true) {
         $loan->status === 'draft' => 0,
@@ -99,6 +100,37 @@
     </div>
     <span class="inline-flex rounded-full px-3 py-1 text-sm font-semibold {{ $statusTone }}">{{ $statusLabel }}</span>
 </div>
+
+@if($canUpdateDraftTerms)
+    <section class="df-card mb-5">
+        <div class="mb-4">
+            <h2 class="text-lg font-semibold text-slate-950">Draft loan terms</h2>
+            <p class="df-muted">Adjust imported draft terms before appraisal. The schedule is recalculated immediately.</p>
+        </div>
+        <form method="POST" action="{{ route('loans.update-draft-terms', $loan) }}" class="grid gap-4 md:grid-cols-4">
+            @csrf
+            <label class="text-sm font-medium text-slate-700">Loan product
+                <select name="loan_product_id" class="mt-1 w-full rounded border-slate-300" required>
+                    @foreach($products as $product)
+                        <option value="{{ $product->id }}" @selected((int) old('loan_product_id', $loan->loan_product_id) === $product->id)>{{ $product->code }} · {{ $product->name }}</option>
+                    @endforeach
+                </select>
+            </label>
+            <label class="text-sm font-medium text-slate-700">Requested amount
+                <input name="requested_amount" value="{{ old('requested_amount', $loan->requested_amount) }}" type="number" step="100" min="100" class="mt-1 w-full rounded border-slate-300" required>
+            </label>
+            <label class="text-sm font-medium text-slate-700">Installments
+                <input name="term_periods" value="{{ old('term_periods', $loan->term_periods) }}" type="number" min="1" class="mt-1 w-full rounded border-slate-300" required>
+            </label>
+            <label class="text-sm font-medium text-slate-700">Application date
+                <input name="application_date" value="{{ old('application_date', $loan->application_date?->toDateString()) }}" type="date" max="{{ today()->toDateString() }}" class="mt-1 w-full rounded border-slate-300">
+            </label>
+            <div class="md:col-span-4">
+                <button class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800">Update draft and schedule</button>
+            </div>
+        </form>
+    </section>
+@endif
 
 <div class="grid gap-5 xl:grid-cols-[22rem_1fr]">
     <aside class="grid gap-5">

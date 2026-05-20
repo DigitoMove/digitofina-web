@@ -7,6 +7,7 @@ use App\Http\Requests\UpdateImportRowRequest;
 use App\Models\Branch;
 use App\Models\ImportBatch;
 use App\Models\ImportRow;
+use App\Models\Organization;
 use App\Services\DataImportService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Response;
@@ -21,14 +22,26 @@ class DataImportController extends Controller
     {
         Gate::authorize('viewAny', ImportBatch::class);
 
+        $user = request()->user();
         $batches = ImportBatch::query()
-            ->with(['branch', 'creator'])
+            ->with(['branch.organization', 'creator', 'organization'])
+            ->when(! $user->hasGlobalOrganizationAccess() && $user->organization_id, fn ($query) => $query->where('organization_id', $user->organization_id))
+            ->when(! $user->hasOrganizationBranchAccess() && $user->branch_id, fn ($query) => $query->where('branch_id', $user->branch_id))
             ->latest()
             ->paginate(12);
+        $branches = Branch::query()
+            ->with('organization')
+            ->when(! $user->hasGlobalOrganizationAccess() && $user->organization_id, fn ($query) => $query->where('organization_id', $user->organization_id))
+            ->when(! $user->hasOrganizationBranchAccess() && $user->branch_id, fn ($query) => $query->whereKey($user->branch_id))
+            ->orderBy('name')
+            ->get();
 
         return view('imports.index', [
             'batches' => $batches,
-            'branches' => Branch::query()->orderBy('name')->get(),
+            'branches' => $branches,
+            'organizations' => $user->hasGlobalOrganizationAccess()
+                ? Organization::query()->orderBy('name')->get()
+                : Organization::query()->whereKey($user->organization_id)->get(),
             'types' => $imports->types(),
         ]);
     }
@@ -43,6 +56,7 @@ class DataImportController extends Controller
                 $request->file('file'),
                 $request->string('type')->toString(),
                 $request->integer('branch_id') ?: null,
+                $request->integer('organization_id') ?: null,
             );
         } catch (InvalidArgumentException|RuntimeException $exception) {
             return back()->withErrors(['file' => $exception->getMessage()])->withInput();

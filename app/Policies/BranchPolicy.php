@@ -19,6 +19,6 @@ class BranchPolicy
 
     public function update(User $user, Branch $branch): bool
     {
-        return $user->canPerform('manage-branches') && ($branch->organization_id === null || $user->organization_id === null || $user->organization_id === $branch->organization_id);
+        return $user->canPerform('manage-branches') && $user->canAccessOrganization($branch->organization_id);
     }
 }

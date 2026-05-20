@@ -27,6 +27,7 @@ class UpdateSavingsProductRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:191'],
             'code' => ['required', 'string', 'max:40', Rule::unique('savings_products', 'code')->ignore($this->route('savings_product'))],
+            'savings_type' => ['required', 'in:ordinary,target,fixed,group,emergency,child_student,business'],
             'minimum_opening_balance' => ['required', 'numeric', 'min:0'],
             'minimum_balance' => ['required', 'numeric', 'min:0'],
             'interest_rate' => ['required', 'numeric', 'min:0'],
@@ -36,6 +37,9 @@ class UpdateSavingsProductRequest extends FormRequest
             'monthly_maintenance_fee' => ['required', 'numeric', 'min:0'],
             'account_number_prefix' => ['required', 'string', 'max:20'],
             'allows_overdraft' => ['boolean'],
+            'supports_goals' => ['boolean'],
+            'supports_fixed_savings' => ['boolean'],
+            'supports_group_savings' => ['boolean'],
             'status' => ['nullable', 'in:active,inactive'],
         ];
     }

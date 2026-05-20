@@ -26,8 +26,8 @@ class SavingsProductController extends Controller
                 $query,
                 request(),
                 ['name', 'code'],
-                ['status'],
-                ['id', 'name', 'code', 'status', 'created_at', 'updated_at'],
+                ['status', 'savings_type'],
+                ['id', 'name', 'code', 'savings_type', 'status', 'created_at', 'updated_at'],
                 'name',
                 'asc',
             )->paginate(ApiQuery::perPage(request(), 20))),
@@ -44,9 +44,13 @@ class SavingsProductController extends Controller
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:191'],
             'code' => ['sometimes', 'string', 'max:40', Rule::unique('savings_products', 'code')->ignore($savingsProduct)],
+            'savings_type' => ['sometimes', Rule::in(['ordinary', 'target', 'fixed', 'group', 'emergency', 'child_student', 'business'])],
             'interest_rate' => ['sometimes', 'numeric', 'min:0'],
             'withdrawal_charge' => ['sometimes', 'numeric', 'min:0'],
             'deposit_charge' => ['sometimes', 'numeric', 'min:0'],
+            'supports_goals' => ['sometimes', 'boolean'],
+            'supports_fixed_savings' => ['sometimes', 'boolean'],
+            'supports_group_savings' => ['sometimes', 'boolean'],
             'status' => ['sometimes', Rule::in(['active', 'inactive'])],
         ]);
         $action = array_key_exists('interest_rate', $data) && (float) $data['interest_rate'] !== (float) $savingsProduct->interest_rate
