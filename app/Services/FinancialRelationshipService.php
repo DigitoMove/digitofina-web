@@ -13,6 +13,7 @@ use App\Models\SavingsAccount;
 use App\Models\SavingsTransaction;
 use App\Models\User;
 use App\Support\CurrencyDenomination;
+use App\Support\ModuleCatalog;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -265,30 +266,69 @@ class FinancialRelationshipService
     }
 
     /**
-     * @return array<string, float|int>
+     * @param  array<int, string>|null  $enabledModules
+     * @return array<string, mixed>
      */
-    public function clientOverview(Client $client): array
+    public function clientOverview(Client $client, ?array $enabledModules = null): array
     {
-        $client->loadMissing(['savingsAccounts', 'investmentAccounts', 'shareAccounts', 'loans']);
+        $enabledModules = $this->enabledModules($enabledModules);
+        $moduleEnabled = fn (string $slug): bool => in_array($slug, $enabledModules, true);
+        $enabledFinancialModules = collect(['savings', 'loans', 'investments', 'shares', 'fixed-deposits'])
+            ->filter($moduleEnabled)
+            ->values()
+            ->all();
 
-        $totalSavings = (float) $client->savingsAccounts->sum(fn (SavingsAccount $account): float => (float) $account->current_balance);
-        $totalInvestments = (float) $client->investmentAccounts->sum(fn (InvestmentAccount $account): float => (float) $account->current_balance);
-        $totalShares = (float) $client->shareAccounts->sum(fn ($account): float => (float) $account->total_share_capital);
-        $activeLoans = $client->loans->whereIn('status', ['approved', 'active', 'in_arrears']);
+        $client->loadMissing(array_filter([
+            $moduleEnabled('savings') ? 'savingsAccounts' : null,
+            $moduleEnabled('investments') ? 'investmentAccounts' : null,
+            $moduleEnabled('shares') ? 'shareAccounts' : null,
+            $moduleEnabled('loans') ? 'loans' : null,
+        ]));
+
+        $totalSavings = $moduleEnabled('savings')
+            ? (float) $client->savingsAccounts->sum(fn (SavingsAccount $account): float => (float) $account->current_balance)
+            : 0.0;
+        $totalInvestments = $moduleEnabled('investments')
+            ? (float) $client->investmentAccounts->sum(fn (InvestmentAccount $account): float => (float) $account->current_balance)
+            : 0.0;
+        $totalShares = $moduleEnabled('shares')
+            ? (float) $client->shareAccounts->sum(fn ($account): float => (float) $account->total_share_capital)
+            : 0.0;
+        $activeLoans = $moduleEnabled('loans')
+            ? $client->loans->whereIn('status', ['approved', 'active', 'in_arrears'])
+            : collect();
         $outstandingLoanBalance = (float) $activeLoans->sum(fn (Loan $loan): float => (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance);
-        $lockedSavings = (float) $client->savingsAccounts->sum(fn (SavingsAccount $account): float => (float) $account->locked_amount);
-        $lockedInvestment = (float) $client->investmentAccounts->sum(fn (InvestmentAccount $account): float => (float) $account->locked_amount);
+        $lockedSavings = $moduleEnabled('savings') && $moduleEnabled('loans')
+            ? (float) $client->savingsAccounts->sum(fn (SavingsAccount $account): float => (float) $account->locked_amount)
+            : 0.0;
+        $lockedInvestment = $moduleEnabled('investments') && $moduleEnabled('loans')
+            ? (float) $client->investmentAccounts->sum(fn (InvestmentAccount $account): float => (float) $account->locked_amount)
+            : 0.0;
+
+        $availableBalance = $totalSavings + $totalInvestments - $lockedSavings - $lockedInvestment;
+        $assetPosition = $totalSavings + $totalInvestments + $totalShares;
 
         return [
+            'enabled_modules' => $enabledModules,
+            'financial_modules' => $enabledFinancialModules,
+            'module_flags' => [
+                'savings' => $moduleEnabled('savings'),
+                'loans' => $moduleEnabled('loans'),
+                'investments' => $moduleEnabled('investments'),
+                'shares' => $moduleEnabled('shares'),
+                'fixed_deposits' => $moduleEnabled('fixed-deposits'),
+                'group_savings' => $moduleEnabled('group-savings'),
+                'documents' => $moduleEnabled('documents'),
+            ],
             'total_savings' => round($totalSavings, 2),
             'total_investments' => round($totalInvestments, 2),
             'total_shares' => round($totalShares, 2),
             'active_loans' => $activeLoans->count(),
             'outstanding_loan_balance' => round($outstandingLoanBalance, 2),
-            'available_balance' => round(max(0, $totalSavings + $totalInvestments - $lockedSavings - $lockedInvestment), 2),
+            'available_balance' => round(max(0, $availableBalance), 2),
             'locked_savings' => round($lockedSavings, 2),
             'locked_investment_amount' => round($lockedInvestment, 2),
-            'net_financial_position' => round($totalSavings + $totalInvestments + $totalShares - $outstandingLoanBalance, 2),
+            'net_financial_position' => round($assetPosition - $outstandingLoanBalance, 2),
         ];
     }
 
@@ -414,5 +454,24 @@ class FinancialRelationshipService
         if (! in_array($loan->status, ['approved', 'active', 'in_arrears'], true)) {
             throw new InvalidArgumentException('Only approved or active loans can accept savings or investment security.');
         }
+    }
+
+    /**
+     * @param  array<int, string>|null  $enabledModules
+     * @return array<int, string>
+     */
+    private function enabledModules(?array $enabledModules = null): array
+    {
+        if ($enabledModules !== null) {
+            return array_values(array_unique($enabledModules));
+        }
+
+        $user = request()?->user();
+
+        if ($user?->organization && ! $user->hasRole('super-admin')) {
+            return app(ModuleService::class)->enabledSlugs($user->organization);
+        }
+
+        return collect(ModuleCatalog::modules())->pluck('slug')->all();
     }
 }

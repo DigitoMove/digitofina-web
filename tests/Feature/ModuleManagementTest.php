@@ -4,10 +4,12 @@ use App\Models\Account;
 use App\Models\AccountType;
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\DrawerSession;
 use App\Models\Module;
 use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\TellerDrawer;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\ModuleService;
@@ -112,6 +114,75 @@ it('shows a teller form error instead of not found when posting without an open 
         ])
         ->assertRedirect(route('teller.index'))
         ->assertSessionHasErrors(['amount' => 'Open your teller drawer before posting a transaction.']);
+});
+
+it('shows a teller form error when the open drawer is unavailable', function () {
+    $user = moduleManagementUser(['post-transactions']);
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($user->organization);
+    $user->organization->modules()->syncWithoutDetaching([
+        Module::where('slug', 'teller')->firstOrFail()->id => ['is_enabled' => true, 'enabled_at' => now()],
+    ]);
+    $otherBranch = Branch::create([
+        'organization_id' => $user->organization_id,
+        'code' => fake()->unique()->numerify('####'),
+        'name' => 'Other Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $drawer = TellerDrawer::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $otherBranch->id,
+        'assigned_user_id' => $user->id,
+        'name' => 'Other Branch Drawer',
+        'code' => fake()->unique()->bothify('TDR-??'),
+        'current_balance' => 1000,
+        'status' => 'open',
+    ]);
+    DrawerSession::create([
+        'organization_id' => $user->organization_id,
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $user->id,
+        'opening_balance' => 1000,
+        'status' => 'open',
+    ]);
+    $client = Client::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'officer_id' => $user->id,
+        'client_number' => fake()->unique()->numerify('1001-C######'),
+        'client_type' => 'individual',
+        'first_name' => fake()->firstName(),
+        'last_name' => fake()->lastName(),
+        'phone' => fake()->unique()->numerify('+2567########'),
+        'status' => 'active',
+    ]);
+    $accountType = AccountType::create(['name' => 'Savings Account', 'code' => fake()->unique()->bothify('SAV-??'), 'category' => 'savings']);
+    $account = Account::create([
+        'organization_id' => $user->organization_id,
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'account_type_id' => $accountType->id,
+        'account_number' => fake()->unique()->numerify('1001-SAV-####'),
+        'account_name' => $client->full_name.' Savings',
+        'status' => 'active',
+        'balance' => 0,
+        'opened_at' => today(),
+    ]);
+    $transactionType = TransactionType::create(['name' => 'Deposit', 'code' => fake()->unique()->bothify('deposit-??'), 'direction' => 'credit']);
+
+    $this->actingAs($user)
+        ->from(route('teller.index'))
+        ->post(route('teller.post'), [
+            'account_scope' => 'client_account',
+            'account_number' => $account->account_number,
+            'transaction_type_id' => $transactionType->id,
+            'amount' => 1000,
+            'transaction_date' => today()->toDateString(),
+        ])
+        ->assertRedirect(route('teller.index'))
+        ->assertSessionHasErrors(['amount' => 'Your open teller drawer is no longer available. Close and reopen your drawer before posting a transaction.']);
 });
 
 it('prevents disabling modules required by enabled dependents', function () {

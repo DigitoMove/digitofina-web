@@ -409,6 +409,10 @@ class TellerDrawerController extends Controller
                 throw new InvalidArgumentException('Open your teller drawer before posting a transaction.');
             }
 
+            if (! $session->drawer) {
+                throw new InvalidArgumentException('Your open teller drawer is no longer available. Close and reopen your drawer before posting a transaction.');
+            }
+
             if ($data['account_scope'] === 'general_ledger') {
                 $chartAccount = ChartAccount::query()
                     ->whereKey($data['chart_account_id'])
