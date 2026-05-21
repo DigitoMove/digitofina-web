@@ -228,6 +228,9 @@ class ReportCatalogService
             'Type' => $transaction->type?->name ?? 'N/A',
             'Amount' => $this->money((float) $transaction->amount),
             'Posted By' => $transaction->user?->name ?? 'System',
+            '_links' => [
+                'Reference' => route('receipts.show', $transaction),
+            ],
         ]);
 
         return [['Date', 'Reference', 'Client', 'Type', 'Amount', 'Posted By'], $rows, ['Total amount' => $this->money((float) $query->sum('amount'))]];
@@ -242,7 +245,11 @@ class ReportCatalogService
 
         $cashIn = (float) (clone $query)->where('type', 'cash_in')->sum('amount');
         $cashOut = (float) (clone $query)->where('type', 'cash_out')->sum('amount');
-        $rows = (clone $query)->latest()->limit($limit)->get()->map(fn (DrawerMovement $movement): array => [
+        $movements = (clone $query)->latest()->limit($limit)->get();
+        $transactionsByReference = Transaction::query()
+            ->whereIn('reference', $movements->pluck('reference')->filter()->unique())
+            ->pluck('id', 'reference');
+        $rows = $movements->map(fn (DrawerMovement $movement): array => [
             'Date' => $movement->created_at?->format('d M Y H:i'),
             'Branch' => $movement->session?->drawer?->branch?->name ?? 'N/A',
             'Teller / Cashier' => $movement->session?->user?->name ?? $movement->user?->name ?? 'N/A',
@@ -252,6 +259,9 @@ class ReportCatalogService
             'Amount' => $this->money((float) $movement->amount),
             'Balance After' => $this->money((float) $movement->balance_after),
             'Description' => $movement->description ?? '',
+            '_links' => filled($movement->reference) && $transactionsByReference->has($movement->reference) ? [
+                'Reference' => route('receipts.show', $transactionsByReference->get($movement->reference)),
+            ] : [],
         ]);
 
         return [

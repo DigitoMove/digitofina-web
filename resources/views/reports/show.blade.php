@@ -45,7 +45,16 @@
                 @forelse($rows as $row)
                     <tr class="border-t border-slate-200 {{ ($row['_is_arrears'] ?? false) ? 'font-semibold text-red-700' : '' }}">
                         @foreach($columns as $column)
-                            <td class="whitespace-nowrap px-4 py-3">{{ $row[$column] ?? '' }}</td>
+                            @php
+                                $cellLink = $row['_links'][$column] ?? null;
+                            @endphp
+                            <td class="whitespace-nowrap px-4 py-3">
+                                @if($cellLink)
+                                    <a href="{{ $cellLink }}" class="font-semibold text-blue-700 hover:text-blue-900 hover:underline">{{ $row[$column] ?? '' }}</a>
+                                @else
+                                    {{ $row[$column] ?? '' }}
+                                @endif
+                            </td>
                         @endforeach
                     </tr>
                 @empty
