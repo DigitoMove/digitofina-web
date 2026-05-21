@@ -132,7 +132,7 @@ class User extends Authenticatable
 
         $module = ModuleCatalog::moduleForPermission($permission);
 
-        if ($module && $this->organization && ! app(ModuleService::class)->isEnabled($this->organization, $module)) {
+        if ($module && ! $this->canAccessModule($module)) {
             return false;
         }
 
@@ -147,5 +147,14 @@ class User extends Authenticatable
         }
 
         return true;
+    }
+
+    public function canAccessModule(string $slug): bool
+    {
+        if ($this->hasRole('super-admin') || ! $this->organization) {
+            return true;
+        }
+
+        return app(ModuleService::class)->isEnabled($this->organization, $slug);
     }
 }

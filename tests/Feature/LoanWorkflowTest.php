@@ -5,15 +5,22 @@ use App\Models\AccountType;
 use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\Client;
+use App\Models\DrawerMovement;
+use App\Models\DrawerSession;
 use App\Models\Guarantor;
 use App\Models\Loan;
 use App\Models\LoanProduct;
+use App\Models\LoanRepayment;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\TellerDrawer;
+use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\LoanService;
+use App\Services\TransactionPostingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\ViewErrorBag;
 
 uses(RefreshDatabase::class);
 
@@ -36,6 +43,7 @@ function loanWorkflowUser(): User
     }
 
     TransactionType::create(['name' => 'Loan Disbursement', 'code' => 'loan_disbursement', 'direction' => 'credit']);
+    TransactionType::create(['name' => 'Loan Repayment', 'code' => 'loan_repayment', 'direction' => 'credit']);
     AccountType::create(['name' => 'Savings Account', 'code' => 'SAV', 'category' => 'savings']);
     AccountType::create(['name' => 'Loan Account', 'code' => 'LON', 'category' => 'loan']);
 
@@ -165,6 +173,14 @@ it('approves and disburses a loan with guarantor checks and a repayment schedule
 
 it('allocates repayments and releases loan guarantees when fully paid', function () {
     $user = loanWorkflowUser();
+    $tellerRole = Role::create(['name' => 'Teller Cashier', 'slug' => 'teller-cashier']);
+    $tellerRole->permissions()->sync(Permission::where('slug', 'post-repayments')->pluck('id')->all());
+    $teller = User::factory()->create([
+        'branch_id' => $user->branch_id,
+        'role_id' => $tellerRole->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
     $client = loanWorkflowClient($user);
     $guarantorClient = loanWorkflowClient($user, '+256700000003');
     $product = loanWorkflowProduct();
@@ -179,7 +195,7 @@ it('allocates repayments and releases loan guarantees when fully paid', function
         'requested_amount' => 600_000,
         'approved_amount' => 600_000,
         'principal_balance' => 600_000,
-        'interest_rate' => 24,
+        'interest_rate' => 0,
         'term_periods' => 3,
         'repayment_frequency' => 'monthly',
         'purpose' => 'Working capital',
@@ -192,21 +208,91 @@ it('allocates repayments and releases loan guarantees when fully paid', function
     app(LoanService::class)->disburseToSavings($loan, $user);
     $loan->refresh();
     $amountDue = (float) $loan->principal_balance + (float) $loan->interest_balance;
-
-    $response = $this->actingAs($user)->post(route('loans.repayments.store', $loan), [
-        'amount' => $amountDue,
-        'payment_method' => 'cash',
-        'paid_at' => today()->toDateString(),
+    expect($loan->loanAccount->accountType->category)->toBe('loan');
+    $openingBalance = 100_000.0;
+    $drawer = TellerDrawer::create([
+        'branch_id' => $user->branch_id,
+        'assigned_user_id' => $teller->id,
+        'name' => 'Main Cash Drawer',
+        'code' => 'TDR-001',
+        'current_balance' => $openingBalance,
+        'status' => 'open',
+    ]);
+    DrawerSession::create([
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $teller->id,
+        'opening_balance' => $openingBalance,
+        'status' => 'open',
     ]);
 
-    $response->assertRedirect();
+    app(TransactionPostingService::class)->postCash(
+        $loan->loanAccount,
+        DrawerSession::where('user_id', $teller->id)->firstOrFail(),
+        TransactionType::where('code', 'loan_repayment')->firstOrFail(),
+        $amountDue,
+        $teller,
+        'Full settlement',
+        null,
+        today(),
+    );
+
     $loan->refresh();
+    $repayment = LoanRepayment::firstOrFail();
+    $transaction = Transaction::findOrFail($repayment->transaction_id);
 
     expect($loan->status)->toBe('closed')
         ->and((float) $loan->principal_balance)->toBe(0.0)
         ->and((float) $loan->interest_balance)->toBe(0.0)
         ->and($loan->loanAccount()->value('status'))->toBe('closed')
-        ->and($loan->loanGuarantors()->first()->status)->toBe('released');
+        ->and($loan->loanGuarantors()->first()->status)->toBe('released')
+        ->and($repayment->transaction_id)->toBe($transaction->id)
+        ->and($transaction->reference)->toBe($repayment->reference)
+        ->and(DrawerMovement::where('reference', $transaction->reference)->value('type'))->toBe('cash_in')
+        ->and((float) $drawer->fresh()->current_balance)->toBe($openingBalance + $amountDue);
+});
+
+it('hides the direct repayment workflow from loan officers', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    loanWorkflowSavingsAccount($user, $client);
+
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '1001-LN-0000002',
+        'requested_amount' => 400_000,
+        'approved_amount' => 400_000,
+        'principal_balance' => 400_000,
+        'interest_rate' => 24,
+        'term_periods' => 2,
+        'repayment_frequency' => 'monthly',
+        'purpose' => 'Working capital',
+        'status' => 'approved',
+        'approved_by' => $user->id,
+        'approved_at' => today(),
+    ]);
+
+    app(LoanService::class)->disburseToSavings($loan, $user);
+
+    $this->actingAs($user);
+
+    $html = view('loans.partials.workflow-actions', [
+        'loan' => $loan->fresh()->load('loanAccount'),
+        'canAssignOfficer' => false,
+        'canCancel' => false,
+        'assignableOfficers' => collect(),
+        'statusTone' => 'bg-emerald-50 text-emerald-700',
+        'statusLabel' => 'Active',
+        'errors' => new ViewErrorBag,
+    ])->render();
+
+    expect($html)
+        ->not->toContain(route('loans.repayments.store', $loan))
+        ->not->toContain('Post repayment')
+        ->not->toContain('Open Teller Drawer');
 });
 
 it('shows a loan when the legacy guarantors payload is empty', function () {

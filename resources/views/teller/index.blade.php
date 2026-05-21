@@ -14,6 +14,10 @@
         ? $selectedChartAccount->drawerEntryType($selectedChartAccount->drawer_direction)
         : null;
     $needsLedgerDirection = $isLedgerPosting && ! $selectedLedgerEntryType;
+    $isLoanAccountPosting = $account?->accountType?->category === 'loan';
+    $availableTransactionTypes = $isLoanAccountPosting
+        ? $transactionTypes->where('code', 'loan_repayment')
+        : $transactionTypes->reject(fn ($type) => $type->code === 'loan_repayment');
 @endphp
 
 <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
@@ -504,7 +508,7 @@
             @if(! $isLedgerPosting)
                 <label class="text-sm font-semibold text-slate-700">Client Money Direction <x-required-badge />
                     <select name="transaction_type_id" class="mt-1">
-                        @foreach($transactionTypes as $type)
+                        @foreach($availableTransactionTypes as $type)
                             <option value="{{ $type->id }}">{{ $type->name }}</option>
                         @endforeach
                     </select>

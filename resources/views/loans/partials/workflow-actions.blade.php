@@ -5,13 +5,17 @@
     $canApproveLoan = $currentUser->canPerform('approve-loans');
     $canDisburseLoan = $currentUser->canPerform('disburse-loans');
     $canPostLoanRepayment = $currentUser->canPerform('post-repayments');
+    $canPostTellerLoanRepayment = $currentUser->isTellerCashier()
+        && $canPostLoanRepayment
+        && in_array($loan->status, ['active', 'in_arrears'], true)
+        && $loan->loanAccount;
     $hasVisibleWorkflowAction = $canAssignOfficer
         || $canCancel
         || ($canManageLoanAccounts && $loan->status === 'draft')
         || ($canManageLoanWorkflow && $loan->status === 'under_review')
         || ($canApproveLoan && in_array($loan->status, ['submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true))
         || ($canDisburseLoan && $loan->status === 'approved')
-        || ($canPostLoanRepayment && in_array($loan->status, ['active', 'in_arrears'], true));
+        || $canPostTellerLoanRepayment;
 @endphp
 
 <section class="df-panel p-5">
@@ -110,15 +114,14 @@
         </form>
     @endif
 
-    @if($canPostLoanRepayment && in_array($loan->status, ['active', 'in_arrears'], true))
-        <form method="POST" action="{{ route('loans.repayments.store', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-5">
-            @csrf
-            <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge /><input name="amount" type="number" min="100" step="100" placeholder="Amount" required></label>
-            <label class="text-sm font-semibold text-slate-700">Payment method <x-required-badge /><select name="payment_method" required><option value="cash">Cash</option><option value="mobile_money">Mobile money</option><option value="bank">Bank</option><option value="savings_deduction">Savings deduction</option><option value="cheque">Cheque</option></select></label>
-            <input name="reference" placeholder="Reference">
-            <label class="text-sm font-semibold text-slate-700">Paid date <x-required-badge /><input name="paid_at" type="date" value="{{ now()->toDateString() }}" required></label>
-            <button class="df-action-primary">Post repayment</button>
-        </form>
+    @if($canPostTellerLoanRepayment)
+        <div class="mt-4 grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 md:grid-cols-[1fr_auto]">
+            <div>
+                <div class="text-sm font-semibold text-slate-950">Cash repayment</div>
+                <div class="text-sm text-slate-600">Post this repayment from the teller drawer so the transaction record, receipt, and drawer movement are captured.</div>
+            </div>
+            <a href="{{ route('teller.index', ['account_number' => $loan->loanAccount->account_number]) }}" class="df-action-primary text-center">Open Teller Drawer</a>
+        </div>
     @endif
 
     @unless($hasVisibleWorkflowAction)
