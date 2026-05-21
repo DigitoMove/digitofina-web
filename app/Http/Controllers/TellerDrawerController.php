@@ -92,21 +92,30 @@ class TellerDrawerController extends Controller
             ->orderBy('due_date')
             ->limit(8)
             ->get();
+        $drawers = TellerDrawer::query()
+            ->with(['branch', 'assignedUser'])
+            ->when(! $request->user()->canPerform('manage-organization') && $request->user()->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
+            ->when(! $canOpenForTellers, function (Builder $query): void {
+                $query->where(function (Builder $query): void {
+                    $query->where('assigned_user_id', auth()->id())
+                        ->orWhereNull('assigned_user_id');
+                });
+            })
+            ->orderBy('branch_id')
+            ->orderBy('code')
+            ->get();
+        $branches = Branch::query()
+            ->where('is_active', true)
+            ->when(! $request->user()->canPerform('manage-organization'), fn (Builder $query): Builder => $query->where('id', $request->user()->branch_id))
+            ->orderBy('name')
+            ->get();
 
         return view('teller.index', [
             'session' => $session,
             'drawer' => $session?->drawer,
-            'drawers' => TellerDrawer::query()
-                ->with(['branch', 'assignedUser'])
-                ->when(! $canOpenForTellers, fn ($query) => $query->where('assigned_user_id', auth()->id())->orWhereNull('assigned_user_id'))
-                ->orderBy('branch_id')
-                ->orderBy('code')
-                ->get(),
-            'branches' => Branch::query()
-                ->where('is_active', true)
-                ->when(! $request->user()->canPerform('manage-organization'), fn ($query) => $query->where('id', $request->user()->branch_id))
-                ->orderBy('name')
-                ->get(),
+            'drawers' => $drawers,
+            'branches' => $branches,
+            'branchesWithoutDrawers' => $branches->reject(fn (Branch $branch): bool => $drawers->contains('branch_id', $branch->id)),
             'tellers' => $canOpenForTellers
                 ? User::query()
                     ->with(['branch', 'role'])
@@ -353,7 +362,13 @@ class TellerDrawerController extends Controller
         ]);
 
         try {
-            $drawer = TellerDrawer::query()->findOrFail($data['teller_drawer_id']);
+            $drawer = TellerDrawer::query()->find($data['teller_drawer_id']);
+
+            if (! $drawer) {
+                throw new InvalidArgumentException('The selected drawer was not found. Refresh the page and choose an available branch drawer.');
+            }
+
+            $this->authorizeDrawerBranch($request, $drawer->branch);
             $financialControls->ensureFinancialDayOpen($request->user(), (int) $drawer->branch_id, today());
             $teller = $this->resolveOpeningTeller($request, $data['teller_user_id'] ?? null);
             $this->assertAssignedTellerBelongsToBranch($teller->id, $drawer->branch);
@@ -380,15 +395,29 @@ class TellerDrawerController extends Controller
             'description' => ['nullable', 'string'],
         ]);
 
-        $session = DrawerSession::where('user_id', auth()->id())->where('status', 'open')->latest()->firstOrFail();
         $postedAt = CarbonImmutable::parse($data['transaction_date']);
 
         try {
+            $session = DrawerSession::query()
+                ->with('drawer')
+                ->where('user_id', auth()->id())
+                ->where('status', 'open')
+                ->latest()
+                ->first();
+
+            if (! $session) {
+                throw new InvalidArgumentException('Open your teller drawer before posting a transaction.');
+            }
+
             if ($data['account_scope'] === 'general_ledger') {
                 $chartAccount = ChartAccount::query()
                     ->whereKey($data['chart_account_id'])
                     ->where('branch_id', $session->drawer->branch_id)
-                    ->firstOrFail();
+                    ->first();
+
+                if (! $chartAccount) {
+                    throw new InvalidArgumentException('The selected ledger account was not found for this drawer branch.');
+                }
 
                 $entryType = $this->ledgerEntryType($chartAccount, $data['gl_entry_type'] ?? null);
 
@@ -401,8 +430,27 @@ class TellerDrawerController extends Controller
                 return back()->with('status', 'General ledger transaction posted.');
             }
 
-            $account = Account::where('account_number', $data['account_number'])->firstOrFail();
-            $type = TransactionType::findOrFail($data['transaction_type_id']);
+            $account = Account::query()->with('accountType')->where('account_number', $data['account_number'])->first();
+            $type = TransactionType::query()->find($data['transaction_type_id']);
+
+            if (! $account) {
+                throw new InvalidArgumentException('The selected account was not found.');
+            }
+
+            if ((int) $account->branch_id !== (int) $session->drawer->branch_id) {
+                throw new InvalidArgumentException('This account belongs to a different branch from your open drawer.');
+            }
+
+            if (! $type) {
+                throw new InvalidArgumentException('The selected transaction type was not found.');
+            }
+
+            if ($type->code === 'loan_repayment') {
+                abort_unless($request->user()->canPerform('post-repayments'), 403);
+            } else {
+                abort_unless($request->user()->canPerform('post-transactions'), 403);
+            }
+
             $transaction = $posting->postCash($account, $session, $type, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $data['cheque_number'] ?? null, $postedAt);
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['amount' => $exception->getMessage()])->withInput();
@@ -419,7 +467,12 @@ class TellerDrawerController extends Controller
         $data = $request->validate(['closing_balance' => ['required', 'numeric', 'min:0', CurrencyDenomination::validationRule()]]);
 
         try {
-            $session = DrawerSession::where('user_id', auth()->id())->where('status', 'open')->latest()->firstOrFail();
+            $session = DrawerSession::query()->where('user_id', auth()->id())->where('status', 'open')->latest()->first();
+
+            if (! $session) {
+                throw new InvalidArgumentException('Open your teller drawer before closing it.');
+            }
+
             $financialControls->closeDrawer($session, $request->user(), (float) $data['closing_balance']);
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['closing_balance' => $exception->getMessage()])->withInput();
@@ -436,7 +489,12 @@ class TellerDrawerController extends Controller
 
         try {
             $this->authorizeDrawerBranch($request, $drawer->branch);
-            $session = $drawer->sessions()->where('status', 'open')->latest()->firstOrFail();
+            $session = $drawer->sessions()->where('status', 'open')->latest()->first();
+
+            if (! $session) {
+                throw new InvalidArgumentException('This drawer does not have an open session.');
+            }
+
             $financialControls->closeDrawer($session, $request->user(), (float) $data['closing_balance']);
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['drawer_management' => $exception->getMessage()])->withInput();
@@ -486,7 +544,11 @@ class TellerDrawerController extends Controller
             ->whereKey($tellerUserId)
             ->where('organization_id', $request->user()->organization_id)
             ->where('status', 'active')
-            ->firstOrFail();
+            ->first();
+
+        if (! $teller) {
+            throw new InvalidArgumentException('The selected teller/cashier was not found.');
+        }
 
         if ($teller->role?->slug !== 'teller-cashier') {
             throw new InvalidArgumentException('Select an active teller/cashier.');
@@ -548,7 +610,11 @@ class TellerDrawerController extends Controller
             return;
         }
 
-        $teller = User::query()->findOrFail($tellerUserId);
+        $teller = User::query()->find($tellerUserId);
+
+        if (! $teller) {
+            throw new InvalidArgumentException('The selected teller/cashier was not found.');
+        }
 
         if ($teller->branch_id && (int) $teller->branch_id !== (int) $branch->id) {
             throw new InvalidArgumentException('Select a teller/cashier from the drawer branch.');

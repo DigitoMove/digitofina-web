@@ -56,6 +56,14 @@ class DashboardController extends Controller
             ? collect(ModuleCatalog::modules())->pluck('slug')->all()
             : app(ModuleService::class)->enabledSlugs($user->organization);
         $moduleIsEnabled = fn (string $slug): bool => in_array($slug, $enabledModules, true);
+        $clientsEnabled = $moduleIsEnabled('clients');
+        $loansEnabled = $moduleIsEnabled('loans');
+        $savingsEnabled = $moduleIsEnabled('savings');
+        $fixedDepositsEnabled = $moduleIsEnabled('fixed-deposits');
+        $investmentsEnabled = $moduleIsEnabled('investments');
+        $tellerEnabled = $moduleIsEnabled('teller');
+        $usersEnabled = $moduleIsEnabled('users');
+        $auditLogsEnabled = $moduleIsEnabled('audit-logs');
         $drawer = $user->drawerSessions()->with('drawer')->where('status', 'open')->latest()->first()?->drawer;
         $today = CarbonImmutable::today();
         $monthStart = $today->startOfMonth();
@@ -66,46 +74,53 @@ class DashboardController extends Controller
         $calendarScope = fn (Builder $query): Builder => $visibility
             ->scopeRepaymentCalendar($query, $user)
             ->when($selectedCalendarBranchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
-        $dueToday = LoanSchedule::query()
-            ->with(['loan.client', 'loan.product'])
-            ->whereHas('loan', $calendarScope)
-            ->where('outstanding_amount', '>', 0)
-            ->where('status', '!=', 'paid')
-            ->whereDate('due_date', $today->toDateString())
-            ->orderBy('due_date')
-            ->limit(10)
-            ->get();
-        $dueTodayTotals = LoanSchedule::query()
-            ->whereHas('loan', $calendarScope)
-            ->where('outstanding_amount', '>', 0)
-            ->where('status', '!=', 'paid')
-            ->whereDate('due_date', $today->toDateString())
-            ->selectRaw('count(*) as total, coalesce(sum(outstanding_amount), 0) as amount')
-            ->first();
-        $nextRepayments = LoanSchedule::query()
-            ->with(['loan.client', 'loan.product'])
-            ->whereHas('loan', $calendarScope)
-            ->where('outstanding_amount', '>', 0)
-            ->where('status', '!=', 'paid')
-            ->whereDate('due_date', '>=', $today->toDateString())
-            ->orderBy('due_date')
-            ->orderBy('installment_number')
-            ->limit(10)
-            ->get();
-        $calendarCounts = LoanSchedule::query()
-            ->whereHas('loan', $calendarScope)
-            ->whereBetween('due_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
-            ->selectRaw("
-                due_date,
-                count(*) as total,
-                sum(case when outstanding_amount > 0 and status != 'paid' then 1 else 0 end) as open_total,
-                sum(case when due_date >= ? and outstanding_amount > 0 and status != 'paid' then 1 else 0 end) as upcoming_total,
-                sum(case when due_date < ? and outstanding_amount > 0 and status != 'paid' then 1 else 0 end) as overdue_total,
-                coalesce(sum(case when outstanding_amount > 0 and status != 'paid' then outstanding_amount else 0 end), 0) as amount
-            ", [$today->toDateString(), $today->toDateString()])
-            ->groupBy('due_date')
-            ->get()
-            ->keyBy(fn (LoanSchedule $schedule): string => $schedule->due_date->toDateString());
+        $dueToday = collect();
+        $dueTodayTotals = null;
+        $nextRepayments = collect();
+        $calendarCounts = collect();
+
+        if ($loansEnabled) {
+            $dueToday = LoanSchedule::query()
+                ->with(['loan.client', 'loan.product'])
+                ->whereHas('loan', $calendarScope)
+                ->where('outstanding_amount', '>', 0)
+                ->where('status', '!=', 'paid')
+                ->whereDate('due_date', $today->toDateString())
+                ->orderBy('due_date')
+                ->limit(10)
+                ->get();
+            $dueTodayTotals = LoanSchedule::query()
+                ->whereHas('loan', $calendarScope)
+                ->where('outstanding_amount', '>', 0)
+                ->where('status', '!=', 'paid')
+                ->whereDate('due_date', $today->toDateString())
+                ->selectRaw('count(*) as total, coalesce(sum(outstanding_amount), 0) as amount')
+                ->first();
+            $nextRepayments = LoanSchedule::query()
+                ->with(['loan.client', 'loan.product'])
+                ->whereHas('loan', $calendarScope)
+                ->where('outstanding_amount', '>', 0)
+                ->where('status', '!=', 'paid')
+                ->whereDate('due_date', '>=', $today->toDateString())
+                ->orderBy('due_date')
+                ->orderBy('installment_number')
+                ->limit(10)
+                ->get();
+            $calendarCounts = LoanSchedule::query()
+                ->whereHas('loan', $calendarScope)
+                ->whereBetween('due_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+                ->selectRaw("
+                    due_date,
+                    count(*) as total,
+                    sum(case when outstanding_amount > 0 and status != 'paid' then 1 else 0 end) as open_total,
+                    sum(case when due_date >= ? and outstanding_amount > 0 and status != 'paid' then 1 else 0 end) as upcoming_total,
+                    sum(case when due_date < ? and outstanding_amount > 0 and status != 'paid' then 1 else 0 end) as overdue_total,
+                    coalesce(sum(case when outstanding_amount > 0 and status != 'paid' then outstanding_amount else 0 end), 0) as amount
+                ", [$today->toDateString(), $today->toDateString()])
+                ->groupBy('due_date')
+                ->get()
+                ->keyBy(fn (LoanSchedule $schedule): string => $schedule->due_date->toDateString());
+        }
         $calendarDays = collect(CarbonPeriod::create($monthStart->startOfWeek(CarbonInterface::SUNDAY), $monthEnd->endOfWeek(CarbonInterface::SATURDAY)))
             ->map(function ($date) use ($calendarCounts, $monthStart, $today): array {
                 $key = $date->toDateString();
@@ -123,24 +138,24 @@ class DashboardController extends Controller
                     'amount' => (float) ($count?->amount ?? 0),
                 ];
             });
-        $arrearsCount = LoanSchedule::query()
+        $arrearsCount = $loansEnabled ? LoanSchedule::query()
             ->whereHas('loan', $scheduleScope)
             ->where('outstanding_amount', '>', 0)
             ->whereDate('due_date', '<', $today->toDateString())
             ->distinct('loan_id')
-            ->count('loan_id');
-        $arrearsAmount = LoanSchedule::query()
+            ->count('loan_id') : 0;
+        $arrearsAmount = $loansEnabled ? LoanSchedule::query()
             ->whereHas('loan', $scheduleScope)
             ->where('outstanding_amount', '>', 0)
             ->whereDate('due_date', '<', $today->toDateString())
-            ->sum('outstanding_amount');
-        $loanApplications = Loan::query()
+            ->sum('outstanding_amount') : 0;
+        $loanApplications = $loansEnabled ? Loan::query()
             ->whereIn('status', ['draft', 'under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved'])
             ->tap(fn (Builder $query) => $visibility->scope($query, $user))
-            ->count();
+            ->count() : 0;
         $cashierRecentTransactions = collect();
 
-        if ($user->isTellerCashier() && $moduleIsEnabled('teller')) {
+        if ($user->isTellerCashier() && $tellerEnabled) {
             $cashierRecentTransactions = Transaction::query()
                 ->with([
                     'account.client',
@@ -156,41 +171,41 @@ class DashboardController extends Controller
         }
 
         return view('dashboard.index', [
-            'totalClients' => Client::count(),
-            'activeAccounts' => Account::where('status', 'active')->count(),
-            'totalSavings' => Account::whereHas('accountType', fn ($query) => $query->where('category', 'savings'))->sum('balance'),
-            'savingsLedgerBalance' => SavingsAccount::sum('current_balance'),
-            'savingsGrowthThisMonth' => SavingsTransaction::whereIn('type', ['deposit', 'transfer_in'])
+            'totalClients' => $clientsEnabled ? Client::count() : 0,
+            'activeAccounts' => ($savingsEnabled || $loansEnabled || $investmentsEnabled) ? Account::where('status', 'active')->count() : 0,
+            'totalSavings' => $savingsEnabled ? Account::whereHas('accountType', fn ($query) => $query->where('category', 'savings'))->sum('balance') : 0,
+            'savingsLedgerBalance' => $savingsEnabled ? SavingsAccount::sum('current_balance') : 0,
+            'savingsGrowthThisMonth' => $savingsEnabled ? SavingsTransaction::whereIn('type', ['deposit', 'transfer_in'])
                 ->whereBetween('transaction_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
                 ->sum('amount') - SavingsTransaction::whereIn('type', ['withdrawal', 'transfer_out'])
                 ->whereBetween('transaction_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
-                ->sum('amount'),
-            'activeSavers' => SavingsAccount::where('status', 'active')->distinct('client_id')->count('client_id'),
-            'targetSavingsProgress' => (float) SavingsGoal::where('status', 'active')->sum('current_saved_amount'),
-            'targetSavingsAmount' => (float) SavingsGoal::where('status', 'active')->sum('target_amount'),
-            'fixedSavingsMaturingSoon' => FixedSavingsAccount::where('status', 'active')->whereBetween('maturity_date', [$today->toDateString(), $today->addDays(30)->toDateString()])->count(),
-            'dormantSavingsAccounts' => SavingsAccount::where('status', 'dormant')
+                ->sum('amount') : 0,
+            'activeSavers' => $savingsEnabled ? SavingsAccount::where('status', 'active')->distinct('client_id')->count('client_id') : 0,
+            'targetSavingsProgress' => $savingsEnabled ? (float) SavingsGoal::where('status', 'active')->sum('current_saved_amount') : 0,
+            'targetSavingsAmount' => $savingsEnabled ? (float) SavingsGoal::where('status', 'active')->sum('target_amount') : 0,
+            'fixedSavingsMaturingSoon' => $fixedDepositsEnabled ? FixedSavingsAccount::where('status', 'active')->whereBetween('maturity_date', [$today->toDateString(), $today->addDays(30)->toDateString()])->count() : 0,
+            'dormantSavingsAccounts' => $savingsEnabled ? SavingsAccount::where('status', 'dormant')
                 ->orWhereDate('last_activity_at', '<=', $today->subMonths(6)->toDateString())
-                ->count(),
-            'totalLoans' => Loan::whereIn('status', ['approved', 'active'])->sum('principal_balance'),
-            'todayDeposits' => $depositType ? Transaction::whereDate('posted_at', today())->where('transaction_type_id', $depositType->id)->sum('amount') : 0,
-            'todayWithdrawals' => $withdrawalType ? Transaction::whereDate('posted_at', today())->where('transaction_type_id', $withdrawalType->id)->sum('amount') : 0,
-            'drawerBalance' => $drawer?->current_balance ?? 0,
+                ->count() : 0,
+            'totalLoans' => $loansEnabled ? Loan::whereIn('status', ['approved', 'active'])->sum('principal_balance') : 0,
+            'todayDeposits' => ($tellerEnabled && $depositType) ? Transaction::whereDate('posted_at', today())->where('transaction_type_id', $depositType->id)->sum('amount') : 0,
+            'todayWithdrawals' => ($tellerEnabled && $withdrawalType) ? Transaction::whereDate('posted_at', today())->where('transaction_type_id', $withdrawalType->id)->sum('amount') : 0,
+            'drawerBalance' => $tellerEnabled ? ($drawer?->current_balance ?? 0) : 0,
             'pendingApprovals' => Approval::where('status', 'pending')->count(),
-            'branchCount' => Branch::count(),
-            'staffCount' => User::where('status', 'active')->count(),
-            'auditEventsToday' => AuditLog::whereDate('created_at', today())->count(),
-            'totalInvestors' => InvestorAccount::where('status', 'active')->count(),
-            'totalActiveInvestments' => InvestmentAccount::where('status', 'active')->count(),
-            'totalInvestmentBalance' => InvestorAccount::sum('current_investment_balance'),
-            'totalReturnsPosted' => InvestmentTransaction::where('type', 'return_posting')->sum('amount'),
-            'investmentsMaturingThisMonth' => InvestmentAccount::whereIn('status', ['active', 'matured'])->whereBetween('maturity_date', [$monthStart->toDateString(), $monthEnd->toDateString()])->count(),
-            'investmentWithdrawalsThisMonth' => InvestmentTransaction::where('type', 'withdrawal')->whereBetween('transaction_date', [$monthStart->toDateString(), $monthEnd->toDateString()])->sum('amount'),
-            'topInvestmentPlans' => InvestmentPlan::query()
+            'branchCount' => $usersEnabled ? Branch::count() : 0,
+            'staffCount' => $usersEnabled ? User::where('status', 'active')->count() : 0,
+            'auditEventsToday' => $auditLogsEnabled ? AuditLog::whereDate('created_at', today())->count() : 0,
+            'totalInvestors' => $investmentsEnabled ? InvestorAccount::where('status', 'active')->count() : 0,
+            'totalActiveInvestments' => $investmentsEnabled ? InvestmentAccount::where('status', 'active')->count() : 0,
+            'totalInvestmentBalance' => $investmentsEnabled ? InvestorAccount::sum('current_investment_balance') : 0,
+            'totalReturnsPosted' => $investmentsEnabled ? InvestmentTransaction::where('type', 'return_posting')->sum('amount') : 0,
+            'investmentsMaturingThisMonth' => $investmentsEnabled ? InvestmentAccount::whereIn('status', ['active', 'matured'])->whereBetween('maturity_date', [$monthStart->toDateString(), $monthEnd->toDateString()])->count() : 0,
+            'investmentWithdrawalsThisMonth' => $investmentsEnabled ? InvestmentTransaction::where('type', 'withdrawal')->whereBetween('transaction_date', [$monthStart->toDateString(), $monthEnd->toDateString()])->sum('amount') : 0,
+            'topInvestmentPlans' => $investmentsEnabled ? InvestmentPlan::query()
                 ->withSum('investmentAccounts', 'current_balance')
                 ->orderByDesc('investment_accounts_sum_current_balance')
                 ->limit(3)
-                ->get(),
+                ->get() : collect(),
             'dueToday' => $dueToday,
             'dueTodayCount' => (int) ($dueTodayTotals?->total ?? 0),
             'dueTodayAmount' => (float) ($dueTodayTotals?->amount ?? 0),
@@ -202,7 +217,7 @@ class DashboardController extends Controller
             'arrearsAmount' => $arrearsAmount,
             'loanApplications' => $loanApplications,
             'canFilterCalendarBranch' => $canFilterCalendarBranch,
-            'calendarBranches' => Branch::orderBy('name')->get(),
+            'calendarBranches' => $loansEnabled ? Branch::orderBy('name')->get() : collect(),
             'selectedCalendarBranchId' => $selectedCalendarBranchId,
             'enabledModules' => $enabledModules,
             'alerts' => array_filter([

@@ -35,63 +35,65 @@
             <nav class="grid flex-1 content-start gap-1 overflow-y-auto p-3 text-sm lg:max-h-[calc(100vh-8rem)]">
                 @php
                     $user = auth()->user();
-                    $moduleService = app(\App\Services\ModuleService::class);
-                    $moduleEnabled = fn (string $slug): bool => $user->hasRole('super-admin') || $moduleService->isEnabled($user->organization, $slug);
+                    $moduleEnabled = fn (?string $slug): bool => $slug === null || $user->canAccessModule($slug);
+                    $modulesEnabled = fn (array $slugs): bool => collect($slugs)->contains(fn (?string $slug): bool => $moduleEnabled($slug));
+                    $canAny = fn (array $permissions): bool => $permissions === [] || collect($permissions)->contains(fn (string $permission): bool => $user->canPerform($permission));
                     $isRouteActive = fn (string $route): bool => request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*');
                     $canManageOrganization = $user->canPerform('manage-organization') || $user->hasRole('super-admin') || $user->hasRole('supervisor') || $user->hasRole('organization-admin');
                     $organizationRoute = $user->hasRole('super-admin') ? 'organizations.index' : 'organization.current';
                     $navGroups = $user->isMember() ? [] : [
                         [
                             'label' => 'Clients',
-                            'module' => 'clients',
                             'icon' => 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0',
                             'items' => [
-                                ['Clients', 'clients.index', 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0'],
-                                ['Client Groups', 'client-groups.index', 'M7 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M17 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M3 21a6 6 0 0 1 8-5.7 M13 15.3A6 6 0 0 1 21 21'],
+                                ['label' => 'Clients', 'route' => 'clients.index', 'module' => 'clients', 'permissions' => ['manage-clients', 'view-reports'], 'icon' => 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0'],
+                                ['label' => 'Client Groups', 'route' => 'client-groups.index', 'module' => 'clients', 'permissions' => ['manage-clients', 'view-reports'], 'icon' => 'M7 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M17 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M3 21a6 6 0 0 1 8-5.7 M13 15.3A6 6 0 0 1 21 21'],
                             ],
                         ],
                         [
                             'label' => 'Loans',
-                            'module' => 'loans',
                             'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5',
                             'items' => [
-                                ['Loans', 'loans.index', 'M4 6h16v12H4z M8 10h8 M8 14h5'],
-                                ['Arrears', 'arrears.index', 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
-                                ['Loan Products', 'loan-products.index', 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
+                                ['label' => 'Loans', 'route' => 'loans.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'view-reports'], 'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5'],
+                                ['label' => 'Arrears', 'route' => 'arrears.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'post-repayments', 'view-reports'], 'icon' => 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
+                                ['label' => 'Loan Products', 'route' => 'loan-products.index', 'module' => 'loans', 'permissions' => ['manage-loans'], 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
                             ],
                         ],
                         [
                             'label' => 'Operations',
-                            'module' => 'teller',
                             'icon' => 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10',
                             'items' => [
-                                ['Teller Drawer', 'teller.index', 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10'],
-                                ['Non-Cash Transactions', 'non-cash.index', 'M7 7h10M7 12h10M7 17h6 M4 5h16v14H4z'],
-                                ['End of Day', 'end-of-day.index', 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'],
-                                ['Data Imports', 'imports.index', 'M12 3v12m0 0 4-4m-4 4-4-4 M5 19h14 M5 15v4 M19 15v4'],
+                                ['label' => 'Teller Drawer', 'route' => 'teller.index', 'module' => 'teller', 'permissions' => ['post-transactions', 'post-repayments', 'manage-drawers'], 'icon' => 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10'],
+                                ['label' => 'Non-Cash Transactions', 'route' => 'non-cash.index', 'module' => 'teller', 'permissions' => ['post-transactions', 'manage-accounting'], 'icon' => 'M7 7h10M7 12h10M7 17h6 M4 5h16v14H4z'],
+                                ['label' => 'End of Day', 'route' => 'end-of-day.index', 'module' => 'teller', 'permissions' => ['manage-end-of-day', 'view-reports'], 'icon' => 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'],
+                                ['label' => 'Data Imports', 'route' => 'imports.index', 'module' => 'settings', 'permissions' => ['import-data', 'manage-settings'], 'icon' => 'M12 3v12m0 0 4-4m-4 4-4-4 M5 19h14 M5 15v4 M19 15v4'],
                             ],
                         ],
                         [
                             'label' => 'Accounts',
-                            'module' => 'savings',
                             'icon' => 'M3 7h18v12H3z M7 7V5h10v2',
                             'items' => [
-                                ['Accounts Register', 'accounts.index', 'M3 7h18v12H3z M7 7V5h10v2'],
-                                ['Savings Products', 'savings-products.index', 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
-                                ['Savings Transfer', 'savings-transfers.create', 'M7 7h12m0 0-4-4m4 4-4 4 M17 17H5m0 0 4-4m-4 4 4 4'],
+                                ['label' => 'Accounts Register', 'route' => 'accounts.index', 'modules' => ['savings', 'loans', 'investments'], 'permissions' => ['manage-accounts', 'manage-loans', 'manage-investments', 'view-reports'], 'icon' => 'M3 7h18v12H3z M7 7V5h10v2'],
+                                ['label' => 'Savings Products', 'route' => 'savings-products.index', 'module' => 'savings', 'permissions' => ['manage-accounts'], 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
+                                ['label' => 'Savings Transfer', 'route' => 'savings-transfers.create', 'module' => 'savings', 'permissions' => ['post-transactions'], 'icon' => 'M7 7h12m0 0-4-4m4 4-4 4 M17 17H5m0 0 4-4m-4 4 4 4'],
                             ],
                         ],
                     ];
-                    $navGroups = array_values(array_filter($navGroups, fn (array $group): bool => $moduleEnabled($group['module'])));
+                    $itemVisible = fn (array $item): bool => $modulesEnabled($item['modules'] ?? [$item['module'] ?? null]) && $canAny($item['permissions'] ?? []);
+                    $navGroups = array_values(array_filter(array_map(function (array $group) use ($itemVisible): array {
+                        $group['items'] = array_values(array_filter($group['items'], $itemVisible));
+
+                        return $group;
+                    }, $navGroups), fn (array $group): bool => $group['items'] !== []));
                     $adminItems = $user->isMember() ? [] : array_values(array_filter([
-                        $canManageOrganization ? [$user->hasRole('super-admin') ? 'Organizations' : 'Organization', $organizationRoute, 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'] : null,
-                        $user->canPerform('manage-branches') ? ['Branches', 'branches.index', 'M4 20V8l8-4 8 4v12 M9 20v-6h6v6'] : null,
-                        $user->canPerform('manage-users') && $moduleEnabled('users') ? ['Users', 'users.index', 'M16 11a4 4 0 1 0-8 0 M4 21a8 8 0 0 1 16 0'] : null,
-                        $user->canPerform('manage-roles') && $moduleEnabled('roles') ? ['Roles', 'roles.index', 'M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z'] : null,
-                        $user->hasRole('super-admin') ? ['Modules', 'modules.index', 'M4 6h16M4 12h16M4 18h16'] : null,
-                        (! $user->hasRole('super-admin') && ($user->hasRole('organization-admin') || $user->canPerform('manage-organization'))) ? ['Module Visibility', 'modules.visibility', 'M5 12h14 M12 5v14'] : null,
-                        $user->canPerform('manage-settings') && $moduleEnabled('settings') ? ['Settings', 'settings.index', 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M4 12h2 M18 12h2 M12 4v2 M12 18v2'] : null,
-                        $user->canPerform('view-audit-logs') && $moduleEnabled('audit-logs') ? ['Audit Logs', 'audit-logs.index', 'M5 4h14v16H5z M9 8h6 M9 12h6 M9 16h3'] : null,
+                        $canManageOrganization ? ['label' => $user->hasRole('super-admin') ? 'Organizations' : 'Organization', 'route' => $organizationRoute, 'icon' => 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'] : null,
+                        $user->canPerform('manage-branches') ? ['label' => 'Branches', 'route' => 'branches.index', 'icon' => 'M4 20V8l8-4 8 4v12 M9 20v-6h6v6'] : null,
+                        $user->canPerform('manage-users') && $moduleEnabled('users') ? ['label' => 'Users', 'route' => 'users.index', 'icon' => 'M16 11a4 4 0 1 0-8 0 M4 21a8 8 0 0 1 16 0'] : null,
+                        $user->canPerform('manage-roles') && $moduleEnabled('roles') ? ['label' => 'Roles', 'route' => 'roles.index', 'icon' => 'M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-9V7z'] : null,
+                        $user->hasRole('super-admin') ? ['label' => 'Modules', 'route' => 'modules.index', 'icon' => 'M4 6h16M4 12h16M4 18h16'] : null,
+                        (! $user->hasRole('super-admin') && ($user->hasRole('organization-admin') || $user->canPerform('manage-organization'))) ? ['label' => 'Module Visibility', 'route' => 'modules.visibility', 'icon' => 'M5 12h14 M12 5v14'] : null,
+                        $user->canPerform('manage-settings') && $moduleEnabled('settings') ? ['label' => 'Settings', 'route' => 'settings.index', 'icon' => 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M4 12h2 M18 12h2 M12 4v2 M12 18v2'] : null,
+                        $user->canPerform('view-audit-logs') && $moduleEnabled('audit-logs') ? ['label' => 'Audit Logs', 'route' => 'audit-logs.index', 'icon' => 'M5 4h14v16H5z M9 8h6 M9 12h6 M9 16h3'] : null,
                     ]));
                 @endphp
 
@@ -111,7 +113,7 @@
                     </a>
 
                     @foreach($navGroups as $group)
-                        @php($groupActive = collect($group['items'])->contains(fn ($item) => $isRouteActive($item[1])))
+                        @php($groupActive = collect($group['items'])->contains(fn ($item) => $isRouteActive($item['route'])))
                         <details class="group/nav rounded-lg" {{ $groupActive ? 'open' : '' }}>
                             <summary class="flex cursor-pointer list-none items-center gap-3 rounded-lg px-3 py-2.5 font-medium text-slate-600 transition hover:bg-slate-50 hover:text-brand-900 [&::-webkit-details-marker]:hidden {{ $groupActive ? 'bg-brand-50 text-brand-900 ring-1 ring-brand-200 shadow-sm' : '' }}">
                                 <span class="grid h-8 w-8 place-items-center rounded-lg transition {{ $groupActive ? 'bg-brand-700 text-white' : 'bg-slate-100 text-brand-700' }}">
@@ -121,12 +123,13 @@
                                 <svg class="h-4 w-4 text-slate-400 transition group-open/nav:rotate-180" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
                             </summary>
                             <div class="ml-4 mt-1 grid gap-1 border-l border-slate-200 pl-3">
-                                @foreach($group['items'] as [$label, $route, $icon])
+                                @foreach($group['items'] as $item)
+                                    @php($route = $item['route'])
                                     <a href="{{ route($route) }}" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition {{ $isRouteActive($route) ? 'bg-brand-50 text-brand-900' : 'text-slate-600 hover:bg-slate-50 hover:text-brand-900' }}">
                                         <span class="grid h-7 w-7 place-items-center rounded-lg transition {{ $isRouteActive($route) ? 'bg-brand-700 text-white' : 'bg-slate-100 text-brand-700' }}">
-                                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="{{ $icon }}"/></svg>
+                                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="{{ $item['icon'] }}"/></svg>
                                         </span>
-                                        <span class="truncate">{{ $label }}</span>
+                                        <span class="truncate">{{ $item['label'] }}</span>
                                     </a>
                                 @endforeach
                             </div>
@@ -143,7 +146,7 @@
                     @endif
 
                     @if($adminItems !== [])
-                        @php($adminActive = collect($adminItems)->contains(fn ($item) => $isRouteActive($item[1])))
+                        @php($adminActive = collect($adminItems)->contains(fn ($item) => $isRouteActive($item['route'])))
                         <details class="group/nav mt-2 rounded-lg border-t border-slate-200 pt-2" {{ $adminActive ? 'open' : '' }}>
                             <summary class="flex cursor-pointer list-none items-center gap-3 rounded-lg px-3 py-2.5 font-medium text-slate-600 transition hover:bg-sun-50 hover:text-sun-600 [&::-webkit-details-marker]:hidden {{ $adminActive ? 'bg-sun-50 text-sun-600 ring-1 ring-amber-100 shadow-sm' : '' }}">
                                 <span class="grid h-8 w-8 place-items-center rounded-lg transition {{ $adminActive ? 'bg-sun-400 text-slate-950' : 'bg-sun-50 text-sun-600' }}">
@@ -153,12 +156,13 @@
                                 <svg class="h-4 w-4 text-slate-400 transition group-open/nav:rotate-180" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
                             </summary>
                             <div class="ml-4 mt-1 grid gap-1 border-l border-slate-200 pl-3">
-                                @foreach ($adminItems as [$label, $route, $icon])
+                                @foreach ($adminItems as $item)
+                                    @php($route = $item['route'])
                                     <a href="{{ route($route) }}" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition {{ $isRouteActive($route) ? 'bg-sun-50 text-sun-600' : 'text-slate-600 hover:bg-sun-50 hover:text-sun-600' }}">
                                         <span class="grid h-7 w-7 place-items-center rounded-lg transition {{ $isRouteActive($route) ? 'bg-sun-400 text-slate-950' : 'bg-sun-50 text-sun-600' }}">
-                                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="{{ $icon }}"/></svg>
+                                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="{{ $item['icon'] }}"/></svg>
                                         </span>
-                                        <span class="truncate">{{ $label }}</span>
+                                        <span class="truncate">{{ $item['label'] }}</span>
                                     </a>
                                 @endforeach
                             </div>
@@ -180,13 +184,13 @@
                             <path d="M4 7h16M4 12h16M4 17h16" />
                         </svg>
                     </button>
-                    @unless(auth()->user()->isMember())
+                    @if(! auth()->user()->isMember() && auth()->user()->canAccessModule('clients'))
                         <form action="{{ route('clients.index') }}" class="hidden flex-1 sm:block">
                             <input name="search" class="h-11 w-full max-w-xl rounded-xl border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-4 focus:ring-brand-100" placeholder="Search client, phone, account or national ID">
                         </form>
                     @else
                         <div class="hidden flex-1 text-sm font-medium text-slate-500 sm:block">Member self-service portal</div>
-                    @endunless
+                    @endif
                     <div class="flex items-center gap-3 text-sm">
                         @include('notifications.dropdown')
                         <span class="hidden text-slate-500 md:inline">{{ auth()->user()->branch?->name }}</span>

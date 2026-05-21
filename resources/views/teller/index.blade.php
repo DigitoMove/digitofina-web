@@ -54,6 +54,11 @@
             <span class="df-badge {{ $session ? 'border-emerald-500/20 bg-emerald-50 text-emerald-700' : 'border-amber-400/20 bg-amber-50 text-amber-700' }}">{{ $session ? 'Ready' : 'Required' }}</span>
         </div>
         @unless($session)
+            @if($branchesWithoutDrawers->isNotEmpty())
+                <div class="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    No drawer is configured for {{ $branchesWithoutDrawers->pluck('name')->join(', ') }}. Create a drawer in Drawer Management before tellers can open one for that branch.
+                </div>
+            @endif
             <form method="POST" action="{{ route('teller.open') }}" class="mt-5 grid gap-3">
                 @csrf
                 <label class="text-sm font-semibold text-slate-700">Drawer <x-required-badge />
@@ -61,7 +66,7 @@
                         @forelse($drawers->where('status', 'closed') as $openDrawer)
                             <option value="{{ $openDrawer->id }}" @selected((int) old('teller_drawer_id') === $openDrawer->id)>{{ $openDrawer->branch?->name }} · {{ $openDrawer->code }} {{ $openDrawer->name }} · {{ str($openDrawer->status)->headline() }}</option>
                         @empty
-                            <option value="">No closed drawers available</option>
+                            <option value="">No closed drawers available for your branch</option>
                         @endforelse
                     </select>
                 </label>
