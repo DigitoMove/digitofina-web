@@ -81,6 +81,21 @@ class User extends Authenticatable
         return $this->role?->slug === $slug;
     }
 
+    /**
+     * @param  array<int, string>  $slugs
+     */
+    public function hasAnyRole(array $slugs): bool
+    {
+        return in_array($this->role?->slug, $slugs, true);
+    }
+
+    public function canAdministerLoanRepairs(): bool
+    {
+        return $this->hasAnyRole(['super-admin', 'organization-admin', 'supervisor'])
+            || $this->canPerform('approve-reversals')
+            || $this->canPerform('override-maker-checker');
+    }
+
     public function isMember(): bool
     {
         return $this->hasRole('member');

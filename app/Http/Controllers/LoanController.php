@@ -168,7 +168,7 @@ class LoanController extends Controller
 
     public function repairTerms(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
-        abort_unless($request->user()->canPerform('approve-reversals') || $request->user()->canPerform('override-maker-checker'), 403);
+        abort_unless($request->user()->canAdministerLoanRepairs(), 403);
 
         $data = $request->validate([
             'loan_product_id' => ['required', 'exists:loan_products,id'],
@@ -268,7 +268,7 @@ class LoanController extends Controller
 
     public function reopen(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
-        abort_unless($request->user()->canPerform('approve-reversals') || $request->user()->canPerform('override-maker-checker'), 403);
+        abort_unless($request->user()->canAdministerLoanRepairs(), 403);
 
         $data = $request->validate([
             'reason' => ['required', 'string', 'max:1000'],

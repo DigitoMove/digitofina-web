@@ -22,8 +22,8 @@
     $canCancel = (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans')) && ! in_array($loan->status, ['cancelled', 'rejected', 'disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true);
     $canUpdateDraftTerms = $loan->status === 'draft' && (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans'));
     $loanAccountNeedsReopen = $loan->loanAccount && $loan->loanAccount->status !== 'active' && in_array($loan->status, ['active', 'in_arrears'], true);
-    $canReopenClosedLoan = (in_array($loan->status, ['closed', 'fully_paid'], true) || $loanAccountNeedsReopen) && (auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker'));
-    $canRepairLoanTerms = in_array($loan->status, ['approved', 'disbursed', 'active', 'in_arrears'], true) && (auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker'));
+    $canReopenClosedLoan = (in_array($loan->status, ['closed', 'fully_paid'], true) || $loanAccountNeedsReopen) && auth()->user()->canAdministerLoanRepairs();
+    $canRepairLoanTerms = in_array($loan->status, ['approved', 'disbursed', 'active', 'in_arrears'], true) && auth()->user()->canAdministerLoanRepairs();
     $workflow = ['Draft', 'Appraisal', 'Approval', 'Approved', 'Disbursed', 'Closed'];
     $statusIndex = match (true) {
         $loan->status === 'draft' => 0,
@@ -142,7 +142,7 @@
                 <h2 class="text-lg font-semibold text-slate-950">Repair loan terms</h2>
                 <p class="mt-1 text-sm text-sky-900">Use this for admin corrections such as changing a disbursed loan from weekly installments to monthly installments. Successful repayments must be reversed before schedules can be replaced.</p>
             </div>
-            <button type="button" data-loan-repair-open class="rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800">Repair loan</button>
+            <button type="button" data-loan-repair-open class="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white shadow-sm ring-1 ring-slate-950 hover:bg-brand-800 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Repair loan</button>
         </div>
     </section>
 
@@ -186,7 +186,7 @@
                 </label>
                 <div class="flex flex-col-reverse gap-2 md:col-span-2 md:flex-row md:justify-end">
                     <button type="button" data-loan-repair-close class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-                    <button class="rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800">Repair terms and regenerate schedule</button>
+                    <button class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-800 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Repair terms and regenerate schedule</button>
                 </div>
             </form>
         </div>

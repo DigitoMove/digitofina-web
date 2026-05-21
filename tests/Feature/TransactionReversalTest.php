@@ -11,6 +11,9 @@ use App\Models\LoanRepayment;
 use App\Models\LoanRepaymentAllocation;
 use App\Models\LoanSchedule;
 use App\Models\MakerCheckerRequest;
+use App\Models\Module;
+use App\Models\Organization;
+use App\Models\OrganizationModule;
 use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\TransactionType;
@@ -566,24 +569,46 @@ it('allows an admin to reactivate an inactive loan account for an in arrears loa
         ->and((float) $loan->schedules()->sum('total_paid'))->toBe(0.0);
 });
 
-it('allows an admin to repair disbursed loan terms and regenerate the schedule', function () {
+it('allows an organization admin to repair disbursed loan terms and regenerate the schedule', function () {
+    $organization = Organization::create([
+        'name' => 'Repair SACCO',
+        'slug' => 'repair-sacco',
+        'status' => 'active',
+    ]);
+    $loansModule = Module::create([
+        'name' => 'Loans',
+        'slug' => 'loans',
+        'category' => 'operations',
+        'is_core' => false,
+        'status' => 'active',
+    ]);
+    OrganizationModule::create([
+        'organization_id' => $organization->id,
+        'module_id' => $loansModule->id,
+        'is_enabled' => true,
+        'enabled_at' => now(),
+    ]);
     $branch = Branch::create([
+        'organization_id' => $organization->id,
         'code' => '1006',
         'name' => 'Repair Branch',
         'is_active' => true,
         'status' => 'active',
     ]);
     $role = Role::create([
-        'name' => 'Super Admin',
-        'slug' => 'super-admin',
+        'organization_id' => $organization->id,
+        'name' => 'Organization Admin',
+        'slug' => 'organization-admin',
     ]);
     $admin = User::factory()->create([
+        'organization_id' => $organization->id,
         'branch_id' => null,
         'role_id' => $role->id,
         'status' => 'active',
         'is_active' => true,
     ]);
     $client = Client::create([
+        'organization_id' => $organization->id,
         'branch_id' => $branch->id,
         'client_number' => '1006-C000001',
         'first_name' => 'Peter',
@@ -593,6 +618,7 @@ it('allows an admin to repair disbursed loan terms and regenerate the schedule',
         'registered_at' => today(),
     ]);
     $accountType = AccountType::create([
+        'organization_id' => $organization->id,
         'name' => 'Loan',
         'code' => 'LN-REPAIR',
         'category' => 'loan',
@@ -600,6 +626,7 @@ it('allows an admin to repair disbursed loan terms and regenerate the schedule',
         'is_active' => true,
     ]);
     $loanAccount = Account::create([
+        'organization_id' => $organization->id,
         'client_id' => $client->id,
         'branch_id' => $branch->id,
         'account_type_id' => $accountType->id,
@@ -610,6 +637,7 @@ it('allows an admin to repair disbursed loan terms and regenerate the schedule',
         'opened_at' => today(),
     ]);
     $weeklyProduct = LoanProduct::create([
+        'organization_id' => $organization->id,
         'name' => 'Weekly 20',
         'code' => 'WEEKLY20',
         'annual_interest_rate' => 20,
@@ -626,6 +654,7 @@ it('allows an admin to repair disbursed loan terms and regenerate the schedule',
         'is_active' => true,
     ]);
     $monthlyProduct = LoanProduct::create([
+        'organization_id' => $organization->id,
         'name' => 'Monthly 20',
         'code' => 'MONTHLY20',
         'annual_interest_rate' => 20,
@@ -642,6 +671,7 @@ it('allows an admin to repair disbursed loan terms and regenerate the schedule',
         'is_active' => true,
     ]);
     $loan = Loan::create([
+        'organization_id' => $organization->id,
         'client_id' => $client->id,
         'branch_id' => $branch->id,
         'loan_product_id' => $weeklyProduct->id,

@@ -335,7 +335,7 @@ class LoanService
      */
     public function repairTermsAndSchedule(Loan $loan, User $user, array $data): Loan
     {
-        abort_unless($user->canPerform('approve-reversals') || $user->canPerform('override-maker-checker'), 403);
+        abort_unless($user->canAdministerLoanRepairs(), 403);
 
         return DB::transaction(function () use ($loan, $user, $data): Loan {
             $loan = Loan::query()
