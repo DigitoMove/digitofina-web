@@ -2,12 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\FinancialDay;
 use App\Models\MakerCheckerRequest;
 use App\Models\Transaction;
 use App\Services\FinancialControlService;
 use App\Support\ApiSecurity;
-use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use InvalidArgumentException;
@@ -26,10 +24,6 @@ class TransactionReversalController extends Controller
 
         if ($transaction->status !== 'posted' || $transaction->reversed_by !== null) {
             return back()->with('warning', 'Only posted transactions that have not been reversed can be requested for reversal.');
-        }
-
-        if (! $this->reversalWindowIsOpen($transaction)) {
-            return back()->with('warning', 'This transaction belongs to a closed or locked business day, so it can no longer be requested for reversal.');
         }
 
         $hasPendingRequest = $transaction->reversalRequests()->where('status', 'pending')->exists();
@@ -126,20 +120,5 @@ class TransactionReversalController extends Controller
         return (int) $makerCheckerRequest->branch_id === (int) $user->branch_id
             || ApiSecurity::hasGlobalBranchAccess($user)
             || $user->canPerform('override-maker-checker');
-    }
-
-    private function reversalWindowIsOpen(Transaction $transaction): bool
-    {
-        $postedDate = CarbonImmutable::parse(($transaction->posted_at ?: $transaction->created_at)->toDateString());
-
-        if ($postedDate->isToday()) {
-            return true;
-        }
-
-        return ! FinancialDay::query()
-            ->where('branch_id', $transaction->branch_id)
-            ->whereDate('business_date', $postedDate->toDateString())
-            ->whereIn('status', ['closed', 'locked'])
-            ->exists();
     }
 }

@@ -158,10 +158,6 @@ class TransactionReversalService
 
         $loan = Loan::query()->whereKey($repayment->loan_id)->lockForUpdate()->firstOrFail();
 
-        if ($loan->status === 'closed') {
-            throw new InvalidArgumentException('This repayment closed the loan account and cannot be reversed.');
-        }
-
         $loan->increment('penalty_balance', (float) $repayment->penalty_paid);
         $loan->increment('fees_balance', (float) $repayment->fees_paid);
         $loan->increment('interest_balance', (float) $repayment->interest_paid);

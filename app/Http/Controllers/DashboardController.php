@@ -7,7 +7,6 @@ use App\Models\Approval;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Client;
-use App\Models\FinancialDay;
 use App\Models\FixedSavingsAccount;
 use App\Models\InvestmentAccount;
 use App\Models\InvestmentPlan;
@@ -235,32 +234,15 @@ class DashboardController extends Controller
 
     private function markReversalAvailability(Collection $transactions, User $user): void
     {
-        $dates = $transactions
-            ->map(fn (Transaction $transaction): string => ($transaction->posted_at ?: $transaction->created_at)->toDateString())
-            ->unique()
-            ->values();
-
-        $lockedDates = FinancialDay::query()
-            ->where('branch_id', $user->branch_id)
-            ->whereIn('business_date', $dates)
-            ->whereIn('status', ['closed', 'locked'])
-            ->pluck('business_date')
-            ->map(fn ($date): string => CarbonImmutable::parse($date)->toDateString())
-            ->all();
-
-        $transactions->each(function (Transaction $transaction) use ($lockedDates, $user): void {
-            $postedDate = ($transaction->posted_at ?: $transaction->created_at)->toDateString();
+        $transactions->each(function (Transaction $transaction) use ($user): void {
             $hasPendingReversal = $transaction->reversalRequests->isNotEmpty();
-            $isToday = $postedDate === today()->toDateString();
-            $isLocked = in_array($postedDate, $lockedDates, true);
             $canRequest = $transaction->status === 'posted'
                 && ! $transaction->reversed_by
                 && ! $hasPendingReversal
-                && ($isToday || ! $isLocked)
                 && ((int) $transaction->user_id === (int) $user->id || $user->canPerform('approve-reversals'));
 
             $transaction->setAttribute('can_request_reversal', $canRequest);
-            $transaction->setAttribute('reversal_lock_note', $isLocked && ! $isToday ? 'Business day locked' : null);
+            $transaction->setAttribute('reversal_lock_note', null);
         });
     }
 
