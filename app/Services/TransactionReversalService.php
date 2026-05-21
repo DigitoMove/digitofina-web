@@ -185,10 +185,15 @@ class TransactionReversalService
         ]);
 
         if ($loan->loan_account_id) {
+            $loanAccountBalance = (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance;
+
             Account::query()
                 ->whereKey($loan->loan_account_id)
                 ->lockForUpdate()
-                ->update(['balance' => (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance]);
+                ->update([
+                    'balance' => $loanAccountBalance,
+                    'status' => $loanAccountBalance > 0 ? 'active' : 'closed',
+                ]);
         }
 
         $this->auditLogger->record('loan.repayment_reversed', $repayment, [
