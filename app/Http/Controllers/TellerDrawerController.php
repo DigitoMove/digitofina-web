@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\FinancialControlService;
 use App\Services\TellerService;
+use App\Services\TenantContext;
 use App\Services\TransactionPostingService;
 use App\Support\CurrencyDenomination;
 use Carbon\CarbonImmutable;
@@ -32,7 +33,8 @@ class TellerDrawerController extends Controller
 {
     public function index(Request $request): View
     {
-        $canOpenForTellers = $request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users');
+        $organizationId = $this->activeOrganizationId($request);
+        $canOpenForTellers = $this->canOpenForTellers($request);
         $canApproveReversals = $request->user()->canPerform('approve-reversals') || $request->user()->canPerform('override-maker-checker');
         $session = DrawerSession::with('drawer')->where('user_id', auth()->id())->where('status', 'open')->latest()->first();
         $branchId = $session?->drawer?->branch_id ?? $request->user()->branch_id;
@@ -93,8 +95,10 @@ class TellerDrawerController extends Controller
             ->limit(8)
             ->get();
         $drawers = TellerDrawer::query()
+            ->withoutGlobalScope('tenant')
             ->with(['branch', 'assignedUser'])
-            ->when(! $request->user()->canPerform('manage-organization') && $request->user()->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
+            ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $this->scopeDrawersToOrganization($query, $organizationId))
+            ->when(! $request->user()->hasOrganizationBranchAccess() && $request->user()->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
             ->when(! $canOpenForTellers, function (Builder $query): void {
                 $query->where(function (Builder $query): void {
                     $query->where('assigned_user_id', auth()->id())
@@ -105,8 +109,10 @@ class TellerDrawerController extends Controller
             ->orderBy('code')
             ->get();
         $branches = Branch::query()
+            ->withoutGlobalScope('tenant')
             ->where('is_active', true)
-            ->when(! $request->user()->canPerform('manage-organization'), fn (Builder $query): Builder => $query->where('id', $request->user()->branch_id))
+            ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
+            ->when(! $request->user()->hasOrganizationBranchAccess(), fn (Builder $query): Builder => $query->where('id', $request->user()->branch_id))
             ->orderBy('name')
             ->get();
 
@@ -119,7 +125,8 @@ class TellerDrawerController extends Controller
             'tellers' => $canOpenForTellers
                 ? User::query()
                     ->with(['branch', 'role'])
-                    ->where('organization_id', $request->user()->organization_id)
+                    ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
+                    ->when(! $organizationId, fn (Builder $query): Builder => $query->whereRaw('1 = 0'))
                     ->where('status', 'active')
                     ->whereHas('role', fn ($query) => $query->where('slug', 'teller-cashier'))
                     ->orderBy('name')
@@ -279,7 +286,7 @@ class TellerDrawerController extends Controller
 
     public function storeDrawer(Request $request, AuditLogger $auditLogger): RedirectResponse
     {
-        abort_unless($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'), 403);
+        abort_unless($this->canOpenForTellers($request), 403);
 
         $data = $request->validate([
             'branch_id' => ['required', 'exists:branches,id'],
@@ -314,7 +321,7 @@ class TellerDrawerController extends Controller
 
     public function updateDrawer(Request $request, TellerDrawer $drawer, AuditLogger $auditLogger): RedirectResponse
     {
-        abort_unless($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'), 403);
+        abort_unless($this->canOpenForTellers($request), 403);
 
         $data = $request->validate([
             'branch_id' => ['required', 'exists:branches,id'],
@@ -362,7 +369,10 @@ class TellerDrawerController extends Controller
         ]);
 
         try {
-            $drawer = TellerDrawer::query()->find($data['teller_drawer_id']);
+            $drawer = TellerDrawer::query()
+                ->withoutGlobalScope('tenant')
+                ->with('branch')
+                ->find($data['teller_drawer_id']);
 
             if (! $drawer) {
                 throw new InvalidArgumentException('The selected drawer was not found. Refresh the page and choose an available branch drawer.');
@@ -487,7 +497,7 @@ class TellerDrawerController extends Controller
 
     public function closeDrawer(Request $request, TellerDrawer $drawer, FinancialControlService $financialControls): RedirectResponse
     {
-        abort_unless($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'), 403);
+        abort_unless($this->canOpenForTellers($request), 403);
 
         $data = $request->validate(['closing_balance' => ['required', 'numeric', 'min:0', CurrencyDenomination::validationRule()]]);
 
@@ -509,7 +519,7 @@ class TellerDrawerController extends Controller
 
     public function destroyDrawer(Request $request, TellerDrawer $drawer, AuditLogger $auditLogger): RedirectResponse
     {
-        abort_unless($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'), 403);
+        abort_unless($this->canOpenForTellers($request), 403);
 
         $this->authorizeDrawerBranch($request, $drawer->branch);
 
@@ -529,7 +539,7 @@ class TellerDrawerController extends Controller
 
     private function resolveOpeningTeller(Request $request, ?int $tellerUserId): User
     {
-        $canOpenForTellers = $request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users');
+        $canOpenForTellers = $this->canOpenForTellers($request);
 
         if ($canOpenForTellers && ! $tellerUserId) {
             throw new InvalidArgumentException('Select the teller or cashier to open this drawer for.');
@@ -546,7 +556,7 @@ class TellerDrawerController extends Controller
         $teller = User::query()
             ->with(['branch', 'role'])
             ->whereKey($tellerUserId)
-            ->where('organization_id', $request->user()->organization_id)
+            ->when($this->activeOrganizationId($request), fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
             ->where('status', 'active')
             ->first();
 
@@ -563,11 +573,28 @@ class TellerDrawerController extends Controller
 
     private function authorizeDrawerBranch(Request $request, Branch $branch): void
     {
-        if ($request->user()->canPerform('manage-organization')) {
-            return;
-        }
+        abort_unless($request->user()->canAccessBranch($branch->id, $branch->organization_id), 403);
+    }
 
-        abort_unless((int) $request->user()->branch_id === (int) $branch->id, 403);
+    private function canOpenForTellers(Request $request): bool
+    {
+        return $request->user()->hasRole('super-admin')
+            || $request->user()->hasRole('organization-admin')
+            || $request->user()->canPerform('manage-organization')
+            || ($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'));
+    }
+
+    private function activeOrganizationId(Request $request): ?int
+    {
+        return app(TenantContext::class)->id() ?: $request->user()->organization_id;
+    }
+
+    private function scopeDrawersToOrganization(Builder $query, int $organizationId): Builder
+    {
+        return $query->where(function (Builder $query) use ($organizationId): void {
+            $query->where('organization_id', $organizationId)
+                ->orWhereHas('branch', fn (Builder $query): Builder => $query->where('organization_id', $organizationId));
+        });
     }
 
     private function canManageLedgerAccounts(Request $request): bool

@@ -22,7 +22,11 @@ class TellerService
         }
 
         return DB::transaction(function () use ($drawer, $teller, $openingBalance, $openedBy): DrawerSession {
-            $drawer = TellerDrawer::query()->whereKey($drawer->id)->lockForUpdate()->firstOrFail();
+            $drawer = TellerDrawer::query()
+                ->withoutGlobalScope('tenant')
+                ->whereKey($drawer->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
             if ($drawer->status === 'open') {
                 throw new InvalidArgumentException('Drawer is already open.');
@@ -37,7 +41,7 @@ class TellerService
                 throw new InvalidArgumentException('Drawer already has an open session. Close it before opening it again.');
             }
 
-            if ($drawer->assigned_user_id && (int) $drawer->assigned_user_id !== (int) $teller->id && ! $openedBy?->canPerform('manage-users')) {
+            if ($drawer->assigned_user_id && (int) $drawer->assigned_user_id !== (int) $teller->id && ! $this->canOverrideDrawerAssignment($openedBy)) {
                 throw new InvalidArgumentException('This drawer is assigned to another teller.');
             }
 
@@ -64,5 +68,13 @@ class TellerService
                 'opened_at' => now(),
             ]);
         });
+    }
+
+    private function canOverrideDrawerAssignment(?User $user): bool
+    {
+        return $user?->hasRole('super-admin')
+            || $user?->hasRole('organization-admin')
+            || $user?->canPerform('manage-organization')
+            || $user?->canPerform('manage-users');
     }
 }

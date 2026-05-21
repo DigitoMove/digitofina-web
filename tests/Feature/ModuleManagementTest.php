@@ -185,6 +185,69 @@ it('shows a teller form error when the open drawer is unavailable', function () 
         ->assertSessionHasErrors(['amount' => 'Your open teller drawer is no longer available. Close and reopen your drawer before posting a transaction.']);
 });
 
+it('allows an organization admin to open an organization drawer for a teller', function () {
+    [$organization, $branch, $otherBranch] = drawerAdminOrganization();
+    enableTellerModule($organization);
+    $admin = drawerAdminUser($organization, null, 'organization-admin', ['manage-organization', 'manage-users', 'manage-drawers']);
+    $teller = drawerAdminUser($organization, $otherBranch->id, 'teller-cashier', ['post-transactions', 'manage-drawers']);
+    $drawer = TellerDrawer::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $otherBranch->id,
+        'assigned_user_id' => null,
+        'name' => 'Other Branch Drawer',
+        'code' => fake()->unique()->bothify('ORG-TD-??'),
+        'current_balance' => 0,
+        'status' => 'closed',
+    ]);
+
+    $this->actingAs($admin)
+        ->from(route('teller.index'))
+        ->post(route('teller.open'), [
+            'teller_drawer_id' => $drawer->id,
+            'teller_user_id' => $teller->id,
+            'opening_balance' => 1000,
+        ])
+        ->assertRedirect(route('teller.index'))
+        ->assertSessionHasNoErrors();
+
+    expect($drawer->fresh())
+        ->status->toBe('open')
+        ->assigned_user_id->toBe($teller->id);
+});
+
+it('shows selected organization drawers and tellers to a super admin', function () {
+    [$organization, $branch] = drawerAdminOrganization();
+    [$otherOrganization, $otherBranch] = drawerAdminOrganization('Other Tenant');
+    $superAdmin = drawerAdminUser(null, null, 'super-admin', []);
+    $teller = drawerAdminUser($organization, $branch->id, 'teller-cashier', ['post-transactions', 'manage-drawers']);
+    $ownDrawer = TellerDrawer::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'assigned_user_id' => null,
+        'name' => 'Selected Org Drawer',
+        'code' => fake()->unique()->bothify('SEL-TD-??'),
+        'current_balance' => 0,
+        'status' => 'closed',
+    ]);
+    $otherDrawer = TellerDrawer::create([
+        'organization_id' => $otherOrganization->id,
+        'branch_id' => $otherBranch->id,
+        'assigned_user_id' => null,
+        'name' => 'Other Org Drawer',
+        'code' => fake()->unique()->bothify('OTH-TD-??'),
+        'current_balance' => 0,
+        'status' => 'closed',
+    ]);
+
+    $this->actingAs($superAdmin)
+        ->withSession(['super_admin_organization_id' => $organization->id])
+        ->get(route('teller.index'))
+        ->assertSuccessful()
+        ->assertSee($teller->name)
+        ->assertSee($ownDrawer->code)
+        ->assertDontSee($otherDrawer->code);
+});
+
 it('prevents disabling modules required by enabled dependents', function () {
     $user = moduleManagementUser(['manage-organization']);
     $modules = app(ModuleService::class);
@@ -231,5 +294,64 @@ function moduleManagementUser(array $permissions): User
         'password' => Hash::make('password'),
         'status' => 'active',
         'is_active' => true,
+    ]);
+}
+
+function drawerAdminOrganization(string $name = 'Drawer Admin Tenant'): array
+{
+    $organization = Organization::create([
+        'name' => $name,
+        'slug' => fake()->unique()->slug(),
+    ]);
+    $branch = Branch::create([
+        'organization_id' => $organization->id,
+        'code' => fake()->unique()->numerify('####'),
+        'name' => 'Main Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $otherBranch = Branch::create([
+        'organization_id' => $organization->id,
+        'code' => fake()->unique()->numerify('####'),
+        'name' => 'Second Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+
+    return [$organization, $branch, $otherBranch];
+}
+
+function drawerAdminUser(?Organization $organization, ?int $branchId, string $roleSlug, array $permissions): User
+{
+    $role = Role::create([
+        'organization_id' => $organization?->id,
+        'name' => str($roleSlug)->headline(),
+        'slug' => $roleSlug,
+    ]);
+
+    foreach ($permissions as $permission) {
+        $permissionModel = Permission::firstOrCreate(
+            ['slug' => $permission],
+            ['organization_id' => $organization?->id, 'name' => str($permission)->headline()]
+        );
+        $role->permissions()->syncWithoutDetaching([$permissionModel->id]);
+    }
+
+    return User::factory()->create([
+        'organization_id' => $organization?->id,
+        'branch_id' => $branchId,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+}
+
+function enableTellerModule(Organization $organization): void
+{
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($organization);
+    $organization->modules()->syncWithoutDetaching([
+        Module::where('slug', 'teller')->firstOrFail()->id => ['is_enabled' => true, 'enabled_at' => now()],
     ]);
 }
