@@ -185,6 +185,87 @@ it('shows a teller form error when the open drawer is unavailable', function () 
         ->assertSessionHasErrors(['amount' => 'Your open teller drawer is no longer available. Close and reopen your drawer before posting a transaction.']);
 });
 
+it('keeps the selected account after closing a posted drawer receipt', function () {
+    $user = moduleManagementUser(['post-transactions']);
+    enableTellerModule($user->organization);
+    $client = Client::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'officer_id' => $user->id,
+        'client_number' => fake()->unique()->numerify('1001-C######'),
+        'client_type' => 'individual',
+        'first_name' => fake()->firstName(),
+        'last_name' => fake()->lastName(),
+        'phone' => fake()->unique()->numerify('+2567########'),
+        'status' => 'active',
+    ]);
+    $accountType = AccountType::create([
+        'name' => 'Savings Account',
+        'code' => fake()->unique()->bothify('SAV-??'),
+        'category' => 'savings',
+        'is_active' => true,
+    ]);
+    $account = Account::create([
+        'organization_id' => $user->organization_id,
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'account_type_id' => $accountType->id,
+        'account_number' => fake()->unique()->numerify('1001-SAV-####'),
+        'account_name' => $client->full_name.' Savings',
+        'status' => 'active',
+        'balance' => 0,
+        'opened_at' => today(),
+    ]);
+    $transactionType = TransactionType::create([
+        'name' => 'Deposit',
+        'code' => fake()->unique()->bothify('deposit-??'),
+        'direction' => 'credit',
+        'is_active' => true,
+    ]);
+    $drawer = TellerDrawer::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'assigned_user_id' => $user->id,
+        'name' => 'Main Drawer',
+        'code' => fake()->unique()->bothify('TDR-??'),
+        'current_balance' => 0,
+        'status' => 'open',
+    ]);
+    DrawerSession::create([
+        'organization_id' => $user->organization_id,
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $user->id,
+        'opening_balance' => 0,
+        'status' => 'open',
+        'opened_at' => now(),
+    ]);
+
+    $redirectUrl = route('teller.index', [
+        'lookup_scope' => 'client_account',
+        'account_number' => $account->account_number,
+        'account_type_id' => $accountType->id,
+    ]);
+
+    $response = $this->actingAs($user)
+        ->from(route('teller.index', ['account_number' => $account->account_number]))
+        ->post(route('teller.post'), [
+            'account_scope' => 'client_account',
+            'account_number' => $account->account_number,
+            'transaction_type_id' => $transactionType->id,
+            'amount' => 1000,
+            'transaction_date' => today()->toDateString(),
+        ])
+        ->assertRedirect($redirectUrl)
+        ->assertSessionHas('receipt_transaction_id');
+
+    $this->actingAs($user)
+        ->withSession(['receipt_transaction_id' => $response->getSession()->get('receipt_transaction_id')])
+        ->get($redirectUrl)
+        ->assertSuccessful()
+        ->assertSee($account->account_number)
+        ->assertSee('account_number='.$account->account_number.'&amp;account_type_id='.$accountType->id.'&amp;lookup_scope=client_account', false);
+});
+
 it('allows an organization admin to open an organization drawer for a teller', function () {
     [$organization, $branch, $otherBranch] = drawerAdminOrganization();
     enableTellerModule($organization);

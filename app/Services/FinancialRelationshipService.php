@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Account;
 use App\Models\Client;
 use App\Models\InvestmentAccount;
 use App\Models\InvestmentTransaction;
@@ -271,7 +272,7 @@ class FinancialRelationshipService
      */
     public function clientOverview(Client $client, ?array $enabledModules = null): array
     {
-        $enabledModules = $this->enabledModules($enabledModules);
+        $enabledModules = $this->enabledModules($enabledModules, $client);
         $moduleEnabled = fn (string $slug): bool => in_array($slug, $enabledModules, true);
         $enabledFinancialModules = collect(['savings', 'loans', 'investments', 'shares', 'fixed-deposits'])
             ->filter($moduleEnabled)
@@ -279,15 +280,20 @@ class FinancialRelationshipService
             ->all();
 
         $client->loadMissing(array_filter([
+            'accounts.accountType',
             $moduleEnabled('savings') ? 'savingsAccounts' : null,
             $moduleEnabled('investments') ? 'investmentAccounts' : null,
             $moduleEnabled('shares') ? 'shareAccounts' : null,
             $moduleEnabled('loans') ? 'loans' : null,
         ]));
 
-        $totalSavings = $moduleEnabled('savings')
+        $basicSavingsBalance = (float) $client->accounts
+            ->filter(fn (Account $account): bool => $account->accountType?->category === 'savings')
+            ->sum(fn (Account $account): float => (float) $account->balance);
+        $savingsPackageBalance = $moduleEnabled('savings')
             ? (float) $client->savingsAccounts->sum(fn (SavingsAccount $account): float => (float) $account->current_balance)
             : 0.0;
+        $totalSavings = $basicSavingsBalance + $savingsPackageBalance;
         $totalInvestments = $moduleEnabled('investments')
             ? (float) $client->investmentAccounts->sum(fn (InvestmentAccount $account): float => (float) $account->current_balance)
             : 0.0;
@@ -460,10 +466,16 @@ class FinancialRelationshipService
      * @param  array<int, string>|null  $enabledModules
      * @return array<int, string>
      */
-    private function enabledModules(?array $enabledModules = null): array
+    private function enabledModules(?array $enabledModules = null, ?Client $client = null): array
     {
         if ($enabledModules !== null) {
             return array_values(array_unique($enabledModules));
+        }
+
+        $client?->loadMissing('organization');
+
+        if ($client?->organization) {
+            return app(ModuleService::class)->enabledSlugs($client->organization);
         }
 
         $user = request()?->user();

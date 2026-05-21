@@ -32,7 +32,7 @@ class ClientPolicy
 
     public function delete(User $user, Client $client): bool
     {
-        return ($user->hasRole('super-admin') || $user->canPerform('manage-organization'))
+        return ($user->hasRole('super-admin') || $user->hasRole('organization-admin') || $user->canPerform('manage-organization'))
             && $this->canAccessBranch($user, $client);
     }
 
@@ -48,14 +48,7 @@ class ClientPolicy
 
     private function canAccessBranch(User $user, Client $client): bool
     {
-        if ($user->hasRole('super-admin') || $user->canPerform('manage-organization') || $user->canPerform('audit-system')) {
-            return true;
-        }
-
-        if ($user->organization_id !== null && $client->organization_id !== null && $user->organization_id !== $client->organization_id) {
-            return false;
-        }
-
-        return $user->branch_id === null || $user->branch_id === $client->branch_id;
+        return $user->canAccessBranch($client->branch_id, $client->organization_id)
+            || $user->canPerform('audit-system');
     }
 }

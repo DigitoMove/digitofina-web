@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Account;
+use App\Models\AccountType;
 use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\Client;
@@ -9,12 +11,14 @@ use App\Models\InvestorAccount;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\LoanSchedule;
+use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
 use App\Models\User;
 use App\Services\FinancialRelationshipService;
+use App\Services\ModuleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -237,4 +241,69 @@ it('repays loans from savings and updates the client overview', function () {
         ->and($overview['total_savings'])->toBe(160000.0)
         ->and($overview['total_investments'])->toBe((float) $investment->current_balance)
         ->and($overview['outstanding_loan_balance'])->toBe(60000.0);
+});
+
+it('includes basic savings account balances in the client overview for the client organization', function () {
+    $organization = Organization::create([
+        'name' => 'Loan Only Organization',
+        'slug' => fake()->unique()->slug(),
+    ]);
+    $branch = Branch::create([
+        'organization_id' => $organization->id,
+        'code' => fake()->unique()->numerify('####'),
+        'name' => 'Main Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $role = Role::create([
+        'organization_id' => $organization->id,
+        'name' => 'Relationship Officer',
+        'slug' => fake()->unique()->slug(),
+    ]);
+    $user = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $client = Client::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'officer_id' => $user->id,
+        'client_number' => fake()->unique()->numerify('1001-C######'),
+        'client_type' => 'individual',
+        'first_name' => fake()->firstName(),
+        'last_name' => fake()->lastName(),
+        'phone' => fake()->unique()->e164PhoneNumber(),
+        'kyc_status' => 'verified',
+        'status' => 'active',
+    ]);
+    $accountType = AccountType::create([
+        'organization_id' => $organization->id,
+        'name' => 'Savings Account',
+        'code' => fake()->unique()->bothify('SAV-??'),
+        'category' => 'savings',
+        'is_active' => true,
+    ]);
+    Account::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'client_id' => $client->id,
+        'account_type_id' => $accountType->id,
+        'account_number' => fake()->unique()->numerify('1001-SAV-####'),
+        'account_name' => $client->full_name.' Savings',
+        'status' => 'active',
+        'balance' => 75_000,
+        'opened_at' => today(),
+    ]);
+
+    app(ModuleService::class)->syncCatalog();
+    app(ModuleService::class)->syncDefaults($organization);
+
+    $overview = app(FinancialRelationshipService::class)->clientOverview($client->fresh());
+
+    expect($overview['total_savings'])->toBe(75000.0)
+        ->and($overview['available_balance'])->toBe(75000.0)
+        ->and($overview['module_flags']['investments'])->toBeFalse();
 });

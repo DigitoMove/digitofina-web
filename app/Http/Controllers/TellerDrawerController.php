@@ -471,7 +471,11 @@ class TellerDrawerController extends Controller
         }
 
         return redirect()
-            ->route('teller.index')
+            ->route('teller.index', [
+                'lookup_scope' => 'client_account',
+                'account_number' => $account->account_number,
+                'account_type_id' => $account->account_type_id,
+            ])
             ->with('status', 'Transaction posted.')
             ->with('receipt_transaction_id', $transaction->id);
     }

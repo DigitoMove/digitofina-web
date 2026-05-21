@@ -122,16 +122,17 @@
         'mobile_money_proof' => 'Mobile Money Proof',
         'other' => 'Other',
     ];
-    $financialMetrics = [
-        ['label' => 'Total Savings', 'value' => $financialOverview['total_savings'] ?? 0, 'tone' => 'text-emerald-700'],
-        ['label' => 'Total Investments', 'value' => $financialOverview['total_investments'] ?? 0, 'tone' => 'text-sky-700'],
-        ['label' => 'Total Shares', 'value' => $financialOverview['total_shares'] ?? 0, 'tone' => 'text-blue-700'],
-        ['label' => 'Outstanding Loans', 'value' => $financialOverview['outstanding_loan_balance'] ?? 0, 'tone' => 'text-red-700'],
-        ['label' => 'Available Balance', 'value' => $financialOverview['available_balance'] ?? 0, 'tone' => 'text-slate-900'],
-        ['label' => 'Locked Savings', 'value' => $financialOverview['locked_savings'] ?? 0, 'tone' => 'text-amber-700'],
-        ['label' => 'Locked Investments', 'value' => $financialOverview['locked_investment_amount'] ?? 0, 'tone' => 'text-violet-700'],
-        ['label' => 'Net Position', 'value' => $financialOverview['net_financial_position'] ?? 0, 'tone' => (($financialOverview['net_financial_position'] ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-700')],
-    ];
+    $moduleFlags = $financialOverview['module_flags'] ?? [];
+    $financialMetrics = collect([
+        ['label' => 'Total Savings', 'value' => $financialOverview['total_savings'] ?? 0, 'tone' => 'text-emerald-700', 'show' => ($moduleFlags['savings'] ?? false) || ($financialOverview['total_savings'] ?? 0) > 0],
+        ['label' => 'Total Investments', 'value' => $financialOverview['total_investments'] ?? 0, 'tone' => 'text-sky-700', 'show' => $moduleFlags['investments'] ?? false],
+        ['label' => 'Total Shares', 'value' => $financialOverview['total_shares'] ?? 0, 'tone' => 'text-blue-700', 'show' => $moduleFlags['shares'] ?? false],
+        ['label' => 'Outstanding Loans', 'value' => $financialOverview['outstanding_loan_balance'] ?? 0, 'tone' => 'text-red-700', 'show' => $moduleFlags['loans'] ?? false],
+        ['label' => 'Available Balance', 'value' => $financialOverview['available_balance'] ?? 0, 'tone' => 'text-slate-900', 'show' => true],
+        ['label' => 'Locked Savings', 'value' => $financialOverview['locked_savings'] ?? 0, 'tone' => 'text-amber-700', 'show' => ($financialOverview['locked_savings'] ?? 0) > 0],
+        ['label' => 'Locked Investments', 'value' => $financialOverview['locked_investment_amount'] ?? 0, 'tone' => 'text-violet-700', 'show' => ($financialOverview['locked_investment_amount'] ?? 0) > 0],
+        ['label' => 'Net Position', 'value' => $financialOverview['net_financial_position'] ?? 0, 'tone' => (($financialOverview['net_financial_position'] ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-700'), 'show' => true],
+    ])->filter(fn (array $metric): bool => $metric['show'])->values();
 @endphp
 
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">

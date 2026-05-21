@@ -739,5 +739,5 @@
     </div>
 </section>
 
-<x-transaction-receipt-modal :transaction="$receiptTransaction" :close-url="route('teller.index')" />
+<x-transaction-receipt-modal :transaction="$receiptTransaction" :close-url="url()->full()" />
 @endsection

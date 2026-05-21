@@ -17,6 +17,7 @@ use App\Models\LoanProduct;
 use App\Models\LoanRepayment;
 use App\Models\LoanRepaymentAllocation;
 use App\Models\LoanSchedule;
+use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\SavingsAccount;
@@ -27,6 +28,7 @@ use App\Models\ShareProduct;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
+use App\Services\ModuleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -173,6 +175,18 @@ it('does not let a non-admin delete a client', function () {
     expect(Client::whereKey($client->id)->exists())->toBeTrue();
 });
 
+it('lets an organization admin delete a client', function () {
+    $admin = deletionOrganizationAdmin();
+    $client = deletionClient($admin);
+
+    $response = $this->actingAs($admin)->delete(route('clients.destroy', $client), [
+        'confirmation' => $client->client_number,
+    ]);
+
+    $response->assertRedirect();
+    expect(Client::whereKey($client->id)->exists())->toBeFalse();
+});
+
 function deletionUser(array $permissions, string $roleSlug = 'loan-officer'): User
 {
     $branch = Branch::create(['code' => fake()->unique()->numerify('####'), 'name' => fake()->city(), 'is_active' => true, 'status' => 'active']);
@@ -194,10 +208,44 @@ function deletionAdmin(): User
     return deletionUser(['manage-organization', 'manage-clients'], 'super-admin');
 }
 
+function deletionOrganizationAdmin(): User
+{
+    $organization = Organization::create([
+        'name' => 'Deletion Tenant',
+        'slug' => fake()->unique()->slug(),
+    ]);
+    $branch = Branch::create([
+        'organization_id' => $organization->id,
+        'code' => fake()->unique()->numerify('####'),
+        'name' => fake()->city(),
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $role = Role::firstOrCreate(
+        ['slug' => 'organization-admin'],
+        ['organization_id' => $organization->id, 'name' => 'Organization Admin'],
+    );
+    $role->permissions()->sync(collect(['manage-clients'])->map(
+        fn (string $slug): int => Permission::firstOrCreate(['slug' => $slug], ['organization_id' => $organization->id, 'name' => str($slug)->headline()])->id
+    )->all());
+
+    app(ModuleService::class)->syncCatalog();
+    app(ModuleService::class)->syncDefaults($organization);
+
+    return User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => null,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+}
+
 function deletionClient(User $user, string $number = '1001-C000001', string $phone = '+256700000001'): Client
 {
     return Client::create([
-        'branch_id' => $user->branch_id,
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id ?: Branch::where('organization_id', $user->organization_id)->value('id'),
         'officer_id' => $user->id,
         'client_number' => $number,
         'client_type' => 'individual',
