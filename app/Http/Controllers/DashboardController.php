@@ -7,6 +7,7 @@ use App\Models\Approval;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\FinancialDay;
 use App\Models\FixedSavingsAccount;
 use App\Models\InvestmentAccount;
 use App\Models\InvestmentPlan;
@@ -21,12 +22,15 @@ use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\LoanVisibilityService;
+use App\Services\ModuleService;
+use App\Support\ModuleCatalog;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 
@@ -41,6 +45,10 @@ class DashboardController extends Controller
         $depositType = TransactionType::where('code', 'deposit')->first();
         $withdrawalType = TransactionType::where('code', 'withdrawal')->first();
         $user = Auth::user();
+        $enabledModules = $user->hasRole('super-admin') || ! $user->organization
+            ? collect(ModuleCatalog::modules())->pluck('slug')->all()
+            : app(ModuleService::class)->enabledSlugs($user->organization);
+        $moduleIsEnabled = fn (string $slug): bool => in_array($slug, $enabledModules, true);
         $drawer = $user->drawerSessions()->with('drawer')->where('status', 'open')->latest()->first()?->drawer;
         $today = CarbonImmutable::today();
         $monthStart = $today->startOfMonth();
@@ -123,6 +131,22 @@ class DashboardController extends Controller
             ->whereIn('status', ['draft', 'under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved'])
             ->tap(fn (Builder $query) => $visibility->scope($query, $user))
             ->count();
+        $cashierRecentTransactions = collect();
+
+        if ($user->isTellerCashier() && $moduleIsEnabled('teller')) {
+            $cashierRecentTransactions = Transaction::query()
+                ->with([
+                    'account.client',
+                    'type',
+                    'reversalRequests' => fn ($query) => $query->where('status', 'pending')->latest(),
+                ])
+                ->where('user_id', $user->id)
+                ->latest('posted_at')
+                ->limit(8)
+                ->get();
+
+            $this->markReversalAvailability($cashierRecentTransactions, $user);
+        }
 
         return view('dashboard.index', [
             'totalClients' => Client::count(),
@@ -164,6 +188,7 @@ class DashboardController extends Controller
             'dueTodayCount' => (int) ($dueTodayTotals?->total ?? 0),
             'dueTodayAmount' => (float) ($dueTodayTotals?->amount ?? 0),
             'nextRepayments' => $nextRepayments,
+            'cashierRecentTransactions' => $cashierRecentTransactions,
             'calendarDays' => $calendarDays,
             'calendarMonth' => $today,
             'arrearsCount' => $arrearsCount,
@@ -172,11 +197,43 @@ class DashboardController extends Controller
             'canFilterCalendarBranch' => $canFilterCalendarBranch,
             'calendarBranches' => Branch::orderBy('name')->get(),
             'selectedCalendarBranchId' => $selectedCalendarBranchId,
-            'alerts' => [
-                'Loans in arrears' => $arrearsCount,
-                'Open drawer' => $drawer ? $drawer->name : 'No active teller drawer',
+            'enabledModules' => $enabledModules,
+            'alerts' => array_filter([
+                'Loans in arrears' => $moduleIsEnabled('loans') ? $arrearsCount : null,
+                'Open drawer' => $moduleIsEnabled('teller') ? ($drawer ? $drawer->name : 'No active teller drawer') : null,
                 'Organization' => $user->organization?->name ?? 'Not assigned',
-            ],
+            ], fn (mixed $value): bool => $value !== null),
         ]);
+    }
+
+    private function markReversalAvailability(Collection $transactions, User $user): void
+    {
+        $dates = $transactions
+            ->map(fn (Transaction $transaction): string => ($transaction->posted_at ?: $transaction->created_at)->toDateString())
+            ->unique()
+            ->values();
+
+        $lockedDates = FinancialDay::query()
+            ->where('branch_id', $user->branch_id)
+            ->whereIn('business_date', $dates)
+            ->whereIn('status', ['closed', 'locked'])
+            ->pluck('business_date')
+            ->map(fn ($date): string => CarbonImmutable::parse($date)->toDateString())
+            ->all();
+
+        $transactions->each(function (Transaction $transaction) use ($lockedDates, $user): void {
+            $postedDate = ($transaction->posted_at ?: $transaction->created_at)->toDateString();
+            $hasPendingReversal = $transaction->reversalRequests->isNotEmpty();
+            $isToday = $postedDate === today()->toDateString();
+            $isLocked = in_array($postedDate, $lockedDates, true);
+            $canRequest = $transaction->status === 'posted'
+                && ! $transaction->reversed_by
+                && ! $hasPendingReversal
+                && ($isToday || ! $isLocked)
+                && ((int) $transaction->user_id === (int) $user->id || $user->canPerform('approve-reversals'));
+
+            $transaction->setAttribute('can_request_reversal', $canRequest);
+            $transaction->setAttribute('reversal_lock_note', $isLocked && ! $isToday ? 'Business day locked' : null);
+        });
     }
 }

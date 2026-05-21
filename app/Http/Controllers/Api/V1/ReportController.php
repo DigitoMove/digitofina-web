@@ -23,6 +23,7 @@ use App\Models\ReportExport;
 use App\Models\SavingsAccount;
 use App\Models\SavingsGoal;
 use App\Models\SavingsTransaction;
+use App\Services\ModuleService;
 use App\Support\ApiResponse;
 use App\Support\ApiSecurity;
 use Illuminate\Http\JsonResponse;
@@ -33,26 +34,28 @@ class ReportController extends Controller
     public function dashboard(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
+        $moduleEnabled = fn (string $module): bool => $this->moduleEnabled($request, $module);
 
-        return ApiResponse::data([
+        return ApiResponse::data(array_filter([
             'clients' => ApiSecurity::scopeTenant(Client::query(), $request->user())->count(),
             'active_clients' => ApiSecurity::scopeTenant(Client::query(), $request->user())->where('status', 'active')->count(),
-            'total_savings' => (float) ApiSecurity::scopeTenant(SavingsAccount::query(), $request->user())->sum('current_balance'),
-            'loan_portfolio' => (float) ApiSecurity::scopeTenant(Loan::query(), $request->user())->whereIn('status', ['approved', 'active', 'in_arrears'])->sum('principal_balance'),
-            'arrears' => (float) LoanSchedule::whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->sum('outstanding_amount'),
-            'deposits_today' => (float) ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user())->where('type', 'deposit')->whereDate('transaction_date', today())->sum('amount'),
-            'withdrawals_today' => (float) ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user())->where('type', 'withdrawal')->whereDate('transaction_date', today())->sum('amount'),
-            'total_investors' => ApiSecurity::scopeTenant(InvestorAccount::query(), $request->user())->where('status', 'active')->count(),
-            'active_investments' => ApiSecurity::scopeTenant(InvestmentAccount::query(), $request->user())->where('status', 'active')->count(),
-            'investment_balance' => (float) ApiSecurity::scopeTenant(InvestorAccount::query(), $request->user())->sum('current_investment_balance'),
-            'returns_posted' => (float) ApiSecurity::scopeTenant(InvestmentTransaction::query(), $request->user())->where('type', 'return_posting')->sum('amount'),
+            'total_savings' => $moduleEnabled('savings') ? (float) ApiSecurity::scopeTenant(SavingsAccount::query(), $request->user())->sum('current_balance') : null,
+            'loan_portfolio' => $moduleEnabled('loans') ? (float) ApiSecurity::scopeTenant(Loan::query(), $request->user())->whereIn('status', ['approved', 'active', 'in_arrears'])->sum('principal_balance') : null,
+            'arrears' => $moduleEnabled('loans') ? (float) LoanSchedule::whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->sum('outstanding_amount') : null,
+            'deposits_today' => $moduleEnabled('savings') ? (float) ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user())->where('type', 'deposit')->whereDate('transaction_date', today())->sum('amount') : null,
+            'withdrawals_today' => $moduleEnabled('savings') ? (float) ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user())->where('type', 'withdrawal')->whereDate('transaction_date', today())->sum('amount') : null,
+            'total_investors' => $moduleEnabled('investments') ? ApiSecurity::scopeTenant(InvestorAccount::query(), $request->user())->where('status', 'active')->count() : null,
+            'active_investments' => $moduleEnabled('investments') ? ApiSecurity::scopeTenant(InvestmentAccount::query(), $request->user())->where('status', 'active')->count() : null,
+            'investment_balance' => $moduleEnabled('investments') ? (float) ApiSecurity::scopeTenant(InvestorAccount::query(), $request->user())->sum('current_investment_balance') : null,
+            'returns_posted' => $moduleEnabled('investments') ? (float) ApiSecurity::scopeTenant(InvestmentTransaction::query(), $request->user())->where('type', 'return_posting')->sum('amount') : null,
             'branches' => ApiSecurity::scopeTenant(Branch::query(), $request->user())->count(),
-        ], 'Dashboard summary retrieved.');
+        ], fn (mixed $value): bool => $value !== null), 'Dashboard summary retrieved.');
     }
 
     public function clients(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->requireModule($request, 'savings');
 
         $rows = ApiSecurity::scopeTenant(Client::query(), $request->user())
             ->selectRaw('status, count(*) as total')
@@ -66,6 +69,7 @@ class ReportController extends Controller
     public function savings(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->requireModule($request, 'savings');
 
         $accountsByStatus = ApiSecurity::scopeTenant(SavingsAccount::query(), $request->user())
             ->selectRaw('status, count(*) as total')
@@ -92,6 +96,7 @@ class ReportController extends Controller
     public function savingsAnalytics(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->requireModule($request, 'loans');
 
         $monthStart = today()->startOfMonth();
         $monthEnd = today()->endOfMonth();
@@ -138,6 +143,7 @@ class ReportController extends Controller
     public function loans(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->requireModule($request, 'loans');
 
         $rows = ApiSecurity::scopeTenant(Loan::query(), $request->user())
             ->selectRaw('status, count(*) as total, sum(principal_balance) as principal')
@@ -155,6 +161,7 @@ class ReportController extends Controller
     public function arrears(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->requireModule($request, 'teller');
 
         return ApiResponse::collection(
             LoanScheduleResource::collection(LoanSchedule::query()->with('loan.client')->whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->paginate($request->integer('per_page', 30))),
@@ -165,6 +172,7 @@ class ReportController extends Controller
     public function tellers(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->requireModule($request, 'investments');
 
         return ApiResponse::collection(
             DrawerMovementResource::collection(DrawerMovement::query()->with(['session.drawer', 'session.user'])->whereHas('session.drawer', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->latest()->paginate($request->integer('per_page', 30))),
@@ -249,5 +257,19 @@ class ReportController extends Controller
         GenerateReportExport::dispatch($export)->afterCommit();
 
         return ApiResponse::resource(new ReportExportResource($export), 'Report export queued.', 202);
+    }
+
+    private function moduleEnabled(Request $request, string $module): bool
+    {
+        $user = $request->user();
+
+        return $user->hasRole('super-admin')
+            || ! $user->organization
+            || app(ModuleService::class)->isEnabled($user->organization, $module);
+    }
+
+    private function requireModule(Request $request, string $module): void
+    {
+        abort_unless($this->moduleEnabled($request, $module), 403, 'This module is disabled for your organization.');
     }
 }

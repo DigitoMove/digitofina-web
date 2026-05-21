@@ -43,7 +43,7 @@ class ClientDocumentController extends Controller
         Gate::authorize('uploadDocument', $client);
 
         $file = $request->file('document');
-        $path = $file->store("clients/{$client->id}/documents", 'local');
+        $path = $file->store("private/organizations/{$client->organization_id}/clients/{$client->id}/documents", 'local');
 
         $document = ClientDocument::create([
             'organization_id' => $client->organization_id,
@@ -75,6 +75,7 @@ class ClientDocumentController extends Controller
         ApiSecurity::assertTenantAccess(request()->user(), $client);
         Gate::authorize('view', $client);
         abort_unless($document->client_id === $client->id, 404);
+        abort_unless((int) $document->organization_id === (int) $client->organization_id, 404);
 
         return ApiResponse::resource(new ClientDocumentResource($document->load(['uploadedBy', 'verifiedBy'])), 'Client document retrieved.');
     }

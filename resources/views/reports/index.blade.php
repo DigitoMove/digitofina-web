@@ -7,6 +7,7 @@
         'Treasury' => ['bg-emerald-50 text-emerald-800 border-emerald-200', 'bg-emerald-100 text-emerald-800'],
         'Clients' => ['bg-yellow-50 text-yellow-800 border-yellow-200', 'bg-yellow-100 text-yellow-800'],
         'Accounting' => ['bg-sky-50 text-sky-800 border-sky-200', 'bg-sky-100 text-sky-800'],
+        'Profitability' => ['bg-emerald-50 text-emerald-800 border-emerald-200', 'bg-emerald-100 text-emerald-800'],
         'Savings' => ['bg-slate-50 text-slate-800 border-slate-200', 'bg-slate-100 text-slate-800'],
         'Shares' => ['bg-orange-50 text-orange-800 border-orange-200', 'bg-orange-100 text-orange-800'],
         'Loan Application' => ['bg-cyan-50 text-cyan-800 border-cyan-200', 'bg-cyan-100 text-cyan-800'],

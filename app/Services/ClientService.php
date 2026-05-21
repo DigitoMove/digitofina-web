@@ -215,7 +215,7 @@ class ClientService
         }
 
         $client->update([
-            'photo_path' => $profilePhoto->store("clients/{$client->id}/profile", 'local'),
+            'photo_path' => $profilePhoto->store("private/organizations/{$client->organization_id}/clients/{$client->id}/profile", 'local'),
         ]);
     }
 }

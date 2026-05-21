@@ -10,7 +10,7 @@ use Illuminate\Validation\ValidationException;
 
 class ApiTokenService
 {
-    public function __construct(private AuditLogger $auditLogger) {}
+    public function __construct(private AuditLogger $auditLogger, private TenantContext $tenant) {}
 
     /**
      * @return array{user:User,token:string}
@@ -29,6 +29,14 @@ class ApiTokenService
 
         if ($user->status !== 'active' || ! $user->is_active) {
             throw ValidationException::withMessages(['login' => 'This user account is not active.']);
+        }
+
+        if ($this->tenant->organization() && (int) $user->organization_id !== (int) $this->tenant->id()) {
+            throw ValidationException::withMessages(['login' => 'This account cannot access this organization tenant.']);
+        }
+
+        if ($user->organization?->status === 'suspended' || $user->organization?->status === 'inactive') {
+            throw ValidationException::withMessages(['login' => 'This organization account is not active.']);
         }
 
         $abilities = $user->role?->permissions->pluck('slug')->values()->all() ?: ['view-own-accounts'];

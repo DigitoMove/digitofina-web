@@ -6,10 +6,17 @@
         <h1 class="text-2xl font-semibold text-slate-950">Dashboard</h1>
         <p class="text-sm text-slate-500">Branch operations, cash position, approvals, and portfolio pulse.</p>
     </div>
-    <a href="{{ route('teller.index') }}" class="df-action-primary">Open Teller Drawer</a>
+    @if(in_array('teller', $enabledModules ?? [], true) && (auth()->user()->canPerform('manage-drawers') || auth()->user()->canPerform('post-transactions')))
+        <a href="{{ route('teller.index') }}" class="df-action-primary">Open Teller Drawer</a>
+    @endif
 </div>
 
 @php
+    $moduleEnabled = fn (string $slug): bool => in_array($slug, $enabledModules ?? [], true);
+    $dashboardUser = auth()->user();
+    $isCashierDashboard = $dashboardUser?->isTellerCashier();
+    $isLoanOfficerDashboard = $dashboardUser?->hasRole('loan-officer');
+    $isCompactDashboard = $isCashierDashboard || $isLoanOfficerDashboard;
     $cards = [
         ['Total clients', $totalClients, 'bg-brand-50 text-brand-800', 'from-brand-500 to-brand-600', [38, 58, 44, 68, 74], route('clients.index')],
         ['Active accounts', $activeAccounts, 'bg-emerald-50 text-emerald-700', 'from-emerald-500 to-emerald-600', [46, 52, 63, 57, 78], route('accounts.index')],
@@ -38,6 +45,43 @@
         ['Maturing this month', $investmentsMaturingThisMonth, 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [28, 36, 48, 60, 74], route('reports.index')],
         ['Investment withdrawals', number_format($investmentWithdrawalsThisMonth, 2).' UGX', 'bg-rose-50 text-rose-700', 'from-rose-500 to-red-500', [18, 34, 46, 42, 58], route('reports.index')],
     ];
+    $cardModules = [
+        'Total clients' => 'clients',
+        'Active accounts' => 'savings',
+        'Loan applications' => 'loans',
+        'Loans in arrears' => 'loans',
+        'Due today' => 'loans',
+        'Total savings' => 'savings',
+        'Savings balance' => 'savings',
+        'Savings growth' => 'savings',
+        'Active savers' => 'savings',
+        'Target progress' => 'savings',
+        'Fixed maturing soon' => 'fixed-deposits',
+        'Dormant savings' => 'savings',
+        'Total loans' => 'loans',
+        "Today's deposits" => 'teller',
+        "Today's withdrawals" => 'teller',
+        'Teller drawer balance' => 'teller',
+        'Pending approvals' => 'reports',
+        'Branches' => 'users',
+        'Active staff' => 'users',
+        'Audit events today' => 'audit-logs',
+        'Total investors' => 'investments',
+        'Active investments' => 'investments',
+        'Investment balance' => 'investments',
+        'Returns posted' => 'investments',
+        'Maturing this month' => 'investments',
+        'Investment withdrawals' => 'investments',
+    ];
+    $cards = array_values(array_filter($cards, fn (array $card): bool => $moduleEnabled($cardModules[$card[0]] ?? 'reports')));
+    $essentialCardLabels = match (true) {
+        $isCashierDashboard => ['Due today', "Today's deposits", "Today's withdrawals", 'Teller drawer balance'],
+        $isLoanOfficerDashboard => ['Loan applications', 'Loans in arrears', 'Due today', 'Total loans'],
+        default => null,
+    };
+    $cards = $essentialCardLabels
+        ? array_values(array_filter($cards, fn (array $card): bool => in_array($card[0], $essentialCardLabels, true)))
+        : $cards;
 
     $cashRows = [
         ["Today's deposits", $todayDeposits, 'bg-emerald-500'],
@@ -47,13 +91,14 @@
     $cashMax = max(1, $todayDeposits, $todayWithdrawals, $drawerBalance);
 
     $portfolioRows = [
-        ['Savings', $totalSavings, 'bg-teal-500'],
-        ['Tracked savings', $savingsLedgerBalance, 'bg-cyan-600'],
-        ['Loans', $totalLoans, 'bg-brand-700'],
-        ['Investments', $totalInvestmentBalance, 'bg-cyan-600'],
-        ['Drawer cash', $drawerBalance, 'bg-amber-500'],
+        ['Savings', $totalSavings, 'bg-teal-500', 'savings'],
+        ['Tracked savings', $savingsLedgerBalance, 'bg-cyan-600', 'savings'],
+        ['Loans', $totalLoans, 'bg-brand-700', 'loans'],
+        ['Investments', $totalInvestmentBalance, 'bg-cyan-600', 'investments'],
+        ['Drawer cash', $drawerBalance, 'bg-amber-500', 'teller'],
     ];
-    $portfolioTotal = max(1, $totalSavings + $totalLoans + $drawerBalance);
+    $portfolioRows = array_values(array_filter($portfolioRows, fn (array $row): bool => $moduleEnabled($row[3])));
+    $portfolioTotal = max(1, array_sum(array_column($portfolioRows, 1)));
 @endphp
 
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -79,6 +124,77 @@
     @endforeach
 </div>
 
+@if($isCashierDashboard && $moduleEnabled('teller'))
+<section class="df-panel mt-6 overflow-visible">
+    <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+        <div>
+            <h2 class="text-lg font-semibold text-slate-950">Recent Posted Transactions</h2>
+            <p class="text-sm text-slate-500">Latest cashier postings with reversal requests where the business day is still open.</p>
+        </div>
+        <a href="{{ route('reports.show', 'user-posted-transactions') }}" class="df-action-secondary">View all</a>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+            <thead class="bg-slate-50 text-slate-600">
+                <tr>
+                    <th class="p-3">Time</th>
+                    <th>Reference</th>
+                    <th>Account</th>
+                    <th>Client</th>
+                    <th>Type</th>
+                    <th class="text-right">Amount</th>
+                    <th>Status</th>
+                    <th class="text-right">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($cashierRecentTransactions as $transaction)
+                    @php($pendingReversal = $transaction->reversalRequests->first())
+                    <tr class="border-t border-slate-200 align-top">
+                        <td class="p-3 whitespace-nowrap">{{ $transaction->posted_at?->format('d M H:i') ?? $transaction->created_at->format('d M H:i') }}</td>
+                        <td><a class="font-semibold text-blue-700" href="{{ route('receipts.show', $transaction) }}">{{ $transaction->reference }}</a></td>
+                        <td class="font-medium text-slate-950">{{ $transaction->account?->account_number ?? 'N/A' }}</td>
+                        <td class="max-w-56">{{ $transaction->account?->client?->full_name ?? 'N/A' }}</td>
+                        <td>{{ $transaction->type?->name ?? 'Transaction' }}</td>
+                        <td class="text-right font-semibold whitespace-nowrap">UGX {{ number_format((float) $transaction->amount, 2) }}</td>
+                        <td>
+                            @if($pendingReversal)
+                                <span class="rounded bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">Reversal pending</span>
+                            @elseif($transaction->status === 'reversed')
+                                <span class="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">Reversed</span>
+                            @elseif($transaction->reversal_lock_note)
+                                <span class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">{{ $transaction->reversal_lock_note }}</span>
+                            @else
+                                <span class="rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">{{ str($transaction->status)->headline() }}</span>
+                            @endif
+                        </td>
+                        <td class="text-right">
+                            @if($transaction->can_request_reversal)
+                                <details class="relative inline-block text-left">
+                                    <summary class="cursor-pointer list-none rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white">Request reversal</summary>
+                                    <form method="POST" action="{{ route('transactions.reversal-requests.store', $transaction) }}" class="absolute right-0 z-20 mt-2 grid w-72 gap-2 rounded-lg border border-amber-200 bg-white p-3 text-left shadow-xl">
+                                        @csrf
+                                        <label class="text-xs font-semibold text-slate-700">Reason
+                                            <textarea name="reason" rows="3" class="mt-1 w-full rounded border-slate-300 text-sm" required></textarea>
+                                        </label>
+                                        <button class="rounded bg-amber-700 px-3 py-2 text-xs font-semibold text-white">Submit request</button>
+                                    </form>
+                                </details>
+                            @else
+                                <a class="text-sm font-semibold text-blue-700" href="{{ route('receipts.show', $transaction) }}">Receipt</a>
+                            @endif
+                        </td>
+                    </tr>
+                @empty
+                    <tr><td colspan="8" class="p-8 text-center text-slate-500">No posted transactions yet.</td></tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+</section>
+@endif
+
+@if($moduleEnabled('investments') && ! $isCompactDashboard)
 <section class="df-panel mt-6 p-5">
     <div class="flex items-center justify-between gap-4">
         <div>
@@ -98,7 +214,9 @@
         @endforelse
     </div>
 </section>
+@endif
 
+@if($moduleEnabled('loans'))
 <div class="mt-6 grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
     <section class="df-panel p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -185,8 +303,11 @@
         <a href="{{ route('due-repayments.index', array_filter(['branch_id' => $selectedCalendarBranchId])) }}" class="mt-4 inline-flex text-sm font-semibold text-brand-700">View due today</a>
     </section>
 </div>
+@endif
 
-<div class="mt-6 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+@if(($moduleEnabled('teller') && (! $isCompactDashboard || $isCashierDashboard)) || (count($portfolioRows) > 0 && ! $isCompactDashboard))
+<div class="mt-6 grid gap-5 {{ $isCompactDashboard ? 'xl:grid-cols-1' : 'xl:grid-cols-[1.1fr_0.9fr]' }}">
+    @if($moduleEnabled('teller') && (! $isCompactDashboard || $isCashierDashboard))
     <section class="df-panel p-5">
         <div class="flex items-start justify-between gap-4">
             <div>
@@ -208,10 +329,12 @@
             @endforeach
         </div>
     </section>
+    @endif
 
+    @if(count($portfolioRows) > 0 && ! $isCompactDashboard)
     <section class="df-panel p-5">
         <h2 class="text-lg font-semibold text-slate-950">Portfolio Mix</h2>
-        <p class="text-sm text-slate-500">Savings, lending exposure, and cash on hand.</p>
+        <p class="text-sm text-slate-500">Enabled financial modules summarized in one view.</p>
         <div class="mt-6 space-y-5">
             @foreach ($portfolioRows as [$label, $amount, $barClass])
                 @php($width = ($amount / $portfolioTotal) * 100)
@@ -227,8 +350,11 @@
             @endforeach
         </div>
     </section>
+    @endif
 </div>
+@endif
 
+@if(! $isCompactDashboard)
 <section class="df-panel mt-6 p-5">
     <div class="flex items-center justify-between gap-4">
         <div>
@@ -252,4 +378,5 @@
         @endforeach
     </div>
 </section>
+@endif
 @endsection

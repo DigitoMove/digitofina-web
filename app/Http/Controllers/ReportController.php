@@ -14,7 +14,7 @@ class ReportController extends Controller
         abort_if($request->user()->isMember(), 403);
 
         return view('reports.index', [
-            'groups' => $reports->grouped(),
+            'groups' => $reports->grouped($request->user()),
             'branches' => Branch::query()->orderBy('name')->get(),
             'canChooseBranch' => $request->user()->canPerform('manage-branches'),
             'defaultFrom' => today()->toDateString(),

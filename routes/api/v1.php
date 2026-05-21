@@ -30,13 +30,13 @@ use App\Http\Controllers\Api\V1\SettingController;
 use App\Http\Controllers\Api\V1\WebhookController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:api')->name('auth.login');
+Route::post('/auth/login', [AuthController::class, 'login'])->middleware(['tenant', 'throttle:api'])->name('auth.login');
 Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:api')->name('auth.forgot-password');
 Route::get('/docs/openapi.json', [ApiDocumentationController::class, 'openapi'])->middleware('throttle:api')->name('docs.openapi');
 Route::post('/payments/mobile-money/callback', [PaymentController::class, 'callback'])->middleware(['throttle:api', 'idempotent.financial'])->name('payments.callback');
 Route::post('/webhooks/{source}/{provider}', [WebhookController::class, 'store'])->middleware('throttle:api')->name('webhooks.store');
 
-Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
+Route::middleware(['auth:sanctum', 'tenant', 'throttle:api', 'module:auto'])->group(function (): void {
     Route::get('/auth/me', [AuthController::class, 'me'])->name('auth.me');
     Route::get('/auth/permissions', [AuthController::class, 'permissions'])->name('auth.permissions');
     Route::post('/auth/refresh', [AuthController::class, 'refresh'])->name('auth.refresh');

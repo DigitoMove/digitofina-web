@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Services\AuditLogger;
+use App\Services\TenantContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -17,7 +18,7 @@ class LoginController extends Controller
         return view('auth.login');
     }
 
-    public function store(Request $request, AuditLogger $auditLogger): RedirectResponse
+    public function store(Request $request, AuditLogger $auditLogger, TenantContext $tenant): RedirectResponse
     {
         $data = $request->validate([
             'login' => ['required', 'string'],
@@ -38,12 +39,21 @@ class LoginController extends Controller
             ]);
         }
 
-        if (Auth::user()->status !== 'active' || ! Auth::user()->is_active) {
+        if ($tenant->organization() && (int) Auth::user()->organization_id !== (int) $tenant->id()) {
+            $auditLogger->record('auth.cross_tenant_login_blocked', Auth::user(), ['tenant_organization_id' => $tenant->id()]);
+            Auth::logout();
+
+            throw ValidationException::withMessages([
+                'login' => 'This account cannot access this organization tenant.',
+            ]);
+        }
+
+        if (Auth::user()->status !== 'active' || ! Auth::user()->is_active || Auth::user()->organization?->status === 'suspended' || Auth::user()->organization?->status === 'inactive') {
             $auditLogger->record('auth.blocked_login', Auth::user());
             Auth::logout();
 
             throw ValidationException::withMessages([
-                'login' => 'This staff account is not active. Contact your system administrator.',
+                'login' => 'This staff or organization account is not active. Contact your system administrator.',
             ]);
         }
 

@@ -2,6 +2,8 @@
 
 use App\Http\Middleware\AuditApiMutation;
 use App\Http\Middleware\EnsureIdempotentFinancialRequest;
+use App\Http\Middleware\EnsureModuleEnabled;
+use App\Http\Middleware\ResolveTenant;
 use App\Support\ApiResponse;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -37,6 +39,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'audit.api' => AuditApiMutation::class,
             'idempotent.financial' => EnsureIdempotentFinancialRequest::class,
+            'module' => EnsureModuleEnabled::class,
+            'tenant' => ResolveTenant::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -3,6 +3,8 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Services\ModuleService;
+use App\Support\ModuleCatalog;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -126,6 +128,12 @@ class User extends Authenticatable
     {
         if ($this->hasRole('super-admin')) {
             return true;
+        }
+
+        $module = ModuleCatalog::moduleForPermission($permission);
+
+        if ($module && $this->organization && ! app(ModuleService::class)->isEnabled($this->organization, $module)) {
+            return false;
         }
 
         $hasRolePermission = $this->role?->permissions()->where('slug', $permission)->exists() ?? false;

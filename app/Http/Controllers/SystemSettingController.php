@@ -7,6 +7,7 @@ use App\Models\SystemSetting;
 use App\Services\AuditLogger;
 use App\Services\BusinessCalendarService;
 use App\Services\LoanApplicationFeeService;
+use App\Services\ModuleService;
 use App\Support\CurrencyDenomination;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
@@ -15,17 +16,40 @@ use Illuminate\View\View;
 
 class SystemSettingController extends Controller
 {
-    public function index(): View
+    public function index(ModuleService $modules): View
     {
         Gate::authorize('viewAny', SystemSetting::class);
+
+        $user = auth()->user();
+        $enabledModules = $user?->hasRole('super-admin') || ! $user?->organization
+            ? null
+            : $modules->enabledSlugs($user->organization);
 
         $settings = SystemSetting::query()
             ->orderBy('group')
             ->orderBy('key')
             ->get()
+            ->filter(fn (SystemSetting $setting): bool => $this->settingIsVisible($setting, $enabledModules))
             ->groupBy('group');
 
         return view('settings.index', compact('settings'));
+    }
+
+    /**
+     * @param  array<int, string>|null  $enabledModules
+     */
+    private function settingIsVisible(SystemSetting $setting, ?array $enabledModules): bool
+    {
+        if ($enabledModules === null) {
+            return true;
+        }
+
+        return match ($setting->group) {
+            'notifications' => in_array('sms', $enabledModules, true),
+            'integrations' => in_array('mobile-money', $enabledModules, true),
+            'loans' => in_array('loans', $enabledModules, true),
+            default => true,
+        };
     }
 
     public function update(UpdateSystemSettingsRequest $request, AuditLogger $auditLogger, LoanApplicationFeeService $applicationFees, BusinessCalendarService $calendar): RedirectResponse

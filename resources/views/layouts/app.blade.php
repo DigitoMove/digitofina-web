@@ -35,11 +35,14 @@
             <nav class="grid flex-1 content-start gap-1 overflow-y-auto p-3 text-sm lg:max-h-[calc(100vh-8rem)]">
                 @php
                     $user = auth()->user();
+                    $moduleService = app(\App\Services\ModuleService::class);
+                    $moduleEnabled = fn (string $slug): bool => $user->hasRole('super-admin') || $moduleService->isEnabled($user->organization, $slug);
                     $isRouteActive = fn (string $route): bool => request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*');
                     $canManageOrganization = $user->canPerform('manage-organization') || $user->hasRole('super-admin') || $user->hasRole('supervisor') || $user->hasRole('organization-admin');
                     $navGroups = $user->isMember() ? [] : [
                         [
                             'label' => 'Clients',
+                            'module' => 'clients',
                             'icon' => 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0',
                             'items' => [
                                 ['Clients', 'clients.index', 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0'],
@@ -48,6 +51,7 @@
                         ],
                         [
                             'label' => 'Loans',
+                            'module' => 'loans',
                             'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5',
                             'items' => [
                                 ['Loans', 'loans.index', 'M4 6h16v12H4z M8 10h8 M8 14h5'],
@@ -57,6 +61,7 @@
                         ],
                         [
                             'label' => 'Operations',
+                            'module' => 'teller',
                             'icon' => 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10',
                             'items' => [
                                 ['Teller Drawer', 'teller.index', 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10'],
@@ -67,6 +72,7 @@
                         ],
                         [
                             'label' => 'Accounts',
+                            'module' => 'savings',
                             'icon' => 'M3 7h18v12H3z M7 7V5h10v2',
                             'items' => [
                                 ['Accounts Register', 'accounts.index', 'M3 7h18v12H3z M7 7V5h10v2'],
@@ -75,13 +81,16 @@
                             ],
                         ],
                     ];
+                    $navGroups = array_values(array_filter($navGroups, fn (array $group): bool => $moduleEnabled($group['module'])));
                     $adminItems = $user->isMember() ? [] : array_values(array_filter([
                         $canManageOrganization ? ['Organization', 'organization.current', 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'] : null,
                         $user->canPerform('manage-branches') ? ['Branches', 'branches.index', 'M4 20V8l8-4 8 4v12 M9 20v-6h6v6'] : null,
-                        $user->canPerform('manage-users') ? ['Users', 'users.index', 'M16 11a4 4 0 1 0-8 0 M4 21a8 8 0 0 1 16 0'] : null,
-                        $user->canPerform('manage-roles') ? ['Roles', 'roles.index', 'M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z'] : null,
-                        $user->canPerform('manage-settings') ? ['Settings', 'settings.index', 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M4 12h2 M18 12h2 M12 4v2 M12 18v2'] : null,
-                        $user->canPerform('view-audit-logs') ? ['Audit Logs', 'audit-logs.index', 'M5 4h14v16H5z M9 8h6 M9 12h6 M9 16h3'] : null,
+                        $user->canPerform('manage-users') && $moduleEnabled('users') ? ['Users', 'users.index', 'M16 11a4 4 0 1 0-8 0 M4 21a8 8 0 0 1 16 0'] : null,
+                        $user->canPerform('manage-roles') && $moduleEnabled('roles') ? ['Roles', 'roles.index', 'M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z'] : null,
+                        $user->hasRole('super-admin') ? ['Modules', 'modules.index', 'M4 6h16M4 12h16M4 18h16'] : null,
+                        ($user->hasRole('organization-admin') || $user->canPerform('manage-organization')) ? ['Module Visibility', 'modules.visibility', 'M5 12h14 M12 5v14'] : null,
+                        $user->canPerform('manage-settings') && $moduleEnabled('settings') ? ['Settings', 'settings.index', 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M4 12h2 M18 12h2 M12 4v2 M12 18v2'] : null,
+                        $user->canPerform('view-audit-logs') && $moduleEnabled('audit-logs') ? ['Audit Logs', 'audit-logs.index', 'M5 4h14v16H5z M9 8h6 M9 12h6 M9 16h3'] : null,
                     ]));
                 @endphp
 
@@ -123,12 +132,14 @@
                         </details>
                     @endforeach
 
+                    @if($moduleEnabled('reports'))
                     <a href="{{ route('reports.index') }}" class="group flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition {{ $isRouteActive('reports.index') ? 'bg-brand-50 text-brand-900 ring-1 ring-brand-200 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-brand-900' }}">
                         <span class="grid h-8 w-8 place-items-center rounded-lg transition group-hover:scale-105 {{ $isRouteActive('reports.index') ? 'bg-brand-700 text-white' : 'bg-slate-100 text-brand-700' }}">
                             <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h4"/></svg>
                         </span>
                         Reports
                     </a>
+                    @endif
 
                     @if($adminItems !== [])
                         @php($adminActive = collect($adminItems)->contains(fn ($item) => $isRouteActive($item[1])))

@@ -28,6 +28,8 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        $this->call(ModuleSeeder::class);
+
         $organization = Organization::firstOrCreate(['slug' => 'digitofina-demo'], [
             'name' => 'DigitoFina Demo SACCO',
             'registration_number' => 'DF-UG-001',
@@ -356,5 +358,7 @@ class DatabaseSeeder extends Seeder
             'current_balance' => 75800,
             'status' => 'closed',
         ]);
+
+        $this->call(ModuleSeeder::class);
     }
 }

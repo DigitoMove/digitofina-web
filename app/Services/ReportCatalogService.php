@@ -33,17 +33,17 @@ class ReportCatalogService
     /**
      * @return Collection<string, Collection<int, array<string, mixed>>>
      */
-    public function grouped(): Collection
+    public function grouped(?User $user = null): Collection
     {
-        return collect($this->definitions())->groupBy('category');
+        return collect($this->definitions($user))->groupBy('category');
     }
 
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function definitions(): array
+    public function definitions(?User $user = null): array
     {
-        return [
+        $definitions = [
             $this->report('user-posted-transactions', 'Posted Transactions', 'User Posted Transactions', 'transactions', ['posted_by' => 'user']),
             $this->report('system-posted-transactions', 'Posted Transactions', 'System Posted Transactions', 'transactions', ['posted_by' => 'system']),
             $this->report('daily-teller-transactions', 'Posted Transactions', 'Daily Teller Transactions', 'teller_transactions'),
@@ -61,6 +61,9 @@ class ReportCatalogService
             $this->report('income-statement', 'Accounting', 'Income Statement', 'accounting_statement', ['statement' => 'income']),
             $this->report('trial-balance', 'Accounting', 'Trial Balance', 'accounting_statement', ['statement' => 'trial']),
             $this->report('balance-sheet', 'Accounting', 'Balance Sheet', 'accounting_statement', ['statement' => 'balance']),
+            $this->report('application-fees-income', 'Profitability', 'Application Fees Income', 'application_fees_income'),
+            $this->report('loan-interest-income', 'Profitability', 'Loan Interest Accumulated', 'loan_interest_income'),
+            $this->report('profitability-summary', 'Profitability', 'Profitability Summary', 'profitability_summary'),
             $this->report('opened-savings-accounts', 'Savings', 'Opened Savings Accounts', 'accounts', ['category' => 'savings', 'date_column' => 'opened_at']),
             $this->report('unfunded-savings-accounts', 'Savings', 'Unfunded Savings Accounts', 'accounts', ['category' => 'savings', 'max_balance' => 0], false),
             $this->report('active-savings-accounts', 'Savings', 'Active Savings Accounts', 'accounts', ['category' => 'savings', 'status' => 'active'], false),
@@ -113,14 +116,25 @@ class ReportCatalogService
             $this->report('term-deposits-maturity-report', 'Term Deposits', 'Term Deposits Maturity Report', 'term_deposits', ['maturity' => true]),
             $this->report('current-accounts-register', 'Current Accounts', 'Current Accounts Register', 'accounts', ['category' => 'current'], false),
         ];
+
+        if (! $user || $user->hasRole('super-admin') || ! $user->organization) {
+            return $definitions;
+        }
+
+        $enabledModules = app(ModuleService::class)->enabledSlugs($user->organization);
+
+        return array_values(array_filter(
+            $definitions,
+            fn (array $definition): bool => in_array($this->moduleForReport($definition), $enabledModules, true)
+        ));
     }
 
     /**
      * @return array<string, mixed>|null
      */
-    public function find(string $slug): ?array
+    public function find(string $slug, ?User $user = null): ?array
     {
-        return collect($this->definitions())->firstWhere('slug', $slug);
+        return collect($this->definitions($user))->firstWhere('slug', $slug);
     }
 
     /**
@@ -129,7 +143,7 @@ class ReportCatalogService
      */
     public function generate(string $slug, array $filters, User $user): array
     {
-        $definition = $this->find($slug);
+        $definition = $this->find($slug, $user);
 
         abort_unless($definition, 404);
 
@@ -156,6 +170,9 @@ class ReportCatalogService
             'journal_entries' => $this->journalEntries($from, $to, $branchId, $limit, $user),
             'journal_analysis' => $this->journalAnalysis($from, $to, $branchId, $user),
             'accounting_statement' => $this->accountingStatement($payload, $from, $to, $branchId, $user),
+            'application_fees_income' => $this->applicationFeesIncome($from, $to, $branchId, $limit, $user),
+            'loan_interest_income' => $this->loanInterestIncome($from, $to, $branchId, $limit, $user),
+            'profitability_summary' => $this->profitabilitySummary($from, $to, $branchId, $user),
             'accounts' => $this->accounts($payload, $from, $to, $branchId, $limit, $user),
             'shares' => $this->shares($from, $to, $limit),
             'loans' => $this->loans($payload, $from, $to, $branchId, $limit, $user),
@@ -170,6 +187,25 @@ class ReportCatalogService
         };
 
         return compact('definition', 'columns', 'rows', 'summary', 'from', 'to', 'detail', 'branchId');
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     */
+    private function moduleForReport(array $definition): string
+    {
+        return match ($definition['category']) {
+            'Clients' => 'clients',
+            'Savings', 'Current Accounts' => 'savings',
+            'Shares' => 'shares',
+            'Term Deposits' => 'fixed-deposits',
+            'Loan Application', 'Loan Accounts', 'Profitability' => 'loans',
+            'Accounting' => 'accounting',
+            'Treasury', 'Posted Transactions' => in_array($definition['kind'], ['journal_entries', 'journal_analysis', 'accounting_statement', 'chart_accounts'], true)
+                ? 'accounting'
+                : 'teller',
+            default => 'reports',
+        };
     }
 
     /**
@@ -500,6 +536,130 @@ class ReportCatalogService
         return [['Code', 'Account', 'Type', 'Debit', 'Credit', 'Net'], $rows, ['Rows' => number_format($rows->count())]];
     }
 
+    private function applicationFeesIncome(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
+    {
+        $query = LoanDisbursement::query()
+            ->with(['branch', 'loan.client', 'disbursedBy'])
+            ->whereBetween('disbursement_date', [$from, $to])
+            ->where('fees_deducted', '>', 0)
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
+
+        $rows = (clone $query)->orderByDesc('disbursement_date')->limit($limit)->get()->map(fn (LoanDisbursement $disbursement): array => [
+            'Date' => $disbursement->disbursement_date?->format('d M Y'),
+            'Branch' => $disbursement->branch?->name ?? 'N/A',
+            'Loan' => $disbursement->loan?->loan_number ?? 'N/A',
+            'Client' => $disbursement->loan?->client?->full_name ?? 'N/A',
+            'Gross Disbursed' => $this->money((float) $disbursement->disbursed_amount),
+            'Application Fee' => $this->money((float) $disbursement->fees_deducted),
+            'Net To Savings' => $this->money((float) $disbursement->net_amount),
+            'Disbursed By' => $disbursement->disbursedBy?->name ?? 'N/A',
+        ]);
+
+        return [
+            ['Date', 'Branch', 'Loan', 'Client', 'Gross Disbursed', 'Application Fee', 'Net To Savings', 'Disbursed By'],
+            $rows,
+            [
+                'Application fees' => $this->money((float) (clone $query)->sum('fees_deducted')),
+                'Loans disbursed' => number_format((clone $query)->count()),
+                'Gross disbursed' => $this->money((float) (clone $query)->sum('disbursed_amount')),
+            ],
+        ];
+    }
+
+    private function loanInterestIncome(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
+    {
+        $query = LoanSchedule::query()
+            ->with(['loan.client', 'loan.branch', 'loan.product'])
+            ->whereBetween('due_date', [$from, $to])
+            ->whereHas('loan', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+
+        $rows = (clone $query)->orderBy('due_date')->limit($limit)->get()->map(fn (LoanSchedule $schedule): array => [
+            'Due Date' => $schedule->due_date?->format('d M Y'),
+            'Branch' => $schedule->loan?->branch?->name ?? 'N/A',
+            'Loan' => $schedule->loan?->loan_number ?? 'N/A',
+            'Client' => $schedule->loan?->client?->full_name ?? 'N/A',
+            'Product' => $schedule->loan?->product?->name ?? 'N/A',
+            'Installment' => '#'.$schedule->installment_number,
+            'Interest Accrued' => $this->money((float) $schedule->interest_due),
+            'Interest Collected' => $this->money((float) $schedule->interest_paid),
+            'Interest Outstanding' => $this->money(max(0, (float) $schedule->interest_due - (float) $schedule->interest_paid)),
+            'Status' => Str::headline($schedule->status),
+        ]);
+
+        $interestAccrued = (float) (clone $query)->sum('interest_due');
+        $interestCollected = (float) (clone $query)->sum('interest_paid');
+
+        return [
+            ['Due Date', 'Branch', 'Loan', 'Client', 'Product', 'Installment', 'Interest Accrued', 'Interest Collected', 'Interest Outstanding', 'Status'],
+            $rows,
+            [
+                'Interest accrued' => $this->money($interestAccrued),
+                'Interest collected' => $this->money($interestCollected),
+                'Interest outstanding' => $this->money(max(0, $interestAccrued - $interestCollected)),
+            ],
+        ];
+    }
+
+    private function profitabilitySummary(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
+    {
+        $applicationFees = (float) LoanDisbursement::query()
+            ->whereBetween('disbursement_date', [$from, $to])
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->sum('fees_deducted');
+        $interestAccrued = (float) LoanSchedule::query()
+            ->whereBetween('due_date', [$from, $to])
+            ->whereHas('loan', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
+            ->sum('interest_due');
+        $interestCollected = (float) LoanRepayment::query()
+            ->whereBetween('paid_at', [$from, $to])
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->sum('interest_paid');
+        $journalIncome = $this->journalTypeNet('income', $from, $to, $branchId, $user);
+        $expenses = $this->journalTypeNet('expense', $from, $to, $branchId, $user);
+        $capitalDisbursed = (float) LoanDisbursement::query()
+            ->whereBetween('disbursement_date', [$from, $to])
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->sum('disbursed_amount');
+        $principalRecovered = (float) LoanRepayment::query()
+            ->whereBetween('paid_at', [$from, $to])
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->sum('principal_paid');
+        $loanCapitalOutstanding = (float) Loan::query()
+            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
+            ->sum('principal_balance');
+        $totalIncome = max($journalIncome, $applicationFees + $interestCollected);
+        $profit = $totalIncome - $expenses;
+        $margin = $totalIncome > 0 ? ($profit / $totalIncome) * 100 : 0;
+
+        $rows = collect([
+            ['Section' => 'Income', 'Metric' => 'Application fees received', 'Amount' => $this->money($applicationFees), 'Note' => 'Fees deducted at disbursement.'],
+            ['Section' => 'Income', 'Metric' => 'Interest accrued', 'Amount' => $this->money($interestAccrued), 'Note' => 'Scheduled interest due in the period.'],
+            ['Section' => 'Income', 'Metric' => 'Interest collected', 'Amount' => $this->money($interestCollected), 'Note' => 'Actual interest received through repayments.'],
+            ['Section' => 'Income', 'Metric' => 'Ledger income total', 'Amount' => $this->money($journalIncome), 'Note' => 'Income accounts from the general ledger.'],
+            ['Section' => 'Expense', 'Metric' => 'Ledger expenses total', 'Amount' => $this->money($expenses), 'Note' => 'Expense accounts from the general ledger.'],
+            ['Section' => 'Capital', 'Metric' => 'Capital disbursed', 'Amount' => $this->money($capitalDisbursed), 'Note' => 'Gross loan principal disbursed.'],
+            ['Section' => 'Capital', 'Metric' => 'Principal recovered', 'Amount' => $this->money($principalRecovered), 'Note' => 'Principal paid back in the period.'],
+            ['Section' => 'Capital', 'Metric' => 'Loan capital outstanding', 'Amount' => $this->money($loanCapitalOutstanding), 'Note' => 'Current principal still in the field.'],
+            ['Section' => 'Profit', 'Metric' => 'Net profit estimate', 'Amount' => $this->money($profit), 'Note' => 'Total income less ledger expenses.'],
+        ]);
+
+        return [
+            ['Section', 'Metric', 'Amount', 'Note'],
+            $rows,
+            [
+                'Total income' => $this->money($totalIncome),
+                'Expenses' => $this->money($expenses),
+                'Net profit' => $this->money($profit),
+                'Profit margin' => number_format($margin, 2).'%',
+            ],
+        ];
+    }
+
     private function accounts(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
     {
         $query = Account::query()
@@ -814,6 +974,23 @@ class ReportCatalogService
         }
 
         return $query;
+    }
+
+    private function journalTypeNet(string $type, CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): float
+    {
+        return (float) JournalEntry::query()
+            ->whereBetween(DB::raw('coalesce(posted_at, created_at)'), [$from, $to])
+            ->whereHas('chartAccount', fn (Builder $query): Builder => $query->where('type', $type))
+            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
+            ->get()
+            ->sum(function (JournalEntry $entry) use ($type): float {
+                $amount = (float) $entry->amount;
+
+                return match ($type) {
+                    'expense' => $entry->entry_type === 'debit' ? $amount : -$amount,
+                    default => $entry->entry_type === 'credit' ? $amount : -$amount,
+                };
+            });
     }
 
     /**
