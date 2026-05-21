@@ -784,6 +784,80 @@ class LoanService
         });
     }
 
+    public function reopenAndClearPaidInstallments(Loan $loan, User $user, string $reason): Loan
+    {
+        return DB::transaction(function () use ($loan, $user, $reason): Loan {
+            $loan = Loan::query()
+                ->with(['schedules', 'loanAccount'])
+                ->whereKey($loan->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (! in_array($loan->status, ['closed', 'fully_paid'], true)) {
+                throw new InvalidArgumentException('Only closed or fully paid loans can be reopened.');
+            }
+
+            $principalBalance = (float) $loan->schedules->sum('principal_due');
+            $interestBalance = (float) $loan->schedules->sum('interest_due');
+            $feesBalance = (float) $loan->schedules->sum('fees_due');
+            $penaltyBalance = (float) $loan->schedules->sum('penalty_due');
+            $totalBalance = $principalBalance + $interestBalance + $feesBalance + $penaltyBalance;
+            $status = $loan->schedules->contains(fn (LoanSchedule $schedule): bool => $schedule->due_date?->lt(today()) === true)
+                ? 'in_arrears'
+                : 'active';
+
+            foreach ($loan->schedules as $schedule) {
+                $isOverdue = $schedule->due_date?->lt(today()) === true;
+
+                $schedule->update([
+                    'principal_paid' => 0,
+                    'interest_paid' => 0,
+                    'fees_paid' => 0,
+                    'penalty_paid' => 0,
+                    'total_paid' => 0,
+                    'amount_paid' => 0,
+                    'outstanding_amount' => (float) $schedule->total_due,
+                    'balance_due' => (float) $schedule->total_due,
+                    'status' => $isOverdue ? 'overdue' : 'pending',
+                    'days_overdue' => $isOverdue ? $this->calendar->businessDaysBetween($schedule->due_date, today()) : 0,
+                ]);
+            }
+
+            $loan->repayments()
+                ->where('status', 'successful')
+                ->update([
+                    'status' => 'reversed',
+                    'updated_at' => now(),
+                ]);
+
+            $loan->update([
+                'principal_balance' => $principalBalance,
+                'interest_balance' => $interestBalance,
+                'fees_balance' => $feesBalance,
+                'penalty_balance' => $penaltyBalance,
+                'status' => $status,
+            ]);
+
+            if ($loan->loan_account_id) {
+                Account::query()
+                    ->whereKey($loan->loan_account_id)
+                    ->lockForUpdate()
+                    ->update([
+                        'balance' => $totalBalance,
+                        'status' => 'active',
+                    ]);
+            }
+
+            $this->auditLogger->record('loan.reopened_installments_cleared', $loan->fresh(), [
+                'reason' => $reason,
+                'reopened_by' => $user->id,
+                'restored_balance' => $totalBalance,
+            ], actor: $user);
+
+            return $loan->refresh();
+        });
+    }
+
     public function applyOverduePenalties(?Loan $loan = null, ?CarbonInterface $asOf = null, ?int $branchId = null): int
     {
         $asOf = $asOf ?: now();

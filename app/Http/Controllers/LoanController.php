@@ -244,6 +244,23 @@ class LoanController extends Controller
         return back()->with('status', 'Loan cancelled.');
     }
 
+    public function reopen(Request $request, Loan $loan, LoanService $service): RedirectResponse
+    {
+        abort_unless($request->user()->canPerform('approve-reversals') || $request->user()->canPerform('override-maker-checker'), 403);
+
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        try {
+            $service->reopenAndClearPaidInstallments($loan, $request->user(), $data['reason']);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['reopen_reason' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Loan reopened and paid installments cleared.');
+    }
+
     public function assignOfficer(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
         abort_unless($request->user()->hasRole('super-admin') || $request->user()->canPerform('manage-users') || $request->user()->canPerform('disburse-loans'), 403);

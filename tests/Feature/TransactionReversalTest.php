@@ -317,3 +317,138 @@ it('reopens a closed loan account when its payoff repayment is reversed', functi
         ->and($repayment->fresh()->status)->toBe('reversed')
         ->and($transaction->fresh()->status)->toBe('reversed');
 });
+
+it('allows an admin to reopen a closed loan and clear all paid installments from the loan page action', function () {
+    $branch = Branch::create([
+        'code' => '1004',
+        'name' => 'Reopen Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $role = Role::create([
+        'name' => 'Super Admin',
+        'slug' => 'super-admin',
+    ]);
+    $admin = User::factory()->create([
+        'branch_id' => null,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $client = Client::create([
+        'branch_id' => $branch->id,
+        'client_number' => '1004-C000001',
+        'first_name' => 'Allen',
+        'last_name' => 'Atim',
+        'phone' => '+256700000004',
+        'status' => 'active',
+        'registered_at' => today(),
+    ]);
+    $accountType = AccountType::create([
+        'name' => 'Loan',
+        'code' => 'LN-ACTION',
+        'category' => 'loan',
+        'minimum_balance' => 0,
+        'is_active' => true,
+    ]);
+    $loanAccount = Account::create([
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'account_type_id' => $accountType->id,
+        'account_number' => '1004-LN-000001',
+        'account_name' => 'Allen Atim Loan',
+        'status' => 'closed',
+        'balance' => 0,
+        'opened_at' => today(),
+    ]);
+    $loanProduct = LoanProduct::create([
+        'name' => 'Business Loan',
+        'code' => 'BL-REV',
+        'annual_interest_rate' => 24,
+        'interest_method' => 'declining_balance',
+        'repayment_frequency' => 'monthly',
+        'default_term_months' => 2,
+        'penalty_type' => 'percentage',
+        'penalty_rate' => 0,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'loan_product_id' => $loanProduct->id,
+        'loan_account_id' => $loanAccount->id,
+        'loan_number' => 'LN-REOPEN-001',
+        'requested_amount' => 200000,
+        'approved_amount' => 200000,
+        'principal_balance' => 0,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 24,
+        'term_periods' => 2,
+        'repayment_frequency' => 'monthly',
+        'status' => 'closed',
+    ]);
+
+    foreach ([1, 2] as $installment) {
+        LoanSchedule::create([
+            'loan_id' => $loan->id,
+            'installment_number' => $installment,
+            'due_date' => today()->addMonths($installment),
+            'principal_due' => 100000,
+            'interest_due' => 10000,
+            'fees_due' => 0,
+            'penalty_due' => 0,
+            'total_due' => 110000,
+            'principal_paid' => 100000,
+            'interest_paid' => 10000,
+            'fees_paid' => 0,
+            'penalty_paid' => 0,
+            'total_paid' => 110000,
+            'amount_paid' => 110000,
+            'outstanding_amount' => 0,
+            'balance_due' => 0,
+            'status' => 'paid',
+        ]);
+    }
+
+    LoanRepayment::create([
+        'loan_id' => $loan->id,
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'received_by' => $admin->id,
+        'amount' => 220000,
+        'payment_method' => 'cash',
+        'reference' => 'REOPEN-PAYOFF-001',
+        'status' => 'successful',
+        'principal_paid' => 200000,
+        'interest_paid' => 20000,
+        'fees_paid' => 0,
+        'penalty_paid' => 0,
+        'paid_at' => today(),
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('loans.show', $loan))
+        ->assertSuccessful()
+        ->assertSee('Reopen loan and clear installments');
+
+    $this->actingAs($admin)
+        ->from(route('loans.show', $loan))
+        ->post(route('loans.reopen', $loan), [
+            'reason' => 'Mistaken payoff needs to be reopened',
+        ])
+        ->assertRedirect(route('loans.show', $loan))
+        ->assertSessionHas('status', 'Loan reopened and paid installments cleared.');
+
+    expect($loan->fresh()->status)->toBe('active')
+        ->and($loan->fresh()->principal_balance)->toBe('200000.00')
+        ->and($loan->fresh()->interest_balance)->toBe('20000.00')
+        ->and($loanAccount->fresh()->status)->toBe('active')
+        ->and($loanAccount->fresh()->balance)->toBe('220000.00')
+        ->and($loan->schedules()->where('status', 'pending')->count())->toBe(2)
+        ->and((float) $loan->schedules()->sum('total_paid'))->toBe(0.0)
+        ->and((float) $loan->schedules()->sum('outstanding_amount'))->toBe(220000.0)
+        ->and($loan->repayments()->where('status', 'reversed')->count())->toBe(1);
+});

@@ -21,6 +21,7 @@
     $canCreateLoan = auth()->user()->can('create', \App\Models\Loan::class);
     $canCancel = (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans')) && ! in_array($loan->status, ['cancelled', 'rejected', 'disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true);
     $canUpdateDraftTerms = $loan->status === 'draft' && (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans'));
+    $canReopenClosedLoan = in_array($loan->status, ['closed', 'fully_paid'], true) && (auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker'));
     $workflow = ['Draft', 'Appraisal', 'Approval', 'Approved', 'Disbursed', 'Closed'];
     $statusIndex = match (true) {
         $loan->status === 'draft' => 0,
@@ -129,6 +130,25 @@
                 <button class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800">Update draft and schedule</button>
             </div>
         </form>
+    </section>
+@endif
+
+@if($canReopenClosedLoan)
+    <section class="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-5">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div class="max-w-3xl">
+                <h2 class="text-lg font-semibold text-amber-950">Reopen Loan</h2>
+                <p class="mt-1 text-sm text-amber-900">Use this when a mistaken repayment closed the loan. It reopens the loan account, clears paid installment amounts, restores balances from the schedule, and marks successful repayments as reversed.</p>
+            </div>
+            <form method="POST" action="{{ route('loans.reopen', $loan) }}" class="grid min-w-72 gap-2" onsubmit="return confirm('Reopen this loan and clear all paid installment amounts?');">
+                @csrf
+                <label class="text-sm font-semibold text-amber-950">
+                    Reason <x-required-badge />
+                    <textarea name="reason" rows="2" required class="mt-1 w-full rounded-lg border-amber-200 bg-white text-sm focus:border-amber-500 focus:ring-amber-100" placeholder="Why is this loan being reopened?">{{ old('reason') }}</textarea>
+                </label>
+                <button class="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800">Reopen loan and clear installments</button>
+            </form>
+        </div>
     </section>
 @endif
 
