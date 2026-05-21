@@ -21,7 +21,9 @@
     $canCreateLoan = auth()->user()->can('create', \App\Models\Loan::class);
     $canCancel = (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans')) && ! in_array($loan->status, ['cancelled', 'rejected', 'disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true);
     $canUpdateDraftTerms = $loan->status === 'draft' && (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans'));
-    $canReopenClosedLoan = in_array($loan->status, ['closed', 'fully_paid'], true) && (auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker'));
+    $loanAccountNeedsReopen = $loan->loanAccount && $loan->loanAccount->status !== 'active' && in_array($loan->status, ['active', 'in_arrears'], true);
+    $canReopenClosedLoan = (in_array($loan->status, ['closed', 'fully_paid'], true) || $loanAccountNeedsReopen) && (auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker'));
+    $canRepairLoanTerms = in_array($loan->status, ['approved', 'disbursed', 'active', 'in_arrears'], true) && (auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker'));
     $workflow = ['Draft', 'Appraisal', 'Approval', 'Approved', 'Disbursed', 'Closed'];
     $statusIndex = match (true) {
         $loan->status === 'draft' => 0,
@@ -133,20 +135,67 @@
     </section>
 @endif
 
+@if($canRepairLoanTerms)
+    <section class="df-card mb-5 border border-sky-200 bg-sky-50">
+        <div class="mb-4">
+            <h2 class="text-lg font-semibold text-slate-950">Repair loan terms</h2>
+            <p class="df-muted">Use this for admin corrections such as changing a disbursed loan from weekly installments to monthly installments. Successful repayments must be reversed before schedules can be replaced.</p>
+        </div>
+        <form method="POST" action="{{ route('loans.repair-terms', $loan) }}" class="grid gap-4 md:grid-cols-5" onsubmit="return confirm('Repair this loan and regenerate its repayment schedule?');">
+            @csrf
+            <label class="text-sm font-medium text-slate-700">Loan product
+                <select name="loan_product_id" class="mt-1 w-full rounded border-slate-300" required>
+                    @foreach($products as $product)
+                        <option value="{{ $product->id }}" @selected((int) old('loan_product_id', $loan->loan_product_id) === $product->id)>{{ $product->code }} · {{ $product->name }}</option>
+                    @endforeach
+                </select>
+            </label>
+            <label class="text-sm font-medium text-slate-700">Approved amount
+                <input name="approved_amount" value="{{ old('approved_amount', $loan->approved_amount ?: $loan->requested_amount) }}" type="number" step="100" min="100" class="mt-1 w-full rounded border-slate-300" required>
+            </label>
+            <label class="text-sm font-medium text-slate-700">Installments
+                <input name="term_periods" value="{{ old('term_periods', $loan->term_periods) }}" type="number" min="1" class="mt-1 w-full rounded border-slate-300" required>
+            </label>
+            <label class="text-sm font-medium text-slate-700">Frequency
+                <select name="repayment_frequency" class="mt-1 w-full rounded border-slate-300" required>
+                    @foreach(['daily' => 'Daily', 'weekly' => 'Weekly', 'bi-weekly' => 'Bi-weekly', 'monthly' => 'Monthly'] as $frequency => $label)
+                        <option value="{{ $frequency }}" @selected(old('repayment_frequency', $loan->repayment_frequency) === $frequency)>{{ $label }}</option>
+                    @endforeach
+                </select>
+            </label>
+            <label class="text-sm font-medium text-slate-700">Schedule start
+                <input name="schedule_start_date" value="{{ old('schedule_start_date', ($loan->disbursed_at ?? $loan->approved_at ?? today())->toDateString()) }}" type="date" class="mt-1 w-full rounded border-slate-300" required>
+            </label>
+            <label class="text-sm font-medium text-slate-700 md:col-span-5">Reason <x-required-badge />
+                <textarea name="reason" rows="2" required class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100" placeholder="Explain why the loan terms are being repaired.">{{ old('reason') }}</textarea>
+            </label>
+            <div class="md:col-span-5">
+                <button class="rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800">Repair terms and regenerate schedule</button>
+            </div>
+        </form>
+    </section>
+@endif
+
 @if($canReopenClosedLoan)
     <section class="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-5">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div class="max-w-3xl">
-                <h2 class="text-lg font-semibold text-amber-950">Reopen Loan</h2>
-                <p class="mt-1 text-sm text-amber-900">Use this when a mistaken repayment closed the loan. It reopens the loan account, clears paid installment amounts, restores balances from the schedule, and marks successful repayments as reversed.</p>
+                <h2 class="text-lg font-semibold text-amber-950">{{ $loanAccountNeedsReopen ? 'Reactivate Loan Account' : 'Reopen Loan' }}</h2>
+                <p class="mt-1 text-sm text-amber-900">
+                    @if($loanAccountNeedsReopen)
+                        The loan is {{ str($loan->status)->headline() }}, but its linked loan account is {{ str($loan->loanAccount->status)->headline() }}. Reactivate it so cashiers can post repayments.
+                    @else
+                        Use this when a mistaken repayment closed the loan. It reopens the loan account, clears paid installment amounts, restores balances from the schedule, and marks successful repayments as reversed.
+                    @endif
+                </p>
             </div>
-            <form method="POST" action="{{ route('loans.reopen', $loan) }}" class="grid min-w-72 gap-2" onsubmit="return confirm('Reopen this loan and clear all paid installment amounts?');">
+            <form method="POST" action="{{ route('loans.reopen', $loan) }}" class="grid min-w-72 gap-2" onsubmit="return confirm('{{ $loanAccountNeedsReopen ? 'Reactivate this loan account?' : 'Reopen this loan and clear all paid installment amounts?' }}');">
                 @csrf
                 <label class="text-sm font-semibold text-amber-950">
                     Reason <x-required-badge />
                     <textarea name="reason" rows="2" required class="mt-1 w-full rounded-lg border-amber-200 bg-white text-sm focus:border-amber-500 focus:ring-amber-100" placeholder="Why is this loan being reopened?">{{ old('reason') }}</textarea>
                 </label>
-                <button class="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800">Reopen loan and clear installments</button>
+                <button class="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800">{{ $loanAccountNeedsReopen ? 'Reactivate loan account' : 'Reopen loan and clear installments' }}</button>
             </form>
         </div>
     </section>

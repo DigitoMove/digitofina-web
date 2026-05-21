@@ -166,6 +166,28 @@ class LoanController extends Controller
         return back()->with('status', 'Draft loan terms updated and schedule recalculated.');
     }
 
+    public function repairTerms(Request $request, Loan $loan, LoanService $service): RedirectResponse
+    {
+        abort_unless($request->user()->canPerform('approve-reversals') || $request->user()->canPerform('override-maker-checker'), 403);
+
+        $data = $request->validate([
+            'loan_product_id' => ['required', 'exists:loan_products,id'],
+            'approved_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+            'term_periods' => ['required', 'integer', 'min:1'],
+            'repayment_frequency' => ['required', 'in:daily,weekly,bi-weekly,monthly'],
+            'schedule_start_date' => ['required', 'date'],
+            'reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        try {
+            $service->repairTermsAndSchedule($loan, $request->user(), $data);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['repair_terms' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Loan terms repaired and repayment schedule recalculated.');
+    }
+
     public function generateSavingsAccount(Loan $loan, LoanService $service): RedirectResponse
     {
         $service->generateSavingsAccount($loan, auth()->user());
@@ -251,6 +273,10 @@ class LoanController extends Controller
         $data = $request->validate([
             'reason' => ['required', 'string', 'max:1000'],
         ]);
+        $loan->loadMissing('loanAccount');
+        $reactivatingLoanAccount = in_array($loan->status, ['active', 'in_arrears'], true)
+            && $loan->loanAccount
+            && $loan->loanAccount->status !== 'active';
 
         try {
             $service->reopenAndClearPaidInstallments($loan, $request->user(), $data['reason']);
@@ -258,7 +284,7 @@ class LoanController extends Controller
             return back()->withErrors(['reopen_reason' => $exception->getMessage()])->withInput();
         }
 
-        return back()->with('status', 'Loan reopened and paid installments cleared.');
+        return back()->with('status', $reactivatingLoanAccount ? 'Loan account reactivated.' : 'Loan reopened and paid installments cleared.');
     }
 
     public function assignOfficer(Request $request, Loan $loan, LoanService $service): RedirectResponse

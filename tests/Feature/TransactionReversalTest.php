@@ -452,3 +452,254 @@ it('allows an admin to reopen a closed loan and clear all paid installments from
         ->and((float) $loan->schedules()->sum('outstanding_amount'))->toBe(220000.0)
         ->and($loan->repayments()->where('status', 'reversed')->count())->toBe(1);
 });
+
+it('allows an admin to reactivate an inactive loan account for an in arrears loan', function () {
+    $branch = Branch::create([
+        'code' => '1005',
+        'name' => 'Arrears Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $role = Role::create([
+        'name' => 'Super Admin',
+        'slug' => 'super-admin',
+    ]);
+    $admin = User::factory()->create([
+        'branch_id' => null,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $client = Client::create([
+        'branch_id' => $branch->id,
+        'client_number' => '1005-C000001',
+        'first_name' => 'Doreen',
+        'last_name' => 'Adoch',
+        'phone' => '+256700000005',
+        'status' => 'active',
+        'registered_at' => today(),
+    ]);
+    $accountType = AccountType::create([
+        'name' => 'Loan',
+        'code' => 'LN-ARREARS',
+        'category' => 'loan',
+        'minimum_balance' => 0,
+        'is_active' => true,
+    ]);
+    $loanAccount = Account::create([
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'account_type_id' => $accountType->id,
+        'account_number' => '1005-LN-000001',
+        'account_name' => 'Doreen Adoch Loan',
+        'status' => 'closed',
+        'balance' => 0,
+        'opened_at' => today(),
+    ]);
+    $loanProduct = LoanProduct::create([
+        'name' => 'Arrears Loan',
+        'code' => 'AL-REV',
+        'annual_interest_rate' => 24,
+        'interest_method' => 'declining_balance',
+        'repayment_frequency' => 'monthly',
+        'default_term_months' => 1,
+        'penalty_type' => 'percentage',
+        'penalty_rate' => 0,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'loan_product_id' => $loanProduct->id,
+        'loan_account_id' => $loanAccount->id,
+        'loan_number' => 'LN-ARREARS-001',
+        'requested_amount' => 100000,
+        'approved_amount' => 100000,
+        'principal_balance' => 90000,
+        'interest_balance' => 10000,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 24,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'status' => 'in_arrears',
+    ]);
+    LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subMonth(),
+        'principal_due' => 90000,
+        'interest_due' => 10000,
+        'fees_due' => 0,
+        'penalty_due' => 0,
+        'total_due' => 100000,
+        'principal_paid' => 0,
+        'interest_paid' => 0,
+        'fees_paid' => 0,
+        'penalty_paid' => 0,
+        'total_paid' => 0,
+        'amount_paid' => 0,
+        'outstanding_amount' => 100000,
+        'balance_due' => 100000,
+        'status' => 'overdue',
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('loans.show', $loan))
+        ->assertSuccessful()
+        ->assertSee('Reactivate loan account');
+
+    $this->actingAs($admin)
+        ->from(route('loans.show', $loan))
+        ->post(route('loans.reopen', $loan), [
+            'reason' => 'Loan is in arrears but the loan account is closed',
+        ])
+        ->assertRedirect(route('loans.show', $loan))
+        ->assertSessionHas('status', 'Loan account reactivated.');
+
+    expect($loan->fresh()->status)->toBe('in_arrears')
+        ->and($loan->fresh()->principal_balance)->toBe('90000.00')
+        ->and($loan->fresh()->interest_balance)->toBe('10000.00')
+        ->and($loanAccount->fresh()->status)->toBe('active')
+        ->and($loanAccount->fresh()->balance)->toBe('100000.00')
+        ->and((float) $loan->schedules()->sum('total_paid'))->toBe(0.0);
+});
+
+it('allows an admin to repair disbursed loan terms and regenerate the schedule', function () {
+    $branch = Branch::create([
+        'code' => '1006',
+        'name' => 'Repair Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $role = Role::create([
+        'name' => 'Super Admin',
+        'slug' => 'super-admin',
+    ]);
+    $admin = User::factory()->create([
+        'branch_id' => null,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $client = Client::create([
+        'branch_id' => $branch->id,
+        'client_number' => '1006-C000001',
+        'first_name' => 'Peter',
+        'last_name' => 'Otim',
+        'phone' => '+256700000006',
+        'status' => 'active',
+        'registered_at' => today(),
+    ]);
+    $accountType = AccountType::create([
+        'name' => 'Loan',
+        'code' => 'LN-REPAIR',
+        'category' => 'loan',
+        'minimum_balance' => 0,
+        'is_active' => true,
+    ]);
+    $loanAccount = Account::create([
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'account_type_id' => $accountType->id,
+        'account_number' => '1006-LN-000001',
+        'account_name' => 'Peter Otim Loan',
+        'status' => 'active',
+        'balance' => 100000,
+        'opened_at' => today(),
+    ]);
+    $weeklyProduct = LoanProduct::create([
+        'name' => 'Weekly 20',
+        'code' => 'WEEKLY20',
+        'annual_interest_rate' => 20,
+        'interest_method' => 'declining_balance',
+        'repayment_frequency' => 'weekly',
+        'min_amount' => 100,
+        'max_amount' => 1000000,
+        'min_term' => 1,
+        'max_term' => 52,
+        'default_term_months' => 20,
+        'penalty_type' => 'percentage',
+        'penalty_rate' => 0,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $monthlyProduct = LoanProduct::create([
+        'name' => 'Monthly 20',
+        'code' => 'MONTHLY20',
+        'annual_interest_rate' => 20,
+        'interest_method' => 'declining_balance',
+        'repayment_frequency' => 'monthly',
+        'min_amount' => 100,
+        'max_amount' => 1000000,
+        'min_term' => 1,
+        'max_term' => 24,
+        'default_term_months' => 1,
+        'penalty_type' => 'percentage',
+        'penalty_rate' => 0,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'loan_product_id' => $weeklyProduct->id,
+        'loan_account_id' => $loanAccount->id,
+        'loan_number' => 'LN-REPAIR-001',
+        'requested_amount' => 100000,
+        'approved_amount' => 100000,
+        'principal_balance' => 100000,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 20,
+        'term_periods' => 20,
+        'repayment_frequency' => 'weekly',
+        'status' => 'disbursed',
+        'approved_at' => today(),
+        'disbursed_at' => today(),
+    ]);
+
+    foreach (range(1, 20) as $installment) {
+        LoanSchedule::create([
+            'loan_id' => $loan->id,
+            'installment_number' => $installment,
+            'due_date' => today()->addWeeks($installment),
+            'principal_due' => 5000,
+            'interest_due' => 1000,
+            'total_due' => 6000,
+            'outstanding_amount' => 6000,
+            'balance_due' => 6000,
+            'status' => 'pending',
+        ]);
+    }
+
+    $this->actingAs($admin)
+        ->get(route('loans.show', $loan))
+        ->assertSuccessful()
+        ->assertSee('Repair terms and regenerate schedule');
+
+    $this->actingAs($admin)
+        ->from(route('loans.show', $loan))
+        ->post(route('loans.repair-terms', $loan), [
+            'loan_product_id' => $monthlyProduct->id,
+            'approved_amount' => 100000,
+            'term_periods' => 1,
+            'repayment_frequency' => 'monthly',
+            'schedule_start_date' => today()->toDateString(),
+            'reason' => 'Correcting WEEKLY20 to MONTHLY20 for one month',
+        ])
+        ->assertRedirect(route('loans.show', $loan))
+        ->assertSessionHas('status', 'Loan terms repaired and repayment schedule recalculated.');
+
+    $loan->refresh();
+
+    expect($loan->loan_product_id)->toBe($monthlyProduct->id)
+        ->and($loan->repayment_frequency)->toBe('monthly')
+        ->and($loan->term_periods)->toBe(1)
+        ->and($loan->schedules()->count())->toBe(1)
+        ->and((float) $loan->schedules()->sum('principal_due'))->toBe(100000.0)
+        ->and($loanAccount->fresh()->status)->toBe('active')
+        ->and((float) $loanAccount->fresh()->balance)->toBe((float) $loan->principal_balance + (float) $loan->interest_balance);
+});

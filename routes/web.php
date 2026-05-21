@@ -119,6 +119,7 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::post('/loans/schedule-preview', [LoanController::class, 'schedulePreview'])->middleware('module:loans')->name('loans.schedule-preview');
     Route::resource('loans', LoanController::class)->only(['index', 'create', 'store', 'show'])->middleware('module:loans');
     Route::post('/loans/{loan}/draft-terms', [LoanController::class, 'updateDraftTerms'])->middleware('module:loans')->name('loans.update-draft-terms');
+    Route::post('/loans/{loan}/repair-terms', [LoanController::class, 'repairTerms'])->middleware('module:loans')->name('loans.repair-terms');
     Route::post('/loans/{loan}/generate-savings-account', [LoanController::class, 'generateSavingsAccount'])->middleware('module:loans')->name('loans.generate-savings-account');
     Route::post('/loans/{loan}/generate-loan-account', [LoanController::class, 'generateLoanAccount'])->middleware('module:loans')->name('loans.generate-loan-account');
     Route::post('/loans/{loan}/submit-appraisal', [LoanController::class, 'submitForAppraisal'])->middleware('module:loans')->name('loans.submit-appraisal');

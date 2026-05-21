@@ -330,6 +330,85 @@ class LoanService
         });
     }
 
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function repairTermsAndSchedule(Loan $loan, User $user, array $data): Loan
+    {
+        abort_unless($user->canPerform('approve-reversals') || $user->canPerform('override-maker-checker'), 403);
+
+        return DB::transaction(function () use ($loan, $user, $data): Loan {
+            $loan = Loan::query()
+                ->with(['client.branch', 'product', 'loanAccount'])
+                ->whereKey($loan->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (! in_array($loan->status, ['approved', 'disbursed', 'active', 'in_arrears'], true)) {
+                throw new InvalidArgumentException('Only approved, disbursed, active, or in-arrears loans can have terms repaired.');
+            }
+
+            if ($loan->repayments()->where('status', 'successful')->exists()) {
+                throw new InvalidArgumentException('Reverse successful repayments before repairing loan terms.');
+            }
+
+            $product = LoanProduct::query()->whereKey($data['loan_product_id'])->firstOrFail();
+            $approvedAmount = (float) $data['approved_amount'];
+            $termPeriods = (int) $data['term_periods'];
+            $repaymentFrequency = (string) $data['repayment_frequency'];
+            $scheduleStartDate = CarbonImmutable::parse($data['schedule_start_date'] ?? $loan->disbursed_at?->toDateString() ?? $loan->approved_at?->toDateString() ?? today()->toDateString());
+
+            CurrencyDenomination::assertValid($approvedAmount, 'Approved amount');
+
+            if ($approvedAmount < (float) $product->min_amount || $approvedAmount > (float) $product->max_amount) {
+                throw new InvalidArgumentException('Approved amount is outside the selected product limits.');
+            }
+
+            if ($termPeriods < (int) $product->min_term || $termPeriods > (int) $product->max_term) {
+                throw new InvalidArgumentException('Installments are outside the selected product term limits.');
+            }
+
+            $loan->update([
+                'loan_product_id' => $product->id,
+                'requested_amount' => $approvedAmount,
+                'approved_amount' => $approvedAmount,
+                'principal_balance' => $approvedAmount,
+                'fees_balance' => 0,
+                'penalty_balance' => 0,
+                'interest_rate' => $product->annual_interest_rate,
+                'term_periods' => $termPeriods,
+                'repayment_frequency' => $repaymentFrequency,
+                'required_savings_amount' => round($approvedAmount * ((float) $product->required_savings_percentage / 100), 2),
+            ]);
+
+            $this->generateSchedule($loan->refresh()->load('product'), $scheduleStartDate);
+            $freshLoan = $loan->refresh();
+            $loanBalance = (float) $freshLoan->principal_balance + (float) $freshLoan->interest_balance + (float) $freshLoan->fees_balance + (float) $freshLoan->penalty_balance;
+
+            if ($freshLoan->loan_account_id) {
+                Account::query()
+                    ->whereKey($freshLoan->loan_account_id)
+                    ->lockForUpdate()
+                    ->update([
+                        'balance' => $loanBalance,
+                        'status' => 'active',
+                    ]);
+            }
+
+            $this->auditLogger->record('loan.terms_repaired', $freshLoan, [
+                'reason' => $data['reason'],
+                'loan_product_id' => $product->id,
+                'approved_amount' => $approvedAmount,
+                'term_periods' => $termPeriods,
+                'repayment_frequency' => $repaymentFrequency,
+                'schedule_start_date' => $scheduleStartDate->toDateString(),
+                'repaired_by' => $user->id,
+            ], actor: $user);
+
+            return $freshLoan;
+        });
+    }
+
     public function generateSavingsAccount(Loan $loan, User $user): Account
     {
         abort_unless($user->canPerform('manage-accounts') || $user->canPerform('manage-loans'), 403);
@@ -793,65 +872,70 @@ class LoanService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if (! in_array($loan->status, ['closed', 'fully_paid'], true)) {
-                throw new InvalidArgumentException('Only closed or fully paid loans can be reopened.');
+            if (! in_array($loan->status, ['active', 'in_arrears', 'closed', 'fully_paid'], true)) {
+                throw new InvalidArgumentException('Only active, in-arrears, closed, or fully paid loans can be reopened.');
             }
 
-            $principalBalance = (float) $loan->schedules->sum('principal_due');
-            $interestBalance = (float) $loan->schedules->sum('interest_due');
-            $feesBalance = (float) $loan->schedules->sum('fees_due');
-            $penaltyBalance = (float) $loan->schedules->sum('penalty_due');
+            if (! $loan->loan_account_id) {
+                throw new InvalidArgumentException('This loan does not have a loan account to reopen.');
+            }
+
+            $clearPaidInstallments = in_array($loan->status, ['closed', 'fully_paid'], true);
+            $principalBalance = $clearPaidInstallments ? (float) $loan->schedules->sum('principal_due') : (float) $loan->principal_balance;
+            $interestBalance = $clearPaidInstallments ? (float) $loan->schedules->sum('interest_due') : (float) $loan->interest_balance;
+            $feesBalance = $clearPaidInstallments ? (float) $loan->schedules->sum('fees_due') : (float) $loan->fees_balance;
+            $penaltyBalance = $clearPaidInstallments ? (float) $loan->schedules->sum('penalty_due') : (float) $loan->penalty_balance;
             $totalBalance = $principalBalance + $interestBalance + $feesBalance + $penaltyBalance;
-            $status = $loan->schedules->contains(fn (LoanSchedule $schedule): bool => $schedule->due_date?->lt(today()) === true)
-                ? 'in_arrears'
-                : 'active';
 
-            foreach ($loan->schedules as $schedule) {
-                $isOverdue = $schedule->due_date?->lt(today()) === true;
+            if ($clearPaidInstallments) {
+                foreach ($loan->schedules as $schedule) {
+                    $isOverdue = $schedule->due_date?->lt(today()) === true;
 
-                $schedule->update([
-                    'principal_paid' => 0,
-                    'interest_paid' => 0,
-                    'fees_paid' => 0,
-                    'penalty_paid' => 0,
-                    'total_paid' => 0,
-                    'amount_paid' => 0,
-                    'outstanding_amount' => (float) $schedule->total_due,
-                    'balance_due' => (float) $schedule->total_due,
-                    'status' => $isOverdue ? 'overdue' : 'pending',
-                    'days_overdue' => $isOverdue ? $this->calendar->businessDaysBetween($schedule->due_date, today()) : 0,
-                ]);
+                    $schedule->update([
+                        'principal_paid' => 0,
+                        'interest_paid' => 0,
+                        'fees_paid' => 0,
+                        'penalty_paid' => 0,
+                        'total_paid' => 0,
+                        'amount_paid' => 0,
+                        'outstanding_amount' => (float) $schedule->total_due,
+                        'balance_due' => (float) $schedule->total_due,
+                        'status' => $isOverdue ? 'overdue' : 'pending',
+                        'days_overdue' => $isOverdue ? $this->calendar->businessDaysBetween($schedule->due_date, today()) : 0,
+                    ]);
+                }
+
+                $loan->repayments()
+                    ->where('status', 'successful')
+                    ->update([
+                        'status' => 'reversed',
+                        'updated_at' => now(),
+                    ]);
             }
-
-            $loan->repayments()
-                ->where('status', 'successful')
-                ->update([
-                    'status' => 'reversed',
-                    'updated_at' => now(),
-                ]);
 
             $loan->update([
                 'principal_balance' => $principalBalance,
                 'interest_balance' => $interestBalance,
                 'fees_balance' => $feesBalance,
                 'penalty_balance' => $penaltyBalance,
-                'status' => $status,
+                'status' => $clearPaidInstallments
+                    ? ($loan->schedules->contains(fn (LoanSchedule $schedule): bool => $schedule->due_date?->lt(today()) === true) ? 'in_arrears' : 'active')
+                    : $loan->status,
             ]);
 
-            if ($loan->loan_account_id) {
-                Account::query()
-                    ->whereKey($loan->loan_account_id)
-                    ->lockForUpdate()
-                    ->update([
-                        'balance' => $totalBalance,
-                        'status' => 'active',
-                    ]);
-            }
+            Account::query()
+                ->whereKey($loan->loan_account_id)
+                ->lockForUpdate()
+                ->update([
+                    'balance' => $totalBalance,
+                    'status' => 'active',
+                ]);
 
             $this->auditLogger->record('loan.reopened_installments_cleared', $loan->fresh(), [
                 'reason' => $reason,
                 'reopened_by' => $user->id,
                 'restored_balance' => $totalBalance,
+                'cleared_paid_installments' => $clearPaidInstallments,
             ], actor: $user);
 
             return $loan->refresh();
