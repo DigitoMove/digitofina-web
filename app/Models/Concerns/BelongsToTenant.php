@@ -15,10 +15,11 @@ trait BelongsToTenant
     {
         static::addGlobalScope('tenant', function (Builder $query): void {
             $model = $query->getModel();
-            $organizationId = app(TenantContext::class)->id() ?: Auth::user()?->organization_id;
+            $tenant = app(TenantContext::class);
+            $organizationId = $tenant->id() ?: Auth::user()?->organization_id;
             $user = Auth::user();
 
-            if ($organizationId && ! $user?->hasRole('super-admin') && self::tenantModelHasColumn($model, 'organization_id')) {
+            if ($organizationId && (! $user?->hasRole('super-admin') || $tenant->isScoped()) && self::tenantModelHasColumn($model, 'organization_id')) {
                 $query->where($model->qualifyColumn('organization_id'), $organizationId);
             }
 

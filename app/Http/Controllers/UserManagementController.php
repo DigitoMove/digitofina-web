@@ -42,11 +42,13 @@ class UserManagementController extends Controller
         ]);
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
         Gate::authorize('create', User::class);
 
-        return view('users.create', $this->formData(new User));
+        return view('users.create', $this->formData(new User([
+            'organization_id' => $request->integer('organization_id') ?: null,
+        ])));
     }
 
     public function store(StoreUserRequest $request, AuditLogger $auditLogger): RedirectResponse

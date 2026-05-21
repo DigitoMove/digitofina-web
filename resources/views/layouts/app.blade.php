@@ -39,6 +39,7 @@
                     $moduleEnabled = fn (string $slug): bool => $user->hasRole('super-admin') || $moduleService->isEnabled($user->organization, $slug);
                     $isRouteActive = fn (string $route): bool => request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*');
                     $canManageOrganization = $user->canPerform('manage-organization') || $user->hasRole('super-admin') || $user->hasRole('supervisor') || $user->hasRole('organization-admin');
+                    $organizationRoute = $user->hasRole('super-admin') ? 'organizations.index' : 'organization.current';
                     $navGroups = $user->isMember() ? [] : [
                         [
                             'label' => 'Clients',
@@ -83,12 +84,12 @@
                     ];
                     $navGroups = array_values(array_filter($navGroups, fn (array $group): bool => $moduleEnabled($group['module'])));
                     $adminItems = $user->isMember() ? [] : array_values(array_filter([
-                        $canManageOrganization ? ['Organization', 'organization.current', 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'] : null,
+                        $canManageOrganization ? [$user->hasRole('super-admin') ? 'Organizations' : 'Organization', $organizationRoute, 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'] : null,
                         $user->canPerform('manage-branches') ? ['Branches', 'branches.index', 'M4 20V8l8-4 8 4v12 M9 20v-6h6v6'] : null,
                         $user->canPerform('manage-users') && $moduleEnabled('users') ? ['Users', 'users.index', 'M16 11a4 4 0 1 0-8 0 M4 21a8 8 0 0 1 16 0'] : null,
                         $user->canPerform('manage-roles') && $moduleEnabled('roles') ? ['Roles', 'roles.index', 'M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z'] : null,
                         $user->hasRole('super-admin') ? ['Modules', 'modules.index', 'M4 6h16M4 12h16M4 18h16'] : null,
-                        ($user->hasRole('organization-admin') || $user->canPerform('manage-organization')) ? ['Module Visibility', 'modules.visibility', 'M5 12h14 M12 5v14'] : null,
+                        (! $user->hasRole('super-admin') && ($user->hasRole('organization-admin') || $user->canPerform('manage-organization'))) ? ['Module Visibility', 'modules.visibility', 'M5 12h14 M12 5v14'] : null,
                         $user->canPerform('manage-settings') && $moduleEnabled('settings') ? ['Settings', 'settings.index', 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M4 12h2 M18 12h2 M12 4v2 M12 18v2'] : null,
                         $user->canPerform('view-audit-logs') && $moduleEnabled('audit-logs') ? ['Audit Logs', 'audit-logs.index', 'M5 4h14v16H5z M9 8h6 M9 12h6 M9 16h3'] : null,
                     ]));

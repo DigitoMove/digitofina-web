@@ -22,7 +22,11 @@ class ResolveTenant
 
         if ($user) {
             if ($user->hasRole('super-admin')) {
-                $this->tenant->set($organization);
+                $selectedOrganization = $request->session()->has('super_admin_organization_id')
+                    ? Organization::query()->find($request->session()->get('super_admin_organization_id'))
+                    : null;
+
+                $this->tenant->set($selectedOrganization ?: $organization, (bool) $selectedOrganization);
 
                 return $next($request);
             }

@@ -15,6 +15,8 @@ use App\Models\InvestmentTransaction;
 use App\Models\InvestorAccount;
 use App\Models\Loan;
 use App\Models\LoanSchedule;
+use App\Models\Organization;
+use App\Models\Package;
 use App\Models\SavingsAccount;
 use App\Models\SavingsGoal;
 use App\Models\SavingsTransaction;
@@ -23,6 +25,7 @@ use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\LoanVisibilityService;
 use App\Services\ModuleService;
+use App\Services\TenantContext;
 use App\Support\ModuleCatalog;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -42,9 +45,13 @@ class DashboardController extends Controller
             return redirect()->route('member.dashboard');
         }
 
+        $user = Auth::user();
+        if ($user->hasRole('super-admin')) {
+            return $this->superAdminDashboard($request);
+        }
+
         $depositType = TransactionType::where('code', 'deposit')->first();
         $withdrawalType = TransactionType::where('code', 'withdrawal')->first();
-        $user = Auth::user();
         $enabledModules = $user->hasRole('super-admin') || ! $user->organization
             ? collect(ModuleCatalog::modules())->pluck('slug')->all()
             : app(ModuleService::class)->enabledSlugs($user->organization);
@@ -235,5 +242,27 @@ class DashboardController extends Controller
             $transaction->setAttribute('can_request_reversal', $canRequest);
             $transaction->setAttribute('reversal_lock_note', $isLocked && ! $isToday ? 'Business day locked' : null);
         });
+    }
+
+    private function superAdminDashboard(Request $request): View
+    {
+        $selectedOrganization = app(TenantContext::class)->organization();
+        $organizationIds = $selectedOrganization ? [$selectedOrganization->id] : null;
+        $scope = fn ($query) => $organizationIds ? $query->whereIn('organization_id', $organizationIds) : $query;
+
+        return view('dashboard.super-admin', [
+            'selectedOrganization' => $selectedOrganization,
+            'organizations' => Organization::query()->with('package')->orderBy('name')->get(),
+            'packages' => Package::query()->where('status', 'active')->orderBy('name')->get(),
+            'organizationCount' => Organization::query()->count(),
+            'activeOrganizationCount' => Organization::query()->where('status', 'active')->count(),
+            'suspendedOrganizationCount' => Organization::query()->whereIn('status', ['suspended', 'disabled', 'inactive'])->count(),
+            'staffCount' => User::query()->whereNotNull('organization_id')->count(),
+            'clientCount' => $scope(Client::query())->count(),
+            'loanBalance' => (float) $scope(Loan::query())->sum('principal_balance'),
+            'savingsBalance' => (float) $scope(SavingsAccount::query())->sum('current_balance'),
+            'investmentBalance' => (float) $scope(InvestorAccount::query())->sum('current_investment_balance'),
+            'recentOrganizations' => Organization::query()->with('package')->latest()->limit(6)->get(),
+        ]);
     }
 }
