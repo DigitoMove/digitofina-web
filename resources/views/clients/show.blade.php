@@ -3,28 +3,37 @@
 @section('content')
 @php
     $displayName = $client->full_name ?: $client->business_name ?: $client->client_number;
-    $profilePhotoDocument = $client->documents->firstWhere('type', 'profile_photo');
-    $basicSavingsAccounts = $client->accounts->filter(fn ($account) => $account->accountType?->category === 'savings');
-    $savingsPackages = $client->savingsAccounts;
+    $clientModules = $enabledModules ?? ($financialOverview['enabled_modules'] ?? []);
+    $moduleEnabled = fn (string $slug): bool => in_array($slug, $clientModules, true);
+    $documentsEnabled = $moduleEnabled('documents');
+    $savingsEnabled = $moduleEnabled('savings');
+    $loansEnabled = $moduleEnabled('loans');
+    $investmentsEnabled = $moduleEnabled('investments');
+    $sharesEnabled = $moduleEnabled('shares');
+    $fixedDepositsEnabled = $moduleEnabled('fixed-deposits');
+    $groupSavingsEnabled = $moduleEnabled('group-savings');
+    $profilePhotoDocument = $documentsEnabled ? $client->documents->firstWhere('type', 'profile_photo') : null;
+    $basicSavingsAccounts = $savingsEnabled ? $client->accounts->filter(fn ($account) => $account->accountType?->category === 'savings') : collect();
+    $savingsPackages = $savingsEnabled ? $client->savingsAccounts : collect();
     $hasSavingsAccount = $basicSavingsAccounts->isNotEmpty();
-    $loanAccounts = $client->accounts->filter(fn ($account) => $account->accountType?->category === 'loan');
-    $currentAccounts = $client->accounts->filter(fn ($account) => $account->accountType?->category === 'current');
-    $otherAccounts = $client->accounts->reject(fn ($account) => in_array($account->accountType?->category, ['savings', 'loan', 'current'], true));
-    $canCreateLoan = auth()->user()->can('create', \App\Models\Loan::class);
+    $loanAccounts = $loansEnabled ? $client->accounts->filter(fn ($account) => $account->accountType?->category === 'loan') : collect();
+    $currentAccounts = ($savingsEnabled || $loansEnabled || $investmentsEnabled) ? $client->accounts->filter(fn ($account) => $account->accountType?->category === 'current') : collect();
+    $otherAccounts = ($savingsEnabled || $loansEnabled || $investmentsEnabled || $sharesEnabled || $fixedDepositsEnabled) ? $client->accounts->reject(fn ($account) => in_array($account->accountType?->category, ['savings', 'loan', 'current'], true)) : collect();
+    $canCreateLoan = $loansEnabled && auth()->user()->can('create', \App\Models\Loan::class);
     $canDeleteClient = auth()->user()->can('delete', $client);
     $activeSavings = $basicSavingsAccounts->where('status', 'active')->count();
     $dormantSavings = $basicSavingsAccounts->where('status', 'dormant')->count();
     $activeCurrent = $currentAccounts->where('status', 'active')->count();
     $dormantCurrent = $currentAccounts->where('status', 'dormant')->count();
-    $goodLoans = $client->loans->whereIn('status', ['active', 'fully_paid', 'closed'])->count();
-    $arrearsLoans = $client->loans->whereIn('status', ['in_arrears', 'written_off'])->count();
-    $newApplications = $client->loans->whereIn('status', ['draft', 'under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved']);
-    $approvingApplications = $client->loans->whereIn('status', ['under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification'])->count();
-    $approvedApplications = $client->loans->where('status', 'approved')->count();
-    $shareFunded = $client->shareAccounts->filter(fn ($account) => (float) $account->total_share_capital > 0)->count();
-    $shareUnfunded = $client->shareAccounts->count() - $shareFunded;
-    $accountTiles = [
-        [
+    $goodLoans = $loansEnabled ? $client->loans->whereIn('status', ['active', 'fully_paid', 'closed'])->count() : 0;
+    $arrearsLoans = $loansEnabled ? $client->loans->whereIn('status', ['in_arrears', 'written_off'])->count() : 0;
+    $newApplications = $loansEnabled ? $client->loans->whereIn('status', ['draft', 'under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved']) : collect();
+    $approvingApplications = $loansEnabled ? $client->loans->whereIn('status', ['under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification'])->count() : 0;
+    $approvedApplications = $loansEnabled ? $client->loans->where('status', 'approved')->count() : 0;
+    $shareFunded = $sharesEnabled ? $client->shareAccounts->filter(fn ($account) => (float) $account->total_share_capital > 0)->count() : 0;
+    $shareUnfunded = $sharesEnabled ? $client->shareAccounts->count() - $shareFunded : 0;
+    $accountTiles = array_values(array_filter([
+        $savingsEnabled ? [
             'title' => 'Savings Accounts',
             'count' => $basicSavingsAccounts->count(),
             'tone' => 'bg-emerald-600 text-white',
@@ -34,8 +43,8 @@
             'rightLabel' => 'Dormant',
             'rightValue' => $dormantSavings,
             'href' => route('clients.savings-accounts', $client),
-        ],
-        [
+        ] : null,
+        $loansEnabled ? [
             'title' => 'Loan Accounts',
             'count' => $client->loans->count(),
             'tone' => 'bg-white text-slate-700 border border-slate-200',
@@ -45,8 +54,8 @@
             'rightLabel' => 'In Arrears',
             'rightValue' => $arrearsLoans,
             'href' => route('clients.loans', $client),
-        ],
-        [
+        ] : null,
+        $loansEnabled ? [
             'title' => 'New Applications',
             'count' => $newApplications->count(),
             'tone' => 'bg-slate-700 text-white',
@@ -56,8 +65,8 @@
             'rightLabel' => 'Approved',
             'rightValue' => $approvedApplications,
             'href' => $canCreateLoan ? route('loans.create', ['client_id' => $client->id]) : route('clients.loans', $client),
-        ],
-        [
+        ] : null,
+        ($savingsEnabled || $loansEnabled || $investmentsEnabled) ? [
             'title' => 'Current Accounts',
             'count' => $currentAccounts->count(),
             'tone' => 'bg-amber-500 text-white',
@@ -67,8 +76,8 @@
             'rightLabel' => 'Dormant',
             'rightValue' => $dormantCurrent,
             'href' => route('clients.accounts', $client),
-        ],
-        [
+        ] : null,
+        $fixedDepositsEnabled ? [
             'title' => 'Term Deposits',
             'count' => 0,
             'tone' => 'bg-sky-100 text-sky-800',
@@ -78,8 +87,8 @@
             'rightLabel' => 'Matured',
             'rightValue' => 0,
             'href' => route('reports.show', 'term-deposits-maturity-report'),
-        ],
-        [
+        ] : null,
+        $sharesEnabled ? [
             'title' => 'Shares Accounts',
             'count' => $client->shareAccounts->count(),
             'tone' => 'bg-blue-600 text-white',
@@ -89,17 +98,17 @@
             'rightLabel' => 'Unfunded',
             'rightValue' => $shareUnfunded,
             'href' => route('reports.show', 'share-accounts'),
-        ],
-    ];
+        ] : null,
+    ]));
     $actionItems = array_filter([
         ['Client Account Dashboard', route('clients.show', $client), 'CD', 0],
         ['Transaction Authorisation Details', route('audit-logs.index', ['search' => $client->client_number]), 'TA', 0],
         ['Edit Client Details', route('clients.edit', $client), 'ED', null],
-        ['Open Account', route('accounts.create', ['client_id' => $client->id]), 'OA', $client->accounts->count()],
-        ['Savings Account', route('clients.savings-accounts', $client), 'SA', $basicSavingsAccounts->count()],
-        ['Account Queries', route('clients.accounts', $client), 'AQ', $client->accounts->count()],
+        ($savingsEnabled || $loansEnabled || $investmentsEnabled) ? ['Open Account', route('accounts.create', ['client_id' => $client->id]), 'OA', $client->accounts->count()] : null,
+        $savingsEnabled ? ['Savings Account', route('clients.savings-accounts', $client), 'SA', $basicSavingsAccounts->count()] : null,
+        ($savingsEnabled || $loansEnabled || $investmentsEnabled) ? ['Account Queries', route('clients.accounts', $client), 'AQ', $client->accounts->count()] : null,
         $canCreateLoan ? ['Loan Prospects', route('loans.create', ['client_id' => $client->id]), 'LP', $newApplications->count()] : null,
-        ['Due Repayments', route('due-repayments.index', ['search' => $client->client_number]), 'DR', $arrearsLoans],
+        $loansEnabled ? ['Due Repayments', route('due-repayments.index', ['search' => $client->client_number]), 'DR', $arrearsLoans] : null,
     ]);
     $kycChecks = [
         'identity_confirmed' => 'Identity confirmed',
@@ -124,15 +133,23 @@
     ];
     $moduleFlags = $financialOverview['module_flags'] ?? [];
     $financialMetrics = collect([
-        ['label' => 'Total Savings', 'value' => $financialOverview['total_savings'] ?? 0, 'tone' => 'text-emerald-700', 'show' => ($moduleFlags['savings'] ?? false) || ($financialOverview['total_savings'] ?? 0) > 0],
+        ['label' => 'Total Savings', 'value' => $financialOverview['total_savings'] ?? 0, 'tone' => 'text-emerald-700', 'show' => $moduleFlags['savings'] ?? false],
         ['label' => 'Total Investments', 'value' => $financialOverview['total_investments'] ?? 0, 'tone' => 'text-sky-700', 'show' => $moduleFlags['investments'] ?? false],
         ['label' => 'Total Shares', 'value' => $financialOverview['total_shares'] ?? 0, 'tone' => 'text-blue-700', 'show' => $moduleFlags['shares'] ?? false],
         ['label' => 'Outstanding Loans', 'value' => $financialOverview['outstanding_loan_balance'] ?? 0, 'tone' => 'text-red-700', 'show' => $moduleFlags['loans'] ?? false],
-        ['label' => 'Available Balance', 'value' => $financialOverview['available_balance'] ?? 0, 'tone' => 'text-slate-900', 'show' => true],
-        ['label' => 'Locked Savings', 'value' => $financialOverview['locked_savings'] ?? 0, 'tone' => 'text-amber-700', 'show' => ($financialOverview['locked_savings'] ?? 0) > 0],
-        ['label' => 'Locked Investments', 'value' => $financialOverview['locked_investment_amount'] ?? 0, 'tone' => 'text-violet-700', 'show' => ($financialOverview['locked_investment_amount'] ?? 0) > 0],
+        ['label' => 'Available Balance', 'value' => $financialOverview['available_balance'] ?? 0, 'tone' => 'text-slate-900', 'show' => $savingsEnabled || $investmentsEnabled],
+        ['label' => 'Locked Savings', 'value' => $financialOverview['locked_savings'] ?? 0, 'tone' => 'text-amber-700', 'show' => $savingsEnabled && $loansEnabled],
+        ['label' => 'Locked Investments', 'value' => $financialOverview['locked_investment_amount'] ?? 0, 'tone' => 'text-violet-700', 'show' => $investmentsEnabled && $loansEnabled],
         ['label' => 'Net Position', 'value' => $financialOverview['net_financial_position'] ?? 0, 'tone' => (($financialOverview['net_financial_position'] ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-700'), 'show' => true],
     ])->filter(fn (array $metric): bool => $metric['show'])->values();
+    $accountDropdowns = array_values(array_filter([
+        $savingsEnabled ? ['Savings Accounts', array_filter([! $hasSavingsAccount ? ['Generate savings account', route('clients.savings-accounts.generate', $client), 'post'] : null, ['View accounts', route('clients.savings-accounts', $client), 'get']])] : null,
+        $loansEnabled ? ['Loan Accounts', array_filter([$canCreateLoan ? ['New application', route('loans.create', ['client_id' => $client->id])] : null, ['View loans', route('clients.loans', $client)]])] : null,
+        ($savingsEnabled || $loansEnabled || $investmentsEnabled) ? ['Current Accounts', [['Open current account', route('accounts.create', ['client_id' => $client->id])], ['View accounts', route('clients.accounts', $client)]]] : null,
+        $sharesEnabled ? ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]] : null,
+        $fixedDepositsEnabled ? ['Term Deposits', [['Maturity report', route('reports.show', 'term-deposits-maturity-report')], ['Funded term deposits', route('reports.show', 'funded-term-deposit-accounts')]]] : null,
+    ]));
+    $accountsTabEnabled = count($accountTiles) > 0 || $savingsEnabled || $loansEnabled || $investmentsEnabled;
 @endphp
 
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
@@ -141,13 +158,7 @@
         <p class="df-muted">{{ $client->client_number }} · {{ $displayName }} · {{ $client->branch->name }}</p>
     </div>
     <div class="flex flex-wrap gap-2">
-        @foreach ([
-            ['Savings Accounts', array_filter([! $hasSavingsAccount ? ['Generate savings account', route('clients.savings-accounts.generate', $client), 'post'] : null, ['View accounts', route('clients.savings-accounts', $client), 'get']])],
-            ['Loan Accounts', array_filter([$canCreateLoan ? ['New application', route('loans.create', ['client_id' => $client->id])] : null, ['View loans', route('clients.loans', $client)]])],
-            ['Current Accounts', [['Open current account', route('accounts.create', ['client_id' => $client->id])], ['View accounts', route('clients.accounts', $client)]]],
-            ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]],
-            ['Term Deposits', [['Maturity report', route('reports.show', 'term-deposits-maturity-report')], ['Funded term deposits', route('reports.show', 'funded-term-deposit-accounts')]]],
-        ] as [$label, $links])
+        @foreach ($accountDropdowns as [$label, $links])
             <details class="group relative">
                 <summary class="df-action-primary min-h-10 cursor-pointer list-none rounded-lg px-3 py-2">{{ $label }} <span class="ml-1 text-xs">▾</span></summary>
                 <div class="absolute right-0 z-20 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-2 text-sm shadow-xl">
@@ -267,8 +278,12 @@
         <div data-df-tabs class="grid gap-5">
             <div class="df-tablist" role="tablist">
                 <button type="button" class="df-tab" data-df-tab-target="overview">Overview</button>
-                <button type="button" class="df-tab" data-df-tab-target="accounts">Accounts</button>
-                <button type="button" class="df-tab" data-df-tab-target="loans">Loans & Groups</button>
+                @if($accountsTabEnabled)
+                    <button type="button" class="df-tab" data-df-tab-target="accounts">Accounts</button>
+                @endif
+                @if($loansEnabled || $groupSavingsEnabled)
+                    <button type="button" class="df-tab" data-df-tab-target="loans">Loans & Groups</button>
+                @endif
                 <button type="button" class="df-tab" data-df-tab-target="kyc">KYC & Documents</button>
                 <button type="button" class="df-tab" data-df-tab-target="notes">Notes</button>
             </div>
@@ -278,7 +293,13 @@
                     <div class="flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <h2 class="font-semibold text-slate-950">Financial Overview</h2>
-                            <p class="mt-1 text-sm text-slate-500">{{ number_format($financialOverview['active_loans'] ?? 0) }} active loan(s) included in this position.</p>
+                            <p class="mt-1 text-sm text-slate-500">
+                                @if($loansEnabled)
+                                    {{ number_format($financialOverview['active_loans'] ?? 0) }} active loan(s) included in this position.
+                                @else
+                                    Overview reflects the financial modules enabled for this organization.
+                                @endif
+                            </p>
                         </div>
                     </div>
                     <dl class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -334,7 +355,9 @@
                 </div>
             </section>
 
+            @if($accountsTabEnabled)
             <section data-df-tab-panel="accounts" class="grid gap-5 lg:grid-cols-2">
+                @if($savingsEnabled)
                 <div class="df-panel p-5">
                     <div class="flex items-center justify-between gap-3">
                         <h2 class="font-semibold text-slate-950">Savings Accounts</h2>
@@ -361,6 +384,7 @@
                         @endif
                     </div>
                 </div>
+                @endif
 
                 <div class="df-panel p-5">
                     <div class="flex items-center justify-between gap-3">
@@ -379,8 +403,11 @@
                     </div>
                 </div>
             </section>
+            @endif
 
+            @if($loansEnabled || $groupSavingsEnabled)
             <section data-df-tab-panel="loans" class="grid gap-5">
+                @if($loansEnabled)
                 <div class="df-panel overflow-hidden">
                     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
                         <div>
@@ -444,7 +471,9 @@
                         </table>
                     </div>
                 </div>
+                @endif
 
+                @if($groupSavingsEnabled)
                 <div class="df-panel p-5">
                     <h2 class="font-semibold text-slate-950">Group Membership</h2>
                     <div class="mt-4 grid gap-3">
@@ -458,7 +487,9 @@
                         @endforelse
                     </div>
                 </div>
+                @endif
             </section>
+            @endif
 
             <section data-df-tab-panel="kyc" class="grid gap-5 xl:grid-cols-[1fr_1.1fr]">
                 <div class="df-panel p-5">
@@ -491,6 +522,7 @@
                     </form>
                 </div>
 
+                @if($documentsEnabled)
                 <div class="df-panel p-5">
                     <h2 class="font-semibold text-slate-950">Documents</h2>
                     <form method="POST" action="{{ route('clients.documents.store', $client) }}" enctype="multipart/form-data" class="mt-4 grid gap-3 md:grid-cols-[12rem_1fr]">
@@ -517,6 +549,12 @@
                         @endforelse
                     </div>
                 </div>
+                @else
+                    <div class="df-panel p-5">
+                        <h2 class="font-semibold text-slate-950">Documents</h2>
+                        <p class="mt-4 text-sm text-slate-500">Document management is not enabled for this organization.</p>
+                    </div>
+                @endif
             </section>
 
             <section data-df-tab-panel="notes" class="df-panel p-5">

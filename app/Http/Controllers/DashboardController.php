@@ -26,6 +26,7 @@ use App\Models\User;
 use App\Services\LoanVisibilityService;
 use App\Services\ModuleService;
 use App\Services\TenantContext;
+use App\Support\ApiSecurity;
 use App\Support\ModuleCatalog;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -68,7 +69,7 @@ class DashboardController extends Controller
         $today = CarbonImmutable::today();
         $monthStart = $today->startOfMonth();
         $monthEnd = $today->endOfMonth();
-        $canFilterCalendarBranch = $user->hasRole('super-admin') || $user->canPerform('manage-organization') || $user->canPerform('audit-system');
+        $canFilterCalendarBranch = ApiSecurity::hasGlobalBranchAccess($user);
         $selectedCalendarBranchId = $canFilterCalendarBranch ? $request->integer('calendar_branch_id') : (int) $user->branch_id;
         $scheduleScope = fn (Builder $query): Builder => $visibility->scope($query, $user);
         $calendarScope = fn (Builder $query): Builder => $visibility
@@ -159,6 +160,7 @@ class DashboardController extends Controller
             $cashierRecentTransactions = Transaction::query()
                 ->with([
                     'account.client',
+                    'journalEntries.chartAccount',
                     'type',
                     'reversalRequests' => fn ($query) => $query->where('status', 'pending')->latest(),
                 ])
@@ -184,8 +186,11 @@ class DashboardController extends Controller
             'targetSavingsProgress' => $savingsEnabled ? (float) SavingsGoal::where('status', 'active')->sum('current_saved_amount') : 0,
             'targetSavingsAmount' => $savingsEnabled ? (float) SavingsGoal::where('status', 'active')->sum('target_amount') : 0,
             'fixedSavingsMaturingSoon' => $fixedDepositsEnabled ? FixedSavingsAccount::where('status', 'active')->whereBetween('maturity_date', [$today->toDateString(), $today->addDays(30)->toDateString()])->count() : 0,
-            'dormantSavingsAccounts' => $savingsEnabled ? SavingsAccount::where('status', 'dormant')
-                ->orWhereDate('last_activity_at', '<=', $today->subMonths(6)->toDateString())
+            'dormantSavingsAccounts' => $savingsEnabled ? SavingsAccount::query()
+                ->where(function (Builder $query) use ($today): void {
+                    $query->where('status', 'dormant')
+                        ->orWhereDate('last_activity_at', '<=', $today->subMonths(6)->toDateString());
+                })
                 ->count() : 0,
             'totalLoans' => $loansEnabled ? Loan::whereIn('status', ['approved', 'active'])->sum('principal_balance') : 0,
             'todayDeposits' => ($tellerEnabled && $depositType) ? Transaction::whereDate('posted_at', today())->where('transaction_type_id', $depositType->id)->sum('amount') : 0,

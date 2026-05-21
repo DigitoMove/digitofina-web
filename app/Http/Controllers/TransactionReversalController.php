@@ -6,6 +6,7 @@ use App\Models\FinancialDay;
 use App\Models\MakerCheckerRequest;
 use App\Models\Transaction;
 use App\Services\FinancialControlService;
+use App\Support\ApiSecurity;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -105,7 +106,7 @@ class TransactionReversalController extends Controller
     {
         $user = $request->user();
 
-        if ((int) $transaction->branch_id !== (int) $user->branch_id && ! $user->canPerform('manage-organization')) {
+        if ((int) $transaction->branch_id !== (int) $user->branch_id && ! ApiSecurity::hasGlobalBranchAccess($user)) {
             return false;
         }
 
@@ -123,7 +124,7 @@ class TransactionReversalController extends Controller
         }
 
         return (int) $makerCheckerRequest->branch_id === (int) $user->branch_id
-            || $user->canPerform('manage-organization')
+            || ApiSecurity::hasGlobalBranchAccess($user)
             || $user->canPerform('override-maker-checker');
     }
 

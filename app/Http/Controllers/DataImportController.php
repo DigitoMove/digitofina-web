@@ -9,6 +9,7 @@ use App\Models\ImportBatch;
 use App\Models\ImportRow;
 use App\Models\Organization;
 use App\Services\DataImportService;
+use App\Support\ApiSecurity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
@@ -26,13 +27,13 @@ class DataImportController extends Controller
         $batches = ImportBatch::query()
             ->with(['branch.organization', 'creator', 'organization'])
             ->when(! $user->hasGlobalOrganizationAccess() && $user->organization_id, fn ($query) => $query->where('organization_id', $user->organization_id))
-            ->when(! $user->hasOrganizationBranchAccess() && $user->branch_id, fn ($query) => $query->where('branch_id', $user->branch_id))
+            ->when(! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn ($query) => $query->where('branch_id', $user->branch_id))
             ->latest()
             ->paginate(12);
         $branches = Branch::query()
             ->with('organization')
             ->when(! $user->hasGlobalOrganizationAccess() && $user->organization_id, fn ($query) => $query->where('organization_id', $user->organization_id))
-            ->when(! $user->hasOrganizationBranchAccess() && $user->branch_id, fn ($query) => $query->whereKey($user->branch_id))
+            ->when(! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn ($query) => $query->whereKey($user->branch_id))
             ->orderBy('name')
             ->get();
 

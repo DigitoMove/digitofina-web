@@ -2,6 +2,7 @@
 @section('content')
 @php
     $pendingReversal = $transaction->reversalRequests->firstWhere('status', 'pending');
+    $journalAccount = $transaction->journalEntries->first()?->chartAccount;
     $canApproveReversal = auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker');
     $canRequestReversal = $transaction->status === 'posted'
         && ! $pendingReversal
@@ -18,9 +19,9 @@
         <dl class="mt-6 grid gap-3 text-sm">
             <div class="flex justify-between gap-4"><dt>Reference</dt><dd class="font-semibold">{{ $transaction->reference }}</dd></div>
             <div class="flex justify-between gap-4"><dt>Status</dt><dd class="font-semibold capitalize {{ $transaction->status === 'reversed' ? 'text-red-600' : 'text-emerald-700' }}">{{ str_replace('_', ' ', $transaction->status) }}</dd></div>
-            <div class="flex justify-between gap-4"><dt>Type</dt><dd>{{ $transaction->type->name }}</dd></div>
-            <div class="flex justify-between gap-4"><dt>Client</dt><dd>{{ $transaction->account?->client?->full_name }}</dd></div>
-            <div class="flex justify-between gap-4"><dt>Account</dt><dd>{{ $transaction->account?->account_number }}</dd></div>
+            <div class="flex justify-between gap-4"><dt>Type</dt><dd>{{ $transaction->type?->name ?? 'Transaction' }}</dd></div>
+            <div class="flex justify-between gap-4"><dt>Client</dt><dd>{{ $transaction->account?->client?->full_name ?? $transaction->account?->client?->business_name ?? 'General ledger posting' }}</dd></div>
+            <div class="flex justify-between gap-4"><dt>Account</dt><dd>{{ $transaction->account?->account_number ?? ($journalAccount ? $journalAccount->code.' · '.$journalAccount->name : 'Drawer ledger') }}</dd></div>
             <div class="flex justify-between gap-4"><dt>Amount</dt><dd class="font-semibold">{{ number_format($transaction->amount, 2) }} {{ $transaction->currency }}</dd></div>
             <div class="flex justify-between gap-4"><dt>Balance after</dt><dd>{{ number_format((float) $transaction->balance_after, 2) }} {{ $transaction->currency }}</dd></div>
             <div class="flex justify-between gap-4"><dt>Posted by</dt><dd>{{ $transaction->user->name }}</dd></div>

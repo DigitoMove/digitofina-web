@@ -100,8 +100,7 @@ class User extends Authenticatable
     {
         return $this->hasGlobalOrganizationAccess()
             || $this->hasRole('organization-admin')
-            || $this->canPerform('manage-organization')
-            || $this->canPerform('manage-branches');
+            || $this->branch_id === null;
     }
 
     public function canAccessOrganization(?int $organizationId): bool

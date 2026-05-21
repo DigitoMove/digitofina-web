@@ -9,6 +9,7 @@ use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
 use App\Services\ClientService;
 use App\Services\SavingsAccountService;
+use App\Support\ApiSecurity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -20,8 +21,10 @@ class SavingsAccountController extends Controller
         $accounts = SavingsAccount::query()
             ->with(['client', 'branch', 'product'])
             ->when($request->search, function ($query, string $search) {
-                $query->where('account_number', 'like', "%{$search}%")
-                    ->orWhereHas('client', fn ($query) => $query->whereAny(['client_number', 'first_name', 'last_name', 'phone'], 'like', "%{$search}%"));
+                $query->where(function ($query) use ($search): void {
+                    $query->where('account_number', 'like', "%{$search}%")
+                        ->orWhereHas('client', fn ($query) => $query->whereAny(['client_number', 'first_name', 'last_name', 'phone'], 'like', "%{$search}%"));
+                });
             })
             ->when($request->branch_id, fn ($query, string $branchId) => $query->where('branch_id', $branchId))
             ->when($request->savings_product_id, fn ($query, string $productId) => $query->where('savings_product_id', $productId))
@@ -32,7 +35,10 @@ class SavingsAccountController extends Controller
 
         return view('savings-accounts.index', [
             'accounts' => $accounts,
-            'branches' => Branch::orderBy('name')->get(),
+            'branches' => Branch::query()
+                ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn ($query) => $query->whereKey($request->user()->branch_id))
+                ->orderBy('name')
+                ->get(),
             'products' => SavingsProduct::orderBy('name')->get(),
         ]);
     }
@@ -57,7 +63,10 @@ class SavingsAccountController extends Controller
                 ->orderBy('first_name')
                 ->orderBy('last_name')
                 ->get(),
-            'branches' => Branch::where('is_active', true)->orderBy('name')->get(),
+            'branches' => Branch::where('is_active', true)
+                ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn ($query) => $query->whereKey($request->user()->branch_id))
+                ->orderBy('name')
+                ->get(),
             'products' => SavingsProduct::where('status', 'active')->orderBy('name')->get(),
             'selectedClient' => $selectedClientId,
         ]);

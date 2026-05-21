@@ -149,12 +149,15 @@
             </thead>
             <tbody>
                 @forelse($cashierRecentTransactions as $transaction)
-                    @php($pendingReversal = $transaction->reversalRequests->first())
+                    @php
+                        $pendingReversal = $transaction->reversalRequests->first();
+                        $journalAccount = $transaction->journalEntries->first()?->chartAccount;
+                    @endphp
                     <tr class="border-t border-slate-200 align-top">
                         <td class="p-3 whitespace-nowrap">{{ $transaction->posted_at?->format('d M H:i') ?? $transaction->created_at->format('d M H:i') }}</td>
                         <td><a class="font-semibold text-blue-700" href="{{ route('receipts.show', $transaction) }}">{{ $transaction->reference }}</a></td>
-                        <td class="font-medium text-slate-950">{{ $transaction->account?->account_number ?? 'N/A' }}</td>
-                        <td class="max-w-56">{{ $transaction->account?->client?->full_name ?? 'N/A' }}</td>
+                        <td class="font-medium text-slate-950">{{ $transaction->account?->account_number ?? ($journalAccount?->code ?? 'Ledger') }}</td>
+                        <td class="max-w-56">{{ $transaction->account?->client?->full_name ?? $transaction->account?->client?->business_name ?? ($journalAccount?->name ?? 'General ledger posting') }}</td>
                         <td>{{ $transaction->type?->name ?? 'Transaction' }}</td>
                         <td class="text-right font-semibold whitespace-nowrap">UGX {{ number_format((float) $transaction->amount, 2) }}</td>
                         <td>

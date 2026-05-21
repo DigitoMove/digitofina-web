@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Loan;
 use App\Models\User;
+use App\Support\ApiSecurity;
 use Illuminate\Database\Eloquent\Builder;
 
 class LoanVisibilityService
@@ -14,7 +15,7 @@ class LoanVisibilityService
      */
     public function scope(Builder $query, User $user): Builder
     {
-        if ($user->hasRole('super-admin') || $user->canPerform('manage-organization') || $user->canPerform('audit-system')) {
+        if (ApiSecurity::hasGlobalBranchAccess($user)) {
             return $query;
         }
 
@@ -45,7 +46,7 @@ class LoanVisibilityService
      */
     public function scopeRepaymentCalendar(Builder $query, User $user): Builder
     {
-        if ($user->hasRole('super-admin') || $user->canPerform('manage-organization') || $user->canPerform('audit-system')) {
+        if (ApiSecurity::hasGlobalBranchAccess($user)) {
             return $query;
         }
 
@@ -61,7 +62,7 @@ class LoanVisibilityService
             ->with('role')
             ->where('status', 'active')
             ->when($user->organization_id, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
-            ->when($user->branch_id && ! $user->canPerform('manage-organization'), fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->when($user->branch_id && ! ApiSecurity::hasGlobalBranchAccess($user), fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->whereHas('role', fn (Builder $query): Builder => $query->whereIn('slug', ['branch-manager', 'loan-officer']))
             ->orderBy('name');
     }

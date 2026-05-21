@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Branch;
 use App\Models\User;
+use App\Services\TenantContext;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
@@ -17,9 +18,14 @@ class ApiSecurity
     public static function scopeTenant(Builder $query, User $user): Builder
     {
         $model = $query->getModel();
+        $tenantOrganizationId = app(TenantContext::class)->id();
 
-        if (! $user->hasGlobalOrganizationAccess() && $user->organization_id !== null && self::hasColumn($model, 'organization_id')) {
-            $query->where($model->qualifyColumn('organization_id'), $user->organization_id);
+        if (self::hasColumn($model, 'organization_id')) {
+            if ($tenantOrganizationId !== null) {
+                $query->where($model->qualifyColumn('organization_id'), $tenantOrganizationId);
+            } elseif (! $user->hasGlobalOrganizationAccess() && $user->organization_id !== null) {
+                $query->where($model->qualifyColumn('organization_id'), $user->organization_id);
+            }
         }
 
         if ($model instanceof Branch && ! self::hasGlobalBranchAccess($user)) {
@@ -40,8 +46,16 @@ class ApiSecurity
 
     public static function canAccessTenant(User $user, Model $model): bool
     {
-        if (self::hasColumn($model, 'organization_id') && ! $user->hasGlobalOrganizationAccess() && $user->organization_id !== null && $model->getAttribute('organization_id') !== null && (int) $model->getAttribute('organization_id') !== (int) $user->organization_id) {
-            return false;
+        if (self::hasColumn($model, 'organization_id') && $model->getAttribute('organization_id') !== null) {
+            $tenantOrganizationId = app(TenantContext::class)->id();
+
+            if ($tenantOrganizationId !== null && (int) $model->getAttribute('organization_id') !== (int) $tenantOrganizationId) {
+                return false;
+            }
+
+            if (! $user->hasGlobalOrganizationAccess() && $user->organization_id !== null && (int) $model->getAttribute('organization_id') !== (int) $user->organization_id) {
+                return false;
+            }
         }
 
         if (self::hasColumn($model, 'branch_id') && ! self::hasGlobalBranchAccess($user) && $model->getAttribute('branch_id') !== null && (int) $model->getAttribute('branch_id') !== (int) $user->branch_id) {

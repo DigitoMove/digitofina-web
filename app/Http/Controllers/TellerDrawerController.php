@@ -19,6 +19,7 @@ use App\Services\FinancialControlService;
 use App\Services\TellerService;
 use App\Services\TenantContext;
 use App\Services\TransactionPostingService;
+use App\Support\ApiSecurity;
 use App\Support\CurrencyDenomination;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -98,7 +99,7 @@ class TellerDrawerController extends Controller
             ->withoutGlobalScope('tenant')
             ->with(['branch', 'assignedUser'])
             ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $this->scopeDrawersToOrganization($query, $organizationId))
-            ->when(! $request->user()->hasOrganizationBranchAccess() && $request->user()->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
+            ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()) && $request->user()->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
             ->when(! $canOpenForTellers, function (Builder $query): void {
                 $query->where(function (Builder $query): void {
                     $query->where('assigned_user_id', auth()->id())
@@ -112,7 +113,7 @@ class TellerDrawerController extends Controller
             ->withoutGlobalScope('tenant')
             ->where('is_active', true)
             ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
-            ->when(! $request->user()->hasOrganizationBranchAccess(), fn (Builder $query): Builder => $query->where('id', $request->user()->branch_id))
+            ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('id', $request->user()->branch_id))
             ->orderBy('name')
             ->get();
 
@@ -151,7 +152,7 @@ class TellerDrawerController extends Controller
                 ->get(),
             'managedChartAccounts' => ChartAccount::query()
                 ->with('branch')
-                ->when(! $request->user()->canPerform('manage-organization'), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
+                ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
                 ->where('is_cash_account', false)
                 ->orderBy('branch_id')
                 ->orderBy('code')
@@ -162,7 +163,7 @@ class TellerDrawerController extends Controller
                 ->where('status', 'open')
                 ->whereHas('drawer', function (Builder $query) use ($request): void {
                     $query->where('status', 'open')
-                        ->when(! $request->user()->canPerform('manage-organization'), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id));
+                        ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id));
                 })
                 ->latest()
                 ->get(),
@@ -180,6 +181,7 @@ class TellerDrawerController extends Controller
             'recentTransactions' => Transaction::query()
                 ->with([
                     'account.client',
+                    'journalEntries.chartAccount',
                     'type',
                     'reversalRequests' => fn ($query) => $query->where('status', 'pending')->latest(),
                 ])
@@ -192,7 +194,7 @@ class TellerDrawerController extends Controller
                     ->with(['requestedBy', 'branch', 'subject'])
                     ->where('action', 'transaction_reversal')
                     ->where('status', 'pending')
-                    ->when(! $request->user()->canPerform('manage-organization'), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
+                    ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
                     ->latest()
                     ->limit(10)
                     ->get()
@@ -439,9 +441,15 @@ class TellerDrawerController extends Controller
                     throw new InvalidArgumentException('Select whether the money is coming in or going out.');
                 }
 
-                $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $postedAt);
+                $journal = $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $postedAt);
 
-                return back()->with('status', 'General ledger transaction posted.');
+                return redirect()
+                    ->route('teller.index', [
+                        'lookup_scope' => 'general_ledger',
+                        'chart_account_id' => $chartAccount->id,
+                    ])
+                    ->with('status', 'General ledger transaction posted.')
+                    ->with('receipt_transaction_id', $journal->transaction_id);
             }
 
             $account = Account::query()->with('accountType')->where('account_number', $data['account_number'])->first();
@@ -616,9 +624,9 @@ class TellerDrawerController extends Controller
         }
 
         return Transaction::query()
-            ->with(['account.client', 'type', 'user'])
+            ->with(['account.client', 'journalEntries.chartAccount', 'type', 'user'])
             ->whereKey($transactionId)
-            ->when(! $request->user()->canPerform('manage-organization') && ! $request->user()->hasRole('super-admin'), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
+            ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
             ->first();
     }
 

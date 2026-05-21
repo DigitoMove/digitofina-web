@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Transaction;
+use App\Support\ApiSecurity;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -15,6 +16,7 @@ class ReceiptController extends Controller
         return view('receipts.show', [
             'transaction' => $transaction->load([
                 'account.client',
+                'journalEntries.chartAccount',
                 'type',
                 'user',
                 'reversal',
@@ -31,13 +33,13 @@ class ReceiptController extends Controller
             return true;
         }
 
-        if ((int) $transaction->branch_id !== (int) $user->branch_id && ! $user->canPerform('manage-organization')) {
+        if ((int) $transaction->branch_id !== (int) $user->branch_id && ! ApiSecurity::hasGlobalBranchAccess($user)) {
             return false;
         }
 
         return $user->canPerform('approve-reversals')
             || $user->canPerform('view-reports')
             || $user->canPerform('manage-accounts')
-            || $user->canPerform('manage-organization');
+            || ApiSecurity::hasGlobalBranchAccess($user);
     }
 }

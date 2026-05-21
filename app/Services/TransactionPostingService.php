@@ -449,6 +449,32 @@ class TransactionPostingService
                 : $drawer->increment('current_balance', $amount);
             $drawer->refresh();
 
+            $type = TransactionType::query()->firstOrCreate(
+                ['code' => $entryType === 'debit' ? 'drawer_gl_cash_out' : 'drawer_gl_cash_in'],
+                [
+                    'name' => $entryType === 'debit' ? 'Drawer GL Cash Out' : 'Drawer GL Cash In',
+                    'direction' => $entryType === 'debit' ? 'debit' : 'credit',
+                    'affects_cash_drawer' => true,
+                    'is_active' => true,
+                ],
+            );
+            $transaction = Transaction::create([
+                'account_id' => null,
+                'transaction_type_id' => $type->id,
+                'drawer_session_id' => $session->id,
+                'branch_id' => $drawer->branch_id,
+                'user_id' => $user->id,
+                'reference' => $this->reference(),
+                'amount' => $amount,
+                'balance_after' => $drawer->current_balance,
+                'currency' => $drawer->currency,
+                'description' => $description ?: 'Teller general ledger cash posting for '.$chartAccount->name,
+                'status' => 'posted',
+                'posted_at' => $postedAt,
+                'created_at' => $postedAt,
+                'updated_at' => now(),
+            ]);
+
             $journal = JournalEntry::create([
                 'organization_id' => $user->organization_id,
                 'branch_id' => $drawer->branch_id,
@@ -460,7 +486,8 @@ class TransactionPostingService
                 'status' => 'posted',
                 'posted_at' => $postedAt,
                 'chart_account_id' => $chartAccount->id,
-                'reference' => $this->reference(),
+                'transaction_id' => $transaction->id,
+                'reference' => $transaction->reference,
                 'account_name' => $chartAccount->name,
                 'entry_type' => $entryType,
                 'amount' => $amount,
@@ -498,7 +525,7 @@ class TransactionPostingService
                 'type' => $entryType === 'debit' ? 'cash_out' : 'cash_in',
                 'amount' => $amount,
                 'balance_after' => $drawer->current_balance,
-                'reference' => $journal->reference,
+                'reference' => $transaction->reference,
                 'description' => $description ?: $chartAccount->name,
                 'created_at' => $postedAt,
                 'updated_at' => now(),

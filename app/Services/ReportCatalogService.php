@@ -19,6 +19,7 @@ use App\Models\SystemSetting;
 use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Support\ApiSecurity;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -406,7 +407,7 @@ class ReportCatalogService
             ->where('status', 'active')
             ->whereHas('role', fn (Builder $query): Builder => $query->where('slug', '!=', 'member'))
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->orderBy('name')
             ->get();
 
@@ -457,7 +458,7 @@ class ReportCatalogService
         $query = ChartAccount::query()
             ->with('branch')
             ->when($branchId, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
-            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id)->orWhereNull('branch_id')));
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id)->orWhereNull('branch_id')));
 
         $rows = $query->orderBy('code')->get()->map(fn (ChartAccount $account): array => [
             'Code' => $account->code,
@@ -521,7 +522,7 @@ class ReportCatalogService
             ->withSum(['journalEntries as debit_total' => fn (Builder $query) => $query->where('entry_type', 'debit')->whereBetween(DB::raw('coalesce(posted_at, created_at)'), [$from, $to])], 'amount')
             ->withSum(['journalEntries as credit_total' => fn (Builder $query) => $query->where('entry_type', 'credit')->whereBetween(DB::raw('coalesce(posted_at, created_at)'), [$from, $to])], 'amount')
             ->when($branchId, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
-            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id)->orWhereNull('branch_id')))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id)->orWhereNull('branch_id')))
             ->orderBy('code')
             ->get()
             ->map(fn (ChartAccount $account): array => [
@@ -543,7 +544,7 @@ class ReportCatalogService
             ->whereBetween('disbursement_date', [$from, $to])
             ->where('fees_deducted', '>', 0)
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
 
         $rows = (clone $query)->orderByDesc('disbursement_date')->limit($limit)->get()->map(fn (LoanDisbursement $disbursement): array => [
             'Date' => $disbursement->disbursement_date?->format('d M Y'),
@@ -606,7 +607,7 @@ class ReportCatalogService
         $applicationFees = (float) LoanDisbursement::query()
             ->whereBetween('disbursement_date', [$from, $to])
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->sum('fees_deducted');
         $interestAccrued = (float) LoanSchedule::query()
             ->whereBetween('due_date', [$from, $to])
@@ -615,19 +616,19 @@ class ReportCatalogService
         $interestCollected = (float) LoanRepayment::query()
             ->whereBetween('paid_at', [$from, $to])
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->sum('interest_paid');
         $journalIncome = $this->journalTypeNet('income', $from, $to, $branchId, $user);
         $expenses = $this->journalTypeNet('expense', $from, $to, $branchId, $user);
         $capitalDisbursed = (float) LoanDisbursement::query()
             ->whereBetween('disbursement_date', [$from, $to])
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->sum('disbursed_amount');
         $principalRecovered = (float) LoanRepayment::query()
             ->whereBetween('paid_at', [$from, $to])
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->sum('principal_paid');
         $loanCapitalOutstanding = (float) Loan::query()
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
@@ -733,7 +734,7 @@ class ReportCatalogService
             ->whereBetween('disbursement_date', [$from, $to])
             ->when($payload['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
 
         $rows = $query->latest()->limit($limit)->get()->map(fn (LoanDisbursement $disbursement): array => [
             'Date' => $disbursement->disbursement_date?->format('d M Y'),
@@ -907,7 +908,7 @@ class ReportCatalogService
             ->with(['loan.client', 'receivedBy'])
             ->whereBetween('paid_at', [$from, $to])
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when(! $branchId && ! $user->canPerform('manage-branches') && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
 
         $rows = $query->latest()->limit($limit)->get()->map(fn (LoanRepayment $repayment): array => [
             'Date' => $repayment->paid_at?->format('d M Y'),
@@ -969,7 +970,7 @@ class ReportCatalogService
             return $query->where('branch_id', $branchId);
         }
 
-        if (! $user->canPerform('manage-branches') && $user->branch_id) {
+        if (! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id) {
             return $query->where('branch_id', $user->branch_id);
         }
 

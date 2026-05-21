@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\Client;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\ApiSecurity;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -161,7 +162,7 @@ class ClientService
                 throw new InvalidArgumentException('The assigned officer must belong to this organization.');
             }
 
-            if ($client->branch_id && $assignedOfficer->branch_id && (int) $client->branch_id !== (int) $assignedOfficer->branch_id && ! $user->canPerform('manage-organization') && ! $user->hasRole('super-admin')) {
+            if ($client->branch_id && $assignedOfficer->branch_id && (int) $client->branch_id !== (int) $assignedOfficer->branch_id && ! ApiSecurity::hasGlobalBranchAccess($user)) {
                 throw new InvalidArgumentException('The assigned officer must belong to this branch.');
             }
 

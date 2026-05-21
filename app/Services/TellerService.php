@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\DrawerSession;
 use App\Models\TellerDrawer;
 use App\Models\User;
+use App\Support\ApiSecurity;
 use App\Support\CurrencyDenomination;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -72,9 +73,7 @@ class TellerService
 
     private function canOverrideDrawerAssignment(?User $user): bool
     {
-        return $user?->hasRole('super-admin')
-            || $user?->hasRole('organization-admin')
-            || $user?->canPerform('manage-organization')
-            || $user?->canPerform('manage-users');
+        return $user instanceof User
+            && (ApiSecurity::hasGlobalBranchAccess($user) || $user->canPerform('manage-users'));
     }
 }

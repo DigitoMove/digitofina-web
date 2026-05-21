@@ -17,6 +17,7 @@ use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
 use App\Models\SavingsTransaction;
 use App\Models\User;
+use App\Support\ApiSecurity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
@@ -1012,7 +1013,7 @@ class DataImportService
 
     private function resolveBranch(User $user, ?int $branchId, ?Organization $organization): ?Branch
     {
-        $branch = $branchId ? Branch::query()->findOrFail($branchId) : ($user->hasOrganizationBranchAccess() ? null : $user->branch);
+        $branch = $branchId ? Branch::query()->findOrFail($branchId) : (ApiSecurity::hasGlobalBranchAccess($user) ? null : $user->branch);
 
         if ($branch && ! $user->canAccessBranch($branch->id, $branch->organization_id)) {
             throw new InvalidArgumentException('You cannot import data for another branch.');

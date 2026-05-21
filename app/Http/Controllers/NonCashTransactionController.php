@@ -10,6 +10,7 @@ use App\Models\ChartAccount;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Services\TransactionPostingService;
+use App\Support\ApiSecurity;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -122,9 +123,7 @@ class NonCashTransactionController extends Controller
 
     private function canSeeAllBranches(Request $request): bool
     {
-        return $request->user()->hasRole('super-admin')
-            || $request->user()->canPerform('manage-organization')
-            || $request->user()->canPerform('audit-system');
+        return ApiSecurity::hasGlobalBranchAccess($request->user());
     }
 
     private function branchId(Request $request): ?int

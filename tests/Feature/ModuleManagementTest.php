@@ -3,12 +3,17 @@
 use App\Models\Account;
 use App\Models\AccountType;
 use App\Models\Branch;
+use App\Models\ChartAccount;
 use App\Models\Client;
 use App\Models\DrawerSession;
+use App\Models\Loan;
+use App\Models\LoanProduct;
 use App\Models\Module;
 use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\SavingsAccount;
+use App\Models\SavingsProduct;
 use App\Models\TellerDrawer;
 use App\Models\TransactionType;
 use App\Models\User;
@@ -68,6 +73,209 @@ it('hides disabled module navigation from the application shell', function () {
         ->assertDontSee('Loan Products')
         ->assertDontSee('Teller Drawer')
         ->assertDontSee('Savings Products');
+});
+
+it('renders a loan-only client dashboard without disabled financial modules', function () {
+    $user = moduleManagementUser(['manage-clients', 'manage-loans']);
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($user->organization);
+    $modules->enable($user->organization, Module::where('slug', 'loans')->firstOrFail(), $user);
+    $client = moduleManagementClient($user);
+    $product = LoanProduct::create([
+        'organization_id' => $user->organization_id,
+        'name' => 'Business Loan',
+        'code' => fake()->unique()->bothify('LN-??'),
+        'min_amount' => 1000,
+        'max_amount' => 1000000,
+        'annual_interest_rate' => 12,
+        'interest_method' => 'flat',
+        'repayment_frequency' => 'monthly',
+        'default_term_months' => 6,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+
+    Loan::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'client_id' => $client->id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => fake()->unique()->numerify('1001-LN-######'),
+        'requested_amount' => 250000,
+        'approved_amount' => 250000,
+        'principal_balance' => 200000,
+        'interest_balance' => 15000,
+        'fees_balance' => 5000,
+        'penalty_balance' => 0,
+        'interest_rate' => 12,
+        'term_periods' => 6,
+        'repayment_frequency' => 'monthly',
+        'status' => 'active',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('clients.show', $client))
+        ->assertSuccessful()
+        ->assertSee('Outstanding Loans')
+        ->assertSee('Loan Accounts')
+        ->assertDontSee('Total Savings')
+        ->assertDontSee('Total Investments')
+        ->assertDontSee('Shares Accounts')
+        ->assertDontSee('Term Deposits');
+});
+
+it('renders a savings-only client dashboard without loan workflow links', function () {
+    $user = moduleManagementUser(['manage-clients']);
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($user->organization);
+    $modules->enable($user->organization, Module::where('slug', 'savings')->firstOrFail(), $user);
+    $client = moduleManagementClient($user);
+    $product = SavingsProduct::create([
+        'organization_id' => $user->organization_id,
+        'name' => 'Ordinary Savings',
+        'code' => fake()->unique()->bothify('SAV-??'),
+        'minimum_opening_balance' => 1000,
+        'minimum_balance' => 1000,
+        'interest_rate' => 0,
+        'interest_posting_frequency' => 'monthly',
+        'withdrawal_charge' => 0,
+        'deposit_charge' => 0,
+        'monthly_maintenance_fee' => 0,
+        'account_number_prefix' => 'SAV',
+        'status' => 'active',
+    ]);
+
+    SavingsAccount::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'client_id' => $client->id,
+        'savings_product_id' => $product->id,
+        'account_number' => fake()->unique()->numerify('1001-SAV-######'),
+        'opening_date' => today(),
+        'current_balance' => 120000,
+        'available_balance' => 120000,
+        'status' => 'active',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('clients.show', $client))
+        ->assertSuccessful()
+        ->assertSee('Total Savings')
+        ->assertSee('Savings Accounts')
+        ->assertDontSee('Outstanding Loans')
+        ->assertDontSee('Loan Accounts')
+        ->assertDontSee('Due Repayments');
+});
+
+it('keeps branch-attached managers inside their branch across loan and savings lists', function () {
+    $user = moduleManagementUser(['manage-branches', 'manage-loans', 'manage-accounts']);
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($user->organization);
+    $modules->enable($user->organization, Module::where('slug', 'loans')->firstOrFail(), $user);
+    $modules->enable($user->organization, Module::where('slug', 'savings')->firstOrFail(), $user);
+
+    $otherBranch = Branch::create([
+        'organization_id' => $user->organization_id,
+        'code' => fake()->unique()->numerify('####'),
+        'name' => 'Other Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $product = LoanProduct::create([
+        'organization_id' => $user->organization_id,
+        'name' => 'Working Capital',
+        'code' => fake()->unique()->bothify('LN-??'),
+        'min_amount' => 1000,
+        'max_amount' => 1000000,
+        'annual_interest_rate' => 12,
+        'interest_method' => 'flat',
+        'repayment_frequency' => 'monthly',
+        'default_term_months' => 6,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $savingsProduct = SavingsProduct::create([
+        'organization_id' => $user->organization_id,
+        'name' => 'Ordinary Savings',
+        'code' => fake()->unique()->bothify('SAV-??'),
+        'minimum_opening_balance' => 1000,
+        'minimum_balance' => 1000,
+        'interest_rate' => 0,
+        'interest_posting_frequency' => 'monthly',
+        'withdrawal_charge' => 0,
+        'deposit_charge' => 0,
+        'monthly_maintenance_fee' => 0,
+        'account_number_prefix' => 'SAV',
+        'status' => 'active',
+    ]);
+    $ownClient = moduleManagementClient($user);
+    $otherClient = Client::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $otherBranch->id,
+        'officer_id' => $user->id,
+        'client_number' => fake()->unique()->numerify('1001-C######'),
+        'client_type' => 'individual',
+        'first_name' => fake()->firstName(),
+        'last_name' => fake()->lastName(),
+        'phone' => fake()->unique()->numerify('+2567########'),
+        'status' => 'active',
+    ]);
+    $ownLoanNumber = fake()->unique()->numerify('1001-LN-######');
+    $otherLoanNumber = fake()->unique()->numerify('1001-LN-######');
+
+    foreach ([[$ownClient, $user->branch_id, $ownLoanNumber], [$otherClient, $otherBranch->id, $otherLoanNumber]] as [$client, $branchId, $loanNumber]) {
+        Loan::create([
+            'organization_id' => $user->organization_id,
+            'branch_id' => $branchId,
+            'client_id' => $client->id,
+            'loan_product_id' => $product->id,
+            'officer_id' => $user->id,
+            'loan_number' => $loanNumber,
+            'requested_amount' => 250000,
+            'approved_amount' => 250000,
+            'principal_balance' => 200000,
+            'interest_balance' => 15000,
+            'fees_balance' => 0,
+            'penalty_balance' => 0,
+            'interest_rate' => 12,
+            'term_periods' => 6,
+            'repayment_frequency' => 'monthly',
+            'status' => 'active',
+        ]);
+    }
+
+    $ownSavingsNumber = fake()->unique()->numerify('1001-SAV-######');
+    $otherSavingsNumber = fake()->unique()->numerify('1001-SAV-######');
+
+    foreach ([[$ownClient, $user->branch_id, $ownSavingsNumber], [$otherClient, $otherBranch->id, $otherSavingsNumber]] as [$client, $branchId, $accountNumber]) {
+        SavingsAccount::create([
+            'organization_id' => $user->organization_id,
+            'branch_id' => $branchId,
+            'client_id' => $client->id,
+            'savings_product_id' => $savingsProduct->id,
+            'account_number' => $accountNumber,
+            'opening_date' => today(),
+            'current_balance' => 120000,
+            'available_balance' => 120000,
+            'status' => 'active',
+        ]);
+    }
+
+    $this->actingAs($user)
+        ->get(route('loans.index'))
+        ->assertSuccessful()
+        ->assertSee($ownLoanNumber)
+        ->assertDontSee($otherLoanNumber);
+
+    $this->actingAs($user)
+        ->get(route('savings-accounts.index'))
+        ->assertSuccessful()
+        ->assertSee($ownSavingsNumber)
+        ->assertDontSee($otherSavingsNumber);
 });
 
 it('shows a teller form error instead of not found when posting without an open drawer', function () {
@@ -266,6 +474,66 @@ it('keeps the selected account after closing a posted drawer receipt', function 
         ->assertSee('account_number='.$account->account_number.'&amp;account_type_id='.$accountType->id.'&amp;lookup_scope=client_account', false);
 });
 
+it('shows general ledger drawer expenses in cashier entries and allows reversal requests', function () {
+    $user = moduleManagementUser(['post-transactions']);
+    enableTellerModule($user->organization);
+    $expenseAccount = ChartAccount::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'code' => fake()->unique()->bothify('EXP-??'),
+        'name' => 'Stationery Expense',
+        'type' => 'expense',
+        'normal_balance' => 'debit',
+        'drawer_direction' => 'cash_out',
+        'is_cash_account' => false,
+        'is_system' => false,
+        'is_active' => true,
+    ]);
+    $drawer = TellerDrawer::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'assigned_user_id' => $user->id,
+        'name' => 'Main Drawer',
+        'code' => fake()->unique()->bothify('TDR-??'),
+        'current_balance' => 5000,
+        'status' => 'open',
+    ]);
+    DrawerSession::create([
+        'organization_id' => $user->organization_id,
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $user->id,
+        'opening_balance' => 5000,
+        'status' => 'open',
+        'opened_at' => now(),
+    ]);
+
+    $redirectUrl = route('teller.index', [
+        'lookup_scope' => 'general_ledger',
+        'chart_account_id' => $expenseAccount->id,
+    ]);
+
+    $response = $this->actingAs($user)
+        ->from($redirectUrl)
+        ->post(route('teller.post'), [
+            'account_scope' => 'general_ledger',
+            'chart_account_id' => $expenseAccount->id,
+            'gl_entry_type' => 'debit',
+            'amount' => 1000,
+            'transaction_date' => today()->toDateString(),
+            'description' => 'Bought receipt books',
+        ])
+        ->assertRedirect($redirectUrl)
+        ->assertSessionHas('receipt_transaction_id');
+
+    $this->actingAs($user)
+        ->withSession(['receipt_transaction_id' => $response->getSession()->get('receipt_transaction_id')])
+        ->get($redirectUrl)
+        ->assertSuccessful()
+        ->assertSee('Stationery Expense')
+        ->assertSee('Request reversal')
+        ->assertSee('chart_account_id='.$expenseAccount->id.'&amp;lookup_scope=general_ledger', false);
+});
+
 it('allows an organization admin to open an organization drawer for a teller', function () {
     [$organization, $branch, $otherBranch] = drawerAdminOrganization();
     enableTellerModule($organization);
@@ -375,6 +643,21 @@ function moduleManagementUser(array $permissions): User
         'password' => Hash::make('password'),
         'status' => 'active',
         'is_active' => true,
+    ]);
+}
+
+function moduleManagementClient(User $user): Client
+{
+    return Client::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'officer_id' => $user->id,
+        'client_number' => fake()->unique()->numerify('1001-C######'),
+        'client_type' => 'individual',
+        'first_name' => fake()->firstName(),
+        'last_name' => fake()->lastName(),
+        'phone' => fake()->unique()->numerify('+2567########'),
+        'status' => 'active',
     ]);
 }
 

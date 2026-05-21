@@ -59,4 +59,9 @@ class Transaction extends Model
             ->where('subject_type', $this->getMorphClass())
             ->where('action', 'transaction_reversal');
     }
+
+    public function journalEntries(): HasMany
+    {
+        return $this->hasMany(JournalEntry::class);
+    }
 }

@@ -14,6 +14,7 @@ use App\Models\Loan;
 use App\Models\TellerDrawer;
 use App\Models\User;
 use App\Services\EndOfDayService;
+use App\Support\ApiSecurity;
 use App\Support\CurrencyDenomination;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -31,7 +32,7 @@ class EndOfDayController extends Controller
         $branch = Branch::query()->find($request->integer('branch_id')) ?: $request->user()->branch;
         abort_unless($branch, 404);
 
-        if (! $request->user()->canPerform('manage-branches')) {
+        if (! ApiSecurity::hasGlobalBranchAccess($request->user())) {
             abort_unless((int) $branch->id === (int) $request->user()->branch_id, 403);
         }
 
@@ -104,7 +105,7 @@ class EndOfDayController extends Controller
 
         return view('end-of-day.index', [
             'branches' => Branch::query()
-                ->when(! $request->user()->canPerform('manage-branches'), fn (Builder $query): Builder => $query->whereKey($request->user()->branch_id))
+                ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->whereKey($request->user()->branch_id))
                 ->orderBy('name')
                 ->get(),
             'branch' => $branch,
@@ -197,7 +198,7 @@ class EndOfDayController extends Controller
     {
         $branch = Branch::query()->findOrFail($branchId);
 
-        if (! $request->user()->canPerform('manage-branches')) {
+        if (! ApiSecurity::hasGlobalBranchAccess($request->user())) {
             abort_unless((int) $branch->id === (int) $request->user()->branch_id, 403);
         }
 

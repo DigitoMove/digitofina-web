@@ -9,6 +9,7 @@ use App\Models\Organization;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Support\ApiSecurity;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -27,7 +28,7 @@ class UserManagementController extends Controller
         $users = User::query()
             ->with(['branch', 'role'])
             ->when(! $request->user()->hasGlobalOrganizationAccess() && $request->user()->organization_id, fn ($query) => $query->where('organization_id', $request->user()->organization_id))
-            ->when(! $request->user()->hasOrganizationBranchAccess() && $request->user()->branch_id, fn ($query) => $query->where('branch_id', $request->user()->branch_id))
+            ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()) && $request->user()->branch_id, fn ($query) => $query->where('branch_id', $request->user()->branch_id))
             ->when($request->search, fn ($query, string $search) => $query->whereAny(['name', 'email', 'phone', 'position'], 'like', "%{$search}%"))
             ->when($request->role_id, fn ($query, string $roleId) => $query->where('role_id', $roleId))
             ->when($request->branch_id, fn ($query, string $branchId) => $query->where('branch_id', $branchId))
@@ -119,7 +120,7 @@ class UserManagementController extends Controller
                 ->with('organization')
                 ->where('status', 'active')
                 ->when(! $currentUser->hasGlobalOrganizationAccess() && $currentUser->organization_id, fn ($query) => $query->where('organization_id', $currentUser->organization_id))
-                ->when(! $currentUser->hasOrganizationBranchAccess() && $currentUser->branch_id, fn ($query) => $query->whereKey($currentUser->branch_id))
+                ->when(! ApiSecurity::hasGlobalBranchAccess($currentUser) && $currentUser->branch_id, fn ($query) => $query->whereKey($currentUser->branch_id))
                 ->orderBy('name')
                 ->get(),
             'organizations' => $currentUser->hasGlobalOrganizationAccess()

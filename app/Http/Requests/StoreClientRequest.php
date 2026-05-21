@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\ApiSecurity;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -79,7 +80,7 @@ class StoreClientRequest extends FormRequest
             function (Validator $validator): void {
                 $user = $this->user();
 
-                if (! $user || $user->canPerform('manage-organization') || $user->hasRole('super-admin')) {
+                if (! $user || ApiSecurity::hasGlobalBranchAccess($user)) {
                     return;
                 }
 

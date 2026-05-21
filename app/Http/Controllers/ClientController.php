@@ -10,6 +10,9 @@ use App\Models\User;
 use App\Services\ClientDeletionService;
 use App\Services\ClientService;
 use App\Services\FinancialRelationshipService;
+use App\Services\ModuleService;
+use App\Support\ApiSecurity;
+use App\Support\ModuleCatalog;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -23,7 +26,7 @@ class ClientController extends Controller
     {
         Gate::authorize('viewAny', Client::class);
         $user = $request->user();
-        $canViewAllBranches = $user->hasRole('super-admin') || $user->canPerform('manage-organization') || $user->canPerform('audit-system');
+        $canViewAllBranches = ApiSecurity::hasGlobalBranchAccess($user);
         $canBrowseClientList = $canViewAllBranches || $user->hasRole('supervisor') || $user->canPerform('manage-users') || $user->canPerform('disburse-loans');
 
         $hasClientSearch = $request->filled('search')
@@ -88,29 +91,36 @@ class ClientController extends Controller
         return redirect()->route('clients.show', $client)->with('status', 'Client registered.');
     }
 
-    public function show(Client $client, FinancialRelationshipService $financialRelationships): View
+    public function show(Client $client, FinancialRelationshipService $financialRelationships, ModuleService $modules): View
     {
         Gate::authorize('view', $client);
 
-        $client->load([
+        $user = request()->user();
+        $enabledModules = $user->hasRole('super-admin') || ! $user->organization
+            ? collect(ModuleCatalog::modules())->pluck('slug')->all()
+            : $modules->enabledSlugs($user->organization);
+        $moduleEnabled = fn (string $slug): bool => in_array($slug, $enabledModules, true);
+
+        $client->load(array_filter([
             'branch',
             'officer',
             'accounts.accountType',
-            'savingsAccounts.product',
-            'investmentAccounts.plan',
-            'shareAccounts.product',
-            'loans.branch',
-            'loans.loanAccount.accountType',
-            'loans.product',
-            'documents.uploadedBy',
-            'documents.verifiedBy',
+            $moduleEnabled('savings') ? 'savingsAccounts.product' : null,
+            $moduleEnabled('investments') ? 'investmentAccounts.plan' : null,
+            $moduleEnabled('shares') ? 'shareAccounts.product' : null,
+            $moduleEnabled('loans') ? 'loans.branch' : null,
+            $moduleEnabled('loans') ? 'loans.loanAccount.accountType' : null,
+            $moduleEnabled('loans') ? 'loans.product' : null,
+            $moduleEnabled('documents') ? 'documents.uploadedBy' : null,
+            $moduleEnabled('documents') ? 'documents.verifiedBy' : null,
             'notes.user',
-            'groups',
-        ]);
+            $moduleEnabled('group-savings') ? 'groups' : null,
+        ]));
 
         return view('clients.show', [
             'client' => $client,
-            'financialOverview' => $financialRelationships->clientOverview($client),
+            'enabledModules' => $enabledModules,
+            'financialOverview' => $financialRelationships->clientOverview($client, $enabledModules),
             'canAssignClientOfficer' => $this->canAssignClientOfficer(request()),
             'assignableOfficers' => $this->assignableOfficers(request(), $client->branch_id)->get(),
         ]);
@@ -223,7 +233,7 @@ class ClientController extends Controller
     {
         return Branch::query()
             ->where('is_active', true)
-            ->when(! $request->user()->canPerform('manage-organization') && ! $request->user()->hasRole('super-admin'), fn (Builder $query): Builder => $query->whereKey($request->user()->branch_id))
+            ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->whereKey($request->user()->branch_id))
             ->orderBy('name');
     }
 
@@ -236,7 +246,7 @@ class ClientController extends Controller
             ->with(['branch', 'role'])
             ->where('status', 'active')
             ->when($request->user()->organization_id, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
-            ->when($branchId && ! $request->user()->canPerform('manage-organization') && ! $request->user()->hasRole('super-admin'), fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when($branchId && ! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->whereHas('role', fn (Builder $query): Builder => $query->whereIn('slug', ['branch-manager', 'loan-officer']))
             ->orderBy('name');
     }

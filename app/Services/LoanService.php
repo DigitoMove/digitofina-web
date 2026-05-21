@@ -20,6 +20,7 @@ use App\Models\RoleFinancialLimit;
 use App\Models\SystemSetting;
 use App\Models\TransactionType;
 use App\Models\User;
+use App\Support\ApiSecurity;
 use App\Support\CurrencyDenomination;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -254,7 +255,7 @@ class LoanService
                 throw new InvalidArgumentException('The assigned officer must belong to this organization.');
             }
 
-            if ($loan->branch_id && $assignedOfficer->branch_id && (int) $loan->branch_id !== (int) $assignedOfficer->branch_id && ! $user->canPerform('manage-organization')) {
+            if ($loan->branch_id && $assignedOfficer->branch_id && (int) $loan->branch_id !== (int) $assignedOfficer->branch_id && ! ApiSecurity::hasGlobalBranchAccess($user)) {
                 throw new InvalidArgumentException('The assigned officer must belong to this branch.');
             }
 
