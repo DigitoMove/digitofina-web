@@ -136,44 +136,61 @@
 @endif
 
 @if($canRepairLoanTerms)
-    <section class="df-card mb-5 border border-sky-200 bg-sky-50">
-        <div class="mb-4">
-            <h2 class="text-lg font-semibold text-slate-950">Repair loan terms</h2>
-            <p class="df-muted">Use this for admin corrections such as changing a disbursed loan from weekly installments to monthly installments. Successful repayments must be reversed before schedules can be replaced.</p>
-        </div>
-        <form method="POST" action="{{ route('loans.repair-terms', $loan) }}" class="grid gap-4 md:grid-cols-5" onsubmit="return confirm('Repair this loan and regenerate its repayment schedule?');">
-            @csrf
-            <label class="text-sm font-medium text-slate-700">Loan product
-                <select name="loan_product_id" class="mt-1 w-full rounded border-slate-300" required>
-                    @foreach($products as $product)
-                        <option value="{{ $product->id }}" @selected((int) old('loan_product_id', $loan->loan_product_id) === $product->id)>{{ $product->code }} · {{ $product->name }}</option>
-                    @endforeach
-                </select>
-            </label>
-            <label class="text-sm font-medium text-slate-700">Approved amount
-                <input name="approved_amount" value="{{ old('approved_amount', $loan->approved_amount ?: $loan->requested_amount) }}" type="number" step="100" min="100" class="mt-1 w-full rounded border-slate-300" required>
-            </label>
-            <label class="text-sm font-medium text-slate-700">Installments
-                <input name="term_periods" value="{{ old('term_periods', $loan->term_periods) }}" type="number" min="1" class="mt-1 w-full rounded border-slate-300" required>
-            </label>
-            <label class="text-sm font-medium text-slate-700">Frequency
-                <select name="repayment_frequency" class="mt-1 w-full rounded border-slate-300" required>
-                    @foreach(['daily' => 'Daily', 'weekly' => 'Weekly', 'bi-weekly' => 'Bi-weekly', 'monthly' => 'Monthly'] as $frequency => $label)
-                        <option value="{{ $frequency }}" @selected(old('repayment_frequency', $loan->repayment_frequency) === $frequency)>{{ $label }}</option>
-                    @endforeach
-                </select>
-            </label>
-            <label class="text-sm font-medium text-slate-700">Schedule start
-                <input name="schedule_start_date" value="{{ old('schedule_start_date', ($loan->disbursed_at ?? $loan->approved_at ?? today())->toDateString()) }}" type="date" class="mt-1 w-full rounded border-slate-300" required>
-            </label>
-            <label class="text-sm font-medium text-slate-700 md:col-span-5">Reason <x-required-badge />
-                <textarea name="reason" rows="2" required class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100" placeholder="Explain why the loan terms are being repaired.">{{ old('reason') }}</textarea>
-            </label>
-            <div class="md:col-span-5">
-                <button class="rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800">Repair terms and regenerate schedule</button>
+    <section class="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-5">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="max-w-3xl">
+                <h2 class="text-lg font-semibold text-slate-950">Repair loan terms</h2>
+                <p class="mt-1 text-sm text-sky-900">Use this for admin corrections such as changing a disbursed loan from weekly installments to monthly installments. Successful repayments must be reversed before schedules can be replaced.</p>
             </div>
-        </form>
+            <button type="button" data-loan-repair-open class="rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800">Repair loan</button>
+        </div>
     </section>
+
+    <div data-loan-repair-modal data-open="{{ $errors->any() && old('loan_product_id') ? '1' : '0' }}" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4">
+        <div class="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
+            <div class="mb-4 flex items-start justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-950">Repair loan terms</h2>
+                    <p class="mt-1 text-sm text-slate-600">Update the corrected loan settings, then regenerate the repayment schedule.</p>
+                </div>
+                <button type="button" data-loan-repair-close class="rounded-lg px-3 py-1 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900" aria-label="Close repair loan dialog">&times;</button>
+            </div>
+
+            <form method="POST" action="{{ route('loans.repair-terms', $loan) }}" class="grid gap-4 md:grid-cols-2" onsubmit="return confirm('Repair this loan and regenerate its repayment schedule?');">
+                @csrf
+                <label class="text-sm font-medium text-slate-700">Loan product
+                    <select name="loan_product_id" class="mt-1 w-full rounded border-slate-300" required>
+                        @foreach($products as $product)
+                            <option value="{{ $product->id }}" @selected((int) old('loan_product_id', $loan->loan_product_id) === $product->id)>{{ $product->code }} · {{ $product->name }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label class="text-sm font-medium text-slate-700">Approved amount
+                    <input name="approved_amount" value="{{ old('approved_amount', $loan->approved_amount ?: $loan->requested_amount) }}" type="number" step="100" min="100" class="mt-1 w-full rounded border-slate-300" required>
+                </label>
+                <label class="text-sm font-medium text-slate-700">Installments
+                    <input name="term_periods" value="{{ old('term_periods', $loan->term_periods) }}" type="number" min="1" class="mt-1 w-full rounded border-slate-300" required>
+                </label>
+                <label class="text-sm font-medium text-slate-700">Frequency
+                    <select name="repayment_frequency" class="mt-1 w-full rounded border-slate-300" required>
+                        @foreach(['daily' => 'Daily', 'weekly' => 'Weekly', 'bi-weekly' => 'Bi-weekly', 'monthly' => 'Monthly'] as $frequency => $label)
+                            <option value="{{ $frequency }}" @selected(old('repayment_frequency', $loan->repayment_frequency) === $frequency)>{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label class="text-sm font-medium text-slate-700">Schedule start
+                    <input name="schedule_start_date" value="{{ old('schedule_start_date', ($loan->disbursed_at ?? $loan->approved_at ?? today())->toDateString()) }}" type="date" class="mt-1 w-full rounded border-slate-300" required>
+                </label>
+                <label class="text-sm font-medium text-slate-700 md:col-span-2">Reason <x-required-badge />
+                    <textarea name="reason" rows="3" required class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100" placeholder="Explain why the loan terms are being repaired.">{{ old('reason') }}</textarea>
+                </label>
+                <div class="flex flex-col-reverse gap-2 md:col-span-2 md:flex-row md:justify-end">
+                    <button type="button" data-loan-repair-close class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                    <button class="rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800">Repair terms and regenerate schedule</button>
+                </div>
+            </form>
+        </div>
+    </div>
 @endif
 
 @if($canReopenClosedLoan)

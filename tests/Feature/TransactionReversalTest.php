@@ -678,7 +678,8 @@ it('allows an admin to repair disbursed loan terms and regenerate the schedule',
     $this->actingAs($admin)
         ->get(route('loans.show', $loan))
         ->assertSuccessful()
-        ->assertSee('Repair terms and regenerate schedule');
+        ->assertSee('Repair loan')
+        ->assertSee('data-loan-repair-modal', false);
 
     $this->actingAs($admin)
         ->from(route('loans.show', $loan))
