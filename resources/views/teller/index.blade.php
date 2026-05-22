@@ -395,8 +395,8 @@
                 Search
             </button>
         </div>
-        <div class="fixed inset-0 z-50 {{ $hasLookupSearch ? 'flex' : 'hidden' }} items-center justify-center bg-slate-950/60 p-4" data-teller-lookup-modal data-open="{{ $hasLookupSearch ? '1' : '0' }}">
-            <div class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div class="fixed inset-0 z-[70] {{ $hasLookupSearch ? 'grid' : 'hidden' }} place-items-center bg-slate-950/60 p-4" data-teller-lookup-modal data-open="{{ $hasLookupSearch ? '1' : '0' }}">
+            <div class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-slate-950/10">
                 <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
                     <h3 class="text-lg font-semibold text-slate-950">Search Account</h3>
                     <button type="button" class="rounded border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600" data-teller-lookup-close>Close</button>

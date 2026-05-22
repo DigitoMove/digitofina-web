@@ -360,13 +360,13 @@ const initTellerLookup = () => {
         }
 
         modal.classList.remove('hidden');
-        modal.classList.add('flex');
+        modal.classList.add('grid');
         modal.querySelector('input[name="account_search"]')?.focus();
     };
 
     const close = () => {
         modal.classList.add('hidden');
-        modal.classList.remove('flex');
+        modal.classList.remove('grid');
     };
 
     openButton.addEventListener('click', open);
