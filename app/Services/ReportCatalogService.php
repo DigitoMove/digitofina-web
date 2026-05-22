@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Account;
+use App\Models\Branch;
 use App\Models\BranchDailySummary;
 use App\Models\ChartAccount;
 use App\Models\Client;
@@ -65,6 +66,7 @@ class ReportCatalogService
             $this->report('application-fees-income', 'Profitability', 'Application Fees Income', 'application_fees_income'),
             $this->report('loan-interest-income', 'Profitability', 'Loan Interest Accumulated', 'loan_interest_income'),
             $this->report('profitability-summary', 'Profitability', 'Profitability Summary', 'profitability_summary'),
+            $this->report('branch-profitability-standing', 'Profitability', 'Branch Profitability Standing', 'branch_profitability_standing'),
             $this->report('opened-savings-accounts', 'Savings', 'Opened Savings Accounts', 'accounts', ['category' => 'savings', 'date_column' => 'opened_at']),
             $this->report('unfunded-savings-accounts', 'Savings', 'Unfunded Savings Accounts', 'accounts', ['category' => 'savings', 'max_balance' => 0], false),
             $this->report('active-savings-accounts', 'Savings', 'Active Savings Accounts', 'accounts', ['category' => 'savings', 'status' => 'active'], false),
@@ -174,6 +176,7 @@ class ReportCatalogService
             'application_fees_income' => $this->applicationFeesIncome($from, $to, $branchId, $limit, $user),
             'loan_interest_income' => $this->loanInterestIncome($from, $to, $branchId, $limit, $user),
             'profitability_summary' => $this->profitabilitySummary($from, $to, $branchId, $user),
+            'branch_profitability_standing' => $this->branchProfitabilityStanding($from, $to, $branchId, $user),
             'accounts' => $this->accounts($payload, $from, $to, $branchId, $limit, $user),
             'shares' => $this->shares($from, $to, $limit),
             'loans' => $this->loans($payload, $from, $to, $branchId, $limit, $user),
@@ -668,6 +671,128 @@ class ReportCatalogService
                 'Net profit' => $this->money($profit),
                 'Profit margin' => number_format($margin, 2).'%',
             ],
+        ];
+    }
+
+    private function branchProfitabilityStanding(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
+    {
+        $branchMetrics = Branch::query()
+            ->tap(fn (Builder $query) => ApiSecurity::scopeTenant($query, $user))
+            ->when($branchId, fn (Builder $query): Builder => $query->whereKey($branchId))
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Branch $branch): array => $this->branchProfitabilityMetrics($from, $to, (int) $branch->getKey(), $user) + [
+                'branch' => $branch->name,
+            ]);
+
+        $totalMetrics = $branchMetrics->isEmpty()
+            ? $this->branchProfitabilityMetrics($from, $to, $branchId, $user) + ['branch' => 'All Branches']
+            : $this->totalBranchProfitabilityMetrics($branchMetrics) + ['branch' => 'All Branches'];
+
+        $rows = $branchMetrics
+            ->push($totalMetrics)
+            ->map(fn (array $metrics): array => $this->formatBranchProfitabilityMetrics($metrics));
+
+        return [
+            ['Branch', 'Income', 'Expenses', 'Total Loans', 'Interest', 'Expected', 'Collected', 'Current Standing', 'Net'],
+            $rows,
+            [
+                'Branches' => number_format(max(0, $rows->count() - 1)),
+                'Income' => $this->money((float) $totalMetrics['income']),
+                'Expenses' => $this->money((float) $totalMetrics['expenses']),
+                'Total loans' => $this->money((float) $totalMetrics['total_loans']),
+                'Interest' => $this->money((float) $totalMetrics['interest']),
+                'Expected' => $this->money((float) $totalMetrics['expected']),
+                'Collected' => $this->money((float) $totalMetrics['collected']),
+                'Current standing' => $this->money((float) $totalMetrics['current_standing']),
+                'Net' => $this->money((float) $totalMetrics['net']),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{income: float, expenses: float, total_loans: float, interest: float, expected: float, collected: float, current_standing: float, net: float}
+     */
+    private function branchProfitabilityMetrics(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
+    {
+        $applicationFees = (float) LoanDisbursement::query()
+            ->whereBetween('disbursement_date', [$from, $to])
+            ->where('status', 'successful')
+            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
+            ->sum('fees_deducted');
+        $journalIncome = $this->journalTypeNet('income', $from, $to, $branchId, $user);
+        $expenses = $this->journalTypeNet('expense', $from, $to, $branchId, $user);
+        $interest = (float) LoanRepayment::query()
+            ->whereBetween('paid_at', [$from, $to])
+            ->where('status', 'successful')
+            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
+            ->sum('interest_paid');
+        $collected = (float) LoanRepayment::query()
+            ->whereBetween('paid_at', [$from, $to])
+            ->where('status', 'successful')
+            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
+            ->sum('amount');
+        $expected = (float) LoanSchedule::query()
+            ->whereBetween('due_date', [$from, $to])
+            ->whereHas('loan', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
+            ->sum('total_due');
+        $totalLoans = (float) Loan::query()
+            ->whereNotIn('status', ['draft', 'submitted', 'under_review', 'cancelled', 'rejected', 'written_off'])
+            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
+            ->sum(DB::raw('coalesce(approved_amount, requested_amount)'));
+        $currentStanding = (float) Loan::query()
+            ->whereIn('status', ['approved', 'disbursed', 'active', 'in_arrears', 'restructured'])
+            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
+            ->selectRaw('sum(principal_balance + interest_balance + fees_balance + penalty_balance) as standing')
+            ->value('standing');
+        $income = max($journalIncome, $applicationFees + $interest);
+
+        return [
+            'income' => $income,
+            'expenses' => $expenses,
+            'total_loans' => $totalLoans,
+            'interest' => $interest,
+            'expected' => $expected,
+            'collected' => $collected,
+            'current_standing' => $currentStanding,
+            'net' => $income - $expenses,
+        ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $branchMetrics
+     * @return array{income: float, expenses: float, total_loans: float, interest: float, expected: float, collected: float, current_standing: float, net: float}
+     */
+    private function totalBranchProfitabilityMetrics(Collection $branchMetrics): array
+    {
+        return [
+            'income' => (float) $branchMetrics->sum('income'),
+            'expenses' => (float) $branchMetrics->sum('expenses'),
+            'total_loans' => (float) $branchMetrics->sum('total_loans'),
+            'interest' => (float) $branchMetrics->sum('interest'),
+            'expected' => (float) $branchMetrics->sum('expected'),
+            'collected' => (float) $branchMetrics->sum('collected'),
+            'current_standing' => (float) $branchMetrics->sum('current_standing'),
+            'net' => (float) $branchMetrics->sum('net'),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $metrics
+     * @return array<string, mixed>
+     */
+    private function formatBranchProfitabilityMetrics(array $metrics): array
+    {
+        return [
+            'Branch' => $metrics['branch'],
+            'Income' => $this->money((float) $metrics['income']),
+            'Expenses' => $this->money((float) $metrics['expenses']),
+            'Total Loans' => $this->money((float) $metrics['total_loans']),
+            'Interest' => $this->money((float) $metrics['interest']),
+            'Expected' => $this->money((float) $metrics['expected']),
+            'Collected' => $this->money((float) $metrics['collected']),
+            'Current Standing' => $this->money((float) $metrics['current_standing']),
+            'Net' => $this->money((float) $metrics['net']),
         ];
     }
 
