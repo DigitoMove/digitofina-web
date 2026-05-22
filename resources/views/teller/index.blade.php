@@ -395,8 +395,8 @@
                 Search
             </button>
         </div>
-        <div class="fixed inset-0 z-50 {{ $hasLookupSearch ? 'flex' : 'hidden' }} items-center justify-center bg-slate-950/55 p-4" data-teller-lookup-modal data-open="{{ $hasLookupSearch ? '1' : '0' }}">
-            <div class="w-full max-w-4xl overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div class="fixed inset-0 z-50 {{ $hasLookupSearch ? 'flex' : 'hidden' }} items-center justify-center bg-slate-950/60 p-4" data-teller-lookup-modal data-open="{{ $hasLookupSearch ? '1' : '0' }}">
+            <div class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
                 <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
                     <h3 class="text-lg font-semibold text-slate-950">Search Account</h3>
                     <button type="button" class="rounded border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600" data-teller-lookup-close>Close</button>
@@ -412,11 +412,11 @@
                     <input name="account_search" value="{{ request('account_search') }}" placeholder="Type a name, phone, account number, ledger name, or code" autofocus>
                     <button class="df-action-primary justify-center">Go</button>
                 </form>
-                <div class="max-h-[60vh] overflow-auto p-5">
+                <div class="min-h-0 flex-1 overflow-y-auto p-5">
             @if(! $isGeneralLedgerLookup)
             <div class="rounded border border-slate-200 bg-slate-50 p-4">
                 <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Client account results</div>
-                <div class="mt-3 max-h-72 divide-y divide-slate-200 overflow-auto rounded bg-white">
+                <div class="mt-3 max-h-[52vh] divide-y divide-slate-200 overflow-y-auto rounded bg-white">
                     @if(! $hasLookupSearch)
                         <div class="p-5 text-sm text-slate-500">Select an account type, type a keyword, then search.</div>
                     @else
@@ -427,9 +427,8 @@
                                 <div class="text-sm text-slate-500">{{ $resultAccount->client?->full_name ?: $resultAccount->client?->business_name ?: 'No client' }} · {{ $resultAccount->client?->client_number }} · {{ $resultAccount->client?->phone }}</div>
                                 <div class="mt-1 text-xs text-slate-500">{{ $resultAccount->accountType?->name }} · {{ str($resultAccount->status)->headline() }} · Balance UGX {{ number_format((float) $resultAccount->balance, 2) }}</div>
                             </div>
-                            <form method="GET" action="{{ route('teller.index') }}" class="flex items-start justify-end">
+                            <form method="GET" action="{{ route('teller.index') }}" class="flex items-start justify-end" data-teller-lookup-select>
                                 <input type="hidden" name="lookup_scope" value="account_type:{{ $resultAccount->account_type_id }}">
-                                <input type="hidden" name="account_search" value="{{ request('account_search') }}">
                                 <input type="hidden" name="account_number" value="{{ $resultAccount->account_number }}">
                                 <button class="rounded bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white">Select</button>
                             </form>
@@ -445,7 +444,7 @@
             @if($isGeneralLedgerLookup)
             <div class="rounded border border-slate-200 bg-slate-50 p-4">
                 <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">General ledger results</div>
-                <div class="mt-3 max-h-72 divide-y divide-slate-200 overflow-auto rounded bg-white">
+                <div class="mt-3 max-h-[52vh] divide-y divide-slate-200 overflow-y-auto rounded bg-white">
                     @if(! $hasLookupSearch)
                         <div class="p-5 text-sm text-slate-500">Select General Ledger Account, type a keyword, then search.</div>
                     @else
@@ -455,9 +454,8 @@
                                 <div class="font-semibold text-slate-950">{{ $chartAccount->code }} · {{ $chartAccount->name }}</div>
                                 <div class="text-sm text-slate-500">{{ str($chartAccount->type)->headline() }} · {{ $chartAccount->normal_balance ? str($chartAccount->normal_balance)->headline().' normal balance' : 'Normal balance not set' }} · {{ str($chartAccount->drawer_direction ?: 'both')->headline() }}</div>
                             </div>
-                            <form method="GET" action="{{ route('teller.index') }}" class="flex items-start justify-end">
+                            <form method="GET" action="{{ route('teller.index') }}" class="flex items-start justify-end" data-teller-lookup-select>
                                 <input type="hidden" name="lookup_scope" value="general_ledger">
-                                <input type="hidden" name="account_search" value="{{ request('account_search') }}">
                                 <input type="hidden" name="account_number" value="{{ request('account_number') }}">
                                 <input type="hidden" name="chart_account_id" value="{{ $chartAccount->id }}">
                                 <button class="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">Select</button>

@@ -68,7 +68,7 @@ class TellerDrawerController extends Controller
             })
             ->when(! $shouldSearchClientAccounts, fn (Builder $query): Builder => $query->whereRaw('1 = 0'))
             ->orderBy('account_number')
-            ->limit(12)
+            ->limit(50)
             ->get();
         $selectedChartAccount = $request->integer('chart_account_id')
             ? ChartAccount::query()

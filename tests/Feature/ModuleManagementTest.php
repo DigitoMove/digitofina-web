@@ -474,6 +474,58 @@ it('keeps the selected account after closing a posted drawer receipt', function 
         ->assertSee('account_number='.$account->account_number.'&amp;account_type_id='.$accountType->id.'&amp;lookup_scope=client_account', false);
 });
 
+it('closes the teller lookup modal after selecting an account from scrollable results', function () {
+    $user = moduleManagementUser(['post-transactions']);
+    enableTellerModule($user->organization);
+    $client = Client::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'officer_id' => $user->id,
+        'client_number' => fake()->unique()->numerify('1001-C######'),
+        'client_type' => 'individual',
+        'first_name' => 'Searchable',
+        'last_name' => 'Member',
+        'phone' => fake()->unique()->numerify('+2567########'),
+        'status' => 'active',
+    ]);
+    $accountType = AccountType::create([
+        'name' => 'Savings Account',
+        'code' => fake()->unique()->bothify('SAV-??'),
+        'category' => 'savings',
+        'is_active' => true,
+    ]);
+    $account = Account::create([
+        'organization_id' => $user->organization_id,
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'account_type_id' => $accountType->id,
+        'account_number' => fake()->unique()->numerify('1001-SAV-####'),
+        'account_name' => $client->full_name.' Savings',
+        'status' => 'active',
+        'balance' => 0,
+        'opened_at' => today(),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('teller.index', [
+            'lookup_scope' => 'account_type:'.$accountType->id,
+            'account_search' => 'Searchable',
+        ]))
+        ->assertSuccessful()
+        ->assertSee('data-teller-lookup-select', false)
+        ->assertSee('max-h-[52vh]', false)
+        ->assertDontSee('<input type="hidden" name="account_search"', false);
+
+    $this->actingAs($user)
+        ->get(route('teller.index', [
+            'lookup_scope' => 'account_type:'.$accountType->id,
+            'account_number' => $account->account_number,
+        ]))
+        ->assertSuccessful()
+        ->assertSee($account->account_number)
+        ->assertSee('data-teller-lookup-modal data-open="0"', false);
+});
+
 it('shows general ledger drawer expenses in cashier entries and allows reversal requests', function () {
     $user = moduleManagementUser(['post-transactions']);
     enableTellerModule($user->organization);

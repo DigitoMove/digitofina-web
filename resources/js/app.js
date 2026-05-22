@@ -346,6 +346,7 @@ const initTellerLookup = () => {
     const modal = document.querySelector('[data-teller-lookup-modal]');
     const openButton = document.querySelector('[data-teller-lookup-open]');
     const closeButtons = document.querySelectorAll('[data-teller-lookup-close]');
+    const selectForms = document.querySelectorAll('[data-teller-lookup-select]');
     const pageScope = document.querySelector('[data-teller-lookup-scope]');
     const modalScope = document.querySelector('[data-teller-lookup-modal-scope]');
 
@@ -370,6 +371,7 @@ const initTellerLookup = () => {
 
     openButton.addEventListener('click', open);
     closeButtons.forEach((button) => button.addEventListener('click', close));
+    selectForms.forEach((form) => form.addEventListener('submit', close));
     modal.addEventListener('click', (event) => {
         if (event.target === modal) {
             close();
