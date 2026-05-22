@@ -274,7 +274,7 @@ class LoanController extends Controller
             'reason' => ['required', 'string', 'max:1000'],
         ]);
         $loan->loadMissing('loanAccount');
-        $reactivatingLoanAccount = in_array($loan->status, ['active', 'in_arrears'], true)
+        $reactivatingLoanAccount = in_array($loan->status, ['disbursed', 'active', 'in_arrears'], true)
             && $loan->loanAccount
             && $loan->loanAccount->status !== 'active';
 

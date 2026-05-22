@@ -424,6 +424,44 @@ const initLoanRepairModal = () => {
     }
 };
 
+const initLoanReopenModal = () => {
+    const modal = document.querySelector('[data-loan-reopen-modal]');
+    const openButton = document.querySelector('[data-loan-reopen-open]');
+    const closeButtons = document.querySelectorAll('[data-loan-reopen-close]');
+
+    if (!modal || !openButton) {
+        return;
+    }
+
+    const open = () => {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        modal.querySelector('[name="reason"]')?.focus();
+    };
+
+    const close = () => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    };
+
+    openButton.addEventListener('click', open);
+    closeButtons.forEach((button) => button.addEventListener('click', close));
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            close();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            close();
+        }
+    });
+
+    if (modal.dataset.open === '1') {
+        open();
+    }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     initSteps();
@@ -434,4 +472,5 @@ document.addEventListener('DOMContentLoaded', () => {
     initReportLauncher();
     initTellerLookup();
     initLoanRepairModal();
+    initLoanReopenModal();
 });

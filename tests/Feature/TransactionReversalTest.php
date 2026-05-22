@@ -551,7 +551,8 @@ it('allows an admin to reactivate an inactive loan account for an in arrears loa
     $this->actingAs($admin)
         ->get(route('loans.show', $loan))
         ->assertSuccessful()
-        ->assertSee('Reactivate loan account');
+        ->assertSee('Reactivate loan')
+        ->assertSee('data-loan-reopen-modal', false);
 
     $this->actingAs($admin)
         ->from(route('loans.show', $loan))
@@ -567,6 +568,103 @@ it('allows an admin to reactivate an inactive loan account for an in arrears loa
         ->and($loanAccount->fresh()->status)->toBe('active')
         ->and($loanAccount->fresh()->balance)->toBe('100000.00')
         ->and((float) $loan->schedules()->sum('total_paid'))->toBe(0.0);
+});
+
+it('allows an admin to reactivate a disbursed loan and its inactive loan account', function () {
+    $branch = Branch::create([
+        'code' => '1007',
+        'name' => 'Disbursed Repair Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $role = Role::create([
+        'name' => 'Super Admin',
+        'slug' => 'super-admin',
+    ]);
+    $admin = User::factory()->create([
+        'branch_id' => null,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $client = Client::create([
+        'branch_id' => $branch->id,
+        'client_number' => '1007-C000001',
+        'first_name' => 'Jane',
+        'last_name' => 'Achen',
+        'phone' => '+256700000007',
+        'status' => 'active',
+        'registered_at' => today(),
+    ]);
+    $accountType = AccountType::create([
+        'name' => 'Loan',
+        'code' => 'LN-DISB',
+        'category' => 'loan',
+        'minimum_balance' => 0,
+        'is_active' => true,
+    ]);
+    $loanAccount = Account::create([
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'account_type_id' => $accountType->id,
+        'account_number' => '1007-LN-000001',
+        'account_name' => 'Jane Achen Loan',
+        'status' => 'closed',
+        'balance' => 0,
+        'opened_at' => today(),
+    ]);
+    $loanProduct = LoanProduct::create([
+        'name' => 'Monthly Loan',
+        'code' => 'ML-REACT',
+        'annual_interest_rate' => 20,
+        'interest_method' => 'declining_balance',
+        'repayment_frequency' => 'monthly',
+        'default_term_months' => 1,
+        'penalty_type' => 'percentage',
+        'penalty_rate' => 0,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'loan_product_id' => $loanProduct->id,
+        'loan_account_id' => $loanAccount->id,
+        'loan_number' => 'LN-DISBURSED-001',
+        'requested_amount' => 100000,
+        'approved_amount' => 100000,
+        'principal_balance' => 95000,
+        'interest_balance' => 5000,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 20,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'status' => 'disbursed',
+        'approved_at' => today(),
+        'disbursed_at' => today(),
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('loans.show', $loan))
+        ->assertSuccessful()
+        ->assertSee('Reactivate loan')
+        ->assertSee('data-loan-reopen-modal', false);
+
+    $this->actingAs($admin)
+        ->from(route('loans.show', $loan))
+        ->post(route('loans.reopen', $loan), [
+            'reason' => 'Loan was disbursed but the loan account is inactive',
+        ])
+        ->assertRedirect(route('loans.show', $loan))
+        ->assertSessionHas('status', 'Loan account reactivated.');
+
+    $freshLoan = $loan->fresh();
+    $reactivatedAccount = $loanAccount->fresh();
+
+    expect($freshLoan->status)->toBe('active')
+        ->and($reactivatedAccount->status)->toBe('active')
+        ->and((float) $reactivatedAccount->balance)->toBe((float) $freshLoan->principal_balance + (float) $freshLoan->interest_balance + (float) $freshLoan->fees_balance + (float) $freshLoan->penalty_balance);
 });
 
 it('allows an organization admin to repair disbursed loan terms and regenerate the schedule', function () {

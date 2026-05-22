@@ -872,8 +872,8 @@ class LoanService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if (! in_array($loan->status, ['active', 'in_arrears', 'closed', 'fully_paid'], true)) {
-                throw new InvalidArgumentException('Only active, in-arrears, closed, or fully paid loans can be reopened.');
+            if (! in_array($loan->status, ['disbursed', 'active', 'in_arrears', 'closed', 'fully_paid'], true)) {
+                throw new InvalidArgumentException('Only disbursed, active, in-arrears, closed, or fully paid loans can be reopened.');
             }
 
             if (! $loan->loan_account_id) {
@@ -920,7 +920,7 @@ class LoanService
                 'penalty_balance' => $penaltyBalance,
                 'status' => $clearPaidInstallments
                     ? ($loan->schedules->contains(fn (LoanSchedule $schedule): bool => $schedule->due_date?->lt(today()) === true) ? 'in_arrears' : 'active')
-                    : $loan->status,
+                    : ($loan->status === 'disbursed' ? 'active' : $loan->status),
             ]);
 
             Account::query()

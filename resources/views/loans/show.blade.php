@@ -21,7 +21,7 @@
     $canCreateLoan = auth()->user()->can('create', \App\Models\Loan::class);
     $canCancel = (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans')) && ! in_array($loan->status, ['cancelled', 'rejected', 'disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true);
     $canUpdateDraftTerms = $loan->status === 'draft' && (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans'));
-    $loanAccountNeedsReopen = $loan->loanAccount && $loan->loanAccount->status !== 'active' && in_array($loan->status, ['active', 'in_arrears'], true);
+    $loanAccountNeedsReopen = $loan->loanAccount && $loan->loanAccount->status !== 'active' && in_array($loan->status, ['disbursed', 'active', 'in_arrears'], true);
     $canReopenClosedLoan = (in_array($loan->status, ['closed', 'fully_paid'], true) || $loanAccountNeedsReopen) && auth()->user()->canAdministerLoanRepairs();
     $canRepairLoanTerms = in_array($loan->status, ['approved', 'disbursed', 'active', 'in_arrears'], true) && auth()->user()->canAdministerLoanRepairs();
     $workflow = ['Draft', 'Appraisal', 'Approval', 'Approved', 'Disbursed', 'Closed'];
@@ -195,7 +195,7 @@
 
 @if($canReopenClosedLoan)
     <section class="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-5">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div class="max-w-3xl">
                 <h2 class="text-lg font-semibold text-amber-950">{{ $loanAccountNeedsReopen ? 'Reactivate Loan Account' : 'Reopen Loan' }}</h2>
                 <p class="mt-1 text-sm text-amber-900">
@@ -206,16 +206,39 @@
                     @endif
                 </p>
             </div>
-            <form method="POST" action="{{ route('loans.reopen', $loan) }}" class="grid min-w-72 gap-2" onsubmit="return confirm('{{ $loanAccountNeedsReopen ? 'Reactivate this loan account?' : 'Reopen this loan and clear all paid installment amounts?' }}');">
-                @csrf
-                <label class="text-sm font-semibold text-amber-950">
-                    Reason <x-required-badge />
-                    <textarea name="reason" rows="2" required class="mt-1 w-full rounded-lg border-amber-200 bg-white text-sm focus:border-amber-500 focus:ring-amber-100" placeholder="Why is this loan being reopened?">{{ old('reason') }}</textarea>
-                </label>
-                <button class="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800">{{ $loanAccountNeedsReopen ? 'Reactivate loan account' : 'Reopen loan and clear installments' }}</button>
-            </form>
+            <button type="button" data-loan-reopen-open class="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white shadow-sm ring-1 ring-slate-950 hover:bg-brand-800 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">{{ $loanAccountNeedsReopen ? 'Reactivate loan' : 'Reopen loan' }}</button>
         </div>
     </section>
+
+    <div data-loan-reopen-modal data-open="{{ $errors->has('reopen_reason') ? '1' : '0' }}" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4">
+        <div class="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl">
+            <div class="mb-4 flex items-start justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-950">{{ $loanAccountNeedsReopen ? 'Reactivate loan' : 'Reopen loan' }}</h2>
+                    <p class="mt-1 text-sm text-slate-600">
+                        @if($loanAccountNeedsReopen)
+                            Confirm the admin reason. The loan account will be activated{{ $loan->status === 'disbursed' ? ' and the loan will move to Active' : '' }}.
+                        @else
+                            Confirm the admin reason before reopening the loan and clearing paid installment amounts.
+                        @endif
+                    </p>
+                </div>
+                <button type="button" data-loan-reopen-close class="rounded-lg px-3 py-1 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900" aria-label="Close reopen loan dialog">&times;</button>
+            </div>
+
+            <form method="POST" action="{{ route('loans.reopen', $loan) }}" class="grid gap-4" onsubmit="return confirm('{{ $loanAccountNeedsReopen ? 'Reactivate this loan?' : 'Reopen this loan and clear all paid installment amounts?' }}');">
+                @csrf
+                <label class="text-sm font-semibold text-slate-800">
+                    Reason <x-required-badge />
+                    <textarea name="reason" rows="3" required class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100" placeholder="{{ $loanAccountNeedsReopen ? 'Why is this loan being reactivated?' : 'Why is this loan being reopened?' }}">{{ old('reason') }}</textarea>
+                </label>
+                <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button type="button" data-loan-reopen-close class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                    <button class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-800 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">{{ $loanAccountNeedsReopen ? 'Reactivate loan' : 'Reopen loan and clear installments' }}</button>
+                </div>
+            </form>
+        </div>
+    </div>
 @endif
 
 <div class="grid gap-5 xl:grid-cols-[22rem_1fr]">
