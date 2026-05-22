@@ -153,10 +153,25 @@ class TellerDrawerController extends Controller
             'managedChartAccounts' => ChartAccount::query()
                 ->with('branch')
                 ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
-                ->where('is_cash_account', false)
                 ->orderBy('branch_id')
                 ->orderBy('code')
                 ->limit(80)
+                ->get(),
+            'managedDrawerChartAccounts' => ChartAccount::query()
+                ->with('branch')
+                ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
+                ->where('is_cash_account', false)
+                ->where('is_active', true)
+                ->orderBy('branch_id')
+                ->orderBy('code')
+                ->limit(80)
+                ->get(),
+            'ledgerParentAccounts' => ChartAccount::query()
+                ->with('branch')
+                ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
+                ->orderBy('branch_id')
+                ->orderBy('code')
+                ->limit(250)
                 ->get(),
             'openDrawerSessions' => DrawerSession::query()
                 ->with(['drawer.branch', 'user'])
@@ -249,6 +264,77 @@ class TellerDrawerController extends Controller
         $auditLogger->record('ledger_account.created', $chartAccount, $chartAccount->toArray());
 
         return back()->with('status', 'Ledger account created.');
+    }
+
+    public function updateLedgerAccount(Request $request, ChartAccount $chartAccount, AuditLogger $auditLogger): RedirectResponse
+    {
+        abort_unless($this->canManageLedgerAccounts($request), 403);
+        $this->authorizeLedgerAccountAccess($request, $chartAccount);
+        $request->merge(['code' => Str::upper((string) $request->input('code'))]);
+
+        $data = $request->validate([
+            'branch_id' => ['nullable', 'exists:branches,id'],
+            'parent_id' => ['nullable', 'exists:chart_accounts,id'],
+            'code' => ['required', 'string', 'max:30', 'regex:/^[A-Za-z0-9_-]+$/', Rule::unique('chart_accounts', 'code')->ignore($chartAccount->id)],
+            'name' => ['required', 'string', 'max:191'],
+            'type' => ['required', Rule::in(['asset', 'liability', 'equity', 'income', 'expense'])],
+            'normal_balance' => ['required', Rule::in(['debit', 'credit'])],
+            'drawer_direction' => ['nullable', Rule::in(['cash_in', 'cash_out', 'both'])],
+            'is_cash_account' => ['nullable', 'boolean'],
+            'is_system' => ['nullable', 'boolean'],
+            'is_active' => ['nullable', 'boolean'],
+        ]);
+
+        $branch = filled($data['branch_id'] ?? null)
+            ? Branch::query()->findOrFail($data['branch_id'])
+            : null;
+
+        if ($branch) {
+            $this->authorizeDrawerBranch($request, $branch);
+        } elseif (! ApiSecurity::hasGlobalBranchAccess($request->user()) && $request->user()->branch_id) {
+            abort(403);
+        }
+
+        if (filled($data['parent_id'] ?? null)) {
+            if ((int) $data['parent_id'] === (int) $chartAccount->id) {
+                return back()->withErrors(['ledger_account' => 'A ledger account cannot be its own parent.'])->withInput();
+            }
+
+            $parentAccount = ChartAccount::query()->findOrFail($data['parent_id']);
+            $this->authorizeLedgerAccountAccess($request, $parentAccount);
+        }
+
+        $oldValues = $chartAccount->only([
+            'organization_id',
+            'branch_id',
+            'parent_id',
+            'code',
+            'name',
+            'type',
+            'normal_balance',
+            'drawer_direction',
+            'is_cash_account',
+            'is_system',
+            'is_active',
+        ]);
+
+        $chartAccount->update([
+            'organization_id' => $branch?->organization_id ?? $this->activeOrganizationId($request),
+            'branch_id' => $branch?->id,
+            'parent_id' => $data['parent_id'] ?? null,
+            'code' => $data['code'],
+            'name' => $data['name'],
+            'type' => $data['type'],
+            'normal_balance' => $data['normal_balance'],
+            'drawer_direction' => $data['drawer_direction'] ?? null,
+            'is_cash_account' => $request->boolean('is_cash_account'),
+            'is_system' => $request->boolean('is_system'),
+            'is_active' => $request->boolean('is_active'),
+        ]);
+
+        $auditLogger->record('ledger_account.updated', $chartAccount, $chartAccount->fresh()->only(array_keys($oldValues)), $oldValues);
+
+        return back()->with('status', 'Ledger account updated.');
     }
 
     public function postManagedDrawer(Request $request, TransactionPostingService $posting): RedirectResponse
@@ -588,6 +674,11 @@ class TellerDrawerController extends Controller
     private function authorizeDrawerBranch(Request $request, Branch $branch): void
     {
         abort_unless($request->user()->canAccessBranch($branch->id, $branch->organization_id), 403);
+    }
+
+    private function authorizeLedgerAccountAccess(Request $request, ChartAccount $chartAccount): void
+    {
+        abort_unless($request->user()->canAccessBranch($chartAccount->branch_id, $chartAccount->organization_id), 403);
     }
 
     private function canOpenForTellers(Request $request): bool

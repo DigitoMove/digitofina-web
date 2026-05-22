@@ -141,6 +141,7 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::get('/due-repayments', [DueRepaymentController::class, 'index'])->middleware('module:loans')->name('due-repayments.index');
     Route::get('/teller-drawer', [TellerDrawerController::class, 'index'])->middleware('module:teller')->name('teller.index');
     Route::post('/teller-drawer/ledger-accounts', [TellerDrawerController::class, 'storeLedgerAccount'])->name('teller.ledger-accounts.store');
+    Route::put('/teller-drawer/ledger-accounts/{chartAccount}', [TellerDrawerController::class, 'updateLedgerAccount'])->name('teller.ledger-accounts.update');
     Route::post('/teller-drawer/managed-post', [TellerDrawerController::class, 'postManagedDrawer'])->name('teller.managed-post');
     Route::post('/teller-drawer/drawers', [TellerDrawerController::class, 'storeDrawer'])->name('teller.drawers.store');
     Route::post('/teller-drawer/open', [TellerDrawerController::class, 'open'])->name('teller.open');

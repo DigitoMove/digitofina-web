@@ -650,6 +650,73 @@ it('shows ledger cash received into the drawer with a reversal action', function
         ->assertSee('Request reversal');
 });
 
+it('allows admins to edit ledger account attributes from drawer management', function () {
+    [$organization, $branch, $otherBranch] = drawerAdminOrganization();
+    enableTellerModule($organization);
+    $admin = drawerAdminUser($organization, null, 'organization-admin', ['manage-accounting', 'manage-drawers', 'manage-users']);
+    $organization->modules()->syncWithoutDetaching([
+        Module::where('slug', 'accounting')->firstOrFail()->id => ['is_enabled' => true, 'enabled_at' => now()],
+    ]);
+    $parentAccount = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $otherBranch->id,
+        'code' => fake()->unique()->bothify('PAR-??'),
+        'name' => 'Parent Expense',
+        'type' => 'expense',
+        'normal_balance' => 'debit',
+        'is_cash_account' => false,
+        'is_system' => false,
+        'is_active' => true,
+    ]);
+    $ledgerAccount = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'code' => 'OLD-LEDGER',
+        'name' => 'Old Ledger Name',
+        'type' => 'expense',
+        'normal_balance' => 'debit',
+        'drawer_direction' => 'cash_out',
+        'is_cash_account' => false,
+        'is_system' => false,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('teller.index'))
+        ->assertSuccessful()
+        ->assertSee('Edit OLD-LEDGER', false)
+        ->assertSee(route('teller.ledger-accounts.update', $ledgerAccount), false);
+
+    $this->actingAs($admin)
+        ->from(route('teller.index'))
+        ->put(route('teller.ledger-accounts.update', $ledgerAccount), [
+            'branch_id' => $otherBranch->id,
+            'parent_id' => $parentAccount->id,
+            'code' => 'NEW-LEDGER',
+            'name' => 'Updated Ledger Name',
+            'type' => 'income',
+            'normal_balance' => 'credit',
+            'drawer_direction' => 'cash_in',
+            'is_cash_account' => '1',
+            'is_system' => '1',
+            'is_active' => '0',
+        ])
+        ->assertRedirect(route('teller.index'))
+        ->assertSessionHas('status', 'Ledger account updated.');
+
+    expect($ledgerAccount->fresh())
+        ->branch_id->toBe($otherBranch->id)
+        ->parent_id->toBe($parentAccount->id)
+        ->code->toBe('NEW-LEDGER')
+        ->name->toBe('Updated Ledger Name')
+        ->type->toBe('income')
+        ->normal_balance->toBe('credit')
+        ->drawer_direction->toBe('cash_in')
+        ->is_cash_account->toBeTrue()
+        ->is_system->toBeTrue()
+        ->is_active->toBeFalse();
+});
+
 it('allows an organization admin to open an organization drawer for a teller', function () {
     [$organization, $branch, $otherBranch] = drawerAdminOrganization();
     enableTellerModule($organization);

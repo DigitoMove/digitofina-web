@@ -310,7 +310,7 @@
                     <label class="text-sm font-semibold text-slate-700 md:col-span-2">Ledger Account <x-required-badge />
                         <select name="chart_account_id" class="mt-1" required>
                             <option value="">Select source or expense ledger</option>
-                            @foreach($managedChartAccounts->groupBy(fn ($account) => $account->branch?->name ?? 'No branch') as $branchName => $accounts)
+                            @foreach($managedDrawerChartAccounts->groupBy(fn ($account) => $account->branch?->name ?? 'No branch') as $branchName => $accounts)
                                 <optgroup label="{{ $branchName }}">
                                     @foreach($accounts as $managedAccount)
                                         <option value="{{ $managedAccount->id }}" @selected((int) old('chart_account_id') === $managedAccount->id)>{{ $managedAccount->code }} · {{ $managedAccount->name }} · {{ str($managedAccount->drawer_direction ?: 'both')->headline() }}</option>
@@ -341,7 +341,7 @@
             <div class="mt-5 max-h-72 overflow-auto rounded-lg border border-slate-200">
                 <table class="w-full text-left text-sm">
                     <thead class="bg-slate-800 text-white">
-                        <tr><th class="p-3">Branch</th><th>Code</th><th>Name</th><th>Type</th><th>Drawer Use</th><th>Status</th></tr>
+                        <tr><th class="p-3">Branch</th><th>Code</th><th>Name</th><th>Type</th><th>Drawer Use</th><th>Status</th><th>Action</th></tr>
                     </thead>
                     <tbody>
                         @forelse($managedChartAccounts as $managedAccount)
@@ -352,9 +352,83 @@
                                 <td>{{ str($managedAccount->type)->headline() }} · {{ str($managedAccount->normal_balance)->headline() }}</td>
                                 <td>{{ str($managedAccount->drawer_direction ?: 'both')->headline() }}</td>
                                 <td><span class="rounded px-2 py-1 text-xs font-semibold {{ $managedAccount->is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700' }}">{{ $managedAccount->is_active ? 'Active' : 'Inactive' }}</span></td>
+                                <td class="pr-3 text-xs font-semibold text-slate-500">Edit below</td>
+                            </tr>
+                            <tr class="border-t border-slate-200 bg-slate-50">
+                                <td colspan="7" class="p-0">
+                                    <details class="group">
+                                        <summary class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-brand-700 hover:bg-white">Edit {{ $managedAccount->code }} · {{ $managedAccount->name }}</summary>
+                                        <form method="POST" action="{{ route('teller.ledger-accounts.update', $managedAccount) }}" class="grid gap-3 p-4 md:grid-cols-3">
+                                            @csrf
+                                            @method('PUT')
+                                            <label class="text-sm font-semibold text-slate-700">Branch
+                                                <select name="branch_id" class="mt-1">
+                                                    <option value="">Organization-level ledger</option>
+                                                    @foreach($branches as $branch)
+                                                        <option value="{{ $branch->id }}" @selected((int) $managedAccount->branch_id === $branch->id)>{{ $branch->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </label>
+                                            <label class="text-sm font-semibold text-slate-700">Parent Account
+                                                <select name="parent_id" class="mt-1">
+                                                    <option value="">No parent account</option>
+                                                    @foreach($ledgerParentAccounts as $parentAccount)
+                                                        @if($parentAccount->id !== $managedAccount->id)
+                                                            <option value="{{ $parentAccount->id }}" @selected((int) $managedAccount->parent_id === $parentAccount->id)>{{ $parentAccount->code }} · {{ $parentAccount->name }}</option>
+                                                        @endif
+                                                    @endforeach
+                                                </select>
+                                            </label>
+                                            <label class="text-sm font-semibold text-slate-700">Code <x-required-badge />
+                                                <input name="code" value="{{ $managedAccount->code }}" class="mt-1" required>
+                                            </label>
+                                            <label class="text-sm font-semibold text-slate-700 md:col-span-2">Account Name <x-required-badge />
+                                                <input name="name" value="{{ $managedAccount->name }}" class="mt-1" required>
+                                            </label>
+                                            <label class="text-sm font-semibold text-slate-700">Account Type <x-required-badge />
+                                                <select name="type" class="mt-1" required>
+                                                    @foreach(['asset' => 'Asset', 'liability' => 'Liability', 'equity' => 'Equity', 'income' => 'Income', 'expense' => 'Expense'] as $value => $label)
+                                                        <option value="{{ $value }}" @selected($managedAccount->type === $value)>{{ $label }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </label>
+                                            <label class="text-sm font-semibold text-slate-700">Normal Balance <x-required-badge />
+                                                <select name="normal_balance" class="mt-1" required>
+                                                    <option value="debit" @selected($managedAccount->normal_balance === 'debit')>Debit</option>
+                                                    <option value="credit" @selected($managedAccount->normal_balance === 'credit')>Credit</option>
+                                                </select>
+                                            </label>
+                                            <label class="text-sm font-semibold text-slate-700">Drawer Use
+                                                <select name="drawer_direction" class="mt-1">
+                                                    <option value="">Can add or take drawer money</option>
+                                                    <option value="cash_in" @selected($managedAccount->drawer_direction === 'cash_in')>Adds money to drawer</option>
+                                                    <option value="cash_out" @selected($managedAccount->drawer_direction === 'cash_out')>Takes money from drawer</option>
+                                                    <option value="both" @selected($managedAccount->drawer_direction === 'both')>Can add or take drawer money</option>
+                                                </select>
+                                            </label>
+                                            <div class="flex flex-wrap items-center gap-4 text-sm font-semibold text-slate-700 md:col-span-2">
+                                                <label class="inline-flex items-center gap-2">
+                                                    <input type="hidden" name="is_active" value="0">
+                                                    <input type="checkbox" name="is_active" value="1" @checked($managedAccount->is_active)> Active
+                                                </label>
+                                                <label class="inline-flex items-center gap-2">
+                                                    <input type="hidden" name="is_cash_account" value="0">
+                                                    <input type="checkbox" name="is_cash_account" value="1" @checked($managedAccount->is_cash_account)> Cash account
+                                                </label>
+                                                <label class="inline-flex items-center gap-2">
+                                                    <input type="hidden" name="is_system" value="0">
+                                                    <input type="checkbox" name="is_system" value="1" @checked($managedAccount->is_system)> System account
+                                                </label>
+                                            </div>
+                                            <div class="flex justify-end md:col-span-3">
+                                                <button class="df-action-primary">Update Ledger Account</button>
+                                            </div>
+                                        </form>
+                                    </details>
+                                </td>
                             </tr>
                         @empty
-                            <tr><td colspan="6" class="p-8 text-center text-slate-500">No branch ledger accounts created yet.</td></tr>
+                            <tr><td colspan="7" class="p-8 text-center text-slate-500">No ledger accounts created yet.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
