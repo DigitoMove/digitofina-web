@@ -589,6 +589,67 @@ it('shows general ledger drawer expenses in cashier entries and allows reversal 
         ->assertSee('chart_account_id='.$expenseAccount->id.'&amp;lookup_scope=general_ledger', false);
 });
 
+it('shows ledger cash received into the drawer with a reversal action', function () {
+    $user = moduleManagementUser(['post-transactions']);
+    enableTellerModule($user->organization);
+    $incomeAccount = ChartAccount::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'code' => fake()->unique()->bothify('INC-??'),
+        'name' => 'Bank Float Received',
+        'type' => 'income',
+        'normal_balance' => 'credit',
+        'drawer_direction' => 'cash_in',
+        'is_cash_account' => false,
+        'is_system' => false,
+        'is_active' => true,
+    ]);
+    $drawer = TellerDrawer::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'assigned_user_id' => $user->id,
+        'name' => 'Main Drawer',
+        'code' => fake()->unique()->bothify('TDR-??'),
+        'current_balance' => 0,
+        'status' => 'open',
+    ]);
+    DrawerSession::create([
+        'organization_id' => $user->organization_id,
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $user->id,
+        'opening_balance' => 0,
+        'status' => 'open',
+        'opened_at' => now(),
+    ]);
+
+    $redirectUrl = route('teller.index', [
+        'lookup_scope' => 'general_ledger',
+        'chart_account_id' => $incomeAccount->id,
+    ]);
+
+    $response = $this->actingAs($user)
+        ->from($redirectUrl)
+        ->post(route('teller.post'), [
+            'account_scope' => 'general_ledger',
+            'chart_account_id' => $incomeAccount->id,
+            'gl_entry_type' => 'credit',
+            'amount' => 2000,
+            'transaction_date' => today()->toDateString(),
+            'description' => 'Float top up received',
+        ])
+        ->assertRedirect($redirectUrl)
+        ->assertSessionHas('receipt_transaction_id');
+
+    $this->actingAs($user)
+        ->withSession(['receipt_transaction_id' => $response->getSession()->get('receipt_transaction_id')])
+        ->get($redirectUrl)
+        ->assertSuccessful()
+        ->assertSee('Drawer Posted Transactions')
+        ->assertSee('Bank Float Received')
+        ->assertSee('Money came in')
+        ->assertSee('Request reversal');
+});
+
 it('allows an organization admin to open an organization drawer for a teller', function () {
     [$organization, $branch, $otherBranch] = drawerAdminOrganization();
     enableTellerModule($organization);

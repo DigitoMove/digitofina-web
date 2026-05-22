@@ -609,28 +609,38 @@
 <section class="df-panel mt-6 overflow-visible">
     <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div>
-            <h2 class="font-semibold text-slate-950">My Posted Transactions</h2>
-            <p class="df-muted">Your latest postings. Open the receipt or request a reversal for admin approval.</p>
+            <h2 class="font-semibold text-slate-950">Drawer Posted Transactions</h2>
+            <p class="df-muted">All recent postings through this open drawer, including client accounts and ledger cash-in/cash-out corrections.</p>
         </div>
         <a href="{{ route('reports.show', 'user-posted-transactions') }}" class="df-action-secondary">Full Report</a>
     </div>
     <div class="overflow-x-auto">
         <table class="w-full text-left text-sm">
             <thead class="bg-slate-50 text-slate-600">
-                <tr><th class="p-3">Time</th><th>Reference</th><th>Account</th><th>Client</th><th>Type</th><th class="text-right">Amount</th><th>Status</th><th class="text-right">Action</th></tr>
+                <tr><th class="p-3">Time</th><th>Reference</th><th>Account</th><th>Target</th><th>Drawer movement</th><th class="text-right">Amount</th><th>Status</th><th class="text-right">Action</th></tr>
             </thead>
             <tbody>
                 @forelse($recentTransactions as $transaction)
                     @php
                         $pendingReversal = $transaction->reversalRequests->first();
                         $journalAccount = $transaction->journalEntries->first()?->chartAccount;
+                        $drawerMovement = $transaction->drawerSession
+                            ? $recentMovements->firstWhere('reference', $transaction->reference)
+                            : null;
                     @endphp
                     <tr class="border-t border-slate-200 align-top">
                         <td class="p-3 whitespace-nowrap">{{ $transaction->posted_at?->format('d M H:i') ?? $transaction->created_at->format('d M H:i') }}</td>
                         <td><a class="font-semibold text-blue-700" href="{{ route('receipts.show', $transaction) }}">{{ $transaction->reference }}</a></td>
                         <td class="font-medium text-slate-950">{{ $transaction->account?->account_number ?? ($journalAccount?->code ?? 'Ledger') }}</td>
                         <td class="max-w-56">{{ $transaction->account?->client?->full_name ?? $transaction->account?->client?->business_name ?? ($journalAccount?->name ?? 'General ledger posting') }}</td>
-                        <td>{{ $transaction->type?->name ?? 'Transaction' }}</td>
+                        <td>
+                            @if($drawerMovement)
+                                <span class="rounded px-2 py-1 text-xs font-semibold {{ $drawerMovement->type === 'cash_in' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700' }}">{{ $drawerMovement->type === 'cash_in' ? 'Money came in' : 'Money went out' }}</span>
+                                <div class="mt-1 text-xs text-slate-500">{{ $transaction->type?->name ?? 'Drawer posting' }}</div>
+                            @else
+                                {{ $transaction->type?->name ?? 'Transaction' }}
+                            @endif
+                        </td>
                         <td class="text-right font-semibold whitespace-nowrap">UGX {{ number_format((float) $transaction->amount, 2) }}</td>
                         <td>
                             @if($pendingReversal)

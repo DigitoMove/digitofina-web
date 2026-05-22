@@ -176,18 +176,20 @@ class TellerDrawerController extends Controller
             'isGeneralLedgerLookup' => $isGeneralLedgerLookup,
             'hasLookupSearch' => $accountSearch !== '',
             'recentMovements' => $session
-                ? DrawerMovement::query()->with('session.drawer')->where('drawer_session_id', $session->id)->latest()->limit(8)->get()
+                ? DrawerMovement::query()->with('session.drawer')->where('drawer_session_id', $session->id)->latest()->limit(50)->get()
                 : collect(),
             'recentTransactions' => Transaction::query()
                 ->with([
                     'account.client',
+                    'drawerSession.drawer',
                     'journalEntries.chartAccount',
                     'type',
                     'reversalRequests' => fn ($query) => $query->where('status', 'pending')->latest(),
                 ])
-                ->where('user_id', $request->user()->id)
+                ->when($session, fn (Builder $query, DrawerSession $session): Builder => $query->where('drawer_session_id', $session->id))
+                ->when(! $session, fn (Builder $query): Builder => $query->where('user_id', $request->user()->id))
                 ->latest('posted_at')
-                ->limit(10)
+                ->limit(50)
                 ->get(),
             'pendingReversalRequests' => $canApproveReversals
                 ? MakerCheckerRequest::query()
