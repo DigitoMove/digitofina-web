@@ -514,7 +514,8 @@ it('closes the teller lookup modal after selecting an account from scrollable re
         ->assertSuccessful()
         ->assertSee('data-teller-lookup-select', false)
         ->assertSee('place-items-center', false)
-        ->assertSee('z-[70]', false)
+        ->assertSee('z-[90]', false)
+        ->assertSee('data-teller-lookup-loading', false)
         ->assertSee('max-h-[52vh]', false)
         ->assertDontSee('<input type="hidden" name="account_search"', false);
 

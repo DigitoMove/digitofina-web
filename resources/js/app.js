@@ -347,6 +347,7 @@ const initTellerLookup = () => {
     const openButton = document.querySelector('[data-teller-lookup-open]');
     const closeButtons = document.querySelectorAll('[data-teller-lookup-close]');
     const selectForms = document.querySelectorAll('[data-teller-lookup-select]');
+    const loadingOverlay = document.querySelector('[data-teller-lookup-loading]');
     const pageScope = document.querySelector('[data-teller-lookup-scope]');
     const modalScope = document.querySelector('[data-teller-lookup-modal-scope]');
 
@@ -369,9 +370,16 @@ const initTellerLookup = () => {
         modal.classList.remove('grid');
     };
 
+    const showLoading = () => {
+        close();
+        loadingOverlay?.classList.remove('hidden');
+        loadingOverlay?.classList.add('grid');
+        document.body.classList.add('overflow-hidden');
+    };
+
     openButton.addEventListener('click', open);
     closeButtons.forEach((button) => button.addEventListener('click', close));
-    selectForms.forEach((form) => form.addEventListener('submit', close));
+    selectForms.forEach((form) => form.addEventListener('submit', showLoading));
     modal.addEventListener('click', (event) => {
         if (event.target === modal) {
             close();

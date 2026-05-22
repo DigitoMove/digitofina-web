@@ -395,82 +395,6 @@
                 Search
             </button>
         </div>
-        <div class="fixed inset-0 z-[70] {{ $hasLookupSearch ? 'grid' : 'hidden' }} place-items-center bg-slate-950/60 p-4" data-teller-lookup-modal data-open="{{ $hasLookupSearch ? '1' : '0' }}">
-            <div class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-slate-950/10">
-                <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
-                    <h3 class="text-lg font-semibold text-slate-950">Search Account</h3>
-                    <button type="button" class="rounded border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600" data-teller-lookup-close>Close</button>
-                </div>
-                <form method="GET" action="{{ route('teller.index') }}" class="grid gap-3 border-b border-slate-200 bg-slate-50 p-5 md:grid-cols-[220px_1fr_auto]">
-                    <select name="lookup_scope" data-teller-lookup-modal-scope required>
-                        <option value="">Select account type</option>
-                        @foreach($accountTypes as $type)
-                            <option value="account_type:{{ $type->id }}" @selected($lookupScope === 'account_type:'.$type->id || ($selectedAccountTypeId === $type->id && ! $isGeneralLedgerLookup))>{{ $type->name }}</option>
-                        @endforeach
-                        <option value="general_ledger" @selected($isGeneralLedgerLookup)>General Ledger Account</option>
-                    </select>
-                    <input name="account_search" value="{{ request('account_search') }}" placeholder="Type a name, phone, account number, ledger name, or code" autofocus>
-                    <button class="df-action-primary justify-center">Go</button>
-                </form>
-                <div class="min-h-0 flex-1 overflow-y-auto p-5">
-            @if(! $isGeneralLedgerLookup)
-            <div class="rounded border border-slate-200 bg-slate-50 p-4">
-                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Client account results</div>
-                <div class="mt-3 max-h-[52vh] divide-y divide-slate-200 overflow-y-auto rounded bg-white">
-                    @if(! $hasLookupSearch)
-                        <div class="p-5 text-sm text-slate-500">Select an account type, type a keyword, then search.</div>
-                    @else
-                        @forelse($accountResults as $resultAccount)
-                        <div class="grid gap-3 p-3 sm:grid-cols-[1fr_auto]">
-                            <div>
-                                <div class="font-semibold text-slate-950">{{ $resultAccount->account_number }} · {{ $resultAccount->account_name }}</div>
-                                <div class="text-sm text-slate-500">{{ $resultAccount->client?->full_name ?: $resultAccount->client?->business_name ?: 'No client' }} · {{ $resultAccount->client?->client_number }} · {{ $resultAccount->client?->phone }}</div>
-                                <div class="mt-1 text-xs text-slate-500">{{ $resultAccount->accountType?->name }} · {{ str($resultAccount->status)->headline() }} · Balance UGX {{ number_format((float) $resultAccount->balance, 2) }}</div>
-                            </div>
-                            <form method="GET" action="{{ route('teller.index') }}" class="flex items-start justify-end" data-teller-lookup-select>
-                                <input type="hidden" name="lookup_scope" value="account_type:{{ $resultAccount->account_type_id }}">
-                                <input type="hidden" name="account_number" value="{{ $resultAccount->account_number }}">
-                                <button class="rounded bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white">Select</button>
-                            </form>
-                        </div>
-                        @empty
-                            <div class="p-5 text-sm text-slate-500">No client accounts matched this search.</div>
-                        @endforelse
-                    @endif
-                </div>
-            </div>
-            @endif
-
-            @if($isGeneralLedgerLookup)
-            <div class="rounded border border-slate-200 bg-slate-50 p-4">
-                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">General ledger results</div>
-                <div class="mt-3 max-h-[52vh] divide-y divide-slate-200 overflow-y-auto rounded bg-white">
-                    @if(! $hasLookupSearch)
-                        <div class="p-5 text-sm text-slate-500">Select General Ledger Account, type a keyword, then search.</div>
-                    @else
-                        @forelse($chartAccounts as $chartAccount)
-                        <div class="grid gap-3 p-3 sm:grid-cols-[1fr_auto]">
-                            <div>
-                                <div class="font-semibold text-slate-950">{{ $chartAccount->code }} · {{ $chartAccount->name }}</div>
-                                <div class="text-sm text-slate-500">{{ str($chartAccount->type)->headline() }} · {{ $chartAccount->normal_balance ? str($chartAccount->normal_balance)->headline().' normal balance' : 'Normal balance not set' }} · {{ str($chartAccount->drawer_direction ?: 'both')->headline() }}</div>
-                            </div>
-                            <form method="GET" action="{{ route('teller.index') }}" class="flex items-start justify-end" data-teller-lookup-select>
-                                <input type="hidden" name="lookup_scope" value="general_ledger">
-                                <input type="hidden" name="account_number" value="{{ request('account_number') }}">
-                                <input type="hidden" name="chart_account_id" value="{{ $chartAccount->id }}">
-                                <button class="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">Select</button>
-                            </form>
-                        </div>
-                        @empty
-                            <div class="p-5 text-sm text-slate-500">No general ledger accounts matched this search.</div>
-                        @endforelse
-                    @endif
-                </div>
-            </div>
-            @endif
-                </div>
-            </div>
-        </div>
         <div class="mt-4 grid gap-4 md:grid-cols-2">
             <div class="rounded border border-slate-200 bg-slate-50 p-4">
                 <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected client account</div>
@@ -741,6 +665,94 @@
         </table>
     </div>
 </section>
+
+<div class="fixed inset-0 z-[90] {{ $hasLookupSearch ? 'grid' : 'hidden' }} place-items-center bg-slate-950/60 p-4" data-teller-lookup-modal data-open="{{ $hasLookupSearch ? '1' : '0' }}">
+    <div class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/10">
+        <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+            <div>
+                <h3 class="text-lg font-semibold text-slate-950">Search Account</h3>
+                <p class="text-sm text-slate-500">Search, select, and the drawer will load the selected account.</p>
+            </div>
+            <button type="button" class="rounded border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-50" data-teller-lookup-close>Close</button>
+        </div>
+        <form method="GET" action="{{ route('teller.index') }}" class="grid gap-3 border-b border-slate-200 bg-slate-50 p-5 md:grid-cols-[220px_1fr_auto]">
+            <select name="lookup_scope" data-teller-lookup-modal-scope required>
+                <option value="">Select account type</option>
+                @foreach($accountTypes as $type)
+                    <option value="account_type:{{ $type->id }}" @selected($lookupScope === 'account_type:'.$type->id || ($selectedAccountTypeId === $type->id && ! $isGeneralLedgerLookup))>{{ $type->name }}</option>
+                @endforeach
+                <option value="general_ledger" @selected($isGeneralLedgerLookup)>General Ledger Account</option>
+            </select>
+            <input name="account_search" value="{{ request('account_search') }}" placeholder="Type a name, phone, account number, ledger name, or code" autofocus>
+            <button class="df-action-primary justify-center">Search</button>
+        </form>
+        <div class="min-h-0 flex-1 overflow-y-auto p-5">
+            @if(! $isGeneralLedgerLookup)
+                <div class="rounded border border-slate-200 bg-slate-50 p-4">
+                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Client account results</div>
+                    <div class="mt-3 max-h-[52vh] divide-y divide-slate-200 overflow-y-auto rounded bg-white">
+                        @if(! $hasLookupSearch)
+                            <div class="p-5 text-sm text-slate-500">Select an account type, type a keyword, then search.</div>
+                        @else
+                            @forelse($accountResults as $resultAccount)
+                                <div class="grid gap-3 p-3 sm:grid-cols-[1fr_auto]">
+                                    <div>
+                                        <div class="font-semibold text-slate-950">{{ $resultAccount->account_number }} · {{ $resultAccount->account_name }}</div>
+                                        <div class="text-sm text-slate-500">{{ $resultAccount->client?->full_name ?: $resultAccount->client?->business_name ?: 'No client' }} · {{ $resultAccount->client?->client_number }} · {{ $resultAccount->client?->phone }}</div>
+                                        <div class="mt-1 text-xs text-slate-500">{{ $resultAccount->accountType?->name }} · {{ str($resultAccount->status)->headline() }} · Balance UGX {{ number_format((float) $resultAccount->balance, 2) }}</div>
+                                    </div>
+                                    <form method="GET" action="{{ route('teller.index') }}" class="flex items-start justify-end" data-teller-lookup-select>
+                                        <input type="hidden" name="lookup_scope" value="account_type:{{ $resultAccount->account_type_id }}">
+                                        <input type="hidden" name="account_number" value="{{ $resultAccount->account_number }}">
+                                        <button class="rounded bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white">Select</button>
+                                    </form>
+                                </div>
+                            @empty
+                                <div class="p-5 text-sm text-slate-500">No client accounts matched this search.</div>
+                            @endforelse
+                        @endif
+                    </div>
+                </div>
+            @endif
+
+            @if($isGeneralLedgerLookup)
+                <div class="rounded border border-slate-200 bg-slate-50 p-4">
+                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">General ledger results</div>
+                    <div class="mt-3 max-h-[52vh] divide-y divide-slate-200 overflow-y-auto rounded bg-white">
+                        @if(! $hasLookupSearch)
+                            <div class="p-5 text-sm text-slate-500">Select General Ledger Account, type a keyword, then search.</div>
+                        @else
+                            @forelse($chartAccounts as $chartAccount)
+                                <div class="grid gap-3 p-3 sm:grid-cols-[1fr_auto]">
+                                    <div>
+                                        <div class="font-semibold text-slate-950">{{ $chartAccount->code }} · {{ $chartAccount->name }}</div>
+                                        <div class="text-sm text-slate-500">{{ str($chartAccount->type)->headline() }} · {{ $chartAccount->normal_balance ? str($chartAccount->normal_balance)->headline().' normal balance' : 'Normal balance not set' }} · {{ str($chartAccount->drawer_direction ?: 'both')->headline() }}</div>
+                                    </div>
+                                    <form method="GET" action="{{ route('teller.index') }}" class="flex items-start justify-end" data-teller-lookup-select>
+                                        <input type="hidden" name="lookup_scope" value="general_ledger">
+                                        <input type="hidden" name="account_number" value="{{ request('account_number') }}">
+                                        <input type="hidden" name="chart_account_id" value="{{ $chartAccount->id }}">
+                                        <button class="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">Select</button>
+                                    </form>
+                                </div>
+                            @empty
+                                <div class="p-5 text-sm text-slate-500">No general ledger accounts matched this search.</div>
+                            @endforelse
+                        @endif
+                    </div>
+                </div>
+            @endif
+        </div>
+    </div>
+</div>
+
+<div class="fixed inset-0 z-[100] hidden place-items-center bg-slate-950/70 p-4" data-teller-lookup-loading>
+    <div class="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-2xl">
+        <div class="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-brand-700"></div>
+        <div class="mt-4 font-semibold text-slate-950">Loading selected account</div>
+        <p class="mt-1 text-sm text-slate-500">Please wait while the drawer is updated.</p>
+    </div>
+</div>
 
 <x-transaction-receipt-modal :transaction="$receiptTransaction" :close-url="url()->full()" />
 @endsection
