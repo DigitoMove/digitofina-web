@@ -18,6 +18,7 @@ use App\Models\LoanRepaymentAllocation;
 use App\Models\LoanSchedule;
 use App\Models\RoleFinancialLimit;
 use App\Models\SystemSetting;
+use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Support\ApiSecurity;
@@ -140,11 +141,13 @@ class LoanService
     public function reject(Loan $loan, User $user, string $reason): Loan
     {
         return DB::transaction(function () use ($loan, $user, $reason) {
-            $loan = Loan::query()->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+            $loan = Loan::query()->with(['branch', 'client.accounts.accountType', 'savingsAccount'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
 
             if (in_array($loan->status, ['disbursed', 'active', 'fully_paid', 'closed'], true)) {
                 throw new InvalidArgumentException('This loan can no longer be rejected.');
             }
+
+            $applicationFee = $this->collectRejectedLoanApplicationFee($loan, $user);
 
             $loan->update([
                 'status' => 'rejected',
@@ -162,7 +165,11 @@ class LoanService
                 'acted_at' => now(),
             ]);
 
-            $this->auditLogger->record('loan.rejected', $loan, ['reason' => $reason]);
+            $this->auditLogger->record('loan.rejected', $loan, [
+                'reason' => $reason,
+                'application_fee' => $applicationFee,
+                'application_fee_basis' => (float) $loan->requested_amount,
+            ]);
             $freshLoan = $loan->refresh()->loadMissing('client');
             $this->notifications->notifyLoanOfficer(
                 $freshLoan,
@@ -183,6 +190,92 @@ class LoanService
 
             return $freshLoan;
         });
+    }
+
+    private function collectRejectedLoanApplicationFee(Loan $loan, User $user): float
+    {
+        $requestedAmountForFee = (float) $loan->requested_amount;
+        $fee = round($this->applicationFees->feeFor($requestedAmountForFee), 2);
+
+        if ($fee <= 0) {
+            return 0.0;
+        }
+
+        CurrencyDenomination::assertValid($fee, 'Application fee');
+
+        $savings = $loan->savingsAccount ?: $loan->client->accounts
+            ->first(fn (Account $account): bool => $account->accountType?->category === 'savings');
+
+        if (! $savings) {
+            throw new InvalidArgumentException('Client needs a savings account with enough balance to deduct the application fee before rejection.');
+        }
+
+        $savings = Account::query()->with('accountType')->whereKey($savings->id)->lockForUpdate()->firstOrFail();
+
+        if ($savings->status !== 'active') {
+            throw new InvalidArgumentException('Client savings account must be active before rejecting this loan.');
+        }
+
+        if ($savings->accountType?->category !== 'savings') {
+            throw new InvalidArgumentException('Application fee can only be deducted from a savings account.');
+        }
+
+        if ((float) $savings->balance < $fee) {
+            throw new InvalidArgumentException('Client savings account does not have enough money to deduct the application fee before rejection.');
+        }
+
+        $postedAt = $this->effectiveWorkflowDate($loan);
+        $savings->decrement('balance', $fee);
+        $savings->refresh();
+        $type = TransactionType::query()->firstOrCreate(
+            ['code' => 'loan_application_fee'],
+            ['name' => 'Loan Application Fee', 'direction' => 'debit'],
+        );
+
+        $transaction = Transaction::create([
+            'organization_id' => $savings->organization_id,
+            'account_id' => $savings->id,
+            'transaction_type_id' => $type->id,
+            'branch_id' => $savings->branch_id,
+            'user_id' => $user->id,
+            'reference' => 'TX'.now()->format('ymdHis').Str::upper(Str::random(5)),
+            'amount' => $fee,
+            'balance_after' => $savings->balance,
+            'description' => "Loan application fee for rejected loan {$loan->loan_number}",
+            'posted_at' => $postedAt,
+            'created_at' => $postedAt,
+            'updated_at' => now(),
+        ]);
+
+        foreach ([
+            ['account_code' => '2100', 'entry_type' => 'debit', 'memo' => 'Client savings liability reduced for loan application fee'],
+            ['account_code' => $this->applicationFeeIncomeCode($loan), 'entry_type' => 'credit', 'memo' => 'Loan application fee income on rejected loan'],
+        ] as $journal) {
+            $chartAccount = ChartAccount::query()->where('code', $journal['account_code'])->first();
+
+            JournalEntry::create([
+                'organization_id' => $savings->organization_id,
+                'branch_id' => $savings->branch_id,
+                'created_by' => $user->id,
+                'posted_by' => $user->id,
+                'journal_number' => 'JE'.now()->format('ymdHis').Str::upper(Str::random(4)),
+                'journal_date' => $postedAt->toDateString(),
+                'description' => "Loan application fee for rejected loan {$loan->loan_number}",
+                'status' => 'posted',
+                'posted_at' => $postedAt,
+                'chart_account_id' => $chartAccount?->id,
+                'account_name' => $chartAccount?->name,
+                'transaction_id' => $transaction->id,
+                'reference' => $transaction->reference,
+                'entry_type' => $journal['entry_type'],
+                'amount' => $fee,
+                'memo' => $journal['memo'],
+                'created_at' => $postedAt,
+                'updated_at' => now(),
+            ]);
+        }
+
+        return $fee;
     }
 
     public function cancel(Loan $loan, User $user, string $reason): Loan

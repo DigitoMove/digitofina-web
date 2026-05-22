@@ -355,6 +355,77 @@ it('returns a form error when approving a loan without required accepted guarant
     expect($loan->fresh()->status)->toBe('submitted');
 });
 
+it('deducts the requested amount application fee from savings when rejecting a loan', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $savings = loanWorkflowSavingsAccount($user, $client);
+
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'savings_account_id' => $savings->id,
+        'loan_number' => '1001-LN-0000005',
+        'requested_amount' => 500_000,
+        'principal_balance' => 0,
+        'interest_rate' => 24,
+        'term_periods' => 2,
+        'repayment_frequency' => 'monthly',
+        'purpose' => 'Input purchase',
+        'status' => 'submitted',
+    ]);
+
+    app(LoanService::class)->reject($loan, $user, 'Weak repayment capacity.');
+
+    expect($loan->fresh()->status)->toBe('rejected')
+        ->and((float) $savings->fresh()->balance)->toBe(235_000.0);
+
+    $transaction = Transaction::where('account_id', $savings->id)->latest('id')->firstOrFail();
+
+    expect($transaction->type->code)->toBe('loan_application_fee')
+        ->and((float) $transaction->amount)->toBe(15_000.0)
+        ->and((float) $transaction->balance_after)->toBe(235_000.0);
+
+    $this->assertDatabaseHas('journal_entries', [
+        'transaction_id' => $transaction->id,
+        'entry_type' => 'credit',
+        'amount' => 15_000,
+    ]);
+});
+
+it('blocks loan rejection when savings cannot cover the requested amount application fee', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $savings = loanWorkflowSavingsAccount($user, $client);
+    $savings->update(['balance' => 10_000]);
+
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'savings_account_id' => $savings->id,
+        'loan_number' => '1001-LN-0000006',
+        'requested_amount' => 500_000,
+        'principal_balance' => 0,
+        'interest_rate' => 24,
+        'term_periods' => 2,
+        'repayment_frequency' => 'monthly',
+        'purpose' => 'Input purchase',
+        'status' => 'submitted',
+    ]);
+
+    expect(fn () => app(LoanService::class)->reject($loan, $user, 'Weak repayment capacity.'))
+        ->toThrow(InvalidArgumentException::class, 'Client savings account does not have enough money to deduct the application fee before rejection.');
+
+    expect($loan->fresh()->status)->toBe('submitted')
+        ->and((float) $savings->fresh()->balance)->toBe(10_000.0)
+        ->and(Transaction::where('account_id', $savings->id)->exists())->toBeFalse();
+});
+
 it('marks overdue schedules and applies configured penalties', function () {
     $user = loanWorkflowUser();
     $client = loanWorkflowClient($user);
