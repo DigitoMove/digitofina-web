@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\UpdateSystemSettingsRequest;
+use App\Models\Organization;
 use App\Models\SystemSetting;
 use App\Services\AuditLogger;
 use App\Services\BusinessCalendarService;
 use App\Services\LoanApplicationFeeService;
 use App\Services\ModuleService;
+use App\Services\TenantContext;
 use App\Support\CurrencyDenomination;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
@@ -16,23 +18,37 @@ use Illuminate\View\View;
 
 class SystemSettingController extends Controller
 {
-    public function index(ModuleService $modules): View
+    public function index(ModuleService $modules, TenantContext $tenant): View
     {
         Gate::authorize('viewAny', SystemSetting::class);
 
         $user = auth()->user();
-        $enabledModules = $user?->hasRole('super-admin') || ! $user?->organization
+        $selectedOrganization = $tenant->organization()
+            ?: ($user?->organization_id ? $user->organization : Organization::query()->oldest('id')->first());
+
+        if ($selectedOrganization) {
+            SystemSetting::ensureForOrganization($selectedOrganization);
+        }
+
+        $enabledModules = $user?->hasRole('super-admin') || ! $selectedOrganization
             ? null
-            : $modules->enabledSlugs($user->organization);
+            : $modules->enabledSlugs($selectedOrganization);
 
-        $settings = SystemSetting::query()
-            ->orderBy('group')
-            ->orderBy('key')
-            ->get()
-            ->filter(fn (SystemSetting $setting): bool => $this->settingIsVisible($setting, $enabledModules))
-            ->groupBy('group');
+        $settings = $selectedOrganization
+            ? SystemSetting::forOrganization($selectedOrganization->id)
+                ->orderBy('group')
+                ->orderBy('key')
+                ->get()
+                ->filter(fn (SystemSetting $setting): bool => $this->settingIsVisible($setting, $enabledModules))
+                ->groupBy('group')
+            : collect();
 
-        return view('settings.index', compact('settings'));
+        return view('settings.index', [
+            'settings' => $settings,
+            'selectedOrganization' => $selectedOrganization,
+            'organizations' => $user?->hasRole('super-admin') ? Organization::query()->orderBy('name')->get() : collect(),
+            'isSuperAdminGlobal' => $user?->hasRole('super-admin') && ! $tenant->isScoped(),
+        ]);
     }
 
     /**
@@ -55,9 +71,10 @@ class SystemSettingController extends Controller
     public function update(UpdateSystemSettingsRequest $request, AuditLogger $auditLogger, LoanApplicationFeeService $applicationFees, BusinessCalendarService $calendar): RedirectResponse
     {
         Gate::authorize('update', SystemSetting::class);
+        $organizationId = SystemSetting::resolvedOrganizationId();
 
         foreach ($request->validated('settings', []) as $key => $value) {
-            $setting = SystemSetting::where('key', $key)->firstOrFail();
+            $setting = SystemSetting::forOrganization($organizationId)->where('key', $key)->firstOrFail();
             try {
                 if ($setting->type === 'money' && (float) $value > 0) {
                     CurrencyDenomination::assertValid((float) $value, $setting->label ?? str($key)->headline()->toString());

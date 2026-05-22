@@ -502,12 +502,10 @@ class FinancialControlService
 
     private function performSettingsUpdate(MakerCheckerRequest $request, User $checker): void
     {
+        $organizationId = app(TenantContext::class)->id() ?: $checker->organization_id;
+
         foreach (($request->payload['settings'] ?? []) as $key => $value) {
-            $setting = SystemSetting::query()
-                ->where('key', $key)
-                ->where(fn ($query) => $query->whereNull('organization_id')->orWhere('organization_id', $checker->organization_id))
-                ->latest('organization_id')
-                ->firstOrFail();
+            $setting = SystemSetting::forOrganization($organizationId)->where('key', $key)->firstOrFail();
 
             $old = $setting->toArray();
             $setting->update(['value' => $value, 'updated_by' => $checker->id]);
@@ -561,10 +559,8 @@ class FinancialControlService
             return (float) $limit->maker_checker_threshold;
         }
 
-        $setting = SystemSetting::query()
+        $setting = SystemSetting::forOrganization($user->organization_id)
             ->where('key', 'large_withdrawal_maker_checker_threshold')
-            ->where(fn ($query) => $query->whereNull('organization_id')->orWhere('organization_id', $user->organization_id))
-            ->latest('organization_id')
             ->first();
 
         return (float) ($setting?->value ?? 5_000_000);
@@ -578,10 +574,8 @@ class FinancialControlService
             return (float) $limit->suspicious_transaction_threshold;
         }
 
-        $setting = SystemSetting::query()
+        $setting = SystemSetting::forOrganization($user->organization_id)
             ->where('key', 'suspicious_transaction_threshold')
-            ->where(fn ($query) => $query->whereNull('organization_id')->orWhere('organization_id', $user->organization_id))
-            ->latest('organization_id')
             ->first();
 
         return (float) ($setting?->value ?? 0);

@@ -9,26 +9,26 @@ use InvalidArgumentException;
 
 class LoanApplicationFeeService
 {
-    public function feeFor(float $amount): float
+    public function feeFor(float $amount, ?int $organizationId = null): float
     {
         CurrencyDenomination::assertValid($amount, 'Loan amount');
 
-        $range = $this->ranges()
+        $range = $this->ranges($organizationId)
             ->first(fn (array $range): bool => $amount >= (float) $range['min'] && ($range['max'] === null || $amount <= (float) $range['max']));
 
         if ($range) {
             return (float) $range['fee'];
         }
 
-        return (float) SystemSetting::value('loan_application_fee', 0);
+        return (float) SystemSetting::value('loan_application_fee', 0, $organizationId);
     }
 
     /**
      * @return Collection<int, array{min:float,max:float|null,fee:float}>
      */
-    public function ranges(): Collection
+    public function ranges(?int $organizationId = null): Collection
     {
-        $value = SystemSetting::value('loan_application_fee_ranges', '[]');
+        $value = SystemSetting::value('loan_application_fee_ranges', '[]', $organizationId);
         $decoded = json_decode((string) $value, true);
 
         if (! is_array($decoded)) {

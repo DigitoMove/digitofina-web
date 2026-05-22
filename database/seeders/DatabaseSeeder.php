@@ -265,7 +265,10 @@ class DatabaseSeeder extends Seeder
         ];
 
         foreach ($settings as $setting) {
-            SystemSetting::updateOrCreate(['key' => $setting['key']], $setting + ['organization_id' => $organization->id]);
+            SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
+                ['organization_id' => $organization->id, 'key' => $setting['key']],
+                $setting,
+            );
         }
 
         $client = Client::firstOrCreate(['client_number' => '1001-C000001'], [

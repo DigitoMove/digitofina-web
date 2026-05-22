@@ -9,18 +9,18 @@ use InvalidArgumentException;
 
 class BusinessCalendarService
 {
-    public function dueDate(CarbonInterface $startDate, int $installment, string $frequency): CarbonInterface
+    public function dueDate(CarbonInterface $startDate, int $installment, string $frequency, ?int $organizationId = null): CarbonInterface
     {
         return match ($frequency) {
-            'daily' => $this->addBusinessDays($startDate, $installment),
-            'weekly' => $this->nextBusinessDay($startDate->copy()->addWeeks($installment)),
-            'bi-weekly' => $this->nextBusinessDay($startDate->copy()->addWeeks($installment * 2)),
-            'quarterly' => $this->nextBusinessDay($startDate->copy()->addMonths($installment * 3)),
-            default => $this->addBusinessDays($startDate, $installment * 26),
+            'daily' => $this->addBusinessDays($startDate, $installment, $organizationId),
+            'weekly' => $this->nextBusinessDay($startDate->copy()->addWeeks($installment), $organizationId),
+            'bi-weekly' => $this->nextBusinessDay($startDate->copy()->addWeeks($installment * 2), $organizationId),
+            'quarterly' => $this->nextBusinessDay($startDate->copy()->addMonths($installment * 3), $organizationId),
+            default => $this->addBusinessDays($startDate, $installment * 26, $organizationId),
         };
     }
 
-    public function addBusinessDays(CarbonInterface $date, int $days): CarbonInterface
+    public function addBusinessDays(CarbonInterface $date, int $days, ?int $organizationId = null): CarbonInterface
     {
         $cursor = $date->copy();
         $added = 0;
@@ -28,7 +28,7 @@ class BusinessCalendarService
         while ($added < $days) {
             $cursor->addDay();
 
-            if ($this->isBusinessDay($cursor)) {
+            if ($this->isBusinessDay($cursor, $organizationId)) {
                 $added++;
             }
         }
@@ -36,18 +36,18 @@ class BusinessCalendarService
         return $cursor;
     }
 
-    public function nextBusinessDay(CarbonInterface $date): CarbonInterface
+    public function nextBusinessDay(CarbonInterface $date, ?int $organizationId = null): CarbonInterface
     {
         $cursor = $date->copy();
 
-        while (! $this->isBusinessDay($cursor)) {
+        while (! $this->isBusinessDay($cursor, $organizationId)) {
             $cursor->addDay();
         }
 
         return $cursor;
     }
 
-    public function businessDaysBetween(CarbonInterface $from, CarbonInterface $to): int
+    public function businessDaysBetween(CarbonInterface $from, CarbonInterface $to, ?int $organizationId = null): int
     {
         $start = $from->copy()->startOfDay();
         $end = $to->copy()->startOfDay();
@@ -62,7 +62,7 @@ class BusinessCalendarService
         while ($cursor->lessThan($end)) {
             $cursor->addDay();
 
-            if ($cursor->lessThanOrEqualTo($end) && $this->isBusinessDay($cursor)) {
+            if ($cursor->lessThanOrEqualTo($end) && $this->isBusinessDay($cursor, $organizationId)) {
                 $days++;
             }
         }
@@ -70,17 +70,17 @@ class BusinessCalendarService
         return $days;
     }
 
-    public function isBusinessDay(CarbonInterface $date): bool
+    public function isBusinessDay(CarbonInterface $date, ?int $organizationId = null): bool
     {
-        return ! $date->isSunday() && ! $this->holidayDates()->contains($date->toDateString());
+        return ! $date->isSunday() && ! $this->holidayDates($organizationId)->contains($date->toDateString());
     }
 
     /**
      * @return Collection<int, string>
      */
-    public function holidayDates(): Collection
+    public function holidayDates(?int $organizationId = null): Collection
     {
-        $decoded = json_decode((string) SystemSetting::value('repayment_public_holidays', '[]'), true);
+        $decoded = json_decode((string) SystemSetting::value('repayment_public_holidays', '[]', $organizationId), true);
 
         if (! is_array($decoded)) {
             return collect();

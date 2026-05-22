@@ -475,10 +475,8 @@ class InvestmentService
 
     private function approvalThreshold(User $user): float
     {
-        $setting = SystemSetting::query()
+        $setting = SystemSetting::forOrganization($user->organization_id)
             ->where('key', 'investment_approval_threshold')
-            ->where(fn ($query) => $query->whereNull('organization_id')->orWhere('organization_id', $user->organization_id))
-            ->latest('organization_id')
             ->first();
 
         return (float) ($setting?->value ?? 5_000_000);

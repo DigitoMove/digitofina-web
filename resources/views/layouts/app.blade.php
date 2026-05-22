@@ -35,13 +35,16 @@
             <nav class="grid flex-1 content-start gap-1 overflow-y-auto p-3 text-sm lg:max-h-[calc(100vh-8rem)]">
                 @php
                     $user = auth()->user();
+                    $tenantContext = app(\App\Services\TenantContext::class);
+                    $selectedOrganization = $tenantContext->organization();
+                    $isGlobalSuperAdmin = $user->hasRole('super-admin') && ! $tenantContext->isScoped();
                     $moduleEnabled = fn (?string $slug): bool => $slug === null || $user->canAccessModule($slug);
                     $modulesEnabled = fn (array $slugs): bool => collect($slugs)->contains(fn (?string $slug): bool => $moduleEnabled($slug));
                     $canAny = fn (array $permissions): bool => $permissions === [] || collect($permissions)->contains(fn (string $permission): bool => $user->canPerform($permission));
                     $isRouteActive = fn (string $route): bool => request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*');
                     $canManageOrganization = $user->canPerform('manage-organization') || $user->hasRole('super-admin') || $user->hasRole('supervisor') || $user->hasRole('organization-admin');
                     $organizationRoute = $user->hasRole('super-admin') ? 'organizations.index' : 'organization.current';
-                    $navGroups = $user->isMember() ? [] : [
+                    $navGroups = ($user->isMember() || $isGlobalSuperAdmin) ? [] : [
                         [
                             'label' => 'Clients',
                             'icon' => 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0',
@@ -92,7 +95,7 @@
                         $user->canPerform('manage-roles') && $moduleEnabled('roles') ? ['label' => 'Roles', 'route' => 'roles.index', 'icon' => 'M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-9V7z'] : null,
                         $user->hasRole('super-admin') ? ['label' => 'Modules', 'route' => 'modules.index', 'icon' => 'M4 6h16M4 12h16M4 18h16'] : null,
                         (! $user->hasRole('super-admin') && ($user->hasRole('organization-admin') || $user->canPerform('manage-organization'))) ? ['label' => 'Module Visibility', 'route' => 'modules.visibility', 'icon' => 'M5 12h14 M12 5v14'] : null,
-                        $user->canPerform('manage-settings') && $moduleEnabled('settings') ? ['label' => 'Settings', 'route' => 'settings.index', 'icon' => 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M4 12h2 M18 12h2 M12 4v2 M12 18v2'] : null,
+                        $user->canPerform('manage-settings') && $moduleEnabled('settings') ? ['label' => 'Company Settings', 'route' => 'settings.index', 'icon' => 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M4 12h2 M18 12h2 M12 4v2 M12 18v2'] : null,
                         $user->canPerform('view-audit-logs') && $moduleEnabled('audit-logs') ? ['label' => 'Audit Logs', 'route' => 'audit-logs.index', 'icon' => 'M5 4h14v16H5z M9 8h6 M9 12h6 M9 16h3'] : null,
                     ]));
                 @endphp
@@ -136,7 +139,7 @@
                         </details>
                     @endforeach
 
-                    @if($moduleEnabled('reports'))
+                    @if(! $isGlobalSuperAdmin && $moduleEnabled('reports'))
                     <a href="{{ route('reports.index') }}" class="group flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition {{ $isRouteActive('reports.index') ? 'bg-brand-50 text-brand-900 ring-1 ring-brand-200 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-brand-900' }}">
                         <span class="grid h-8 w-8 place-items-center rounded-lg transition group-hover:scale-105 {{ $isRouteActive('reports.index') ? 'bg-brand-700 text-white' : 'bg-slate-100 text-brand-700' }}">
                             <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h4"/></svg>
@@ -152,7 +155,7 @@
                                 <span class="grid h-8 w-8 place-items-center rounded-lg transition {{ $adminActive ? 'bg-sun-400 text-slate-950' : 'bg-sun-50 text-sun-600' }}">
                                     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M4 12h2 M18 12h2 M12 4v2 M12 18v2"/></svg>
                                 </span>
-                                <span class="min-w-0 flex-1 truncate">Administration</span>
+                                <span class="min-w-0 flex-1 truncate">{{ $isGlobalSuperAdmin ? 'Platform Administration' : 'Administration' }}</span>
                                 <svg class="h-4 w-4 text-slate-400 transition group-open/nav:rotate-180" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
                             </summary>
                             <div class="ml-4 mt-1 grid gap-1 border-l border-slate-200 pl-3">
@@ -172,7 +175,8 @@
             </nav>
             <div class="mx-3 mb-3 mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
                 <div class="font-semibold text-slate-800">Operational mode</div>
-                <div class="mt-1">{{ auth()->user()->role?->name ?? 'User' }} · {{ now()->format('d M Y') }}</div>
+                <div class="mt-1">{{ auth()->user()->role?->name ?? 'User' }} · {{ $isGlobalSuperAdmin ? 'Global platform' : ($selectedOrganization?->name ?? auth()->user()->organization?->name ?? 'Company scope') }}</div>
+                <div class="mt-1">{{ now()->format('d M Y') }}</div>
             </div>
         </aside>
 

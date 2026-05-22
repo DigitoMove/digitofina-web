@@ -6,6 +6,7 @@ use App\Http\Requests\UpdateOrganizationRequest;
 use App\Models\Branch;
 use App\Models\Organization;
 use App\Models\Package;
+use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\ModuleService;
@@ -61,6 +62,7 @@ class OrganizationController extends Controller
         $organization = Organization::create($data);
         $modules->syncCatalog();
         $modules->syncDefaults($organization);
+        SystemSetting::ensureForOrganization($organization);
 
         if (! empty($data['package_id'])) {
             $modules->assignPackage($organization, Package::findOrFail($data['package_id']), $request->user());

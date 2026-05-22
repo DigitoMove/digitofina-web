@@ -22,9 +22,10 @@ class SettingController extends Controller
     public function index(): JsonResponse
     {
         ApiSecurity::assertPermission(request()->user(), 'manage-settings');
+        $organizationId = SystemSetting::resolvedOrganizationId();
 
         return ApiResponse::collection(
-            SystemSettingResource::collection(ApiSecurity::scopeTenant(SystemSetting::query(), request()->user())->orderBy('group')->orderBy('key')->get()),
+            SystemSettingResource::collection(SystemSetting::forOrganization($organizationId)->orderBy('group')->orderBy('key')->get()),
             'System settings retrieved.'
         );
     }
@@ -34,7 +35,8 @@ class SettingController extends Controller
         $this->validateMoneySettings($request, $applicationFees, $calendar);
 
         if ($controls->requiresMakerChecker($request->user(), 'settings_update')) {
-            $oldValues = ApiSecurity::scopeTenant(SystemSetting::query(), $request->user())
+            $organizationId = SystemSetting::resolvedOrganizationId();
+            $oldValues = SystemSetting::forOrganization($organizationId)
                 ->whereIn('key', array_keys($request->validated('settings', [])))
                 ->pluck('value', 'key')
                 ->all();
@@ -54,9 +56,10 @@ class SettingController extends Controller
         }
 
         $updated = collect();
+        $organizationId = SystemSetting::resolvedOrganizationId();
 
         foreach ($request->validated('settings', []) as $key => $value) {
-            $setting = ApiSecurity::scopeTenant(SystemSetting::query(), $request->user())->where('key', $key)->firstOrFail();
+            $setting = SystemSetting::forOrganization($organizationId)->where('key', $key)->firstOrFail();
             $old = $setting->toArray();
 
             $setting->update([
@@ -79,7 +82,7 @@ class SettingController extends Controller
     private function validateMoneySettings(UpdateApiSystemSettingsRequest $request, LoanApplicationFeeService $applicationFees, BusinessCalendarService $calendar): void
     {
         foreach ($request->validated('settings', []) as $key => $value) {
-            $setting = ApiSecurity::scopeTenant(SystemSetting::query(), $request->user())->where('key', $key)->firstOrFail();
+            $setting = SystemSetting::forOrganization(SystemSetting::resolvedOrganizationId())->where('key', $key)->firstOrFail();
 
             try {
                 if ($setting->type === 'money' && (float) $value > 0) {

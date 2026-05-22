@@ -10,6 +10,7 @@ use App\Models\Organization;
 use App\Models\OrganizationDomain;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\ModuleService;
 use App\Services\TenantContext;
@@ -135,6 +136,28 @@ it('lets super admin see all organization records', function () {
     $this->actingAs($superAdmin);
 
     expect(Client::query()->count())->toBe(2);
+});
+
+it('keeps system settings scoped to each organization', function () {
+    [$originalOrganization] = tenantShell('Original SACCO');
+    [$secondOrganization] = tenantShell('Second SACCO');
+
+    SystemSetting::withoutGlobalScope('tenant')->create([
+        'organization_id' => $originalOrganization->id,
+        'key' => 'loan_application_fee',
+        'label' => 'Loan application fee',
+        'value' => '15000',
+        'type' => 'money',
+        'group' => 'loans',
+    ]);
+
+    SystemSetting::ensureForOrganization($secondOrganization);
+    SystemSetting::forOrganization($secondOrganization->id)
+        ->where('key', 'loan_application_fee')
+        ->update(['value' => '30000']);
+
+    expect(SystemSetting::value('loan_application_fee', 0, $originalOrganization->id))->toBe('15000')
+        ->and(SystemSetting::value('loan_application_fee', 0, $secondOrganization->id))->toBe('30000');
 });
 
 it('resolves tenant from organization subdomain', function () {

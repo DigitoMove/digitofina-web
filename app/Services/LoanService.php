@@ -195,7 +195,7 @@ class LoanService
     private function collectRejectedLoanApplicationFee(Loan $loan, User $user): float
     {
         $requestedAmountForFee = (float) $loan->requested_amount;
-        $fee = round($this->applicationFees->feeFor($requestedAmountForFee), 2);
+        $fee = round($this->applicationFees->feeFor($requestedAmountForFee, $loan->organization_id ? (int) $loan->organization_id : null), 2);
 
         if ($fee <= 0) {
             return 0.0;
@@ -693,7 +693,7 @@ class LoanService
             $loanAccount->update(['balance' => $loan->approved_amount]);
 
             $requestedAmountForFee = (float) $loan->requested_amount;
-            $fees = round($this->applicationFees->feeFor($requestedAmountForFee), 2);
+            $fees = round($this->applicationFees->feeFor($requestedAmountForFee, $loan->organization_id ? (int) $loan->organization_id : null), 2);
             CurrencyDenomination::assertValid((float) $loan->approved_amount, 'Approved amount');
 
             if ($fees > 0) {
@@ -797,7 +797,7 @@ class LoanService
 
         foreach ($rows as $row) {
             $i = $row['installment'];
-            $dueDate = $this->calendar->dueDate($startDate, $i, $loan->repayment_frequency);
+            $dueDate = $this->calendar->dueDate($startDate, $i, $loan->repayment_frequency, $loan->organization_id ? (int) $loan->organization_id : null);
             $totalDue = round($row['principal'] + $row['interest'], 2);
 
             LoanSchedule::create([
@@ -1058,10 +1058,10 @@ class LoanService
             DB::transaction(function () use ($schedule, $asOf, &$count) {
                 $schedule = LoanSchedule::query()->whereKey($schedule->id)->lockForUpdate()->firstOrFail();
                 $loan = Loan::query()->with('product')->whereKey($schedule->loan_id)->lockForUpdate()->firstOrFail();
-                $days = $this->calendar->businessDaysBetween($schedule->due_date, $asOf);
+                $days = $this->calendar->businessDaysBetween($schedule->due_date, $asOf, $loan->organization_id ? (int) $loan->organization_id : null);
                 $penaltyType = $loan->product?->penalty_type ?: 'percentage';
                 $penaltyRate = (float) ($loan->product?->penalty_rate ?? 0);
-                $penaltyRate = $penaltyRate > 0 ? $penaltyRate : (float) SystemSetting::value('loan_arrears_penalty_rate', 2);
+                $penaltyRate = $penaltyRate > 0 ? $penaltyRate : (float) SystemSetting::value('loan_arrears_penalty_rate', 2, $loan->organization_id ? (int) $loan->organization_id : null);
                 $repaymentFrequency = $loan->repayment_frequency ?: $loan->product?->repayment_frequency;
                 [$penaltyPeriodStart, $penaltyPeriodEnd] = $this->penalties->penaltyPeriod(
                     $schedule,
