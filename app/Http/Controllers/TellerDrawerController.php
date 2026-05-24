@@ -41,6 +41,7 @@ class TellerDrawerController extends Controller
         $branchId = $session?->drawer?->branch_id ?? $request->user()->branch_id;
         $lookupScope = $request->string('lookup_scope')->toString();
         $accountSearch = $request->string('account_search')->trim()->toString();
+        $transactionSearch = $request->string('transaction_search')->trim()->toString();
         $selectedAccountTypeId = Str::startsWith($lookupScope, 'account_type:')
             ? (int) Str::after($lookupScope, 'account_type:')
             : $request->integer('account_type_id');
@@ -203,9 +204,11 @@ class TellerDrawerController extends Controller
                 ])
                 ->when($session, fn (Builder $query, DrawerSession $session): Builder => $query->where('drawer_session_id', $session->id))
                 ->when(! $session, fn (Builder $query): Builder => $query->where('user_id', $request->user()->id))
+                ->when($transactionSearch !== '', fn (Builder $query): Builder => $this->searchPostedTransactions($query, $transactionSearch))
                 ->latest('posted_at')
                 ->limit(50)
                 ->get(),
+            'transactionSearch' => $transactionSearch,
             'pendingReversalRequests' => $canApproveReversals
                 ? MakerCheckerRequest::query()
                     ->with(['requestedBy', 'branch', 'subject'])
@@ -224,6 +227,30 @@ class TellerDrawerController extends Controller
             'expectedBalance' => (float) ($session?->opening_balance ?? 0) + $cashIn - $cashOut,
             'receiptTransaction' => $this->receiptTransaction($request),
         ]);
+    }
+
+    private function searchPostedTransactions(Builder $query, string $search): Builder
+    {
+        $likeSearch = "%{$search}%";
+
+        return $query->where(function (Builder $query) use ($likeSearch): void {
+            $query->whereAny(['description', 'reference', 'cheque_number', 'status'], 'like', $likeSearch)
+                ->orWhereHas('account', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['account_number', 'account_name'], 'like', $likeSearch);
+                })
+                ->orWhereHas('account.client', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['client_number', 'first_name', 'middle_name', 'last_name', 'business_name', 'phone', 'alternative_phone'], 'like', $likeSearch);
+                })
+                ->orWhereHas('type', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['name', 'code'], 'like', $likeSearch);
+                })
+                ->orWhereHas('journalEntries', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['description', 'reference'], 'like', $likeSearch)
+                        ->orWhereHas('chartAccount', function (Builder $query) use ($likeSearch): void {
+                            $query->whereAny(['code', 'name'], 'like', $likeSearch);
+                        });
+                });
+        });
     }
 
     public function storeLedgerAccount(Request $request, AuditLogger $auditLogger): RedirectResponse

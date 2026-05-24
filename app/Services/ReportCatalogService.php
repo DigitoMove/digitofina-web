@@ -163,12 +163,13 @@ class ReportCatalogService
             : Carbon::parse('2999-12-31')->endOfDay();
         $detail = (string) ($filters['detail'] ?? 'detailed');
         $branchId = isset($filters['branch_id']) && $filters['branch_id'] !== '' ? (int) $filters['branch_id'] : null;
+        $search = trim((string) ($filters['search'] ?? ''));
         $limit = $detail === 'brief' ? 25 : 200;
         $payload = $definition['payload'];
 
         [$columns, $rows, $summary] = match ($definition['kind']) {
-            'transactions' => $this->transactions($payload, $from, $to, $branchId, $limit, $user),
-            'teller_transactions' => $this->tellerTransactions($from, $to, $branchId, $limit, $user),
+            'transactions' => $this->transactions($payload, $from, $to, $branchId, $limit, $user, $search),
+            'teller_transactions' => $this->tellerTransactions($from, $to, $branchId, $limit, $user, $search),
             'cash_balances' => $this->cashBalances($branchId, $user),
             'drawer_balances' => $this->drawerBalances($from, $to, $branchId, $user),
             'branch_period_summary' => $this->branchPeriodSummary($from, $to, $branchId, $user),
@@ -196,7 +197,7 @@ class ReportCatalogService
             default => $this->placeholderRows($definition),
         };
 
-        return compact('definition', 'columns', 'rows', 'summary', 'from', 'to', 'detail', 'branchId');
+        return compact('definition', 'columns', 'rows', 'summary', 'from', 'to', 'detail', 'branchId', 'search');
     }
 
     /**
@@ -221,18 +222,20 @@ class ReportCatalogService
     /**
      * @return array{0: array<int, string>, 1: Collection<int, array<string, mixed>>, 2: array<string, mixed>}
      */
-    private function transactions(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
+    private function transactions(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user, string $search = ''): array
     {
         $query = Transaction::query()
             ->with(['account.client', 'account.branch', 'type', 'user'])
             ->whereBetween('posted_at', [$from, $to])
             ->when(($payload['posted_by'] ?? null) === 'user', fn (Builder $query): Builder => $query->whereNotNull('user_id'))
             ->when(($payload['posted_by'] ?? null) === 'system', fn (Builder $query): Builder => $query->whereNull('user_id'))
+            ->when($search !== '', fn (Builder $query): Builder => $this->searchTransactions($query, $search))
             ->whereHas('account', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
 
         $rows = $query->latest('posted_at')->limit($limit)->get()->map(fn (Transaction $transaction): array => [
             'Date' => $transaction->posted_at?->format('d M Y H:i'),
             'Reference' => $transaction->reference,
+            'Description' => $transaction->description ?? '',
             'Client' => $transaction->account?->client?->full_name ?? 'N/A',
             'Type' => $transaction->type?->name ?? 'N/A',
             'Amount' => $this->money((float) $transaction->amount),
@@ -242,14 +245,41 @@ class ReportCatalogService
             ],
         ]);
 
-        return [['Date', 'Reference', 'Client', 'Type', 'Amount', 'Posted By'], $rows, ['Total amount' => $this->money((float) $query->sum('amount'))]];
+        return [['Date', 'Reference', 'Description', 'Client', 'Type', 'Amount', 'Posted By'], $rows, ['Total amount' => $this->money((float) $query->sum('amount'))]];
     }
 
-    private function tellerTransactions(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
+    private function searchTransactions(Builder $query, string $search): Builder
+    {
+        $likeSearch = "%{$search}%";
+
+        return $query->where(function (Builder $query) use ($likeSearch): void {
+            $query->whereAny(['description', 'reference', 'cheque_number', 'status'], 'like', $likeSearch)
+                ->orWhereHas('account', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['account_number', 'account_name'], 'like', $likeSearch);
+                })
+                ->orWhereHas('account.client', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['client_number', 'first_name', 'middle_name', 'last_name', 'business_name', 'phone', 'alternative_phone'], 'like', $likeSearch);
+                })
+                ->orWhereHas('type', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['name', 'code'], 'like', $likeSearch);
+                });
+        });
+    }
+
+    private function tellerTransactions(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user, string $search = ''): array
     {
         $query = DrawerMovement::query()
             ->with(['session.drawer.branch', 'session.user', 'user'])
             ->whereBetween('created_at', [$from, $to])
+            ->when($search !== '', function (Builder $query) use ($search): void {
+                $likeSearch = "%{$search}%";
+
+                $query->where(function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['description', 'reference', 'type'], 'like', $likeSearch)
+                        ->orWhereHas('session.user', fn (Builder $query): Builder => $query->where('name', 'like', $likeSearch))
+                        ->orWhereHas('session.drawer', fn (Builder $query): Builder => $query->where('name', 'like', $likeSearch));
+                });
+            })
             ->whereHas('session.drawer', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
 
         $cashIn = (float) (clone $query)->where('type', 'cash_in')->sum('amount');

@@ -686,9 +686,18 @@
     <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div>
             <h2 class="font-semibold text-slate-950">Drawer Posted Transactions</h2>
-            <p class="df-muted">All recent postings through this open drawer, including client accounts and ledger cash-in/cash-out corrections.</p>
+            <p class="df-muted">Search posted transactions by description, reference, client, account, status, or transaction type.</p>
         </div>
-        <a href="{{ route('reports.show', 'user-posted-transactions') }}" class="df-action-secondary">Full Report</a>
+        <div class="flex flex-wrap items-center justify-end gap-2">
+            <form method="GET" action="{{ route('teller.index') }}" class="flex flex-wrap items-center gap-2">
+                <input name="transaction_search" value="{{ $transactionSearch }}" class="min-w-64 rounded border-slate-300 text-sm" placeholder="Search description or reference">
+                <button class="df-action-secondary">Search</button>
+                @if($transactionSearch !== '')
+                    <a href="{{ route('teller.index') }}" class="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Clear</a>
+                @endif
+            </form>
+            <a href="{{ route('reports.show', ['report' => 'user-posted-transactions', 'search' => $transactionSearch]) }}" class="df-action-secondary">Full Report</a>
+        </div>
     </div>
     <div class="overflow-x-auto">
         <table class="w-full text-left text-sm">
@@ -706,7 +715,12 @@
                     @endphp
                     <tr class="border-t border-slate-200 align-top">
                         <td class="p-3 whitespace-nowrap">{{ $transaction->posted_at?->format('d M H:i') ?? $transaction->created_at->format('d M H:i') }}</td>
-                        <td><a class="font-semibold text-blue-700" href="{{ route('receipts.show', $transaction) }}">{{ $transaction->reference }}</a></td>
+                        <td>
+                            <a class="font-semibold text-blue-700" href="{{ route('receipts.show', $transaction) }}">{{ $transaction->reference }}</a>
+                            @if(filled($transaction->description))
+                                <div class="mt-1 max-w-64 text-xs text-slate-500">{{ $transaction->description }}</div>
+                            @endif
+                        </td>
                         <td class="font-medium text-slate-950">{{ $transaction->account?->account_number ?? ($journalAccount?->code ?? 'Ledger') }}</td>
                         <td class="max-w-56">{{ $transaction->account?->client?->full_name ?? $transaction->account?->client?->business_name ?? ($journalAccount?->name ?? 'General ledger posting') }}</td>
                         <td>

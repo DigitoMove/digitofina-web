@@ -32,6 +32,7 @@ class ReportController extends Controller
             'to' => ['nullable', 'date'],
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'detail' => ['nullable', 'in:brief,detailed'],
+            'search' => ['nullable', 'string', 'max:255'],
         ]);
 
         if (! ApiSecurity::hasGlobalBranchAccess($request->user()) && isset($data['branch_id'])) {
