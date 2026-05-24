@@ -159,6 +159,93 @@ it('links listed posted transactions to their receipt details', function () {
         ->assertSee('href="'.route('receipts.show', $transaction).'"', false);
 });
 
+it('filters posted transaction reports by description', function () {
+    $branch = Branch::create([
+        'code' => '1004',
+        'name' => 'Report Search Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $role = Role::create([
+        'name' => 'Super Admin',
+        'slug' => 'super-admin',
+    ]);
+    $admin = User::factory()->create([
+        'branch_id' => null,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $client = Client::create([
+        'branch_id' => $branch->id,
+        'client_number' => '1004-C000001',
+        'first_name' => 'Grace',
+        'last_name' => 'Akello',
+        'phone' => '+256700000004',
+        'status' => 'active',
+        'registered_at' => today(),
+    ]);
+    $accountType = AccountType::create([
+        'name' => 'Savings',
+        'code' => 'SAV',
+        'category' => 'savings',
+        'minimum_balance' => 0,
+        'is_active' => true,
+    ]);
+    $account = Account::create([
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'account_type_id' => $accountType->id,
+        'account_number' => '1004-SAV-000001',
+        'account_name' => 'Grace Akello Savings',
+        'status' => 'active',
+        'balance' => 150000,
+        'opened_at' => today(),
+    ]);
+    $type = TransactionType::create([
+        'name' => 'Deposit',
+        'code' => 'deposit',
+        'direction' => 'credit',
+        'affects_cash_drawer' => true,
+        'is_active' => true,
+    ]);
+
+    Transaction::create([
+        'account_id' => $account->id,
+        'transaction_type_id' => $type->id,
+        'branch_id' => $branch->id,
+        'user_id' => $admin->id,
+        'reference' => 'TX-DESC-MATCH',
+        'amount' => 100000,
+        'balance_after' => 100000,
+        'currency' => 'UGX',
+        'description' => 'School fees savings deposit',
+        'status' => 'posted',
+        'posted_at' => now(),
+    ]);
+    Transaction::create([
+        'account_id' => $account->id,
+        'transaction_type_id' => $type->id,
+        'branch_id' => $branch->id,
+        'user_id' => $admin->id,
+        'reference' => 'TX-DESC-HIDDEN',
+        'amount' => 50000,
+        'balance_after' => 150000,
+        'currency' => 'UGX',
+        'description' => 'Market collection deposit',
+        'status' => 'posted',
+        'posted_at' => now(),
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('reports.show', ['report' => 'user-posted-transactions', 'search' => 'School fees']))
+        ->assertSuccessful()
+        ->assertSee('TX-DESC-MATCH')
+        ->assertSee('School fees savings deposit')
+        ->assertDontSee('TX-DESC-HIDDEN')
+        ->assertDontSee('Market collection deposit');
+});
+
 it('reopens a closed loan account when its payoff repayment is reversed', function () {
     $branch = Branch::create([
         'code' => '1003',

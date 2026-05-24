@@ -28,9 +28,24 @@
 @endif
 
 <div class="df-panel overflow-hidden">
-    <div class="border-b border-slate-200 px-5 py-4">
-        <h2 class="font-semibold text-slate-950">Generated Results</h2>
-        <p class="text-sm text-slate-500">{{ $rows->count() }} row{{ $rows->count() === 1 ? '' : 's' }} shown.</p>
+    <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+        <div>
+            <h2 class="font-semibold text-slate-950">Generated Results</h2>
+            <p class="text-sm text-slate-500">{{ $rows->count() }} row{{ $rows->count() === 1 ? '' : 's' }} shown.</p>
+        </div>
+        @if(in_array($definition['kind'], ['transactions', 'teller_transactions'], true))
+            <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="flex flex-wrap items-center justify-end gap-2">
+                <input type="hidden" name="from" value="{{ request('from') }}">
+                <input type="hidden" name="to" value="{{ request('to') }}">
+                <input type="hidden" name="branch_id" value="{{ $branchId }}">
+                <input type="hidden" name="detail" value="{{ $detail }}">
+                <input name="search" value="{{ $search }}" class="min-w-64 rounded border-slate-300 text-sm" placeholder="Search description, reference, client, or account">
+                <button class="df-action-secondary">Search</button>
+                @if($search !== '')
+                    <a href="{{ route('reports.show', ['report' => $definition['slug'], 'from' => request('from'), 'to' => request('to'), 'branch_id' => $branchId, 'detail' => $detail]) }}" class="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Clear</a>
+                @endif
+            </form>
+        @endif
     </div>
     <div class="overflow-auto">
         <table class="w-full text-left text-sm">
