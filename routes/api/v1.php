@@ -54,6 +54,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'throttle:api', 'module:auto'])->gr
     Route::get('/clients/{client}/accounts', [ClientController::class, 'accounts'])->name('clients.accounts');
     Route::get('/clients/{client}/loans', [ClientController::class, 'loans'])->name('clients.loans');
     Route::get('/clients/{client}/statements', [ClientController::class, 'statements'])->name('clients.statements');
+    Route::post('/clients/{client}/relationships', [ClientController::class, 'storeRelationship'])->middleware('throttle:api-sensitive')->name('clients.relationships.store');
     Route::get('/clients/{client}/financial-overview', [FinancialRelationshipController::class, 'clientOverview'])->name('clients.financial-overview');
     Route::get('/clients/{client}/combined-statement', [FinancialRelationshipController::class, 'combinedStatement'])->name('clients.combined-statement');
 

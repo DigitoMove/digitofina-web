@@ -82,6 +82,16 @@ class Client extends Model
         return $this->hasMany(SavingsAccount::class);
     }
 
+    public function relatedClients(): HasMany
+    {
+        return $this->hasMany(ClientRelationship::class);
+    }
+
+    public function guardianRelationships(): HasMany
+    {
+        return $this->hasMany(ClientRelationship::class, 'related_client_id');
+    }
+
     public function shareAccounts(): HasMany
     {
         return $this->hasMany(ShareAccount::class);
@@ -95,6 +105,11 @@ class Client extends Model
     public function investmentAccounts(): HasMany
     {
         return $this->hasMany(InvestmentAccount::class);
+    }
+
+    public function sponsoredInvestmentAccounts(): HasMany
+    {
+        return $this->hasMany(InvestmentAccount::class, 'sponsor_client_id');
     }
 
     public function savingsGoals(): HasMany

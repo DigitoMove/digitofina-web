@@ -10,6 +10,7 @@ use App\Http\Resources\LoanResource;
 use App\Http\Resources\SavingsAccountResource;
 use App\Http\Resources\SavingsTransactionResource;
 use App\Models\Client;
+use App\Models\ClientRelationship;
 use App\Models\SavingsTransaction;
 use App\Services\ClientService;
 use App\Support\ApiQuery;
@@ -19,6 +20,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 
 class ClientController extends Controller
 {
@@ -60,7 +62,7 @@ class ClientController extends Controller
         ApiSecurity::assertTenantAccess(request()->user(), $client);
         Gate::authorize('view', $client);
 
-        return ApiResponse::resource(new ClientResource($client->load(['branch', 'officer'])), 'Client profile retrieved.');
+        return ApiResponse::resource(new ClientResource($client->load(['branch', 'officer', 'relatedClients.relatedClient', 'guardianRelationships.client'])), 'Client profile retrieved.');
     }
 
     public function update(UpdateClientRequest $request, Client $client, ClientService $clients): JsonResponse
@@ -125,6 +127,43 @@ class ClientController extends Controller
         )->paginate(ApiQuery::perPage(request(), 30));
 
         return ApiResponse::collection(SavingsTransactionResource::collection($transactions), 'Client statements retrieved.', meta: ApiQuery::meta(request()));
+    }
+
+    public function storeRelationship(Request $request, Client $client): JsonResponse
+    {
+        ApiSecurity::assertTenantAccess($request->user(), $client);
+        Gate::authorize('update', $client);
+
+        $data = $request->validate([
+            'related_client_id' => ['required', 'exists:clients,id', Rule::notIn([$client->id])],
+            'relationship_type' => ['required', Rule::in(['child', 'parent', 'spouse', 'sibling', 'relative', 'guardian', 'dependent'])],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $relatedClient = Client::findOrFail($data['related_client_id']);
+        ApiSecurity::assertTenantAccess($request->user(), $relatedClient);
+
+        $relationship = ClientRelationship::updateOrCreate(
+            [
+                'client_id' => $client->id,
+                'related_client_id' => $relatedClient->id,
+                'relationship_type' => $data['relationship_type'],
+            ],
+            [
+                'organization_id' => $client->organization_id,
+                'status' => 'active',
+                'created_by' => $request->user()->id,
+                'notes' => $data['notes'] ?? null,
+            ],
+        );
+
+        return ApiResponse::data([
+            'id' => $relationship->id,
+            'client_id' => $relationship->client_id,
+            'related_client_id' => $relationship->related_client_id,
+            'relationship_type' => $relationship->relationship_type,
+            'status' => $relationship->status,
+        ], 'Client relationship attached.', 201);
     }
 
     public function destroy(Client $client): Response

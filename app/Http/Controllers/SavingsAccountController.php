@@ -49,17 +49,11 @@ class SavingsAccountController extends Controller
 
         if ($selectedClientId) {
             $selectedClient = Client::query()->with(['savingsAccounts', 'accounts.accountType'])->findOrFail($selectedClientId);
-            $existingSavingsAccount = $selectedClient->savingsAccounts->first();
-
-            if ($existingSavingsAccount) {
-                return redirect()->route('savings-accounts.show', $existingSavingsAccount)->with('status', 'This client already has a savings product package.');
-            }
         }
 
         return view('savings-accounts.create', [
             'account' => new SavingsAccount(['status' => 'active', 'opening_date' => today()]),
             'clients' => Client::where('status', 'active')
-                ->whereDoesntHave('savingsAccounts')
                 ->orderBy('first_name')
                 ->orderBy('last_name')
                 ->get(),
@@ -69,6 +63,7 @@ class SavingsAccountController extends Controller
                 ->get(),
             'products' => SavingsProduct::where('status', 'active')->orderBy('name')->get(),
             'selectedClient' => $selectedClientId,
+            'selectedBranch' => $selectedClient->branch_id ?? null,
         ]);
     }
 

@@ -22,6 +22,7 @@ class LoanRepayment extends Model
             'interest_paid' => 'decimal:2',
             'principal_paid' => 'decimal:2',
             'paid_at' => 'date',
+            'reversed_at' => 'datetime',
         ];
     }
 

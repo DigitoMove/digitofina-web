@@ -38,6 +38,26 @@ class ClientResource extends JsonResource
                 'id' => $this->officer?->id,
                 'name' => $this->officer?->name,
             ]),
+            'related_clients' => $this->whenLoaded('relatedClients', fn () => $this->relatedClients->map(fn ($relationship): array => [
+                'id' => $relationship->id,
+                'relationship_type' => $relationship->relationship_type,
+                'status' => $relationship->status,
+                'client' => [
+                    'id' => $relationship->relatedClient?->id,
+                    'client_number' => $relationship->relatedClient?->client_number,
+                    'full_name' => $relationship->relatedClient?->full_name,
+                ],
+            ])->values()),
+            'guardian_relationships' => $this->whenLoaded('guardianRelationships', fn () => $this->guardianRelationships->map(fn ($relationship): array => [
+                'id' => $relationship->id,
+                'relationship_type' => $relationship->relationship_type,
+                'status' => $relationship->status,
+                'client' => [
+                    'id' => $relationship->client?->id,
+                    'client_number' => $relationship->client?->client_number,
+                    'full_name' => $relationship->client?->full_name,
+                ],
+            ])->values()),
             'registered_at' => $this->registered_at?->toDateString(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

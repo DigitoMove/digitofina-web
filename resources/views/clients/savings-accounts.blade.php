@@ -11,10 +11,13 @@
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div>
         <h1 class="df-title">Client Savings Account</h1>
-        <p class="df-muted">{{ $client->client_number }} · {{ $client->full_name ?: $client->business_name }} · one savings account per client</p>
+        <p class="df-muted">{{ $client->client_number }} · {{ $client->full_name ?: $client->business_name }} · basic account plus intentional product packages</p>
     </div>
     <div class="flex flex-wrap gap-2">
         <a href="{{ route('clients.show', $client) }}" class="df-action-secondary">Client Dashboard</a>
+        @if($canRemoveSavingsPackage)
+            <a href="{{ route('savings-accounts.create', ['client_id' => $client->id]) }}" class="df-action-primary">Attach Package</a>
+        @endif
         @unless($hasSavingsAccount)
             <form method="POST" action="{{ route('clients.savings-accounts.generate', $client) }}">
                 @csrf
@@ -48,7 +51,7 @@
 <section class="df-panel mt-5 overflow-hidden">
     <div class="border-b border-slate-100 px-5 py-4">
         <h2 class="font-semibold text-slate-950">Savings Product Packages</h2>
-        <p class="mt-1 text-sm text-slate-500">Optional investment-style savings products. These are not used for loan disbursement or teller withdrawal.</p>
+        <p class="mt-1 text-sm text-slate-500">Optional investment-style savings products. Attach these deliberately; they are not generated automatically with the basic savings account.</p>
     </div>
     <div class="overflow-x-auto">
         <table class="min-w-full text-left text-sm">

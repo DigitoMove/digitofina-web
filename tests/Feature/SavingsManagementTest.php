@@ -4,6 +4,7 @@ use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\Client;
 use App\Models\GroupSavingsAccount;
+use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\SavingsAccount;
@@ -18,9 +19,10 @@ uses(RefreshDatabase::class);
 
 function savingsAdmin(): User
 {
-    $branch = Branch::create(['code' => '1001', 'name' => 'Luweero', 'is_active' => true, 'status' => 'active']);
-    $permissions = collect(['manage-accounts', 'post-transactions'])->map(fn (string $slug) => Permission::create(['name' => str($slug)->headline(), 'slug' => $slug]));
-    $role = Role::create(['name' => 'Cashier', 'slug' => 'cashier']);
+    $organization = Organization::create(['name' => 'Digitofina SACCO', 'slug' => fake()->unique()->slug(), 'status' => 'active']);
+    $branch = Branch::create(['organization_id' => $organization->id, 'code' => '1001', 'name' => 'Luweero', 'is_active' => true, 'status' => 'active']);
+    $permissions = collect(['manage-accounts', 'manage-clients', 'post-transactions'])->map(fn (string $slug) => Permission::create(['name' => str($slug)->headline(), 'slug' => $slug]));
+    $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
     $role->permissions()->sync($permissions->pluck('id')->all());
 
     foreach ([
@@ -28,15 +30,16 @@ function savingsAdmin(): User
         ['2100', 'Client Savings Liability', 'liability', 'credit'],
         ['4200', 'Fees and Penalties Income', 'income', 'credit'],
     ] as [$code, $name, $type, $normalBalance]) {
-        ChartAccount::create(['code' => $code, 'name' => $name, 'type' => $type, 'normal_balance' => $normalBalance, 'is_active' => true]);
+        ChartAccount::create(['organization_id' => $organization->id, 'code' => $code, 'name' => $name, 'type' => $type, 'normal_balance' => $normalBalance, 'is_active' => true]);
     }
 
-    return User::factory()->create(['branch_id' => $branch->id, 'role_id' => $role->id, 'status' => 'active', 'is_active' => true]);
+    return User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $branch->id, 'role_id' => $role->id, 'status' => 'active', 'is_active' => true]);
 }
 
 function savingsClient(User $user, string $phone = '+256700000001'): Client
 {
     return Client::create([
+        'organization_id' => $user->organization_id,
         'branch_id' => $user->branch_id,
         'officer_id' => $user->id,
         'client_number' => fake()->unique()->numerify('1001-C######'),
@@ -52,6 +55,7 @@ function savingsClient(User $user, string $phone = '+256700000001'): Client
 function savingsProduct(): SavingsProduct
 {
     return SavingsProduct::create([
+        'organization_id' => Organization::query()->value('id'),
         'name' => 'Regular Savings',
         'code' => fake()->unique()->bothify('SAV-??'),
         'minimum_opening_balance' => 10_000,
@@ -86,6 +90,73 @@ it('opens a savings account with an opening deposit', function () {
     $response->assertRedirect(route('savings-accounts.show', $account));
     expect($account->current_balance)->toBe('50000.00')
         ->and($account->transactions)->toHaveCount(1);
+});
+
+it('attaches multiple savings product packages to the same client intentionally', function () {
+    $user = savingsAdmin();
+    $client = savingsClient($user);
+    $firstProduct = savingsProduct();
+    $secondProduct = SavingsProduct::create([
+        'organization_id' => $user->organization_id,
+        'name' => 'Education Growth Savings',
+        'code' => fake()->unique()->bothify('EDU-??'),
+        'minimum_opening_balance' => 0,
+        'minimum_balance' => 0,
+        'interest_rate' => 8,
+        'interest_posting_frequency' => 'quarterly',
+        'withdrawal_charge' => 0,
+        'deposit_charge' => 0,
+        'monthly_maintenance_fee' => 0,
+        'account_number_prefix' => 'EDU',
+        'allows_overdraft' => false,
+        'status' => 'active',
+    ]);
+
+    foreach ([$firstProduct, $secondProduct] as $product) {
+        $this->actingAs($user)->post(route('savings-accounts.store'), [
+            'client_id' => $client->id,
+            'branch_id' => $user->branch_id,
+            'savings_product_id' => $product->id,
+            'opening_date' => today()->toDateString(),
+            'status' => 'active',
+            'opening_deposit' => 0,
+        ])->assertRedirect();
+    }
+
+    $this->actingAs($user)
+        ->get(route('clients.savings-accounts', $client))
+        ->assertOk()
+        ->assertSee('Attach Package')
+        ->assertSee($client->client_number)
+        ->assertSee('Regular Savings')
+        ->assertSee('Education Growth Savings');
+
+    expect($client->savingsAccounts()->count())->toBe(2);
+});
+
+it('prevents attaching the same savings product package twice to a client', function () {
+    $user = savingsAdmin();
+    $client = savingsClient($user);
+    $product = savingsProduct();
+
+    $payload = [
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'savings_product_id' => $product->id,
+        'opening_date' => today()->toDateString(),
+        'status' => 'active',
+        'opening_deposit' => 0,
+    ];
+
+    $this->actingAs($user)->post(route('savings-accounts.store'), $payload)->assertRedirect();
+
+    $response = $this->actingAs($user)
+        ->post(route('savings-accounts.store'), $payload);
+
+    $response
+        ->assertSessionHasErrors('savings_product_id');
+
+    expect($client->savingsAccounts()->count())->toBe(1);
 });
 
 it('prevents withdrawals below minimum balance', function () {

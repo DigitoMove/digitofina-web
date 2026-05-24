@@ -268,7 +268,7 @@ class DataImportService
      */
     private function validateClient(array &$data, User $user, ?Branch $branch, ?int $organizationId): array
     {
-        $errors = $this->required($data, ['client_number', 'first_name', 'last_name', 'phone', 'loan_amount']);
+        $errors = $this->required($data, ['loan_amount']);
         $this->resolveBranchCode($data, $user, $branch, $organizationId, $errors);
         $data['client_type'] = $data['client_type'] ?? 'individual';
         $data['status'] = $data['status'] ?? 'active';
@@ -276,6 +276,27 @@ class DataImportService
         $data['loan_amount'] = $this->money($data['loan_amount'] ?? 0);
         $data['loan_code'] = strtoupper((string) ($data['loan_code'] ?? 'WEEKLY20'));
         $data['installments'] = (int) ($data['installments'] ?? $data['installments_column'] ?? 4);
+        $existingClient = filled($data['client_number'] ?? null)
+            ? Client::query()
+                ->where('client_number', $data['client_number'])
+                ->when($organizationId, fn ($query) => $query->where('organization_id', $organizationId))
+                ->first()
+            : null;
+
+        if (! $existingClient) {
+            foreach ($this->required($data, ['first_name', 'last_name', 'phone']) as $field => $messages) {
+                $errors[$field] = array_merge($errors[$field] ?? [], $messages);
+            }
+        }
+
+        if (! filled($data['client_number'] ?? null) && isset($data['branch_id'])) {
+            $branchForNumber = Branch::query()->find($data['branch_id']);
+
+            if ($branchForNumber) {
+                $data['client_number'] = $this->numbers->clientNumber($branchForNumber);
+                $data['_client_number_generated'] = true;
+            }
+        }
 
         if (! in_array($data['client_type'], ['individual', 'group', 'business', 'institution'], true)) {
             $errors['client_type'][] = 'Client type must be individual, group, business, or institution.';
@@ -285,11 +306,10 @@ class DataImportService
             $errors['status'][] = 'Status is not supported.';
         }
 
-        if (Client::where('client_number', $data['client_number'] ?? null)->exists()) {
-            $errors['client_number'][] = 'Client number already exists.';
-        }
-
-        if (filled($data['national_id'] ?? null) && Client::where('national_id', $data['national_id'])->exists()) {
+        if (filled($data['national_id'] ?? null)
+            && Client::where('national_id', $data['national_id'])
+                ->when($existingClient, fn ($query, Client $client) => $query->whereKeyNot($client->id))
+                ->exists()) {
             $errors['national_id'][] = 'National ID already exists.';
         }
 
@@ -554,16 +574,28 @@ class DataImportService
     /**
      * @param  array<string, mixed>  $data
      */
-    private function importClientWithDefaultAccounts(array $data, User $user): Client
+    private function importClientWithDefaultAccounts(array $data, User $user): Model
     {
-        $client = Client::create($this->clientPayload($data, $user));
+        if (($data['_client_number_generated'] ?? false) && Client::where('client_number', $data['client_number'])->exists()) {
+            $branchForNumber = Branch::query()->findOrFail($data['branch_id']);
+            $data['client_number'] = $this->numbers->clientNumber($branchForNumber);
+        }
+
+        $branch = Branch::query()->find($data['branch_id']);
+        $organizationId = $branch?->organization_id ?? $user->organization_id;
+        $client = Client::query()
+            ->where('client_number', $data['client_number'])
+            ->when($organizationId, fn ($query, int $organizationId) => $query->where('organization_id', $organizationId))
+            ->first();
+        $isNewClient = ! $client;
+        $client ??= Client::create($this->clientPayload($data, $user));
         $client->loadMissing('branch');
 
         $savingsAccount = $this->ensureImportedClientSavingsAccount($client, $user);
 
-        $this->createImportedDraftLoan($client, $savingsAccount, $data, $user);
+        $loan = $this->createImportedDraftLoan($client, $savingsAccount, $data, $user);
 
-        return $client;
+        return $isNewClient ? $client : $loan;
     }
 
     private function ensureImportedClientSavingsAccount(Client $client, User $user): Account
@@ -607,6 +639,9 @@ class DataImportService
     {
         $product = LoanProduct::query()
             ->where('code', strtoupper((string) ($data['loan_code'] ?? 'WEEKLY20')))
+            ->when($client->organization_id, fn ($query, int $organizationId) => $query->where(function ($query) use ($organizationId): void {
+                $query->where('organization_id', $organizationId)->orWhereNull('organization_id');
+            }))
             ->firstOrFail();
         $applicationDate = Carbon::parse($data['registered_at'] ?? today()->toDateString());
         $requestedAmount = (float) $data['loan_amount'];

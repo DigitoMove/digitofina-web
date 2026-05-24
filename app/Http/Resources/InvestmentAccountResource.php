@@ -16,6 +16,9 @@ class InvestmentAccountResource extends JsonResource
             'id' => $this->id,
             'investment_number' => $this->investment_number,
             'principal_amount' => (float) $this->principal_amount,
+            'unit_quantity' => (int) $this->unit_quantity,
+            'unit_value' => (float) $this->unit_value,
+            'unit_label' => $this->unit_label,
             'start_date' => $this->start_date?->toDateString(),
             'maturity_date' => $this->maturity_date?->toDateString(),
             'expected_return_amount' => (float) $this->expected_return_amount,
@@ -34,10 +37,17 @@ class InvestmentAccountResource extends JsonResource
                 'client_number' => $this->client->client_number,
                 'full_name' => $this->client->full_name,
             ]),
+            'sponsor_client' => $this->whenLoaded('sponsorClient', fn () => $this->sponsorClient ? [
+                'id' => $this->sponsorClient->id,
+                'client_number' => $this->sponsorClient->client_number,
+                'full_name' => $this->sponsorClient->full_name,
+            ] : null),
             'plan' => $this->whenLoaded('plan', fn () => [
                 'id' => $this->plan->id,
                 'name' => $this->plan->name,
                 'code' => $this->plan->code,
+                'unit_label' => $this->plan->unit_label,
+                'unit_value' => (float) $this->plan->unit_value,
             ]),
             'created_at' => $this->created_at?->toIso8601String(),
         ];

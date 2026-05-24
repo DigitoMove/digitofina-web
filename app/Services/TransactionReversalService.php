@@ -52,7 +52,7 @@ class TransactionReversalService
                 ->first();
 
             if ($loanRepayment) {
-                $this->reverseLoanRepayment($loanRepayment, $checker);
+                $this->reverseLoanRepayment($loanRepayment, $checker, $request->reason);
                 $account?->refresh();
             } elseif ($account) {
                 $this->reverseAccountBalance($original, $account);
@@ -84,6 +84,10 @@ class TransactionReversalService
                 'reversed_by' => $reversal->id,
                 'reversed_at' => now(),
             ]);
+
+            if ($loanRepayment) {
+                $loanRepayment->update(['reversal_transaction_id' => $reversal->id]);
+            }
 
             $this->auditLogger->record('transaction.reversed', $original, [
                 'reversal_reference' => $reversal->reference,
@@ -150,7 +154,7 @@ class TransactionReversalService
         ]);
     }
 
-    private function reverseLoanRepayment(LoanRepayment $repayment, User $checker): void
+    private function reverseLoanRepayment(LoanRepayment $repayment, User $checker, ?string $reason): void
     {
         if ($repayment->status === 'reversed') {
             throw new InvalidArgumentException('This loan repayment has already been reversed.');
@@ -165,15 +169,21 @@ class TransactionReversalService
 
         if ($repayment->allocations->isNotEmpty()) {
             foreach ($repayment->allocations as $allocation) {
-                $this->reverseSchedulePayment($allocation->schedule, [
+                $this->reverseSchedulePayment($allocation->schedule, $checker, [
                     'penalty' => (float) $allocation->penalty_paid,
                     'fees' => (float) $allocation->fees_paid,
                     'interest' => (float) $allocation->interest_paid,
                     'principal' => (float) $allocation->principal_paid,
                 ]);
+
+                $allocation->update([
+                    'status' => 'reversed',
+                    'reversed_at' => now(),
+                    'reversed_by' => $checker->id,
+                ]);
             }
         } else {
-            $this->reverseSchedulesWithoutAllocation($loan, $repayment);
+            $this->reverseSchedulesWithoutAllocation($loan, $repayment, $checker);
         }
 
         $loan->refresh();
@@ -181,7 +191,9 @@ class TransactionReversalService
 
         $repayment->update([
             'status' => 'reversed',
-            'reference' => $repayment->reference.'-REVERSED',
+            'reversed_at' => now(),
+            'reversed_by' => $checker->id,
+            'reversal_reason' => $reason,
         ]);
 
         if ($loan->loan_account_id) {
@@ -206,7 +218,7 @@ class TransactionReversalService
     /**
      * @param  array{penalty:float, fees:float, interest:float, principal:float}  $amounts
      */
-    private function reverseSchedulePayment(?LoanSchedule $schedule, array $amounts): void
+    private function reverseSchedulePayment(?LoanSchedule $schedule, User $checker, array $amounts): void
     {
         if (! $schedule) {
             return;
@@ -222,12 +234,14 @@ class TransactionReversalService
             'amount_paid' => max(0, (float) $schedule->amount_paid - $total),
             'outstanding_amount' => (float) $schedule->outstanding_amount + $total,
             'balance_due' => (float) $schedule->balance_due + $total,
+            'last_reversal_at' => now(),
+            'last_reversal_by' => $checker->id,
         ]);
 
         $this->refreshScheduleStatus($schedule->refresh());
     }
 
-    private function reverseSchedulesWithoutAllocation(Loan $loan, LoanRepayment $repayment): void
+    private function reverseSchedulesWithoutAllocation(Loan $loan, LoanRepayment $repayment, User $checker): void
     {
         $remaining = [
             'penalty' => (float) $repayment->penalty_paid,
@@ -252,7 +266,7 @@ class TransactionReversalService
                 $remaining[$bucket] -= $amount;
             }
 
-            $this->reverseSchedulePayment($schedule, $amounts);
+            $this->reverseSchedulePayment($schedule, $checker, $amounts);
         }
     }
 

@@ -43,7 +43,7 @@
             </thead>
             <tbody>
                 @forelse($rows as $row)
-                    <tr class="border-t border-slate-200 {{ ($row['_is_arrears'] ?? false) ? 'font-semibold text-red-700' : '' }}">
+                    <tr class="border-t border-slate-200 {{ ($row['_is_arrears'] ?? false) ? 'font-semibold text-red-700' : '' }} {{ ($row['_is_total'] ?? false) ? 'bg-slate-50 font-semibold text-slate-950' : '' }}">
                         @foreach($columns as $column)
                             @php
                                 $cellLink = $row['_links'][$column] ?? null;

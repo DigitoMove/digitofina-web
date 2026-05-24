@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Client;
+use App\Models\ClientRelationship;
 use App\Models\InvestmentAccount;
 use App\Models\InvestmentPlan;
 use App\Models\InvestmentReturn;
@@ -26,15 +27,27 @@ class InvestmentService
 
     public function createPlan(array $data, User $user): InvestmentPlan
     {
+        $isSharePackage = (bool) ($data['is_share_package'] ?? in_array($data['type'] ?? null, ['share_package', 'asset_backed'], true));
+        $unitValue = (float) ($data['unit_value'] ?? 0);
+        $minimumUnits = (int) ($data['minimum_units'] ?? 1);
+        $maximumUnits = $data['maximum_units'] ?? null;
+        $minimumAmount = $data['minimum_amount'] ?? $data['min_amount'] ?? ($isSharePackage ? $unitValue * $minimumUnits : 0);
+        $maximumAmount = $data['maximum_amount'] ?? $data['max_amount'] ?? ($isSharePackage && $maximumUnits !== null ? $unitValue * (int) $maximumUnits : null);
+
         $plan = InvestmentPlan::create($data + [
             'organization_id' => $user->organization_id,
             'branch_id' => $data['branch_id'] ?? $user->branch_id,
             'created_by' => $user->id,
             'updated_by' => $user->id,
-            'min_amount' => $data['min_amount'] ?? $data['minimum_amount'] ?? 0,
-            'max_amount' => $data['max_amount'] ?? $data['maximum_amount'] ?? null,
-            'minimum_amount' => $data['minimum_amount'] ?? $data['min_amount'] ?? 0,
-            'maximum_amount' => $data['maximum_amount'] ?? $data['max_amount'] ?? null,
+            'unit_label' => $data['unit_label'] ?? 'share',
+            'unit_value' => $unitValue,
+            'minimum_units' => $minimumUnits,
+            'maximum_units' => $maximumUnits,
+            'is_share_package' => $isSharePackage,
+            'min_amount' => $data['min_amount'] ?? $minimumAmount,
+            'max_amount' => $data['max_amount'] ?? $maximumAmount,
+            'minimum_amount' => $minimumAmount,
+            'maximum_amount' => $maximumAmount,
             'return_method' => $data['return_method'] ?? $data['return_calculation_method'] ?? 'fixed_percentage',
             'return_calculation_method' => $data['return_calculation_method'] ?? $data['return_method'] ?? 'fixed_percentage',
             'allow_topups' => $data['allow_topups'] ?? $data['allow_top_ups'] ?? false,
@@ -80,20 +93,16 @@ class InvestmentService
 
     public function createInvestment(array $data, User $user): InvestmentAccount
     {
-        $principal = (float) $data['principal_amount'];
-
-        if ($principal <= 0) {
-            throw new InvalidArgumentException('Principal amount must be greater than zero.');
-        }
-
-        CurrencyDenomination::assertValid($principal, 'Principal amount');
-
-        return DB::transaction(function () use ($data, $user, $principal): InvestmentAccount {
+        return DB::transaction(function () use ($data, $user): InvestmentAccount {
             $investor = InvestorAccount::query()->with('client')->whereKey($data['investor_account_id'])->lockForUpdate()->firstOrFail();
             $plan = InvestmentPlan::query()->whereKey($data['investment_plan_id'])->lockForUpdate()->firstOrFail();
+            $unitQuantity = $this->investmentUnits($data, $plan);
+            $principal = $this->investmentPrincipal($data, $plan, $unitQuantity);
+            $sponsorClientId = $this->sponsorClientId($data, $investor);
 
             $this->assertInvestorCanTransact($investor);
             $this->assertPlanCanBeUsed($plan, $principal);
+            $this->assertPlanUnitsCanBeUsed($plan, $unitQuantity);
             $businessDate = $this->financialControls->ensureFinancialDayOpen($user, (int) $investor->branch_id, $data['start_date'] ?? today());
             $this->financialControls->enforceTransactionLimit($user, $principal, $businessDate);
 
@@ -106,7 +115,11 @@ class InvestmentService
                 'organization_id' => $investor->organization_id,
                 'investor_account_id' => $investor->id,
                 'client_id' => $investor->client_id,
+                'sponsor_client_id' => $sponsorClientId,
                 'investment_plan_id' => $plan->id,
+                'unit_quantity' => $unitQuantity,
+                'unit_value' => $plan->unit_value ?: $principal,
+                'unit_label' => $plan->unit_label ?: 'share',
                 'branch_id' => $investor->branch_id,
                 'created_by' => $user->id,
                 'updated_by' => $user->id,
@@ -462,6 +475,77 @@ class InvestmentService
         if ($plan->maximum_amount !== null && $amount > (float) $plan->maximum_amount) {
             throw new InvalidArgumentException('Investment amount exceeds the plan maximum.');
         }
+    }
+
+    private function assertPlanUnitsCanBeUsed(InvestmentPlan $plan, int $units): void
+    {
+        if ($units < (int) $plan->minimum_units) {
+            throw new InvalidArgumentException("Investment requires at least {$plan->minimum_units} {$plan->unit_label}(s).");
+        }
+
+        if ($plan->maximum_units !== null && $units > (int) $plan->maximum_units) {
+            throw new InvalidArgumentException("Investment cannot exceed {$plan->maximum_units} {$plan->unit_label}(s).");
+        }
+    }
+
+    private function investmentUnits(array $data, InvestmentPlan $plan): int
+    {
+        if (array_key_exists('unit_quantity', $data) && $data['unit_quantity'] !== null) {
+            return (int) $data['unit_quantity'];
+        }
+
+        if ((bool) $plan->is_share_package) {
+            return (int) $plan->minimum_units;
+        }
+
+        return 1;
+    }
+
+    private function investmentPrincipal(array $data, InvestmentPlan $plan, int $units): float
+    {
+        $principal = array_key_exists('principal_amount', $data) && $data['principal_amount'] !== null
+            ? (float) $data['principal_amount']
+            : (float) $plan->unit_value * $units;
+
+        if ($principal <= 0) {
+            throw new InvalidArgumentException('Principal amount must be greater than zero.');
+        }
+
+        CurrencyDenomination::assertValid($principal, 'Principal amount');
+
+        return $principal;
+    }
+
+    private function sponsorClientId(array $data, InvestorAccount $investor): ?int
+    {
+        if (blank($data['sponsor_client_id'] ?? null)) {
+            return null;
+        }
+
+        $sponsor = Client::query()->whereKey($data['sponsor_client_id'])->firstOrFail();
+
+        if ((int) $sponsor->id === (int) $investor->client_id) {
+            return null;
+        }
+
+        $isRelated = ClientRelationship::query()
+            ->where('status', 'active')
+            ->where(function ($query) use ($sponsor, $investor): void {
+                $query->where(function ($query) use ($sponsor, $investor): void {
+                    $query->where('client_id', $sponsor->id)
+                        ->where('related_client_id', $investor->client_id);
+                })->orWhere(function ($query) use ($sponsor, $investor): void {
+                    $query->where('client_id', $investor->client_id)
+                        ->where('related_client_id', $sponsor->id);
+                });
+            })
+            ->exists();
+
+        if (! $isRelated) {
+            throw new InvalidArgumentException('Sponsor client must be attached as an active relative of the investor client.');
+        }
+
+        return (int) $sponsor->id;
     }
 
     private function assertPositiveMoney(float $amount): void

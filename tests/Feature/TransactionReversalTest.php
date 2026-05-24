@@ -286,7 +286,7 @@ it('reopens a closed loan account when its payoff repayment is reversed', functi
         'penalty_paid' => 0,
         'paid_at' => today(),
     ]);
-    LoanRepaymentAllocation::create([
+    $allocation = LoanRepaymentAllocation::create([
         'loan_repayment_id' => $repayment->id,
         'loan_schedule_id' => $schedule->id,
         'principal_paid' => 90000,
@@ -315,9 +315,15 @@ it('reopens a closed loan account when its payoff repayment is reversed', functi
         ->and($loanAccount->fresh()->status)->toBe('active')
         ->and($loanAccount->fresh()->balance)->toBe('100000.00')
         ->and($schedule->fresh()->status)->toBe('pending')
+        ->and($schedule->fresh()->last_reversal_by)->toBe($admin->id)
         ->and($schedule->fresh()->total_paid)->toBe('0.00')
         ->and($schedule->fresh()->outstanding_amount)->toBe('100000.00')
         ->and($repayment->fresh()->status)->toBe('reversed')
+        ->and($repayment->fresh()->reversed_by)->toBe($admin->id)
+        ->and($repayment->fresh()->reversal_reason)->toBe('Mistaken repayment amount')
+        ->and($repayment->fresh()->reversal_transaction_id)->not->toBeNull()
+        ->and($allocation->fresh()->status)->toBe('reversed')
+        ->and($allocation->fresh()->reversed_by)->toBe($admin->id)
         ->and($transaction->fresh()->status)->toBe('reversed');
 });
 

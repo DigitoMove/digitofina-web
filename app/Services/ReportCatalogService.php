@@ -60,6 +60,11 @@ class ReportCatalogService
             $this->report('chart-of-accounts', 'Accounting', 'Chart Of Accounts', 'chart_accounts', [], false),
             $this->report('gl-account-transactions', 'Accounting', 'GL Account Transactions', 'journal_entries'),
             $this->report('gl-transaction-analysis', 'Accounting', 'GL Transaction Analysis', 'journal_analysis'),
+            $this->report('income-accounts', 'Accounting', 'Income Accounts', 'ledger_section', ['types' => ['income'], 'label' => 'Income']),
+            $this->report('expense-accounts', 'Accounting', 'Expense Accounts', 'ledger_section', ['types' => ['expense'], 'label' => 'Expenses']),
+            $this->report('asset-accounts', 'Accounting', 'Asset Accounts', 'ledger_section', ['types' => ['asset'], 'label' => 'Assets']),
+            $this->report('liability-accounts', 'Accounting', 'Liability Accounts', 'ledger_section', ['types' => ['liability'], 'label' => 'Liabilities']),
+            $this->report('equity-accounts', 'Accounting', 'Equity Accounts', 'ledger_section', ['types' => ['equity'], 'label' => 'Equity']),
             $this->report('income-statement', 'Accounting', 'Income Statement', 'accounting_statement', ['statement' => 'income']),
             $this->report('trial-balance', 'Accounting', 'Trial Balance', 'accounting_statement', ['statement' => 'trial']),
             $this->report('balance-sheet', 'Accounting', 'Balance Sheet', 'accounting_statement', ['statement' => 'balance']),
@@ -172,6 +177,7 @@ class ReportCatalogService
             'chart_accounts' => $this->chartAccounts($branchId, $user),
             'journal_entries' => $this->journalEntries($from, $to, $branchId, $limit, $user),
             'journal_analysis' => $this->journalAnalysis($from, $to, $branchId, $user),
+            'ledger_section' => $this->ledgerSection($payload, $from, $to, $branchId, $user),
             'accounting_statement' => $this->accountingStatement($payload, $from, $to, $branchId, $user),
             'application_fees_income' => $this->applicationFeesIncome($from, $to, $branchId, $limit, $user),
             'loan_interest_income' => $this->loanInterestIncome($from, $to, $branchId, $limit, $user),
@@ -522,32 +528,200 @@ class ReportCatalogService
         return [['Account', 'Entry', 'Entries', 'Amount'], $rows, ['Lines' => number_format($rows->count())]];
     }
 
+    private function ledgerSection(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
+    {
+        $types = $payload['types'] ?? ['asset', 'liability', 'equity', 'income', 'expense'];
+        $label = (string) ($payload['label'] ?? 'Ledger');
+        $balances = $this->ledgerBalances($types, $from, $to, $branchId, $user, false);
+
+        $rows = $balances->map(fn (array $balance): array => [
+            'Code' => $balance['code'],
+            'Account' => $balance['account'],
+            'Type' => Str::headline((string) $balance['type']),
+            'Debit' => $this->money((float) $balance['debit']),
+            'Credit' => $this->money((float) $balance['credit']),
+            'Natural Balance' => $this->money((float) $balance['balance']),
+            'Activity' => $balance['has_activity'] ? 'Posted' : 'No activity',
+            '_links' => [
+                'Account' => route('reports.show', [
+                    'report' => 'gl-account-transactions',
+                    'from' => $from->toDateString(),
+                    'to' => $to->toDateString(),
+                    'branch_id' => $branchId,
+                ]),
+            ],
+        ]);
+
+        return [
+            ['Code', 'Account', 'Type', 'Debit', 'Credit', 'Natural Balance', 'Activity'],
+            $rows,
+            [
+                $label.' accounts' => number_format($rows->count()),
+                'Debits' => $this->money((float) $balances->sum('debit')),
+                'Credits' => $this->money((float) $balances->sum('credit')),
+                'Natural balance' => $this->money((float) $balances->sum('balance')),
+            ],
+        ];
+    }
+
     private function accountingStatement(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
     {
-        $types = match ($payload['statement'] ?? 'trial') {
-            'income' => ['income', 'expense'],
-            'balance' => ['asset', 'liability', 'equity'],
-            default => ['asset', 'liability', 'equity', 'income', 'expense'],
+        return match ($payload['statement'] ?? 'trial') {
+            'income' => $this->incomeStatement($from, $to, $branchId, $user),
+            'balance' => $this->balanceSheet($from, $to, $branchId, $user),
+            default => $this->trialBalance($from, $to, $branchId, $user),
         };
+    }
 
-        $rows = ChartAccount::query()
-            ->whereIn('type', $types)
-            ->withSum(['journalEntries as debit_total' => fn (Builder $query) => $query->where('entry_type', 'debit')->whereBetween(DB::raw('coalesce(posted_at, created_at)'), [$from, $to])], 'amount')
-            ->withSum(['journalEntries as credit_total' => fn (Builder $query) => $query->where('entry_type', 'credit')->whereBetween(DB::raw('coalesce(posted_at, created_at)'), [$from, $to])], 'amount')
-            ->when($branchId, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
-            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id)->orWhereNull('branch_id')))
-            ->orderBy('code')
-            ->get()
-            ->map(fn (ChartAccount $account): array => [
-                'Code' => $account->code,
-                'Account' => $account->name,
-                'Type' => Str::headline($account->type),
-                'Debit' => $this->money((float) $account->debit_total),
-                'Credit' => $this->money((float) $account->credit_total),
-                'Net' => $this->money((float) $account->debit_total - (float) $account->credit_total),
+    private function incomeStatement(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
+    {
+        $income = $this->ledgerBalances(['income'], $from, $to, $branchId, $user, false);
+        $expenses = $this->ledgerBalances(['expense'], $from, $to, $branchId, $user, false);
+        $totalIncome = (float) $income->sum('balance');
+        $totalExpenses = (float) $expenses->sum('balance');
+        $netIncome = $totalIncome - $totalExpenses;
+        $columns = ['Section', 'Code', 'Account', 'Debit', 'Credit', 'Amount'];
+
+        $rows = $income
+            ->map(fn (array $balance): array => $this->statementRow('Income', $balance, 'income-accounts', $from, $to, $branchId))
+            ->concat([[
+                'Section' => 'Income',
+                'Code' => '',
+                'Account' => 'Total Income',
+                'Debit' => '',
+                'Credit' => '',
+                'Amount' => $this->money($totalIncome),
+                '_is_total' => true,
+                '_links' => ['Section' => $this->reportUrl('income-accounts', $from, $to, $branchId)],
+            ]])
+            ->concat($expenses->map(fn (array $balance): array => $this->statementRow('Expenses', $balance, 'expense-accounts', $from, $to, $branchId)))
+            ->concat([
+                [
+                    'Section' => 'Expenses',
+                    'Code' => '',
+                    'Account' => 'Total Expenses',
+                    'Debit' => '',
+                    'Credit' => '',
+                    'Amount' => $this->money($totalExpenses),
+                    '_is_total' => true,
+                    '_links' => ['Section' => $this->reportUrl('expense-accounts', $from, $to, $branchId)],
+                ],
+                [
+                    'Section' => 'Profit / Loss',
+                    'Code' => '',
+                    'Account' => $netIncome >= 0 ? 'Net Income' : 'Net Loss',
+                    'Debit' => '',
+                    'Credit' => '',
+                    'Amount' => $this->money($netIncome),
+                    '_is_total' => true,
+                ],
             ]);
 
-        return [['Code', 'Account', 'Type', 'Debit', 'Credit', 'Net'], $rows, ['Rows' => number_format($rows->count())]];
+        return [$columns, $rows, [
+            'Income' => $this->money($totalIncome),
+            'Expenses' => $this->money($totalExpenses),
+            'Net income' => $this->money($netIncome),
+            'Expense ratio' => $totalIncome > 0 ? number_format(($totalExpenses / $totalIncome) * 100, 2).'%' : '0.00%',
+        ]];
+    }
+
+    private function balanceSheet(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
+    {
+        $assets = $this->ledgerBalances(['asset'], $from, $to, $branchId, $user, true);
+        $liabilities = $this->ledgerBalances(['liability'], $from, $to, $branchId, $user, true);
+        $equity = $this->ledgerBalances(['equity'], $from, $to, $branchId, $user, true);
+        $income = $this->ledgerBalances(['income'], $from, $to, $branchId, $user, true);
+        $expenses = $this->ledgerBalances(['expense'], $from, $to, $branchId, $user, true);
+        $retainedEarnings = (float) $income->sum('balance') - (float) $expenses->sum('balance');
+        $totalAssets = (float) $assets->sum('balance');
+        $totalLiabilities = (float) $liabilities->sum('balance');
+        $totalEquity = (float) $equity->sum('balance') + $retainedEarnings;
+        $columns = ['Section', 'Code', 'Account', 'Debit', 'Credit', 'Amount'];
+
+        $rows = $assets
+            ->map(fn (array $balance): array => $this->statementRow('Assets', $balance, 'asset-accounts', $from, $to, $branchId))
+            ->concat([[
+                'Section' => 'Assets',
+                'Code' => '',
+                'Account' => 'Total Assets',
+                'Debit' => '',
+                'Credit' => '',
+                'Amount' => $this->money($totalAssets),
+                '_is_total' => true,
+                '_links' => ['Section' => $this->reportUrl('asset-accounts', $from, $to, $branchId)],
+            ]])
+            ->concat($liabilities->map(fn (array $balance): array => $this->statementRow('Liabilities', $balance, 'liability-accounts', $from, $to, $branchId)))
+            ->concat([[
+                'Section' => 'Liabilities',
+                'Code' => '',
+                'Account' => 'Total Liabilities',
+                'Debit' => '',
+                'Credit' => '',
+                'Amount' => $this->money($totalLiabilities),
+                '_is_total' => true,
+                '_links' => ['Section' => $this->reportUrl('liability-accounts', $from, $to, $branchId)],
+            ]])
+            ->concat($equity->map(fn (array $balance): array => $this->statementRow('Equity', $balance, 'equity-accounts', $from, $to, $branchId)))
+            ->concat([
+                [
+                    'Section' => 'Equity',
+                    'Code' => '',
+                    'Account' => 'Current / Retained Earnings',
+                    'Debit' => '',
+                    'Credit' => '',
+                    'Amount' => $this->money($retainedEarnings),
+                    '_is_total' => true,
+                    '_links' => ['Section' => $this->reportUrl('income-statement', $from, $to, $branchId)],
+                ],
+                [
+                    'Section' => 'Equity',
+                    'Code' => '',
+                    'Account' => 'Total Equity',
+                    'Debit' => '',
+                    'Credit' => '',
+                    'Amount' => $this->money($totalEquity),
+                    '_is_total' => true,
+                    '_links' => ['Section' => $this->reportUrl('equity-accounts', $from, $to, $branchId)],
+                ],
+                [
+                    'Section' => 'Balance Check',
+                    'Code' => '',
+                    'Account' => 'Assets - Liabilities - Equity',
+                    'Debit' => '',
+                    'Credit' => '',
+                    'Amount' => $this->money($totalAssets - $totalLiabilities - $totalEquity),
+                    '_is_total' => true,
+                ],
+            ]);
+
+        return [$columns, $rows, [
+            'Assets' => $this->money($totalAssets),
+            'Liabilities' => $this->money($totalLiabilities),
+            'Equity' => $this->money($totalEquity),
+            'Balance check' => $this->money($totalAssets - $totalLiabilities - $totalEquity),
+        ]];
+    }
+
+    private function trialBalance(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
+    {
+        $balances = $this->ledgerBalances(['asset', 'liability', 'equity', 'income', 'expense'], $from, $to, $branchId, $user, true);
+        $rows = $balances->map(fn (array $balance): array => [
+            'Code' => $balance['code'],
+            'Account' => $balance['account'],
+            'Type' => Str::headline((string) $balance['type']),
+            'Debit' => $this->money((float) $balance['debit']),
+            'Credit' => $this->money((float) $balance['credit']),
+            'Natural Balance' => $this->money((float) $balance['balance']),
+        ]);
+
+        $debits = (float) $balances->sum('debit');
+        $credits = (float) $balances->sum('credit');
+
+        return [['Code', 'Account', 'Type', 'Debit', 'Credit', 'Natural Balance'], $rows, [
+            'Debits' => $this->money($debits),
+            'Credits' => $this->money($credits),
+            'Difference' => $this->money($debits - $credits),
+        ]];
     }
 
     private function applicationFeesIncome(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
@@ -579,6 +753,93 @@ class ReportCatalogService
                 'Gross disbursed' => $this->money((float) (clone $query)->sum('disbursed_amount')),
             ],
         ];
+    }
+
+    /**
+     * @param  array<int, string>  $types
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function ledgerBalances(array $types, CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, bool $cumulative): Collection
+    {
+        $accounts = ChartAccount::query()
+            ->whereIn('type', $types)
+            ->when($branchId, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id)->orWhereNull('branch_id')))
+            ->orderBy('code')
+            ->get()
+            ->keyBy('id');
+
+        if ($accounts->isEmpty()) {
+            return collect();
+        }
+
+        $start = $cumulative ? Carbon::parse('1900-01-01')->startOfDay() : $from;
+        $totals = JournalEntry::query()
+            ->whereIn('chart_account_id', $accounts->keys())
+            ->whereBetween(DB::raw('coalesce(posted_at, created_at)'), [$start, $to])
+            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
+            ->selectRaw("chart_account_id, sum(case when entry_type = 'debit' then amount else 0 end) as debit_total, sum(case when entry_type = 'credit' then amount else 0 end) as credit_total")
+            ->groupBy('chart_account_id')
+            ->get()
+            ->keyBy('chart_account_id');
+
+        return $accounts
+            ->map(function (ChartAccount $account) use ($totals): array {
+                $total = $totals->get($account->id);
+                $debit = (float) ($total?->debit_total ?? 0);
+                $credit = (float) ($total?->credit_total ?? 0);
+
+                return [
+                    'code' => $account->code,
+                    'account' => $account->name,
+                    'type' => $account->type,
+                    'normal_balance' => $account->normal_balance,
+                    'debit' => $debit,
+                    'credit' => $credit,
+                    'balance' => $this->naturalBalance((string) $account->type, $debit, $credit),
+                    'has_activity' => $debit > 0 || $credit > 0,
+                ];
+            })
+            ->filter(fn (array $balance): bool => $balance['has_activity'])
+            ->values();
+    }
+
+    /**
+     * @param  array<string, mixed>  $balance
+     * @return array<string, mixed>
+     */
+    private function statementRow(string $section, array $balance, string $report, CarbonInterface $from, CarbonInterface $to, ?int $branchId): array
+    {
+        return [
+            'Section' => $section,
+            'Code' => $balance['code'],
+            'Account' => $balance['account'],
+            'Debit' => $this->money((float) $balance['debit']),
+            'Credit' => $this->money((float) $balance['credit']),
+            'Amount' => $this->money((float) $balance['balance']),
+            '_links' => [
+                'Section' => $this->reportUrl($report, $from, $to, $branchId),
+                'Account' => $this->reportUrl('gl-account-transactions', $from, $to, $branchId),
+            ],
+        ];
+    }
+
+    private function reportUrl(string $report, CarbonInterface $from, CarbonInterface $to, ?int $branchId): string
+    {
+        return route('reports.show', array_filter([
+            'report' => $report,
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'branch_id' => $branchId,
+        ], fn (mixed $value): bool => $value !== null && $value !== ''));
+    }
+
+    private function naturalBalance(string $type, float $debit, float $credit): float
+    {
+        return match ($type) {
+            'asset', 'expense' => $debit - $credit,
+            default => $credit - $debit,
+        };
     }
 
     private function loanInterestIncome(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array

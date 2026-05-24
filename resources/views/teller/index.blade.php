@@ -45,6 +45,7 @@
 </div>
 
 <div class="mt-6 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+    @if(! $canOpenForTellers || $session)
     <section class="df-panel p-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -102,6 +103,7 @@
             </div>
         @endunless
     </section>
+    @endif
 
     @if($canOpenForTellers)
         <section class="df-panel p-5">

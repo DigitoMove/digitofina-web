@@ -22,7 +22,7 @@ class InvestmentAccountController extends Controller
     {
         abort_unless($request->user()->canPerform('manage-accounts') || $request->user()->canPerform('manage-investments') || $request->user()->canPerform('view-reports'), 403);
 
-        $accounts = ApiSecurity::scopeTenant(InvestmentAccount::query()->with(['investorAccount', 'client', 'plan']), $request->user())
+        $accounts = ApiSecurity::scopeTenant(InvestmentAccount::query()->with(['investorAccount', 'client', 'sponsorClient', 'plan']), $request->user())
             ->when($request->query('status'), fn ($query, string $status) => $query->where('status', $status))
             ->latest()
             ->paginate($request->integer('per_page', 30));
@@ -41,7 +41,7 @@ class InvestmentAccountController extends Controller
             abort(422, $exception->getMessage());
         }
 
-        return ApiResponse::resource(new InvestmentAccountResource($account->load(['investorAccount', 'client', 'plan'])), 'Investment account created.', 201);
+        return ApiResponse::resource(new InvestmentAccountResource($account->load(['investorAccount', 'client', 'sponsorClient', 'plan'])), 'Investment account created.', 201);
     }
 
     public function show(Request $request, InvestmentAccount $investmentAccount): JsonResponse
@@ -49,7 +49,7 @@ class InvestmentAccountController extends Controller
         ApiSecurity::assertTenantAccess($request->user(), $investmentAccount);
         abort_unless($request->user()->canPerform('manage-accounts') || $request->user()->canPerform('manage-investments') || $request->user()->canPerform('view-reports') || $investmentAccount->client_id === $request->user()->client?->id, 403);
 
-        return ApiResponse::resource(new InvestmentAccountResource($investmentAccount->load(['investorAccount', 'client', 'plan'])), 'Investment account retrieved.');
+        return ApiResponse::resource(new InvestmentAccountResource($investmentAccount->load(['investorAccount', 'client', 'sponsorClient', 'plan'])), 'Investment account retrieved.');
     }
 
     public function statement(Request $request, InvestmentAccount $investmentAccount): JsonResponse
@@ -63,7 +63,7 @@ class InvestmentAccountController extends Controller
             ->paginate($request->integer('per_page', 50));
 
         return ApiResponse::data([
-            'investment' => (new InvestmentAccountResource($investmentAccount->load(['investorAccount', 'client', 'plan'])))->resolve($request),
+            'investment' => (new InvestmentAccountResource($investmentAccount->load(['investorAccount', 'client', 'sponsorClient', 'plan'])))->resolve($request),
             'transactions' => InvestmentTransactionResource::collection($transactions)->toResponse($request)->getData(true),
         ], 'Investment statement retrieved.');
     }
@@ -83,6 +83,6 @@ class InvestmentAccountController extends Controller
             abort(422, $exception->getMessage());
         }
 
-        return ApiResponse::resource(new InvestmentAccountResource($account->load(['investorAccount', 'client', 'plan'])), 'Investment approved.');
+        return ApiResponse::resource(new InvestmentAccountResource($account->load(['investorAccount', 'client', 'sponsorClient', 'plan'])), 'Investment approved.');
     }
 }

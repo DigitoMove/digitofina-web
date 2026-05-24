@@ -18,6 +18,8 @@ class InvestmentAccount extends Model
     {
         return [
             'principal_amount' => 'decimal:2',
+            'unit_quantity' => 'integer',
+            'unit_value' => 'decimal:2',
             'start_date' => 'date',
             'maturity_date' => 'date',
             'expected_return_amount' => 'decimal:2',
@@ -38,6 +40,11 @@ class InvestmentAccount extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function sponsorClient(): BelongsTo
+    {
+        return $this->belongsTo(Client::class, 'sponsor_client_id');
     }
 
     public function plan(): BelongsTo

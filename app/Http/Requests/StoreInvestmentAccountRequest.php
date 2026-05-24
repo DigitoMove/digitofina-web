@@ -19,7 +19,9 @@ class StoreInvestmentAccountRequest extends FormRequest
         return [
             'investor_account_id' => ['required', 'exists:investor_accounts,id'],
             'investment_plan_id' => ['required', 'exists:investment_plans,id'],
-            'principal_amount' => ['required', 'numeric', 'gt:0'],
+            'sponsor_client_id' => ['nullable', 'exists:clients,id'],
+            'unit_quantity' => ['nullable', 'integer', 'min:1'],
+            'principal_amount' => ['required_without:unit_quantity', 'numeric', 'gt:0'],
             'start_date' => ['nullable', 'date'],
             'payment_method' => ['required', 'in:cash,mobile_money,bank,internal_transfer'],
             'narration' => ['nullable', 'string', 'max:1000'],
