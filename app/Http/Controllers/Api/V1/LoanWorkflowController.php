@@ -258,7 +258,8 @@ class LoanWorkflowController extends Controller
         $arrearsQuery = LoanSchedule::query()
             ->with('loan')
             ->excludingCancelledLoans()
-            ->whereHas('loan', fn ($query) => $visibility->scope(ApiSecurity::scopeTenant($query, $request->user()), $request->user()))
+            ->forActiveArrearsLoans()
+            ->whereHas('loan', fn ($query) => $visibility->scopeRepaymentCalendar(ApiSecurity::scopeTenant($query, $request->user()), $request->user()))
             ->where('outstanding_amount', '>', 0)
             ->where(fn ($query) => $query->where('status', 'overdue')->orWhereDate('due_date', '<', now()->toDateString()));
 

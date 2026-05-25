@@ -1076,6 +1076,7 @@ class LoanService
         $query = LoanSchedule::query()
             ->with('loan.product')
             ->excludingCancelledLoans()
+            ->forActiveArrearsLoans()
             ->whereDate('due_date', '<', $asOf->toDateString())
             ->where('outstanding_amount', '>', 0)
             ->where('status', '!=', 'paid');
@@ -1093,7 +1094,7 @@ class LoanService
                 $schedule = LoanSchedule::query()->whereKey($schedule->id)->lockForUpdate()->firstOrFail();
                 $loan = Loan::query()->with('product')->whereKey($schedule->loan_id)->lockForUpdate()->firstOrFail();
 
-                if ($loan->status === 'cancelled') {
+                if (! in_array($loan->status, ['active', 'in_arrears'], true)) {
                     return;
                 }
 

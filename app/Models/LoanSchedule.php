@@ -41,4 +41,9 @@ class LoanSchedule extends Model
     {
         return $query->whereHas('loan', fn (Builder $query): Builder => $query->where('status', '!=', 'cancelled'));
     }
+
+    public function scopeForActiveArrearsLoans(Builder $query): Builder
+    {
+        return $query->whereHas('loan', fn (Builder $query): Builder => $query->whereIn('status', ['active', 'in_arrears']));
+    }
 }

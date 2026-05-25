@@ -41,7 +41,7 @@ class ReportController extends Controller
             'active_clients' => ApiSecurity::scopeTenant(Client::query(), $request->user())->where('status', 'active')->count(),
             'total_savings' => $moduleEnabled('savings') ? (float) ApiSecurity::scopeTenant(SavingsAccount::query(), $request->user())->sum('current_balance') : null,
             'loan_portfolio' => $moduleEnabled('loans') ? (float) ApiSecurity::scopeTenant(Loan::query(), $request->user())->whereIn('status', ['approved', 'active', 'in_arrears'])->sum('principal_balance') : null,
-            'arrears' => $moduleEnabled('loans') ? (float) LoanSchedule::query()->excludingCancelledLoans()->whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->sum('outstanding_amount') : null,
+            'arrears' => $moduleEnabled('loans') ? (float) LoanSchedule::query()->excludingCancelledLoans()->forActiveArrearsLoans()->whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->sum('outstanding_amount') : null,
             'deposits_today' => $moduleEnabled('savings') ? (float) ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user())->where('type', 'deposit')->whereDate('transaction_date', today())->sum('amount') : null,
             'withdrawals_today' => $moduleEnabled('savings') ? (float) ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user())->where('type', 'withdrawal')->whereDate('transaction_date', today())->sum('amount') : null,
             'total_investors' => $moduleEnabled('investments') ? ApiSecurity::scopeTenant(InvestorAccount::query(), $request->user())->where('status', 'active')->count() : null,
@@ -164,7 +164,7 @@ class ReportController extends Controller
         $this->requireModule($request, 'teller');
 
         return ApiResponse::collection(
-            LoanScheduleResource::collection(LoanSchedule::query()->with('loan.client')->excludingCancelledLoans()->whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->paginate($request->integer('per_page', 30))),
+            LoanScheduleResource::collection(LoanSchedule::query()->with('loan.client')->excludingCancelledLoans()->forActiveArrearsLoans()->whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->where('outstanding_amount', '>', 0)->whereDate('due_date', '<', now())->paginate($request->integer('per_page', 30))),
             'Arrears report retrieved.'
         );
     }

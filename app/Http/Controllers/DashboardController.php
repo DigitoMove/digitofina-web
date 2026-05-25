@@ -70,7 +70,6 @@ class DashboardController extends Controller
         $monthEnd = $today->endOfMonth();
         $canFilterCalendarBranch = ApiSecurity::hasGlobalBranchAccess($user);
         $selectedCalendarBranchId = $canFilterCalendarBranch ? $request->integer('calendar_branch_id') : (int) $user->branch_id;
-        $scheduleScope = fn (Builder $query): Builder => $visibility->scope($query, $user);
         $calendarScope = fn (Builder $query): Builder => $visibility
             ->scopeRepaymentCalendar($query, $user)
             ->when($selectedCalendarBranchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
@@ -144,14 +143,16 @@ class DashboardController extends Controller
             });
         $arrearsCount = $loansEnabled ? LoanSchedule::query()
             ->excludingCancelledLoans()
-            ->whereHas('loan', $scheduleScope)
+            ->forActiveArrearsLoans()
+            ->whereHas('loan', $calendarScope)
             ->where('outstanding_amount', '>', 0)
             ->whereDate('due_date', '<', $today->toDateString())
             ->distinct('loan_id')
             ->count('loan_id') : 0;
         $arrearsAmount = $loansEnabled ? LoanSchedule::query()
             ->excludingCancelledLoans()
-            ->whereHas('loan', $scheduleScope)
+            ->forActiveArrearsLoans()
+            ->whereHas('loan', $calendarScope)
             ->where('outstanding_amount', '>', 0)
             ->whereDate('due_date', '<', $today->toDateString())
             ->sum('outstanding_amount') : 0;

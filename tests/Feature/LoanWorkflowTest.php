@@ -12,6 +12,8 @@ use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
+use App\Models\Module;
+use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\TellerDrawer;
@@ -19,6 +21,7 @@ use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\LoanService;
+use App\Services\ModuleService;
 use App\Services\TransactionPostingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\ViewErrorBag;
@@ -602,4 +605,97 @@ it('excludes cancelled loans from arrears listings and penalty calculations', fu
 
     expect(app(LoanService::class)->applyOverduePenalties($cancelledLoan, today()))->toBe(0)
         ->and($cancelledSchedule->fresh()->outstanding_amount)->toBe('200000.00');
+});
+
+it('shows arrears only for active branch loans', function () {
+    $user = loanWorkflowUser();
+    $organization = Organization::create(['name' => 'Branch Scope SACCO', 'slug' => 'branch-scope-sacco', 'status' => 'active']);
+    Branch::whereKey($user->branch_id)->update(['organization_id' => $organization->id]);
+    $user->update(['organization_id' => $organization->id]);
+    app(ModuleService::class)->syncCatalog();
+    app(ModuleService::class)->enable($organization, Module::where('slug', 'loans')->firstOrFail(), $user);
+    $otherBranch = Branch::create(['organization_id' => $organization->id, 'code' => '2002', 'name' => 'Other Branch', 'is_active' => true, 'status' => 'active']);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
+    $branchClient = loanWorkflowClient($user);
+    $branchClient->update(['organization_id' => $organization->id]);
+    $otherClient = Client::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $otherBranch->id,
+        'officer_id' => $user->id,
+        'client_number' => '2002-C000001',
+        'client_type' => 'individual',
+        'first_name' => 'Other',
+        'last_name' => 'Branch',
+        'phone' => '+256700200001',
+        'status' => 'active',
+        'kyc_status' => 'verified',
+    ]);
+
+    $visibleLoan = Loan::create([
+        'organization_id' => $organization->id,
+        'client_id' => $branchClient->id,
+        'branch_id' => $user->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '1001-LN-ACTIVE-BRANCH',
+        'requested_amount' => 300000,
+        'principal_balance' => 300000,
+        'interest_rate' => 20,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'status' => 'active',
+    ]);
+    $approvedLoan = Loan::create([
+        'organization_id' => $organization->id,
+        'client_id' => $branchClient->id,
+        'branch_id' => $user->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '1001-LN-APPROVED-ONLY',
+        'requested_amount' => 300000,
+        'principal_balance' => 300000,
+        'interest_rate' => 20,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'status' => 'approved',
+    ]);
+    $otherBranchLoan = Loan::create([
+        'organization_id' => $organization->id,
+        'client_id' => $otherClient->id,
+        'branch_id' => $otherBranch->id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '2002-LN-ACTIVE-OTHER',
+        'requested_amount' => 300000,
+        'principal_balance' => 300000,
+        'interest_rate' => 20,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'status' => 'active',
+    ]);
+
+    foreach ([$visibleLoan, $approvedLoan, $otherBranchLoan] as $loan) {
+        LoanSchedule::create([
+            'loan_id' => $loan->id,
+            'installment_number' => 1,
+            'due_date' => today()->subDays(7),
+            'principal_due' => 300000,
+            'interest_due' => 0,
+            'total_due' => 300000,
+            'outstanding_amount' => 300000,
+            'balance_due' => 300000,
+            'status' => 'overdue',
+            'days_overdue' => 7,
+        ]);
+    }
+
+    $response = $this->actingAs($user)
+        ->get(route('arrears.index'));
+
+    $response
+        ->assertSuccessful()
+        ->assertSee('1001-LN-ACTIVE-BRANCH')
+        ->assertDontSee('1001-LN-APPROVED-ONLY')
+        ->assertDontSee('2002-LN-ACTIVE-OTHER');
 });

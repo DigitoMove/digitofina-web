@@ -1,22 +1,46 @@
 @extends('layouts.app')
 @section('content')
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-    <h1 class="text-2xl font-semibold">Loan Arrears</h1>
-    <form method="POST" action="{{ route('arrears.apply-penalties') }}">@csrf<button class="rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white">Run Penalties</button></form>
+    <div>
+        <p class="df-muted">Only active and in-arrears loans are included.</p>
+        <h1 class="df-title">Loan Arrears</h1>
+    </div>
+    <form method="POST" action="{{ route('arrears.apply-penalties', ['branch_id' => $selectedBranchId ?: null]) }}">@csrf<button class="df-action-danger">Run Penalties</button></form>
 </div>
-<form class="mb-4 grid gap-3 rounded border bg-white p-4 md:grid-cols-[220px_auto]">
-    <select name="bucket" class="rounded border-slate-300"><option value="">All aging buckets</option>@foreach(['1-30','31-60','61-90','91-180','180+'] as $bucket)<option value="{{ $bucket }}" @selected(request('bucket') === $bucket)>{{ $bucket }} days</option>@endforeach</select>
-    <button class="w-fit rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Filter</button>
+<form class="df-panel mb-4 grid gap-3 p-4 lg:grid-cols-[1fr_180px_180px_180px_180px_auto]">
+    <input name="search" value="{{ request('search') }}" placeholder="Search client, phone, or loan number">
+    <select name="bucket"><option value="">All aging buckets</option>@foreach(['1-30','31-60','61-90','91-180','180+'] as $bucket)<option value="{{ $bucket }}" @selected(request('bucket') === $bucket)>{{ $bucket }} days</option>@endforeach</select>
+    <select name="branch_id" @disabled(! $canFilterBranch)>
+        <option value="">All branches</option>
+        @foreach($branches as $branch)
+            <option value="{{ $branch->id }}" @selected((int) request('branch_id', $selectedBranchId) === $branch->id)>{{ $branch->name }}</option>
+        @endforeach
+    </select>
+    <select name="loan_product_id">
+        <option value="">All products</option>
+        @foreach($products as $product)
+            <option value="{{ $product->id }}" @selected((int) request('loan_product_id') === $product->id)>{{ $product->name }}</option>
+        @endforeach
+    </select>
+    <select name="officer_id">
+        <option value="">All officers</option>
+        @foreach($officers as $officer)
+            <option value="{{ $officer->id }}" @selected((int) request('officer_id') === $officer->id)>{{ $officer->name }}</option>
+        @endforeach
+    </select>
+    <button class="df-action-primary">Filter</button>
 </form>
 <div class="overflow-hidden rounded border bg-white">
     <table class="w-full text-left text-sm">
-        <thead class="bg-slate-50"><tr><th class="p-3">Client</th><th>Loan</th><th>Due date</th><th>Days due</th><th>Installment due</th><th>Cumulative due</th><th>Penalty</th><th>Status</th></tr></thead>
+        <thead class="bg-slate-50"><tr><th class="p-3">Client</th><th>Loan</th><th>Branch</th><th>Officer</th><th>Due date</th><th>Days due</th><th>Installment due</th><th>Cumulative due</th><th>Penalty</th><th>Status</th></tr></thead>
         <tbody>
             @forelse($schedules as $schedule)
                 @php($cumulative = $loanArrears->get($schedule->loan_id))
                 <tr class="border-t">
                     <td class="p-3">{{ $schedule->loan->client->full_name }}</td>
                     <td><a class="font-semibold text-blue-700" href="{{ route('loans.show', $schedule->loan) }}">{{ $schedule->loan->loan_number }}</a><div class="text-slate-500">{{ $schedule->loan->product->name }}</div></td>
+                    <td>{{ $schedule->loan->branch?->name ?? 'Unassigned' }}</td>
+                    <td>{{ $schedule->loan->officer?->name ?? 'Unassigned' }}</td>
                     <td>{{ $schedule->due_date->format('d M Y') }}</td>
                     <td>{{ $schedule->days_overdue ?: $calendar->businessDaysBetween($schedule->due_date, now()) }}</td>
                     <td>UGX {{ number_format($schedule->outstanding_amount, 2) }}</td>
@@ -25,7 +49,7 @@
                     <td><span class="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">{{ str($schedule->status)->headline() }}</span></td>
                 </tr>
             @empty
-                <tr><td colspan="8" class="p-6 text-center text-slate-500">No overdue installments found.</td></tr>
+                <tr><td colspan="10" class="p-6 text-center text-slate-500">No overdue installments found.</td></tr>
             @endforelse
         </tbody>
     </table>

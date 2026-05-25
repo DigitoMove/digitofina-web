@@ -1229,7 +1229,8 @@ class ReportCatalogService
                 ->where('outstanding_amount', '>', 0)
                 ->filter(fn (LoanSchedule $schedule): bool => $schedule->status === 'overdue' || $schedule->due_date?->lt(today()));
             $arrearsDays = (int) $overdueSchedules->max(fn (LoanSchedule $schedule): int => (int) ($schedule->days_overdue ?: ($schedule->due_date ? $this->calendar->businessDaysBetween($schedule->due_date, today()) : 0)));
-            $isArrears = $overdueSchedules->isNotEmpty() || $loan->status === 'in_arrears';
+            $isArrears = in_array($loan->status, ['active', 'in_arrears'], true)
+                && ($overdueSchedules->isNotEmpty() || $loan->status === 'in_arrears');
             $principalDue = (float) $schedules->sum('principal_due');
             $interestDue = (float) $schedules->sum('interest_due');
             $feesDue = (float) $schedules->sum('fees_due');
@@ -1295,6 +1296,7 @@ class ReportCatalogService
         $query = LoanSchedule::query()
             ->with(['loan.client', 'loan.product'])
             ->excludingCancelledLoans()
+            ->when($payload['arrears'] ?? false, fn (Builder $query): Builder => $query->forActiveArrearsLoans())
             ->where('outstanding_amount', '>', 0)
             ->when($payload['arrears'] ?? false, fn (Builder $query): Builder => $query->whereDate('due_date', '<', today()))
             ->when($payload['future'] ?? false, fn (Builder $query): Builder => $query->whereBetween('due_date', [$from, $to]))
