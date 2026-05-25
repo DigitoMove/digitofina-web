@@ -45,6 +45,18 @@
                     <a href="{{ route('reports.show', ['report' => $definition['slug'], 'from' => request('from'), 'to' => request('to'), 'branch_id' => $branchId, 'detail' => $detail]) }}" class="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Clear</a>
                 @endif
             </form>
+        @elseif($definition['category'] === 'Profitability')
+            <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="flex flex-wrap items-center justify-end gap-2">
+                <input type="hidden" name="from" value="{{ request('from') }}">
+                <input type="hidden" name="to" value="{{ request('to') }}">
+                <input type="hidden" name="branch_id" value="{{ $branchId }}">
+                <input type="hidden" name="detail" value="{{ $detail }}">
+                <select name="interest_basis" class="rounded border-slate-300 text-sm">
+                    <option value="collected" @selected(($interestBasis ?? 'collected') === 'collected')>Collected interest only</option>
+                    <option value="projected" @selected(($interestBasis ?? 'collected') === 'projected')>Collected plus projected interest</option>
+                </select>
+                <button class="df-action-secondary">Apply</button>
+            </form>
         @endif
     </div>
     <div class="overflow-auto">

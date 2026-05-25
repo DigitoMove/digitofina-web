@@ -43,6 +43,8 @@
                         data-report-url="{{ route('reports.show', $report['slug']) }}"
                         data-report-dates="{{ $report['usesDates'] ? '1' : '0' }}"
                         data-report-detail="{{ $report['hasDetail'] ? '1' : '0' }}"
+                        data-report-profitability="{{ $report['category'] === 'Profitability' ? '1' : '0' }}"
+                        data-report-interest-basis="{{ $report['payload']['interest_basis'] ?? 'collected' }}"
                     >
                         <span>{{ $report['title'] }}</span>
                         <span class="text-xs font-semibold text-slate-400">Generate</span>
@@ -89,6 +91,15 @@
                     </select>
                 </label>
             @endif
+        </div>
+
+        <div class="mt-4" data-report-interest-field hidden>
+            <label class="text-sm font-medium text-slate-700">Interest basis
+                <select name="interest_basis" class="mt-1 w-full rounded border-slate-300" disabled>
+                    <option value="collected">Collected interest only</option>
+                    <option value="projected">Collected plus projected interest</option>
+                </select>
+            </label>
         </div>
 
         <div class="mt-6 flex justify-end gap-3">

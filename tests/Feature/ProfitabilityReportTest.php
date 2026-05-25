@@ -153,6 +153,85 @@ it('reports profitability standing by branch with an all branches total', functi
         ->and($report['summary']['Branches'])->toBe('2');
 });
 
+it('can include projected loan interest in profitability reports', function () {
+    $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $admin = User::factory()->create([
+        'branch_id' => null,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $branch = Branch::create(['code' => '1003', 'name' => 'Kiwenda', 'is_active' => true, 'status' => 'active']);
+    $product = LoanProduct::create([
+        'name' => 'Projected Loan',
+        'code' => 'BL-PROJ',
+        'annual_interest_rate' => 24,
+        'interest_method' => 'flat',
+        'repayment_frequency' => 'monthly',
+        'default_term_months' => 1,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $loan = profitabilityReportLoan($branch, $product, [
+        'loan_number' => 'LN-PROJECTED-001',
+        'approved_amount' => 1000,
+        'principal_balance' => 800,
+        'interest_balance' => 200,
+        'status' => 'active',
+    ]);
+
+    LoanDisbursement::create([
+        'branch_id' => $branch->id,
+        'loan_id' => $loan->id,
+        'disbursed_amount' => 1000,
+        'fees_deducted' => 20,
+        'net_amount' => 980,
+        'payment_method' => 'cash',
+        'transaction_reference' => 'DISB-PROJECTED-001',
+        'disbursement_date' => today(),
+        'status' => 'successful',
+    ]);
+    LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today(),
+        'principal_due' => 300,
+        'interest_due' => 300,
+        'total_due' => 600,
+        'outstanding_amount' => 400,
+        'status' => 'partial',
+    ]);
+    LoanRepayment::create([
+        'loan_id' => $loan->id,
+        'client_id' => $loan->client_id,
+        'branch_id' => $branch->id,
+        'amount' => 200,
+        'interest_paid' => 100,
+        'principal_paid' => 100,
+        'paid_at' => today(),
+        'status' => 'successful',
+    ]);
+    profitabilityReportLedger($branch, 'expense', 'debit', 50);
+
+    $collected = app(ReportCatalogService::class)->generate('profitability-summary', [
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+        'interest_basis' => 'collected',
+    ], $admin);
+    $projected = app(ReportCatalogService::class)->generate('profitability-summary', [
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+        'interest_basis' => 'projected',
+    ], $admin);
+
+    expect($collected['summary']['Interest basis'])->toBe('Collected')
+        ->and($collected['summary']['Total income'])->toBe('UGX 120.00')
+        ->and($collected['summary']['Net profit'])->toBe('UGX 70.00')
+        ->and($projected['summary']['Interest basis'])->toBe('Projected')
+        ->and($projected['summary']['Total income'])->toBe('UGX 320.00')
+        ->and($projected['summary']['Net profit'])->toBe('UGX 270.00');
+});
+
 function profitabilityReportLoan(Branch $branch, LoanProduct $product, array $overrides = []): Loan
 {
     $client = Client::create([

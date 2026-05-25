@@ -288,6 +288,7 @@ const initReportLauncher = () => {
     const title = document.querySelector('[data-report-modal-title]');
     const dateFields = document.querySelector('[data-report-date-fields]');
     const detailField = document.querySelector('[data-report-detail-field]');
+    const interestField = document.querySelector('[data-report-interest-field]');
 
     if (!modal || !form) {
         return;
@@ -317,6 +318,14 @@ const initReportLauncher = () => {
                 detailField.hidden = button.dataset.reportDetail !== '1';
                 detailField.querySelectorAll('select').forEach((select) => {
                     select.disabled = detailField.hidden;
+                });
+            }
+
+            if (interestField) {
+                interestField.hidden = button.dataset.reportProfitability !== '1';
+                interestField.querySelectorAll('select').forEach((select) => {
+                    select.disabled = interestField.hidden;
+                    select.value = button.dataset.reportInterestBasis || 'collected';
                 });
             }
 
