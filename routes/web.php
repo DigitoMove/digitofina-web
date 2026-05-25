@@ -130,6 +130,8 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::post('/loans/{loan}/fast-track-disbursement', [LoanController::class, 'fastTrackDisbursement'])->middleware('module:loans')->name('loans.fast-track-disbursement');
     Route::post('/loans/{loan}/reject', [LoanController::class, 'reject'])->middleware('module:loans')->name('loans.reject');
     Route::post('/loans/{loan}/cancel', [LoanController::class, 'cancel'])->middleware('module:loans')->name('loans.cancel');
+    Route::post('/loans/{loan}/close-paid', [LoanController::class, 'closePaid'])->middleware('module:loans')->name('loans.close-paid');
+    Route::post('/loans/{loan}/close-with-coverage', [LoanController::class, 'closeWithCoverage'])->middleware('module:loans')->name('loans.close-with-coverage');
     Route::post('/loans/{loan}/reopen', [LoanController::class, 'reopen'])->middleware('module:loans')->name('loans.reopen');
     Route::post('/loans/{loan}/assign-officer', [LoanController::class, 'assignOfficer'])->middleware('module:loans')->name('loans.assign-officer');
     Route::post('/loans/{loan}/disburse', [LoanController::class, 'disburse'])->middleware('module:loans')->name('loans.disburse');

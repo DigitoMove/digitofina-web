@@ -12,6 +12,7 @@ use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
+use App\Models\LoanWriteOff;
 use App\Models\Module;
 use App\Models\Organization;
 use App\Models\Permission;
@@ -343,6 +344,141 @@ it('hides the direct repayment workflow from loan officers', function () {
         ->not->toContain(route('loans.repayments.store', $loan))
         ->not->toContain('Post repayment')
         ->not->toContain('Open Teller Drawer');
+});
+
+it('lets an admin close a fully paid loan that remained active', function () {
+    $user = loanWorkflowUser();
+    $superAdminRole = Role::firstOrCreate(['slug' => 'super-admin'], ['name' => 'Super Admin']);
+    $user->update(['role_id' => $superAdminRole->id]);
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $loanAccount = Account::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'account_type_id' => AccountType::where('category', 'loan')->firstOrFail()->id,
+        'account_number' => '1001-LN-PAID',
+        'account_name' => $client->full_name.' Loan',
+        'status' => 'active',
+        'balance' => 0,
+        'opened_at' => today(),
+    ]);
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'loan_account_id' => $loanAccount->id,
+        'loan_number' => '1001-LN-PAID',
+        'requested_amount' => 100000,
+        'approved_amount' => 100000,
+        'principal_balance' => 0,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 0,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'status' => 'active',
+    ]);
+    LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today(),
+        'principal_due' => 100000,
+        'interest_due' => 0,
+        'fees_due' => 0,
+        'penalty_due' => 0,
+        'total_due' => 100000,
+        'total_paid' => 100000,
+        'outstanding_amount' => 0,
+        'balance_due' => 0,
+        'status' => 'paid',
+    ]);
+
+    $response = $this->actingAs($user)
+        ->post(route('loans.close-paid', $loan), [
+            'reason' => 'Loan was fully paid but remained active.',
+        ]);
+
+    $response
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('status', 'Fully paid loan closed.');
+
+    expect($loan->fresh()->status)->toBe('closed')
+        ->and($loanAccount->fresh()->status)->toBe('closed')
+        ->and((float) $loanAccount->fresh()->balance)->toBe(0.0);
+});
+
+it('lets an admin close a loan with remaining balance coverage recorded', function () {
+    $user = loanWorkflowUser();
+    $superAdminRole = Role::firstOrCreate(['slug' => 'super-admin'], ['name' => 'Super Admin']);
+    $user->update(['role_id' => $superAdminRole->id]);
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $loanAccount = Account::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'account_type_id' => AccountType::where('category', 'loan')->firstOrFail()->id,
+        'account_number' => '1001-LN-COVER',
+        'account_name' => $client->full_name.' Loan',
+        'status' => 'active',
+        'balance' => 115000,
+        'opened_at' => today(),
+    ]);
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'loan_account_id' => $loanAccount->id,
+        'loan_number' => '1001-LN-COVER',
+        'requested_amount' => 100000,
+        'approved_amount' => 100000,
+        'principal_balance' => 100000,
+        'interest_balance' => 10000,
+        'fees_balance' => 5000,
+        'penalty_balance' => 0,
+        'interest_rate' => 12,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'status' => 'active',
+    ]);
+    LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today(),
+        'principal_due' => 100000,
+        'interest_due' => 10000,
+        'fees_due' => 5000,
+        'penalty_due' => 0,
+        'total_due' => 115000,
+        'total_paid' => 0,
+        'outstanding_amount' => 115000,
+        'balance_due' => 115000,
+        'status' => 'pending',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('loans.close-with-coverage', $loan), [
+            'coverage_method' => 'organization_covered',
+            'coverage_reference' => 'BOARD-001',
+            'reason' => 'Board approved covering the remaining balance.',
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('status', 'Loan closed with balance coverage recorded.');
+
+    $freshLoan = $loan->fresh();
+    $writeOff = LoanWriteOff::where('loan_id', $loan->id)->firstOrFail();
+
+    expect($freshLoan->status)->toBe('closed')
+        ->and((float) $freshLoan->principal_balance)->toBe(0.0)
+        ->and((float) $freshLoan->interest_balance)->toBe(0.0)
+        ->and((float) $freshLoan->fees_balance)->toBe(0.0)
+        ->and($loanAccount->fresh()->status)->toBe('closed')
+        ->and((float) $loanAccount->fresh()->balance)->toBe(0.0)
+        ->and((float) $writeOff->principal_amount)->toBe(100000.0)
+        ->and((float) $writeOff->interest_amount)->toBe(10000.0)
+        ->and($writeOff->reason)->toContain('BOARD-001');
 });
 
 it('shows a loan when the legacy guarantors payload is empty', function () {

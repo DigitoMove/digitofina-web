@@ -290,6 +290,48 @@ class LoanController extends Controller
         return back()->with('status', 'Loan cancelled.');
     }
 
+    public function closePaid(Request $request, Loan $loan, LoanService $service): RedirectResponse
+    {
+        abort_unless($request->user()->canAdministerLoanRepairs(), 403);
+
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        try {
+            $service->closeFullyPaidLoan($loan, $request->user(), $data['reason']);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['close_paid_reason' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Fully paid loan closed.');
+    }
+
+    public function closeWithCoverage(Request $request, Loan $loan, LoanService $service): RedirectResponse
+    {
+        abort_unless($request->user()->canAdministerLoanRepairs(), 403);
+
+        $data = $request->validate([
+            'coverage_method' => ['required', 'in:organization_covered,write_off,external_settlement'],
+            'coverage_reference' => ['nullable', 'string', 'max:120'],
+            'reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        try {
+            $service->closeWithBalanceCoverage(
+                $loan,
+                $request->user(),
+                $data['coverage_method'],
+                $data['reason'],
+                $data['coverage_reference'] ?? null,
+            );
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['coverage_reason' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Loan closed with balance coverage recorded.');
+    }
+
     public function reopen(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
         abort_unless($request->user()->canAdministerLoanRepairs(), 403);

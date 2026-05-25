@@ -24,6 +24,9 @@
     $loanAccountNeedsReopen = $loan->loanAccount && $loan->loanAccount->status !== 'active' && in_array($loan->status, ['disbursed', 'active', 'in_arrears'], true);
     $canReopenClosedLoan = (in_array($loan->status, ['closed', 'fully_paid'], true) || $loanAccountNeedsReopen) && auth()->user()->canAdministerLoanRepairs();
     $canRepairLoanTerms = in_array($loan->status, ['approved', 'disbursed', 'active', 'in_arrears'], true) && auth()->user()->canAdministerLoanRepairs();
+    $outstandingLoanBalance = (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance;
+    $canClosePaidLoan = $outstandingLoanBalance <= 0 && ! in_array($loan->status, ['closed', 'fully_paid', 'written_off', 'cancelled', 'rejected'], true) && auth()->user()->canAdministerLoanRepairs();
+    $canCloseLoanWithCoverage = $outstandingLoanBalance > 0 && in_array($loan->status, ['disbursed', 'active', 'in_arrears', 'restructured'], true) && auth()->user()->canAdministerLoanRepairs();
     $workflow = ['Draft', 'Appraisal', 'Approval', 'Approved', 'Disbursed', 'Closed'];
     $statusIndex = match (true) {
         $loan->status === 'draft' => 0,
@@ -187,6 +190,82 @@
                 <div class="flex flex-col-reverse gap-2 md:col-span-2 md:flex-row md:justify-end">
                     <button type="button" data-loan-repair-close class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
                     <button class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-800 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Repair terms and regenerate schedule</button>
+                </div>
+            </form>
+        </div>
+    </div>
+@endif
+
+@if($canClosePaidLoan)
+    <section class="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-5">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="max-w-3xl">
+                <h2 class="text-lg font-semibold text-emerald-950">Close Fully Paid Loan</h2>
+                <p class="mt-1 text-sm text-emerald-900">This loan has no remaining principal, interest, fees, or penalties, but it is still marked {{ str($loan->status)->headline() }}. Close it and close the linked loan account.</p>
+            </div>
+            <form method="POST" action="{{ route('loans.close-paid', $loan) }}" class="grid gap-2 sm:min-w-80" onsubmit="return confirm('Close this fully paid loan?');">
+                @csrf
+                <textarea name="reason" rows="2" required class="w-full rounded-lg border-emerald-200 bg-white text-sm focus:border-emerald-500 focus:ring-emerald-100" placeholder="Admin reason for closing this paid loan">{{ old('reason') }}</textarea>
+                @error('close_paid_reason')
+                    <div class="text-xs font-semibold text-red-700">{{ $message }}</div>
+                @enderror
+                <button class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2">Close fully paid loan</button>
+            </form>
+        </div>
+    </section>
+@endif
+
+@if($canCloseLoanWithCoverage)
+    <section class="mb-5 rounded-lg border border-rose-200 bg-rose-50 p-5">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="max-w-3xl">
+                <h2 class="text-lg font-semibold text-rose-950">Admin Close With Balance Coverage</h2>
+                <p class="mt-1 text-sm text-rose-900">Outstanding balance is UGX {{ number_format($outstandingLoanBalance, 2) }}. Use this only when management has approved covering or writing off the remaining balance.</p>
+            </div>
+            <button type="button" data-loan-coverage-open class="rounded-lg bg-rose-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm ring-1 ring-rose-700 hover:bg-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2">Close with coverage</button>
+        </div>
+    </section>
+
+    <div data-loan-coverage-modal data-open="{{ $errors->has('coverage_reason') ? '1' : '0' }}" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4">
+        <div class="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl">
+            <div class="mb-4 flex items-start justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-950">Close loan with balance coverage</h2>
+                    <p class="mt-1 text-sm text-slate-600">The remaining UGX {{ number_format($outstandingLoanBalance, 2) }} will be cleared from the loan account and recorded for audit.</p>
+                </div>
+                <button type="button" data-loan-coverage-close class="rounded-lg px-3 py-1 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900" aria-label="Close balance coverage dialog">&times;</button>
+            </div>
+
+            <form method="POST" action="{{ route('loans.close-with-coverage', $loan) }}" class="grid gap-4" onsubmit="return confirm('Close this loan and clear the remaining balance?');">
+                @csrf
+                <div class="rounded-lg border border-rose-100 bg-rose-50 p-3 text-sm text-rose-900">
+                    <div class="flex justify-between gap-3"><span>Principal</span><strong>UGX {{ number_format((float) $loan->principal_balance, 2) }}</strong></div>
+                    <div class="flex justify-between gap-3"><span>Interest</span><strong>UGX {{ number_format((float) $loan->interest_balance, 2) }}</strong></div>
+                    <div class="flex justify-between gap-3"><span>Fees</span><strong>UGX {{ number_format((float) $loan->fees_balance, 2) }}</strong></div>
+                    <div class="flex justify-between gap-3"><span>Penalties</span><strong>UGX {{ number_format((float) $loan->penalty_balance, 2) }}</strong></div>
+                </div>
+                <label class="text-sm font-semibold text-slate-800">
+                    Coverage method <x-required-badge />
+                    <select name="coverage_method" required class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100">
+                        <option value="organization_covered" @selected(old('coverage_method') === 'organization_covered')>Covered by organization</option>
+                        <option value="write_off" @selected(old('coverage_method') === 'write_off')>Write off remaining balance</option>
+                        <option value="external_settlement" @selected(old('coverage_method') === 'external_settlement')>Settled outside system</option>
+                    </select>
+                </label>
+                <label class="text-sm font-semibold text-slate-800">
+                    Reference
+                    <input name="coverage_reference" value="{{ old('coverage_reference') }}" class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100" placeholder="Approval memo, voucher, or external receipt">
+                </label>
+                <label class="text-sm font-semibold text-slate-800">
+                    Reason <x-required-badge />
+                    <textarea name="reason" rows="3" required class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100" placeholder="Explain why this balance is being covered">{{ old('reason') }}</textarea>
+                </label>
+                @error('coverage_reason')
+                    <div class="rounded border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{{ $message }}</div>
+                @enderror
+                <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button type="button" data-loan-coverage-close class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                    <button class="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2">Close and record coverage</button>
                 </div>
             </form>
         </div>

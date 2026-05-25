@@ -16,6 +16,7 @@ use App\Models\LoanProduct;
 use App\Models\LoanRepayment;
 use App\Models\LoanRepaymentAllocation;
 use App\Models\LoanSchedule;
+use App\Models\LoanWriteOff;
 use App\Models\RoleFinancialLimit;
 use App\Models\SystemSetting;
 use App\Models\Transaction;
@@ -1066,6 +1067,155 @@ class LoanService
 
             return $loan->refresh();
         });
+    }
+
+    public function closeFullyPaidLoan(Loan $loan, User $user, string $reason): Loan
+    {
+        return DB::transaction(function () use ($loan, $user, $reason): Loan {
+            $loan = Loan::query()
+                ->with(['loanAccount', 'schedules', 'loanGuarantors', 'collaterals'])
+                ->whereKey($loan->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (in_array($loan->status, ['closed', 'fully_paid', 'written_off'], true)) {
+                throw new InvalidArgumentException('This loan is already closed.');
+            }
+
+            $outstandingBalance = $this->outstandingBalance($loan);
+
+            if ($outstandingBalance > 0) {
+                throw new InvalidArgumentException('This loan still has an outstanding balance. Use admin closure with balance coverage instead.');
+            }
+
+            $old = $loan->only(['status', 'principal_balance', 'interest_balance', 'fees_balance', 'penalty_balance']);
+
+            $loan->schedules()
+                ->where('status', '!=', 'paid')
+                ->update([
+                    'outstanding_amount' => 0,
+                    'balance_due' => 0,
+                    'status' => 'paid',
+                    'updated_at' => now(),
+                ]);
+
+            $loan->update([
+                'principal_balance' => 0,
+                'interest_balance' => 0,
+                'fees_balance' => 0,
+                'penalty_balance' => 0,
+                'status' => 'closed',
+            ]);
+
+            if ($loan->loan_account_id) {
+                Account::query()
+                    ->whereKey($loan->loan_account_id)
+                    ->lockForUpdate()
+                    ->update([
+                        'balance' => 0,
+                        'status' => 'closed',
+                    ]);
+            }
+
+            $loan->loanGuarantors()->where('status', '!=', 'released')->update(['status' => 'released']);
+            $loan->collaterals()->where('status', '!=', 'released')->update(['status' => 'released']);
+
+            $this->auditLogger->record('loan.closed_fully_paid_admin', $loan->fresh(), [
+                'reason' => $reason,
+                'closed_by' => $user->id,
+            ], $old, actor: $user);
+
+            return $loan->refresh();
+        });
+    }
+
+    public function closeWithBalanceCoverage(Loan $loan, User $user, string $coverageMethod, string $reason, ?string $reference = null): Loan
+    {
+        return DB::transaction(function () use ($loan, $user, $coverageMethod, $reason, $reference): Loan {
+            $loan = Loan::query()
+                ->with(['loanAccount', 'schedules', 'loanGuarantors', 'collaterals'])
+                ->whereKey($loan->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (in_array($loan->status, ['closed', 'fully_paid', 'written_off', 'cancelled', 'rejected'], true)) {
+                throw new InvalidArgumentException('This loan cannot be closed with balance coverage.');
+            }
+
+            $principalBalance = (float) $loan->principal_balance;
+            $interestBalance = (float) $loan->interest_balance;
+            $feesBalance = (float) $loan->fees_balance;
+            $penaltyBalance = (float) $loan->penalty_balance;
+            $outstandingBalance = $principalBalance + $interestBalance + $feesBalance + $penaltyBalance;
+
+            if ($outstandingBalance <= 0) {
+                throw new InvalidArgumentException('This loan has no outstanding balance. Use the fully paid closure action instead.');
+            }
+
+            $old = $loan->only(['status', 'principal_balance', 'interest_balance', 'fees_balance', 'penalty_balance']);
+            $coverageLabel = str($coverageMethod)->replace('_', ' ')->headline()->toString();
+            $coverageReason = trim($reason.($reference ? "\nReference: {$reference}" : '')."\nCoverage method: {$coverageLabel}");
+
+            LoanWriteOff::create([
+                'loan_id' => $loan->id,
+                'approved_by' => $user->id,
+                'principal_amount' => $principalBalance,
+                'interest_amount' => $interestBalance,
+                'fees_amount' => $feesBalance,
+                'penalty_amount' => $penaltyBalance,
+                'reason' => $coverageReason,
+                'written_off_at' => today(),
+                'status' => 'approved',
+            ]);
+
+            $loan->schedules()
+                ->where('outstanding_amount', '>', 0)
+                ->update([
+                    'outstanding_amount' => 0,
+                    'balance_due' => 0,
+                    'status' => 'paid',
+                    'updated_at' => now(),
+                ]);
+
+            $loan->update([
+                'principal_balance' => 0,
+                'interest_balance' => 0,
+                'fees_balance' => 0,
+                'penalty_balance' => 0,
+                'status' => $coverageMethod === 'write_off' ? 'written_off' : 'closed',
+            ]);
+
+            if ($loan->loan_account_id) {
+                Account::query()
+                    ->whereKey($loan->loan_account_id)
+                    ->lockForUpdate()
+                    ->update([
+                        'balance' => 0,
+                        'status' => 'closed',
+                    ]);
+            }
+
+            $loan->loanGuarantors()->where('status', '!=', 'released')->update(['status' => 'released']);
+            $loan->collaterals()->where('status', '!=', 'released')->update(['status' => 'released']);
+
+            $this->auditLogger->record('loan.closed_with_balance_coverage', $loan->fresh(), [
+                'reason' => $reason,
+                'reference' => $reference,
+                'coverage_method' => $coverageMethod,
+                'covered_amount' => $outstandingBalance,
+                'closed_by' => $user->id,
+            ], $old, actor: $user);
+
+            return $loan->refresh();
+        });
+    }
+
+    private function outstandingBalance(Loan $loan): float
+    {
+        return (float) $loan->principal_balance
+            + (float) $loan->interest_balance
+            + (float) $loan->fees_balance
+            + (float) $loan->penalty_balance;
     }
 
     public function applyOverduePenalties(?Loan $loan = null, ?CarbonInterface $asOf = null, ?int $branchId = null): int

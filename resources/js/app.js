@@ -481,6 +481,44 @@ const initLoanReopenModal = () => {
     }
 };
 
+const initLoanCoverageModal = () => {
+    const modal = document.querySelector('[data-loan-coverage-modal]');
+    const openButton = document.querySelector('[data-loan-coverage-open]');
+    const closeButtons = document.querySelectorAll('[data-loan-coverage-close]');
+
+    if (!modal || !openButton) {
+        return;
+    }
+
+    const open = () => {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        modal.querySelector('[name="coverage_method"]')?.focus();
+    };
+
+    const close = () => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    };
+
+    openButton.addEventListener('click', open);
+    closeButtons.forEach((button) => button.addEventListener('click', close));
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            close();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            close();
+        }
+    });
+
+    if (modal.dataset.open === '1') {
+        open();
+    }
+};
+
 const initLedgerAccountModals = () => {
     const modals = document.querySelectorAll('[data-ledger-modal]');
     const openButtons = document.querySelectorAll('[data-ledger-modal-open]');
@@ -565,6 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTellerLookup();
     initLoanRepairModal();
     initLoanReopenModal();
+    initLoanCoverageModal();
     initLedgerAccountModals();
     initResponsiveTables();
 });
