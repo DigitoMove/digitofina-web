@@ -7,28 +7,41 @@
     </div>
     <form method="POST" action="{{ route('arrears.apply-penalties', ['branch_id' => $selectedBranchId ?: null]) }}">@csrf<button class="df-action-danger">Run Penalties</button></form>
 </div>
-<form class="df-panel mb-4 grid gap-3 p-4 lg:grid-cols-[1fr_180px_180px_180px_180px_auto]">
-    <input name="search" value="{{ request('search') }}" placeholder="Search client, phone, or loan number">
-    <select name="bucket"><option value="">All aging buckets</option>@foreach(['1-30','31-60','61-90','91-180','180+'] as $bucket)<option value="{{ $bucket }}" @selected(request('bucket') === $bucket)>{{ $bucket }} days</option>@endforeach</select>
-    <select name="branch_id" @disabled(! $canFilterBranch)>
-        <option value="">All branches</option>
-        @foreach($branches as $branch)
-            <option value="{{ $branch->id }}" @selected((int) request('branch_id', $selectedBranchId) === $branch->id)>{{ $branch->name }}</option>
-        @endforeach
-    </select>
-    <select name="loan_product_id">
-        <option value="">All products</option>
-        @foreach($products as $product)
-            <option value="{{ $product->id }}" @selected((int) request('loan_product_id') === $product->id)>{{ $product->name }}</option>
-        @endforeach
-    </select>
-    <select name="officer_id">
-        <option value="">All officers</option>
-        @foreach($officers as $officer)
-            <option value="{{ $officer->id }}" @selected((int) request('officer_id') === $officer->id)>{{ $officer->name }}</option>
-        @endforeach
-    </select>
-    <button class="df-action-primary">Filter</button>
+<form class="df-panel mb-4 p-4">
+    <div class="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[minmax(18rem,1fr)_repeat(4,minmax(9.5rem,12rem))_auto_auto]">
+        <label class="text-sm font-semibold text-slate-700 xl:min-w-0">Search
+            <input name="search" value="{{ request('search') }}" placeholder="Client, phone, or loan number" class="mt-1">
+        </label>
+        <label class="text-sm font-semibold text-slate-700">Aging bucket
+            <select name="bucket" class="mt-1"><option value="">All buckets</option>@foreach(['1-30','31-60','61-90','91-180','180+'] as $bucket)<option value="{{ $bucket }}" @selected(request('bucket') === $bucket)>{{ $bucket }} days</option>@endforeach</select>
+        </label>
+        <label class="text-sm font-semibold text-slate-700">Branch
+            <select name="branch_id" class="mt-1" @disabled(! $canFilterBranch)>
+                <option value="">All branches</option>
+                @foreach($branches as $branch)
+                    <option value="{{ $branch->id }}" @selected((int) request('branch_id', $selectedBranchId) === $branch->id)>{{ $branch->name }}</option>
+                @endforeach
+            </select>
+        </label>
+        <label class="text-sm font-semibold text-slate-700">Product
+            <select name="loan_product_id" class="mt-1">
+                <option value="">All products</option>
+                @foreach($products as $product)
+                    <option value="{{ $product->id }}" @selected((int) request('loan_product_id') === $product->id)>{{ $product->name }}</option>
+                @endforeach
+            </select>
+        </label>
+        <label class="text-sm font-semibold text-slate-700">Officer
+            <select name="officer_id" class="mt-1">
+                <option value="">All officers</option>
+                @foreach($officers as $officer)
+                    <option value="{{ $officer->id }}" @selected((int) request('officer_id') === $officer->id)>{{ $officer->name }}</option>
+                @endforeach
+            </select>
+        </label>
+        <button class="df-action-primary sm:col-span-2 lg:col-span-1 xl:col-span-1 xl:w-auto">Filter</button>
+        <a href="{{ route('arrears.index') }}" class="df-action-secondary text-center sm:col-span-2 lg:col-span-1 xl:col-span-1 xl:w-auto">Reset</a>
+    </div>
 </form>
 <div class="overflow-hidden rounded border bg-white">
     <table class="w-full text-left text-sm">
