@@ -17,6 +17,7 @@ class StoreLoanProductRequest extends FormRequest
     {
         $this->merge([
             'status' => $this->input('status', 'active'),
+            'annual_interest_rate' => $this->boolean('is_interest_free') ? 0 : $this->input('annual_interest_rate'),
         ]);
     }
 
@@ -37,6 +38,7 @@ class StoreLoanProductRequest extends FormRequest
             'max_term' => ['required', 'integer', 'gte:min_term'],
             'term_unit' => ['required', Rule::in(['days', 'weeks', 'months', 'years'])],
             'annual_interest_rate' => ['required', 'numeric', 'min:0'],
+            'is_interest_free' => ['sometimes', 'boolean'],
             'interest_method' => ['required', Rule::in(['flat', 'declining_balance', 'reducing_balance_equal_installments', 'interest_only'])],
             'interest_frequency' => ['required', Rule::in(['daily', 'weekly', 'monthly', 'annually'])],
             'repayment_frequency' => ['required', Rule::in(['daily', 'weekly', 'bi-weekly', 'monthly', 'quarterly'])],

@@ -17,6 +17,8 @@ class MemberPortalController extends Controller
                 'accounts.transactions.type',
                 'savingsAccounts.product',
                 'savingsAccounts.transactions',
+                'investmentAccounts.plan',
+                'investmentAccounts.transactions',
                 'loans.product',
                 'loans.schedules',
             ])
@@ -28,6 +30,7 @@ class MemberPortalController extends Controller
         }
 
         $savingsAccounts = $client->savingsAccounts;
+        $investmentAccounts = $client->investmentAccounts;
         $legacySavingsTotal = $client->accounts->where('accountType.category', 'savings')->sum(fn ($account) => (float) $account->balance);
         $investmentGrowth = $savingsAccounts->sum(fn ($account): float => (float) $account->transactions
             ->where('type', 'interest_posting')
@@ -41,7 +44,8 @@ class MemberPortalController extends Controller
         return view('member.dashboard', [
             'client' => $client,
             'savingsAccounts' => $savingsAccounts,
-            'savingsTotal' => $savingsAccounts->sum(fn ($account): float => (float) $account->current_balance) ?: $legacySavingsTotal,
+            'investmentAccounts' => $investmentAccounts,
+            'savingsTotal' => ($savingsAccounts->sum(fn ($account): float => (float) $account->current_balance) + $investmentAccounts->sum(fn ($account): float => (float) $account->current_balance)) ?: $legacySavingsTotal,
             'investmentGrowth' => $investmentGrowth,
             'loanBalance' => $client->loans->sum(fn ($loan) => (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance),
             'transactions' => $investmentTransactions->isNotEmpty() ? $investmentTransactions : $client->accounts->flatMap->transactions->sortByDesc('posted_at')->take(12),

@@ -32,8 +32,11 @@ class StoreInvestmentPlanRequest extends FormRequest
             'min_amount' => ['required_without:minimum_amount', 'numeric', 'min:0'],
             'maximum_amount' => ['nullable', 'numeric', 'gte:minimum_amount'],
             'max_amount' => ['nullable', 'numeric', 'gte:min_amount'],
+            'monthly_maintenance_fee' => ['nullable', 'numeric', 'min:0'],
             'duration' => ['required', 'integer', 'min:1'],
             'duration_unit' => ['required', Rule::in(['days', 'weeks', 'months', 'years'])],
+            'min_holding_months' => ['nullable', 'integer', 'min:1', 'max:600'],
+            'max_holding_months' => ['nullable', 'integer', 'gte:min_holding_months', 'max:600'],
             'expected_return_rate' => ['required', 'numeric', 'min:0'],
             'return_calculation_method' => ['required_without:return_method', Rule::in(['fixed_percentage', 'simple_interest', 'compound_interest', 'profit_share', 'manual_return_posting'])],
             'return_method' => ['required_without:return_calculation_method', Rule::in(['fixed_percentage', 'simple_interest', 'compound_interest', 'profit_share', 'manual_return_posting'])],
@@ -47,6 +50,11 @@ class StoreInvestmentPlanRequest extends FormRequest
             'auto_reinvest_returns' => ['sometimes', 'boolean'],
             'auto_reinvest' => ['sometimes', 'boolean'],
             'risk_level' => ['required', Rule::in(['low', 'medium', 'high'])],
+            'default_required_information' => ['nullable', 'array'],
+            'default_required_information.*.key' => ['required_with:default_required_information', 'string', 'max:80'],
+            'default_required_information.*.label' => ['required_with:default_required_information', 'string', 'max:120'],
+            'default_required_information.*.type' => ['nullable', Rule::in(['text', 'number', 'date', 'boolean', 'money', 'textarea'])],
+            'default_required_information.*.required' => ['sometimes', 'boolean'],
             'status' => ['sometimes', Rule::in(['active', 'inactive', 'archived'])],
         ];
     }

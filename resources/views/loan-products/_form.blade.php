@@ -24,6 +24,7 @@
     <label class="text-sm font-medium">Loan account prefix <x-required-badge /><input name="loan_account_number_prefix" value="{{ old('loan_account_number_prefix', $product->loan_account_number_prefix ?? 'LN') }}" class="mt-1 w-full rounded border-slate-300" required></label>
 </div>
 <div class="mt-5 grid gap-3 md:grid-cols-3">
+    <label class="flex items-center gap-2 text-sm"><input name="is_interest_free" type="checkbox" value="1" class="rounded border-slate-300" @checked(old('is_interest_free', $product->is_interest_free ?? false))> Interest-free loan</label>
     <label class="flex items-center gap-2 text-sm"><input name="require_guarantors" type="checkbox" value="1" class="rounded border-slate-300" @checked(old('require_guarantors', $product->require_guarantors ?? false))> Require guarantors</label>
     <label class="text-sm font-medium">Minimum guarantors<input name="minimum_guarantors" type="number" value="{{ old('minimum_guarantors', $product->minimum_guarantors ?? 0) }}" class="mt-1 w-full rounded border-slate-300"></label>
     <label class="flex items-center gap-2 text-sm"><input name="require_collateral" type="checkbox" value="1" class="rounded border-slate-300" @checked(old('require_collateral', $product->require_collateral ?? false))> Require collateral</label>

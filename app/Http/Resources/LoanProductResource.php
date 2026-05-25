@@ -24,6 +24,7 @@ class LoanProductResource extends JsonResource
             'max_term' => $this->max_term,
             'term_unit' => $this->term_unit,
             'annual_interest_rate' => (float) $this->annual_interest_rate,
+            'is_interest_free' => (bool) $this->is_interest_free,
             'interest_method' => $this->interest_method,
             'repayment_frequency' => $this->repayment_frequency,
             'penalty_type' => $this->penalty_type,

@@ -16,6 +16,7 @@ class StoreSavingsProductRequest extends FormRequest
     {
         $this->merge([
             'status' => $this->input('status', 'active'),
+            'interest_rate' => $this->boolean('is_mandatory') ? 0 : $this->input('interest_rate'),
         ]);
     }
 
@@ -28,8 +29,10 @@ class StoreSavingsProductRequest extends FormRequest
             'name' => ['required', 'string', 'max:191'],
             'code' => ['required', 'string', 'max:40', Rule::unique('savings_products', 'code')],
             'savings_type' => ['required', 'in:ordinary,target,fixed,group,emergency,child_student,business'],
+            'is_mandatory' => ['sometimes', 'boolean'],
             'minimum_opening_balance' => ['required', 'numeric', 'min:0'],
             'minimum_balance' => ['required', 'numeric', 'min:0'],
+            'mandatory_amount' => ['nullable', 'numeric', 'min:0'],
             'interest_rate' => ['required', 'numeric', 'min:0'],
             'interest_posting_frequency' => ['required', 'in:daily,weekly,monthly,quarterly,annually'],
             'withdrawal_charge' => ['required', 'numeric', 'min:0'],

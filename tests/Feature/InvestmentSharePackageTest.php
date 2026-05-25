@@ -3,12 +3,14 @@
 use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\Client;
+use App\Models\InvestmentAccount;
 use App\Models\Module;
 use App\Models\Organization;
 use App\Models\OrganizationModule;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\InvestmentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -30,13 +32,21 @@ it('creates share-style investment packages and lets a client invest for a relat
             'is_share_package' => true,
             'minimum_amount' => 450_000,
             'maximum_amount' => 2_250_000,
-            'duration' => 12,
+            'monthly_maintenance_fee' => 25_000,
+            'duration' => 36,
             'duration_unit' => 'months',
+            'min_holding_months' => 36,
+            'max_holding_months' => 60,
             'expected_return_rate' => 15,
             'return_calculation_method' => 'profit_share',
             'return_frequency' => 'annually',
             'allow_top_ups' => true,
             'allow_early_withdrawal' => false,
+            'default_required_information' => [
+                ['key' => 'tag_number', 'label' => 'Goat tag number', 'type' => 'text', 'required' => true],
+                ['key' => 'breed', 'label' => 'Breed', 'type' => 'text', 'required' => true],
+                ['key' => 'cross_breeding_notes', 'label' => 'Cross-breeding notes', 'type' => 'textarea', 'required' => false],
+            ],
             'risk_level' => 'medium',
             'status' => 'active',
         ])
@@ -45,6 +55,8 @@ it('creates share-style investment packages and lets a client invest for a relat
         ->assertJsonPath('data.unit_label', 'goat')
         ->assertJsonPath('data.unit_value', 450000)
         ->assertJsonPath('data.maximum_units', 5)
+        ->assertJsonPath('data.monthly_maintenance_fee', 25000)
+        ->assertJsonPath('data.default_required_information.0.key', 'tag_number')
         ->json('data.id');
 
     $this->actingAs($user, 'sanctum')
@@ -69,6 +81,12 @@ it('creates share-style investment packages and lets a client invest for a relat
             'investment_plan_id' => $planId,
             'sponsor_client_id' => $parent->id,
             'unit_quantity' => 3,
+            'target_duration_months' => 48,
+            'client_investment_details' => [
+                'tag_number' => 'GT-001',
+                'breed' => 'Boer cross',
+                'cross_breeding_notes' => 'Existing local goat crossed with Boer buck.',
+            ],
             'payment_method' => 'cash',
         ])
         ->assertCreated()
@@ -77,7 +95,10 @@ it('creates share-style investment packages and lets a client invest for a relat
         ->assertJsonPath('data.unit_quantity', 3)
         ->assertJsonPath('data.unit_label', 'goat')
         ->assertJsonPath('data.principal_amount', 1350000)
-        ->assertJsonPath('data.current_balance', 1350000);
+        ->assertJsonPath('data.current_balance', 1350000)
+        ->assertJsonPath('data.target_duration_months', 48)
+        ->assertJsonPath('data.monthly_maintenance_fee', 25000)
+        ->assertJsonPath('data.client_investment_details.tag_number', 'GT-001');
 
     $this->actingAs($user, 'sanctum')
         ->postJson('/api/v1/investment-accounts', [
@@ -88,6 +109,62 @@ it('creates share-style investment packages and lets a client invest for a relat
             'payment_method' => 'cash',
         ])
         ->assertUnprocessable();
+});
+
+it('prorates premature withdrawal ROI against the minimum holding period', function () {
+    [$user, $branch] = investmentShareUser();
+    $client = investmentShareClient($user, 'Early', '+256701100003');
+
+    $plan = app(InvestmentService::class)->createPlan([
+        'name' => 'Three Year Goat Project',
+        'code' => 'GOAT-36',
+        'type' => 'asset_backed',
+        'unit_label' => 'goat',
+        'unit_value' => 1_000_000,
+        'minimum_units' => 1,
+        'minimum_amount' => 1_000_000,
+        'duration' => 36,
+        'duration_unit' => 'months',
+        'min_holding_months' => 36,
+        'max_holding_months' => 60,
+        'expected_return_rate' => 36,
+        'return_calculation_method' => 'fixed_percentage',
+        'return_frequency' => 'at_maturity',
+        'allow_early_withdrawal' => true,
+        'risk_level' => 'medium',
+    ], $user);
+
+    $investorId = $this->actingAs($user, 'sanctum')
+        ->postJson('/api/v1/investor-accounts', [
+            'client_id' => $client->id,
+            'branch_id' => $branch->id,
+        ])
+        ->assertCreated()
+        ->json('data.id');
+
+    $investmentId = $this->actingAs($user, 'sanctum')
+        ->postJson('/api/v1/investment-accounts', [
+            'investor_account_id' => $investorId,
+            'investment_plan_id' => $plan->id,
+            'unit_quantity' => 1,
+            'target_duration_months' => 36,
+            'payment_method' => 'cash',
+        ])
+        ->assertCreated()
+        ->json('data.id');
+
+    InvestmentAccount::whereKey($investmentId)->update([
+        'start_date' => today()->subMonthsNoOverflow(18)->toDateString(),
+        'maturity_date' => today()->addMonthsNoOverflow(18)->toDateString(),
+    ]);
+
+    $this->actingAs($user, 'sanctum')
+        ->getJson("/api/v1/investment-accounts/{$investmentId}")
+        ->assertSuccessful()
+        ->assertJsonPath('data.early_withdrawal_quote.elapsed_months', 18)
+        ->assertJsonPath('data.early_withdrawal_quote.minimum_months', 36)
+        ->assertJsonPath('data.early_withdrawal_quote.effective_return_rate', 18)
+        ->assertJsonPath('data.progress_percentage', 50);
 });
 
 /**

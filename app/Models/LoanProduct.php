@@ -20,6 +20,7 @@ class LoanProduct extends Model
             'min_term' => 'integer',
             'max_term' => 'integer',
             'annual_interest_rate' => 'decimal:4',
+            'is_interest_free' => 'boolean',
             'penalty_rate' => 'decimal:4',
             'processing_fee' => 'decimal:2',
             'insurance_fee' => 'decimal:2',

@@ -19,10 +19,12 @@ class SavingsProduct extends Model
         return [
             'minimum_opening_balance' => 'decimal:2',
             'minimum_balance' => 'decimal:2',
+            'mandatory_amount' => 'decimal:2',
             'interest_rate' => 'decimal:4',
             'withdrawal_charge' => 'decimal:2',
             'deposit_charge' => 'decimal:2',
             'monthly_maintenance_fee' => 'decimal:2',
+            'is_mandatory' => 'boolean',
             'allows_overdraft' => 'boolean',
             'supports_goals' => 'boolean',
             'supports_fixed_savings' => 'boolean',

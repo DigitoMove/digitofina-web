@@ -160,6 +160,17 @@ it('keeps system settings scoped to each organization', function () {
         ->and(SystemSetting::value('loan_application_fee', 0, $secondOrganization->id))->toBe('30000');
 });
 
+it('lets organization users view their organization profile without edit permission', function () {
+    [$organization, , $user] = tenantUser(['view-reports']);
+
+    $this->actingAs($user)
+        ->get(route('organization.current'))
+        ->assertOk()
+        ->assertSee($organization->name)
+        ->assertSee('You can view this organization profile')
+        ->assertSee('disabled', false);
+});
+
 it('resolves tenant from organization subdomain', function () {
     [$organization] = tenantShell('Hope SACCO', ['slug' => 'hope']);
     tenantProbeRoute();

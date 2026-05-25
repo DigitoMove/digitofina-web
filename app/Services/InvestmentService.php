@@ -48,6 +48,9 @@ class InvestmentService
             'max_amount' => $data['max_amount'] ?? $maximumAmount,
             'minimum_amount' => $minimumAmount,
             'maximum_amount' => $maximumAmount,
+            'monthly_maintenance_fee' => $data['monthly_maintenance_fee'] ?? 0,
+            'min_holding_months' => $data['min_holding_months'] ?? 36,
+            'max_holding_months' => $data['max_holding_months'] ?? 60,
             'return_method' => $data['return_method'] ?? $data['return_calculation_method'] ?? 'fixed_percentage',
             'return_calculation_method' => $data['return_calculation_method'] ?? $data['return_method'] ?? 'fixed_percentage',
             'allow_topups' => $data['allow_topups'] ?? $data['allow_top_ups'] ?? false,
@@ -57,6 +60,7 @@ class InvestmentService
             'early_withdrawal_penalty' => $data['early_withdrawal_penalty'] ?? $data['early_withdrawal_penalty_value'] ?? 0,
             'auto_reinvest' => $data['auto_reinvest'] ?? $data['auto_reinvest_returns'] ?? false,
             'auto_reinvest_returns' => $data['auto_reinvest_returns'] ?? $data['auto_reinvest'] ?? false,
+            'default_required_information' => $data['default_required_information'] ?? null,
             'status' => $data['status'] ?? 'active',
         ]);
 
@@ -107,7 +111,10 @@ class InvestmentService
             $this->financialControls->enforceTransactionLimit($user, $principal, $businessDate);
 
             $startDate = CarbonImmutable::parse($data['start_date'] ?? today()->toDateString());
-            $maturityDate = $this->maturityDate($startDate, $plan);
+            $targetDurationMonths = $this->targetDurationMonths($data, $plan);
+            $maturityDate = $targetDurationMonths !== null
+                ? $startDate->addMonthsNoOverflow($targetDurationMonths)
+                : $this->maturityDate($startDate, $plan);
             $expectedReturn = $this->calculateReturn($principal, $plan);
             $requiresApproval = $principal >= $this->approvalThreshold($user);
 
@@ -127,11 +134,15 @@ class InvestmentService
                 'principal_amount' => $principal,
                 'start_date' => $startDate->toDateString(),
                 'maturity_date' => $maturityDate->toDateString(),
+                'target_duration_months' => $targetDurationMonths,
                 'expected_return_amount' => $expectedReturn,
                 'actual_return_amount' => 0,
                 'current_balance' => 0,
                 'return_rate' => $plan->expected_return_rate,
+                'monthly_maintenance_fee' => $plan->monthly_maintenance_fee ?? 0,
+                'maintenance_fee_paid' => 0,
                 'return_method' => $plan->return_calculation_method,
+                'client_investment_details' => $data['client_investment_details'] ?? null,
                 'status' => $requiresApproval ? 'pending_approval' : 'active',
             ]);
 
@@ -262,7 +273,7 @@ class InvestmentService
                 throw new InvalidArgumentException('This investment plan does not allow early withdrawal.');
             }
 
-            $penalty = $isEarly ? round($amount * ((float) $investment->plan->early_withdrawal_penalty / 100), 2) : 0.0;
+            $penalty = $isEarly ? $this->earlyWithdrawalPenalty($investment, $amount) : 0.0;
             $totalDebit = $amount + $penalty;
             $balanceBefore = (float) $investment->current_balance;
 
@@ -440,6 +451,38 @@ class InvestmentService
         }, 2);
     }
 
+    /**
+     * @return array<string, float|int|bool>
+     */
+    public function earlyWithdrawalQuote(InvestmentAccount $investment): array
+    {
+        $investment->loadMissing('plan');
+
+        $effectiveRate = $this->effectiveEarlyWithdrawalReturnRate($investment);
+        $principal = (float) $investment->principal_amount;
+        $earnedReturn = round($principal * ($effectiveRate / 100), 2);
+        $fullTermReturn = round($principal * ((float) $investment->return_rate / 100), 2);
+
+        return [
+            'is_early' => (bool) ($investment->maturity_date?->isFuture() ?? false),
+            'elapsed_months' => $investment->elapsedMonths(),
+            'minimum_months' => max(1, (int) ($investment->plan?->min_holding_months ?? 36)),
+            'effective_return_rate' => $effectiveRate,
+            'earned_return_amount' => $earnedReturn,
+            'unearned_return_amount' => max(0, round($fullTermReturn - $earnedReturn, 2)),
+        ];
+    }
+
+    public function effectiveEarlyWithdrawalReturnRate(InvestmentAccount $investment): float
+    {
+        $investment->loadMissing('plan');
+
+        $minimumMonths = max(1, (int) ($investment->plan?->min_holding_months ?? 36));
+        $elapsedMonths = min($minimumMonths, $investment->elapsedMonths());
+
+        return round(((float) $investment->return_rate) * ($elapsedMonths / $minimumMonths), 4);
+    }
+
     private function maturityDate(CarbonImmutable $startDate, InvestmentPlan $plan): CarbonImmutable
     {
         return match ($plan->duration_unit) {
@@ -449,6 +492,40 @@ class InvestmentService
             'years' => $startDate->addYearsNoOverflow((int) $plan->duration),
             default => $startDate->addMonthsNoOverflow((int) $plan->duration),
         };
+    }
+
+    private function targetDurationMonths(array $data, InvestmentPlan $plan): ?int
+    {
+        if (! array_key_exists('target_duration_months', $data) || blank($data['target_duration_months'])) {
+            return null;
+        }
+
+        $targetDurationMonths = (int) $data['target_duration_months'];
+        $minimumMonths = max(1, (int) ($plan->min_holding_months ?? 36));
+        $maximumMonths = max($minimumMonths, (int) ($plan->max_holding_months ?? 60));
+
+        if ($targetDurationMonths < $minimumMonths || $targetDurationMonths > $maximumMonths) {
+            throw new InvalidArgumentException("Investment duration must be between {$minimumMonths} and {$maximumMonths} months for this package.");
+        }
+
+        return $targetDurationMonths;
+    }
+
+    private function earlyWithdrawalPenalty(InvestmentAccount $investment, float $amount): float
+    {
+        $planPenalty = round($amount * ((float) $investment->plan->early_withdrawal_penalty / 100), 2);
+        $quote = $this->earlyWithdrawalQuote($investment);
+        $postedReturn = max(0, (float) $investment->actual_return_amount);
+
+        if ($postedReturn <= 0) {
+            return $planPenalty;
+        }
+
+        $withdrawalShare = min(1, $amount / max(1, (float) $investment->principal_amount));
+        $allowedPostedReturn = (float) $quote['earned_return_amount'] * $withdrawalShare;
+        $unearnedPostedReturn = max(0, ($postedReturn * $withdrawalShare) - $allowedPostedReturn);
+
+        return round($planPenalty + $unearnedPostedReturn, 2);
     }
 
     private function assertInvestorCanTransact(InvestorAccount $investor): void

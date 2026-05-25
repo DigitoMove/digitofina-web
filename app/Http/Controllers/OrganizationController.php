@@ -135,7 +135,7 @@ class OrganizationController extends Controller
             abort(404);
         }
 
-        return $this->edit($this->currentOrganization($request));
+        return $this->edit($this->currentOrganization($request), true);
     }
 
     public function updateCurrent(UpdateOrganizationRequest $request, AuditLogger $auditLogger): RedirectResponse
@@ -147,11 +147,15 @@ class OrganizationController extends Controller
         return $this->update($request, $this->currentOrganization($request), $auditLogger);
     }
 
-    public function edit(Organization $organization): View
+    public function edit(Organization $organization, bool $isCurrentOrganization = false): View
     {
-        Gate::authorize('update', $organization);
+        Gate::authorize('view', $organization);
 
-        return view('organization.edit', compact('organization'));
+        return view('organization.edit', [
+            'organization' => $organization,
+            'isCurrentOrganization' => $isCurrentOrganization,
+            'canUpdateOrganization' => request()->user()?->can('update', $organization) ?? false,
+        ]);
     }
 
     public function update(UpdateOrganizationRequest $request, Organization $organization, AuditLogger $auditLogger): RedirectResponse

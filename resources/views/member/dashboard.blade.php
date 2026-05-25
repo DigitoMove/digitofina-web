@@ -77,6 +77,55 @@
                 <div class="rounded-xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">No savings investment accounts are linked to this member profile yet.</div>
             @endforelse
         </div>
+
+        @if (($investmentAccounts ?? collect())->isNotEmpty())
+            <div class="mt-6 border-t border-slate-200 pt-5">
+                <h3 class="font-semibold text-slate-950">Project Investments</h3>
+                <div class="mt-4 grid gap-3">
+                    @foreach ($investmentAccounts as $investment)
+                        @php
+                            $progress = $investment->progressPercentage();
+                            $elapsedMonths = $investment->elapsedMonths();
+                            $minimumMonths = max(1, (int) ($investment->plan?->min_holding_months ?? 36));
+                            $effectiveRate = round(((float) $investment->return_rate) * (min($minimumMonths, $elapsedMonths) / $minimumMonths), 2);
+                        @endphp
+                        <div class="rounded-xl border border-slate-200 p-4 text-sm transition hover:border-brand-200 hover:bg-brand-50/40">
+                            <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                                <div>
+                                    <div class="font-semibold text-slate-950">{{ $investment->plan?->name ?? 'Investment Project' }}</div>
+                                    <div class="mt-1 text-slate-500">{{ $investment->investment_number }} · {{ str($investment->status)->headline() }}</div>
+                                </div>
+                                <div class="text-left sm:text-right">
+                                    <div class="text-lg font-semibold text-slate-950">{{ number_format($investment->current_balance, 2) }} UGX</div>
+                                    <div class="text-xs font-semibold text-emerald-700">{{ number_format($effectiveRate, 2) }}% early ROI earned</div>
+                                </div>
+                            </div>
+                            <div class="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+                                <div class="h-full rounded-full bg-emerald-600" style="width: {{ $progress }}%"></div>
+                            </div>
+                            <div class="mt-4 grid gap-3 sm:grid-cols-4">
+                                <div class="rounded-lg bg-slate-50 px-3 py-2">
+                                    <div class="text-xs uppercase tracking-wide text-slate-400">Progress</div>
+                                    <div class="mt-1 font-semibold text-slate-700">{{ $progress }}%</div>
+                                </div>
+                                <div class="rounded-lg bg-slate-50 px-3 py-2">
+                                    <div class="text-xs uppercase tracking-wide text-slate-400">Matures</div>
+                                    <div class="mt-1 font-semibold text-slate-700">{{ $investment->maturity_date?->format('d M Y') }}</div>
+                                </div>
+                                <div class="rounded-lg bg-slate-50 px-3 py-2">
+                                    <div class="text-xs uppercase tracking-wide text-slate-400">Monthly care</div>
+                                    <div class="mt-1 font-semibold text-slate-700">{{ number_format($investment->monthly_maintenance_fee, 2) }}</div>
+                                </div>
+                                <div class="rounded-lg bg-slate-50 px-3 py-2">
+                                    <div class="text-xs uppercase tracking-wide text-slate-400">Target ROI</div>
+                                    <div class="mt-1 font-semibold text-slate-700">{{ number_format($investment->return_rate, 2) }}%</div>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
     </section>
 
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
