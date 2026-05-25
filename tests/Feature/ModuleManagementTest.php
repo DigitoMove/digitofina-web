@@ -547,6 +547,82 @@ it('closes the teller lookup modal after selecting an account from scrollable re
         ->assertSee('data-teller-lookup-modal data-open="0"', false);
 });
 
+it('shows the full loan repayment amount when looking up a loan account', function () {
+    $user = moduleManagementUser(['post-transactions']);
+    enableTellerModule($user->organization);
+    $client = Client::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'officer_id' => $user->id,
+        'client_number' => fake()->unique()->numerify('1001-C######'),
+        'client_type' => 'individual',
+        'first_name' => 'Loan',
+        'last_name' => 'Member',
+        'phone' => fake()->unique()->numerify('+2567########'),
+        'status' => 'active',
+    ]);
+    $accountType = AccountType::create([
+        'organization_id' => $user->organization_id,
+        'name' => 'Loan Account',
+        'code' => fake()->unique()->bothify('LN-??'),
+        'category' => 'loan',
+        'is_active' => true,
+    ]);
+    $loanAccount = Account::create([
+        'organization_id' => $user->organization_id,
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'account_type_id' => $accountType->id,
+        'account_number' => fake()->unique()->numerify('1001-LN-####'),
+        'account_name' => $client->full_name.' Loan',
+        'status' => 'active',
+        'balance' => 100000,
+        'opened_at' => today(),
+    ]);
+    $product = LoanProduct::create([
+        'organization_id' => $user->organization_id,
+        'name' => 'Business Loan',
+        'code' => fake()->unique()->bothify('BL-??'),
+        'min_amount' => 1000,
+        'max_amount' => 1000000,
+        'annual_interest_rate' => 24,
+        'interest_method' => 'flat',
+        'repayment_frequency' => 'monthly',
+        'default_term_months' => 6,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    Loan::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'client_id' => $client->id,
+        'loan_product_id' => $product->id,
+        'loan_account_id' => $loanAccount->id,
+        'loan_number' => fake()->unique()->numerify('1001-LOAN-####'),
+        'requested_amount' => 100000,
+        'approved_amount' => 100000,
+        'principal_balance' => 100000,
+        'interest_balance' => 25000,
+        'fees_balance' => 5000,
+        'penalty_balance' => 2000,
+        'interest_rate' => 24,
+        'term_periods' => 6,
+        'repayment_frequency' => 'monthly',
+        'status' => 'active',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('teller.index', [
+            'lookup_scope' => 'account_type:'.$accountType->id,
+            'account_search' => 'Loan',
+            'account_number' => $loanAccount->account_number,
+        ]))
+        ->assertSuccessful()
+        ->assertSee('Total to repay UGX 132,000.00')
+        ->assertSee('Interest UGX 25,000.00')
+        ->assertSee('Principal UGX 100,000.00');
+});
+
 it('shows general ledger drawer expenses in cashier entries and allows reversal requests', function () {
     $user = moduleManagementUser(['post-transactions']);
     enableTellerModule($user->organization);

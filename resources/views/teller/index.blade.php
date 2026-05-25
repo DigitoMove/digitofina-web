@@ -15,6 +15,10 @@
         : null;
     $needsLedgerDirection = $isLedgerPosting && ! $selectedLedgerEntryType;
     $isLoanAccountPosting = $account?->accountType?->category === 'loan';
+    $selectedLoan = $account?->loan;
+    $selectedLoanRepayable = $selectedLoan
+        ? (float) $selectedLoan->principal_balance + (float) $selectedLoan->interest_balance + (float) $selectedLoan->fees_balance + (float) $selectedLoan->penalty_balance
+        : null;
     $availableTransactionTypes = $isLoanAccountPosting
         ? $transactionTypes->where('code', 'loan_repayment')
         : $transactionTypes->reject(fn ($type) => $type->code === 'loan_repayment');
@@ -283,6 +287,24 @@
                 @if($account)
                     <div class="text-sm text-slate-500">{{ $account->account_number }} · {{ $account->accountType?->name }} · {{ $account->client?->full_name ?: $account->client?->business_name }}</div>
                     <div class="mt-2 text-xl font-semibold text-brand-800">UGX {{ number_format((float) $account->balance, 2) }}</div>
+                    @if($selectedLoanRepayable !== null)
+                        <div class="mt-3 rounded border border-brand-200 bg-white p-3 text-sm">
+                            <div class="flex items-center justify-between gap-3">
+                                <span class="font-semibold text-slate-700">Total to repay</span>
+                                <span class="font-semibold text-brand-800">UGX {{ number_format($selectedLoanRepayable, 2) }}</span>
+                            </div>
+                            <div class="mt-1 text-xs text-slate-500">
+                                Principal UGX {{ number_format((float) $selectedLoan->principal_balance, 2) }}
+                                · Interest UGX {{ number_format((float) $selectedLoan->interest_balance, 2) }}
+                                @if((float) $selectedLoan->fees_balance > 0)
+                                    · Fees UGX {{ number_format((float) $selectedLoan->fees_balance, 2) }}
+                                @endif
+                                @if((float) $selectedLoan->penalty_balance > 0)
+                                    · Penalties UGX {{ number_format((float) $selectedLoan->penalty_balance, 2) }}
+                                @endif
+                            </div>
+                        </div>
+                    @endif
                 @endif
             </div>
             <div class="rounded border border-slate-200 bg-slate-50 p-4">
@@ -600,11 +622,23 @@
                             <div class="p-5 text-sm text-slate-500">Select an account type, type a keyword, then search.</div>
                         @else
                             @forelse($accountResults as $resultAccount)
+                                @php
+                                    $resultLoan = $resultAccount->loan;
+                                    $resultLoanRepayable = $resultLoan
+                                        ? (float) $resultLoan->principal_balance + (float) $resultLoan->interest_balance + (float) $resultLoan->fees_balance + (float) $resultLoan->penalty_balance
+                                        : null;
+                                @endphp
                                 <div class="grid gap-3 p-3 sm:grid-cols-[1fr_auto]">
                                     <div>
                                         <div class="font-semibold text-slate-950">{{ $resultAccount->account_number }} · {{ $resultAccount->account_name }}</div>
                                         <div class="text-sm text-slate-500">{{ $resultAccount->client?->full_name ?: $resultAccount->client?->business_name ?: 'No client' }} · {{ $resultAccount->client?->client_number }} · {{ $resultAccount->client?->phone }}</div>
                                         <div class="mt-1 text-xs text-slate-500">{{ $resultAccount->accountType?->name }} · {{ str($resultAccount->status)->headline() }} · Balance UGX {{ number_format((float) $resultAccount->balance, 2) }}</div>
+                                        @if($resultLoanRepayable !== null)
+                                            <div class="mt-2 inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-brand-200 bg-brand-50 px-2 py-1 text-xs text-brand-900">
+                                                <span class="font-semibold">Total to repay UGX {{ number_format($resultLoanRepayable, 2) }}</span>
+                                                <span>Interest UGX {{ number_format((float) $resultLoan->interest_balance, 2) }}</span>
+                                            </div>
+                                        @endif
                                     </div>
                                     <form method="GET" action="{{ route('teller.index') }}" class="flex items-start justify-end" data-teller-lookup-select>
                                         <input type="hidden" name="lookup_scope" value="account_type:{{ $resultAccount->account_type_id }}">

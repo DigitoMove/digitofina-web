@@ -49,14 +49,14 @@ class TellerDrawerController extends Controller
         $shouldSearchClientAccounts = $accountSearch !== '' && ! $isGeneralLedgerLookup;
         $shouldSearchGeneralLedger = $accountSearch !== '' && $isGeneralLedgerLookup;
         $account = $request->account_number
-            ? Account::with(['client', 'accountType'])
+            ? Account::with(['client', 'accountType', 'loan'])
                 ->where('account_number', $request->account_number)
                 ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
                 ->when($selectedAccountTypeId, fn ($query, int $typeId) => $query->where('account_type_id', $typeId))
                 ->first()
             : null;
         $accountResults = Account::query()
-            ->with(['client', 'accountType'])
+            ->with(['client', 'accountType', 'loan'])
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when($selectedAccountTypeId, fn (Builder $query, int $typeId): Builder => $query->where('account_type_id', $typeId))
             ->when($accountSearch, function (Builder $query, string $search): void {
