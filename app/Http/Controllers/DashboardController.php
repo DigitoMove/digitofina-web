@@ -82,6 +82,7 @@ class DashboardController extends Controller
         if ($loansEnabled) {
             $dueToday = LoanSchedule::query()
                 ->with(['loan.client', 'loan.product'])
+                ->excludingCancelledLoans()
                 ->whereHas('loan', $calendarScope)
                 ->where('outstanding_amount', '>', 0)
                 ->where('status', '!=', 'paid')
@@ -90,6 +91,7 @@ class DashboardController extends Controller
                 ->limit(10)
                 ->get();
             $dueTodayTotals = LoanSchedule::query()
+                ->excludingCancelledLoans()
                 ->whereHas('loan', $calendarScope)
                 ->where('outstanding_amount', '>', 0)
                 ->where('status', '!=', 'paid')
@@ -98,6 +100,7 @@ class DashboardController extends Controller
                 ->first();
             $nextRepayments = LoanSchedule::query()
                 ->with(['loan.client', 'loan.product'])
+                ->excludingCancelledLoans()
                 ->whereHas('loan', $calendarScope)
                 ->where('outstanding_amount', '>', 0)
                 ->where('status', '!=', 'paid')
@@ -107,6 +110,7 @@ class DashboardController extends Controller
                 ->limit(10)
                 ->get();
             $calendarCounts = LoanSchedule::query()
+                ->excludingCancelledLoans()
                 ->whereHas('loan', $calendarScope)
                 ->whereBetween('due_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
                 ->selectRaw("
@@ -139,12 +143,14 @@ class DashboardController extends Controller
                 ];
             });
         $arrearsCount = $loansEnabled ? LoanSchedule::query()
+            ->excludingCancelledLoans()
             ->whereHas('loan', $scheduleScope)
             ->where('outstanding_amount', '>', 0)
             ->whereDate('due_date', '<', $today->toDateString())
             ->distinct('loan_id')
             ->count('loan_id') : 0;
         $arrearsAmount = $loansEnabled ? LoanSchedule::query()
+            ->excludingCancelledLoans()
             ->whereHas('loan', $scheduleScope)
             ->where('outstanding_amount', '>', 0)
             ->whereDate('due_date', '<', $today->toDateString())

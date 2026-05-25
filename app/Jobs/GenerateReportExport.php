@@ -108,6 +108,7 @@ class GenerateReportExport implements ShouldQueue
                 ->map(fn (Loan $loan): array => $loan->only(['loan_number', 'client_id', 'approved_amount', 'principal_balance', 'interest_balance', 'penalty_balance', 'status', 'updated_at']))
                 ->all(),
             'arrears', 'arrears_report' => LoanSchedule::query()
+                ->excludingCancelledLoans()
                 ->whereHas('loan', fn ($query) => $query->where('organization_id', $export->organization_id)->when($export->branch_id, fn ($query, int $branchId) => $query->where('branch_id', $branchId)))
                 ->where('outstanding_amount', '>', 0)
                 ->whereDate('due_date', '<', now())

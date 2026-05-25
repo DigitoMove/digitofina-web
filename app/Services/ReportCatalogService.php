@@ -876,6 +876,7 @@ class ReportCatalogService
     {
         $query = LoanSchedule::query()
             ->with(['loan.client', 'loan.branch', 'loan.product'])
+            ->excludingCancelledLoans()
             ->whereBetween('due_date', [$from, $to])
             ->whereHas('loan', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
 
@@ -914,6 +915,7 @@ class ReportCatalogService
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->sum('fees_deducted');
         $interestAccrued = (float) LoanSchedule::query()
+            ->excludingCancelledLoans()
             ->whereBetween('due_date', [$from, $to])
             ->whereHas('loan', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
             ->sum('interest_due');
@@ -1024,6 +1026,7 @@ class ReportCatalogService
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
             ->sum('amount');
         $expected = (float) LoanSchedule::query()
+            ->excludingCancelledLoans()
             ->whereBetween('due_date', [$from, $to])
             ->whereHas('loan', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
             ->sum('total_due');
@@ -1291,6 +1294,7 @@ class ReportCatalogService
     {
         $query = LoanSchedule::query()
             ->with(['loan.client', 'loan.product'])
+            ->excludingCancelledLoans()
             ->where('outstanding_amount', '>', 0)
             ->when($payload['arrears'] ?? false, fn (Builder $query): Builder => $query->whereDate('due_date', '<', today()))
             ->when($payload['future'] ?? false, fn (Builder $query): Builder => $query->whereBetween('due_date', [$from, $to]))

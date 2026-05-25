@@ -672,6 +672,39 @@ class LoanService
         });
     }
 
+    public function fastTrackDisbursement(Loan $loan, User $user, float $approvedAmount, string $paymentMethod = 'transfer_to_savings', ?string $comments = null): Loan
+    {
+        abort_unless(
+            $user->canPerform('manage-loans')
+            && $user->canPerform('approve-loans')
+            && $user->canPerform('disburse-loans'),
+            403
+        );
+
+        CurrencyDenomination::assertValid($approvedAmount, 'Approved amount');
+        $loan = $loan->fresh();
+
+        if ($loan->status === 'draft') {
+            $this->generateSavingsAccount($loan, $user);
+            $this->generateLoanAccount($loan->fresh(), $user);
+            $loan = $this->submitForAppraisal($loan->fresh(), $user);
+        }
+
+        if ($loan->status === 'under_review') {
+            $loan = $this->submitForApproval($loan, $user);
+        }
+
+        if (in_array($loan->status, ['submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true)) {
+            $loan = $this->approve($loan, $user, $approvedAmount, $comments ?: 'Admin fast-track approval and disbursement.');
+        }
+
+        if ($loan->status === 'approved') {
+            return $this->disburseToSavings($loan, $user, $paymentMethod);
+        }
+
+        throw new InvalidArgumentException('Only draft, appraisal, approval, or approved loans can be fast-tracked.');
+    }
+
     public function disburseToSavings(Loan $loan, User $user, string $paymentMethod = 'transfer_to_savings'): Loan
     {
         return DB::transaction(function () use ($loan, $user, $paymentMethod) {
@@ -1042,6 +1075,7 @@ class LoanService
 
         $query = LoanSchedule::query()
             ->with('loan.product')
+            ->excludingCancelledLoans()
             ->whereDate('due_date', '<', $asOf->toDateString())
             ->where('outstanding_amount', '>', 0)
             ->where('status', '!=', 'paid');
@@ -1058,6 +1092,11 @@ class LoanService
             DB::transaction(function () use ($schedule, $asOf, &$count) {
                 $schedule = LoanSchedule::query()->whereKey($schedule->id)->lockForUpdate()->firstOrFail();
                 $loan = Loan::query()->with('product')->whereKey($schedule->loan_id)->lockForUpdate()->firstOrFail();
+
+                if ($loan->status === 'cancelled') {
+                    return;
+                }
+
                 $days = $this->calendar->businessDaysBetween($schedule->due_date, $asOf, $loan->organization_id ? (int) $loan->organization_id : null);
                 $penaltyType = $loan->product?->penalty_type ?: 'percentage';
                 $penaltyRate = (float) ($loan->product?->penalty_rate ?? 0);

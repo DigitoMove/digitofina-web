@@ -237,6 +237,30 @@ class LoanController extends Controller
         return back()->with('status', 'Loan approved.');
     }
 
+    public function fastTrackDisbursement(Request $request, Loan $loan, LoanService $service): RedirectResponse
+    {
+        abort_unless(
+            $request->user()->canPerform('manage-loans')
+            && $request->user()->canPerform('approve-loans')
+            && $request->user()->canPerform('disburse-loans'),
+            403
+        );
+
+        $data = $request->validate([
+            'approved_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+            'comments' => ['nullable', 'string'],
+            'payment_method' => ['required', 'in:cash,mobile_money,bank_transfer,transfer_to_savings,cheque'],
+        ]);
+
+        try {
+            $service->fastTrackDisbursement($loan, $request->user(), (float) $data['approved_amount'], $data['payment_method'], $data['comments'] ?? null);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['fast_track' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Loan appraised, approved, and disbursed.');
+    }
+
     public function reject(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
         abort_unless(auth()->user()->canPerform('approve-loans'), 403);

@@ -5,12 +5,17 @@
     $canApproveLoan = $currentUser->canPerform('approve-loans');
     $canDisburseLoan = $currentUser->canPerform('disburse-loans');
     $canPostLoanRepayment = $currentUser->canPerform('post-repayments');
+    $canFastTrackLoan = $canManageLoanWorkflow
+        && $canApproveLoan
+        && $canDisburseLoan
+        && in_array($loan->status, ['draft', 'under_review', 'submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved'], true);
     $canPostTellerLoanRepayment = $currentUser->isTellerCashier()
         && $canPostLoanRepayment
         && in_array($loan->status, ['active', 'in_arrears'], true)
         && $loan->loanAccount;
     $hasVisibleWorkflowAction = $canAssignOfficer
         || $canCancel
+        || $canFastTrackLoan
         || ($canManageLoanAccounts && $loan->status === 'draft')
         || ($canManageLoanWorkflow && $loan->status === 'under_review')
         || ($canApproveLoan && in_array($loan->status, ['submitted', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true))
@@ -27,7 +32,7 @@
         <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold {{ $statusTone }}">{{ $statusLabel }}</span>
     </div>
 
-    @foreach(['workflow', 'cancel_reason', 'officer_id', 'approved_amount', 'reason', 'payment_method'] as $errorKey)
+    @foreach(['workflow', 'fast_track', 'cancel_reason', 'officer_id', 'approved_amount', 'comments', 'reason', 'payment_method'] as $errorKey)
         @if($errors->has($errorKey))
             <div class="mt-4 rounded border border-coral-500/20 bg-coral-50 p-3 text-sm text-coral-700">{{ $errors->first($errorKey) }}</div>
         @endif
@@ -52,6 +57,26 @@
             @csrf
             <label class="text-sm font-semibold text-coral-800">Cancellation reason <x-required-badge /><input name="reason" value="{{ old('reason') }}" placeholder="Cancellation reason" class="mt-1 rounded border-coral-200" required></label>
             <button class="df-action-danger">Cancel Loan</button>
+        </form>
+    @endif
+
+    @if($canFastTrackLoan)
+        <form method="POST" action="{{ route('loans.fast-track-disbursement', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-forest-500/20 bg-forest-50 p-4 lg:grid-cols-[220px_220px_1fr_auto]">
+            @csrf
+            <label class="text-sm font-semibold text-slate-700">Approved amount <x-required-badge />
+                <input name="approved_amount" type="number" min="100" step="100" value="{{ old('approved_amount', $loan->approved_amount ?: $loan->requested_amount) }}" class="mt-1" required>
+            </label>
+            <label class="text-sm font-semibold text-slate-700">Payment method <x-required-badge />
+                <select name="payment_method" class="mt-1" required>
+                    <option value="transfer_to_savings" @selected(old('payment_method', 'transfer_to_savings') === 'transfer_to_savings')>Transfer to savings</option>
+                    <option value="cash" @selected(old('payment_method') === 'cash')>Cash</option>
+                    <option value="mobile_money" @selected(old('payment_method') === 'mobile_money')>Mobile money</option>
+                    <option value="bank_transfer" @selected(old('payment_method') === 'bank_transfer')>Bank transfer</option>
+                    <option value="cheque" @selected(old('payment_method') === 'cheque')>Cheque</option>
+                </select>
+            </label>
+            <textarea name="comments" placeholder="Approval comments">{{ old('comments', 'Admin fast-track approval and disbursement.') }}</textarea>
+            <button class="df-action-primary">Appraise, Approve & Disburse</button>
         </form>
     @endif
 

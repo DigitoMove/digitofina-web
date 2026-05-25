@@ -20,6 +20,7 @@ class ArrearsController extends Controller
 
         $schedules = LoanSchedule::query()
             ->with(['loan.client', 'loan.product'])
+            ->excludingCancelledLoans()
             ->whereHas('loan', fn (Builder $query): Builder => $visibility->scope($query, $request->user()))
             ->where('outstanding_amount', '>', 0)
             ->where(function ($query): void {
@@ -41,6 +42,7 @@ class ArrearsController extends Controller
             ->withQueryString();
 
         $loanArrears = LoanSchedule::query()
+            ->excludingCancelledLoans()
             ->whereIn('loan_id', $schedules->getCollection()->pluck('loan_id')->unique())
             ->where('outstanding_amount', '>', 0)
             ->whereDate('due_date', '<', now()->toDateString())

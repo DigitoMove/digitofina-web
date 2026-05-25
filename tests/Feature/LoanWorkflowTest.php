@@ -11,6 +11,7 @@ use App\Models\Guarantor;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\LoanRepayment;
+use App\Models\LoanSchedule;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\TellerDrawer;
@@ -169,6 +170,51 @@ it('approves and disburses a loan with guarantor checks and a repayment schedule
         ->and($loan->schedules)->toHaveCount(6)
         ->and($loan->disbursements)->toHaveCount(1)
         ->and((float) $loan->interest_balance)->toBeGreaterThan(0.0);
+});
+
+it('lets an admin appraise approve and disburse a loan in one shortcut', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '1001-LN-FAST001',
+        'requested_amount' => 700_000,
+        'principal_balance' => 0,
+        'interest_rate' => 24,
+        'term_periods' => 4,
+        'repayment_frequency' => 'monthly',
+        'purpose' => 'Fast stock purchase',
+        'status' => 'draft',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('loans.show', $loan))
+        ->assertSuccessful()
+        ->assertSee('Appraise, Approve & Disburse', false);
+
+    $this->actingAs($user)
+        ->from(route('loans.show', $loan))
+        ->post(route('loans.fast-track-disbursement', $loan), [
+            'approved_amount' => 700_000,
+            'payment_method' => 'transfer_to_savings',
+            'comments' => 'Approved through the admin shortcut.',
+        ])
+        ->assertRedirect(route('loans.show', $loan))
+        ->assertSessionHas('status', 'Loan appraised, approved, and disbursed.');
+
+    $loan->refresh();
+
+    expect($loan->status)->toBe('active')
+        ->and($loan->savings_account_id)->not->toBeNull()
+        ->and($loan->loan_account_id)->not->toBeNull()
+        ->and((float) $loan->approved_amount)->toBe(700000.0)
+        ->and($loan->schedules)->toHaveCount(4)
+        ->and($loan->disbursements)->toHaveCount(1);
 });
 
 it('allocates repayments and releases loan guarantees when fully paid', function () {
@@ -460,4 +506,99 @@ it('marks overdue schedules and applies configured penalties', function () {
         ->and($schedule->fresh()->status)->toBe('overdue')
         ->and((float) $schedule->fresh()->penalty_due)->toBeGreaterThan(0.0)
         ->and($loan->fresh()->status)->toBe('in_arrears');
+});
+
+it('excludes cancelled loans from arrears listings and penalty calculations', function () {
+    $branch = Branch::create(['code' => '1009', 'name' => 'Arrears Branch', 'is_active' => true, 'status' => 'active']);
+    $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $user = User::factory()->create([
+        'branch_id' => $branch->id,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $product = loanWorkflowProduct(['code' => 'ARR-'.fake()->unique()->bothify('??')]);
+    $client = Client::create([
+        'branch_id' => $branch->id,
+        'officer_id' => $user->id,
+        'client_number' => '1009-C000001',
+        'client_type' => 'individual',
+        'first_name' => 'Arrears',
+        'last_name' => 'Client',
+        'phone' => '+256700009001',
+        'status' => 'active',
+        'kyc_status' => 'verified',
+    ]);
+
+    $activeLoan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'created_by' => $user->id,
+        'loan_number' => '1009-LN-ACTIVE',
+        'requested_amount' => 100000,
+        'principal_balance' => 100000,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 20,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'application_date' => today()->subMonth(),
+        'status' => 'active',
+    ]);
+    $cancelledLoan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'created_by' => $user->id,
+        'loan_number' => '1009-LN-CANCELLED',
+        'requested_amount' => 200000,
+        'principal_balance' => 200000,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 20,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'application_date' => today()->subMonth(),
+        'status' => 'cancelled',
+    ]);
+
+    LoanSchedule::create([
+        'loan_id' => $activeLoan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subDays(10),
+        'principal_due' => 100000,
+        'interest_due' => 0,
+        'total_due' => 100000,
+        'outstanding_amount' => 100000,
+        'balance_due' => 100000,
+        'status' => 'overdue',
+        'days_overdue' => 10,
+    ]);
+    $cancelledSchedule = LoanSchedule::create([
+        'loan_id' => $cancelledLoan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subDays(10),
+        'principal_due' => 200000,
+        'interest_due' => 0,
+        'total_due' => 200000,
+        'outstanding_amount' => 200000,
+        'balance_due' => 200000,
+        'status' => 'overdue',
+        'days_overdue' => 10,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('arrears.index'))
+        ->assertSuccessful()
+        ->assertSee('1009-LN-ACTIVE')
+        ->assertDontSee('1009-LN-CANCELLED')
+        ->assertDontSee('300,000.00');
+
+    expect(app(LoanService::class)->applyOverduePenalties($cancelledLoan, today()))->toBe(0)
+        ->and($cancelledSchedule->fresh()->outstanding_amount)->toBe('200000.00');
 });

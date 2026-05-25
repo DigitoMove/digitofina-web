@@ -26,6 +26,7 @@ class DueRepaymentController extends Controller
         $branchId = $canFilterBranch ? (int) ($data['branch_id'] ?? 0) : (int) $request->user()->branch_id;
         $scheduleQuery = LoanSchedule::query()
             ->with(['loan.client', 'loan.product'])
+            ->excludingCancelledLoans()
             ->whereHas('loan', fn (Builder $query): Builder => $visibility
                 ->scopeRepaymentCalendar($query, $request->user())
                 ->when($branchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId)))

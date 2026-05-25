@@ -126,6 +126,7 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::post('/loans/{loan}/submit-appraisal', [LoanController::class, 'submitForAppraisal'])->middleware('module:loans')->name('loans.submit-appraisal');
     Route::post('/loans/{loan}/submit-approval', [LoanController::class, 'submitForApproval'])->middleware('module:loans')->name('loans.submit-approval');
     Route::post('/loans/{loan}/approve', [LoanController::class, 'approve'])->middleware('module:loans')->name('loans.approve');
+    Route::post('/loans/{loan}/fast-track-disbursement', [LoanController::class, 'fastTrackDisbursement'])->middleware('module:loans')->name('loans.fast-track-disbursement');
     Route::post('/loans/{loan}/reject', [LoanController::class, 'reject'])->middleware('module:loans')->name('loans.reject');
     Route::post('/loans/{loan}/cancel', [LoanController::class, 'cancel'])->middleware('module:loans')->name('loans.cancel');
     Route::post('/loans/{loan}/reopen', [LoanController::class, 'reopen'])->middleware('module:loans')->name('loans.reopen');

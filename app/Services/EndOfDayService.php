@@ -163,11 +163,14 @@ class EndOfDayService
                 ->whereDate('disbursement_date', $date->toDateString());
 
             $penaltiesApplied = (float) LoanPenalty::query()
-                ->whereHas('loan', fn ($query) => $query->where('branch_id', $branch->id))
+                ->whereHas('loan', fn ($query) => $query
+                    ->where('branch_id', $branch->id)
+                    ->where('status', '!=', 'cancelled'))
                 ->whereDate('calculated_for_date', $date->toDateString())
                 ->sum('amount');
 
             $overdueInstallments = LoanSchedule::query()
+                ->excludingCancelledLoans()
                 ->whereHas('loan', fn ($query) => $query->where('branch_id', $branch->id))
                 ->where('status', 'overdue')
                 ->where('outstanding_amount', '>', 0)
@@ -231,6 +234,7 @@ class EndOfDayService
 
         LoanSchedule::query()
             ->with(['loan.client'])
+            ->excludingCancelledLoans()
             ->whereHas('loan', fn ($query) => $query->where('branch_id', $branch->id))
             ->where('outstanding_amount', '>', 0)
             ->where(fn ($query) => $query

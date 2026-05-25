@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -34,5 +35,10 @@ class LoanSchedule extends Model
     public function loan(): BelongsTo
     {
         return $this->belongsTo(Loan::class);
+    }
+
+    public function scopeExcludingCancelledLoans(Builder $query): Builder
+    {
+        return $query->whereHas('loan', fn (Builder $query): Builder => $query->where('status', '!=', 'cancelled'));
     }
 }
