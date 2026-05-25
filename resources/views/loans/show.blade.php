@@ -196,36 +196,60 @@
     </div>
 @endif
 
-@if($canClosePaidLoan)
-    <section class="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-5">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div class="max-w-3xl">
-                <h2 class="text-lg font-semibold text-emerald-950">Close Fully Paid Loan</h2>
-                <p class="mt-1 text-sm text-emerald-900">This loan has no remaining principal, interest, fees, or penalties, but it is still marked {{ str($loan->status)->headline() }}. Close it and close the linked loan account.</p>
-            </div>
-            <form method="POST" action="{{ route('loans.close-paid', $loan) }}" class="grid gap-2 sm:min-w-80" onsubmit="return confirm('Close this fully paid loan?');">
-                @csrf
-                <textarea name="reason" rows="2" required class="w-full rounded-lg border-emerald-200 bg-white text-sm focus:border-emerald-500 focus:ring-emerald-100" placeholder="Admin reason for closing this paid loan">{{ old('reason') }}</textarea>
-                @error('close_paid_reason')
-                    <div class="text-xs font-semibold text-red-700">{{ $message }}</div>
-                @enderror
-                <button class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2">Close fully paid loan</button>
-            </form>
-        </div>
-    </section>
+@if($canClosePaidLoan || $canCloseLoanWithCoverage || $canReopenClosedLoan)
+    <div class="mb-5 grid gap-4 xl:grid-cols-2">
+        @if($canClosePaidLoan)
+            <section class="rounded-lg border border-emerald-200 bg-emerald-50 p-5">
+                <div class="flex h-full flex-col gap-4">
+                    <div class="min-w-0">
+                        <h2 class="text-lg font-semibold text-emerald-950">Close Fully Paid Loan</h2>
+                        <p class="mt-1 text-sm text-emerald-900">This loan has no remaining principal, interest, fees, or penalties, but it is still marked {{ str($loan->status)->headline() }}. Close it and close the linked loan account.</p>
+                    </div>
+                    <form method="POST" action="{{ route('loans.close-paid', $loan) }}" class="mt-auto grid gap-2" onsubmit="return confirm('Close this fully paid loan?');">
+                        @csrf
+                        <textarea name="reason" rows="2" required class="w-full rounded-lg border-emerald-200 bg-white text-sm focus:border-emerald-500 focus:ring-emerald-100" placeholder="Admin reason for closing this paid loan">{{ old('reason') }}</textarea>
+                        @error('close_paid_reason')
+                            <div class="text-xs font-semibold text-red-700">{{ $message }}</div>
+                        @enderror
+                        <button class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2">Close fully paid loan</button>
+                    </form>
+                </div>
+            </section>
+        @endif
+
+        @if($canCloseLoanWithCoverage)
+            <section class="rounded-lg border border-rose-200 bg-rose-50 p-5">
+                <div class="flex h-full flex-col gap-4">
+                    <div class="min-w-0">
+                        <h2 class="text-lg font-semibold text-rose-950">Admin Close With Balance Coverage</h2>
+                        <p class="mt-1 text-sm text-rose-900">Outstanding balance is UGX {{ number_format($outstandingLoanBalance, 2) }}. Use this only when management has approved covering or writing off the remaining balance.</p>
+                    </div>
+                    <button type="button" data-loan-coverage-open class="mt-auto rounded-lg bg-rose-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm ring-1 ring-rose-700 hover:bg-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2">Close with coverage</button>
+                </div>
+            </section>
+        @endif
+
+        @if($canReopenClosedLoan)
+            <section class="rounded-lg border border-amber-200 bg-amber-50 p-5">
+                <div class="flex h-full flex-col gap-4">
+                    <div class="min-w-0">
+                        <h2 class="text-lg font-semibold text-amber-950">{{ $loanAccountNeedsReopen ? 'Reactivate Loan Account' : 'Reopen Loan' }}</h2>
+                        <p class="mt-1 text-sm text-amber-900">
+                            @if($loanAccountNeedsReopen)
+                                The loan is {{ str($loan->status)->headline() }}, but its linked loan account is {{ str($loan->loanAccount->status)->headline() }}. Reactivate it so cashiers can post repayments.
+                            @else
+                                Use this when a mistaken repayment closed the loan. It reopens the loan account, clears paid installment amounts, restores balances from the schedule, and marks successful repayments as reversed.
+                            @endif
+                        </p>
+                    </div>
+                    <button type="button" data-loan-reopen-open class="mt-auto rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white shadow-sm ring-1 ring-slate-950 hover:bg-brand-800 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">{{ $loanAccountNeedsReopen ? 'Reactivate loan' : 'Reopen loan' }}</button>
+                </div>
+            </section>
+        @endif
+    </div>
 @endif
 
 @if($canCloseLoanWithCoverage)
-    <section class="mb-5 rounded-lg border border-rose-200 bg-rose-50 p-5">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div class="max-w-3xl">
-                <h2 class="text-lg font-semibold text-rose-950">Admin Close With Balance Coverage</h2>
-                <p class="mt-1 text-sm text-rose-900">Outstanding balance is UGX {{ number_format($outstandingLoanBalance, 2) }}. Use this only when management has approved covering or writing off the remaining balance.</p>
-            </div>
-            <button type="button" data-loan-coverage-open class="rounded-lg bg-rose-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm ring-1 ring-rose-700 hover:bg-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2">Close with coverage</button>
-        </div>
-    </section>
-
     <div data-loan-coverage-modal data-open="{{ $errors->has('coverage_reason') ? '1' : '0' }}" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4">
         <div class="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl">
             <div class="mb-4 flex items-start justify-between gap-4">
@@ -273,22 +297,6 @@
 @endif
 
 @if($canReopenClosedLoan)
-    <section class="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-5">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div class="max-w-3xl">
-                <h2 class="text-lg font-semibold text-amber-950">{{ $loanAccountNeedsReopen ? 'Reactivate Loan Account' : 'Reopen Loan' }}</h2>
-                <p class="mt-1 text-sm text-amber-900">
-                    @if($loanAccountNeedsReopen)
-                        The loan is {{ str($loan->status)->headline() }}, but its linked loan account is {{ str($loan->loanAccount->status)->headline() }}. Reactivate it so cashiers can post repayments.
-                    @else
-                        Use this when a mistaken repayment closed the loan. It reopens the loan account, clears paid installment amounts, restores balances from the schedule, and marks successful repayments as reversed.
-                    @endif
-                </p>
-            </div>
-            <button type="button" data-loan-reopen-open class="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white shadow-sm ring-1 ring-slate-950 hover:bg-brand-800 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">{{ $loanAccountNeedsReopen ? 'Reactivate loan' : 'Reopen loan' }}</button>
-        </div>
-    </section>
-
     <div data-loan-reopen-modal data-open="{{ $errors->has('reopen_reason') ? '1' : '0' }}" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4">
         <div class="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl">
             <div class="mb-4 flex items-start justify-between gap-4">
