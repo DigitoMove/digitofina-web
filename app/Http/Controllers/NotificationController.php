@@ -13,9 +13,28 @@ class NotificationController extends Controller
     {
         $notifications = $request->user()
             ->notifications()
+            ->latest()
             ->paginate(20);
 
-        return view('notifications.index', compact('notifications'));
+        return view('notifications.index', [
+            'notifications' => $notifications,
+            'unreadCount' => $request->user()->unreadNotifications()->count(),
+            'readCount' => $request->user()->readNotifications()->count(),
+        ]);
+    }
+
+    public function open(Request $request, string $notification): RedirectResponse
+    {
+        $record = $this->notificationForUser($request, $notification);
+        $record->markAsRead();
+
+        $actionUrl = $record->data['action_url'] ?? null;
+
+        if (filled($actionUrl)) {
+            return redirect()->to($actionUrl);
+        }
+
+        return redirect()->route('notifications.index');
     }
 
     public function markRead(Request $request, string $notification): RedirectResponse

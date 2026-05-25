@@ -174,6 +174,7 @@ it('approves and disburses a loan with guarantor checks and a repayment schedule
 
 it('lets an admin appraise approve and disburse a loan in one shortcut', function () {
     $user = loanWorkflowUser();
+    $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
     $client = loanWorkflowClient($user);
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
 

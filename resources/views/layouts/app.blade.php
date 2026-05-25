@@ -199,10 +199,15 @@
                     <div class="flex items-center gap-3 text-sm">
                         @include('notifications.dropdown')
                         <span class="hidden text-slate-500 md:inline">{{ auth()->user()->branch?->name }}</span>
-                        <a href="{{ route('profile.edit') }}" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 hover:bg-brand-50">{{ auth()->user()->name }}</a>
-                        <form method="POST" action="{{ route('logout') }}">@csrf<button class="rounded-lg bg-slate-900 px-3 py-1.5 font-semibold text-white hover:bg-brand-800">Logout</button></form>
+                        <a href="{{ route('profile.edit') }}" class="max-w-32 truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 hover:bg-brand-50 sm:max-w-none">{{ auth()->user()->name }}</a>
+                        <form method="POST" action="{{ route('logout') }}" class="hidden sm:block">@csrf<button class="rounded-lg bg-slate-900 px-3 py-1.5 font-semibold text-white hover:bg-brand-800">Logout</button></form>
                     </div>
                 </div>
+                @if(! auth()->user()->isMember() && auth()->user()->canAccessModule('clients'))
+                    <form action="{{ route('clients.index') }}" class="border-t border-slate-100 px-4 py-2 sm:hidden">
+                        <input name="search" class="h-11 rounded-xl border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-4 focus:ring-brand-100" placeholder="Search clients, phone, ID">
+                    </form>
+                @endif
             </header>
 
             <main class="df-page flex-1 p-4 sm:p-6">
@@ -222,5 +227,35 @@
             </main>
         </div>
     </div>
+    @if(! auth()->user()->isMember())
+        <nav class="df-mobile-nav lg:hidden" aria-label="Quick actions">
+            <a href="{{ route('dashboard') }}" class="{{ request()->routeIs('dashboard') ? 'is-active' : '' }}">
+                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 4h16v6H4z M4 14h7v6H4z M15 14h5v6h-5z"/></svg>
+                <span>Home</span>
+            </a>
+            @if(auth()->user()->canAccessModule('clients') && auth()->user()->canPerform('manage-clients'))
+                <a href="{{ route('clients.index') }}" class="{{ request()->routeIs('clients.*') ? 'is-active' : '' }}">
+                    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0"/></svg>
+                    <span>Clients</span>
+                </a>
+            @endif
+            @if(auth()->user()->canAccessModule('teller') && (auth()->user()->canPerform('post-transactions') || auth()->user()->canPerform('post-repayments') || auth()->user()->canPerform('manage-drawers')))
+                <a href="{{ route('teller.index') }}" class="{{ request()->routeIs('teller.*') ? 'is-active' : '' }}">
+                    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 7h16v10H4z M8 7V5h8v2 M7 12h10"/></svg>
+                    <span>Teller</span>
+                </a>
+            @endif
+            @if(auth()->user()->canAccessModule('loans') && (auth()->user()->canPerform('manage-loans') || auth()->user()->canPerform('view-reports')))
+                <a href="{{ route('loans.index') }}" class="{{ request()->routeIs('loans.*') || request()->routeIs('arrears.*') ? 'is-active' : '' }}">
+                    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 6h16v12H4z M8 10h8 M8 14h5"/></svg>
+                    <span>Loans</span>
+                </a>
+            @endif
+            <button type="button" data-sidebar-open aria-controls="app-sidebar" aria-expanded="false">
+                <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+                <span>Menu</span>
+            </button>
+        </nav>
+    @endif
 </body>
 </html>

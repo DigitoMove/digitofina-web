@@ -1,6 +1,6 @@
 @php
     $unreadNotificationsCount = auth()->user()->unreadNotifications()->count();
-    $recentNotifications = auth()->user()->notifications()->limit(5)->get();
+    $recentNotifications = auth()->user()->notifications()->latest()->limit(5)->get();
 @endphp
 
 <details class="group/notifications relative">
@@ -23,14 +23,22 @@
                 <div class="font-semibold text-slate-950">Notifications</div>
                 <div class="text-xs text-slate-500">{{ $unreadNotificationsCount }} unread</div>
             </div>
-            <a href="{{ route('notifications.index') }}" class="text-xs font-semibold text-brand-700 hover:text-brand-900">View all</a>
+            <div class="flex items-center gap-3">
+                @if($unreadNotificationsCount > 0)
+                    <form method="POST" action="{{ route('notifications.read-all') }}">
+                        @csrf
+                        <button class="text-xs font-semibold text-slate-500 hover:text-brand-900">Mark all</button>
+                    </form>
+                @endif
+                <a href="{{ route('notifications.index') }}" class="text-xs font-semibold text-brand-700 hover:text-brand-900">View all</a>
+            </div>
         </div>
 
         <div class="max-h-80 divide-y divide-slate-100 overflow-y-auto">
             @forelse($recentNotifications as $notification)
                 @php
                     $data = $notification->data ?? [];
-                    $actionUrl = $data['action_url'] ?? route('notifications.index');
+                    $actionUrl = route('notifications.open', $notification);
                 @endphp
                 <a href="{{ $actionUrl }}" class="block px-4 py-3 transition hover:bg-slate-50 {{ $notification->read_at ? '' : 'bg-brand-50/50' }}">
                     <div class="flex items-start justify-between gap-3">

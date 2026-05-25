@@ -53,7 +53,7 @@ class LoanService
         return DB::transaction(function () use ($loan, $approver, $approvedAmount, $comments) {
             $loan = Loan::query()->with(['product', 'loanGuarantors', 'collaterals'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
 
-            if (! in_array($loan->status, ['submitted', 'under_review', 'pending_guarantor_approval', 'pending_collateral_verification'], true)) {
+            if (! in_array($loan->status, ['submitted', 'under_review', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true)) {
                 throw new InvalidArgumentException('Only submitted loans can be approved.');
             }
 

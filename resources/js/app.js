@@ -96,12 +96,12 @@ const initKeyboardFocus = () => {
 
 const initSidebar = () => {
     const sidebar = document.querySelector('[data-sidebar]');
-    const openButton = document.querySelector('[data-sidebar-open]');
+    const openButtons = document.querySelectorAll('[data-sidebar-open]');
     const closeButtons = document.querySelectorAll('[data-sidebar-close]');
     const backdrop = document.querySelector('[data-sidebar-backdrop]');
     const desktopQuery = window.matchMedia('(min-width: 1024px)');
 
-    if (!sidebar || !openButton || !backdrop) {
+    if (!sidebar || !openButtons.length || !backdrop) {
         return;
     }
 
@@ -110,10 +110,10 @@ const initSidebar = () => {
         sidebar.classList.toggle('translate-x-0', isOpen);
         backdrop.classList.toggle('hidden', !isOpen);
         document.body.classList.toggle('overflow-hidden', isOpen);
-        openButton.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        openButtons.forEach((openButton) => openButton.setAttribute('aria-expanded', isOpen ? 'true' : 'false'));
     };
 
-    openButton.addEventListener('click', () => setOpen(true));
+    openButtons.forEach((openButton) => openButton.addEventListener('click', () => setOpen(true)));
     closeButtons.forEach((button) => button.addEventListener('click', () => setOpen(false)));
     backdrop.addEventListener('click', () => setOpen(false));
 
@@ -525,6 +525,26 @@ const initLedgerAccountModals = () => {
     });
 };
 
+const initResponsiveTables = () => {
+    document.querySelectorAll('main table').forEach((table) => {
+        if (table.dataset.mobileReady === '1') {
+            return;
+        }
+
+        const headings = [...table.querySelectorAll('thead th')].map((heading) => heading.textContent.trim());
+
+        table.querySelectorAll('tbody tr').forEach((row) => {
+            row.querySelectorAll('td').forEach((cell, index) => {
+                if (!cell.dataset.label && headings[index]) {
+                    cell.dataset.label = headings[index];
+                }
+            });
+        });
+
+        table.dataset.mobileReady = '1';
+    });
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     initSteps();
@@ -537,4 +557,5 @@ document.addEventListener('DOMContentLoaded', () => {
     initLoanRepairModal();
     initLoanReopenModal();
     initLedgerAccountModals();
+    initResponsiveTables();
 });

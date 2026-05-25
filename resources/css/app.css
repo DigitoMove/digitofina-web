@@ -42,6 +42,7 @@
 
     body {
         @apply bg-slate-100 text-slate-900 antialiased;
+        -webkit-tap-highlight-color: transparent;
     }
 
     input:not([type='checkbox']):not([type='radio']):not([type='hidden']),
@@ -146,6 +147,26 @@
     .df-hover-lift {
         @apply transition duration-200 hover:-translate-y-0.5 hover:shadow-md;
     }
+
+    .df-mobile-nav {
+        @apply fixed inset-x-3 bottom-3 z-40 grid grid-flow-col auto-cols-fr items-center gap-1 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-2xl backdrop-blur;
+        padding-bottom: max(0.375rem, env(safe-area-inset-bottom));
+    }
+
+    .df-mobile-nav a,
+    .df-mobile-nav button {
+        @apply grid min-h-14 place-items-center gap-0.5 rounded-xl px-2 py-1 text-[0.7rem] font-semibold text-slate-500;
+    }
+
+    .df-mobile-nav svg {
+        @apply h-5 w-5;
+    }
+
+    .df-mobile-nav .is-active,
+    .df-mobile-nav a:hover,
+    .df-mobile-nav button:hover {
+        @apply bg-brand-50 text-brand-900;
+    }
 }
 
 .rounded,
@@ -239,6 +260,126 @@ main table tbody tr {
 
 main table tbody tr:hover {
     background-color: #f0fdfa;
+}
+
+@media (max-width: 640px) {
+    body {
+        padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+    }
+
+    .df-page {
+        width: 100%;
+        padding: 0.85rem;
+    }
+
+    .df-panel,
+    .df-soft-panel,
+    main section.rounded,
+    main form.rounded {
+        border-radius: 0.75rem;
+    }
+
+    .df-panel.p-5,
+    .df-soft-panel.p-5,
+    main .p-5 {
+        padding: 1rem;
+    }
+
+    .df-title {
+        font-size: 1.35rem;
+        line-height: 1.2;
+    }
+
+    .df-action-primary,
+    .df-action-secondary,
+    .df-action-danger {
+        width: 100%;
+        min-height: 3rem;
+        border-radius: 0.85rem;
+        padding-inline: 0.9rem;
+    }
+
+    main form[class*='grid'],
+    main div[class*='grid'] {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    main table {
+        min-width: 0;
+        width: 100%;
+        border-spacing: 0;
+    }
+
+    main table thead {
+        display: none;
+    }
+
+    main table,
+    main table tbody,
+    main table tr,
+    main table td {
+        display: block;
+    }
+
+    main table tbody {
+        display: grid;
+        gap: 0.85rem;
+    }
+
+    main table tbody tr {
+        overflow: hidden;
+        border: 1px solid rgb(226 232 240 / 0.95);
+        border-radius: 0.85rem;
+        background: white;
+        box-shadow: 0 12px 24px rgb(15 23 42 / 0.06);
+    }
+
+    main table tbody tr:hover {
+        background: white;
+    }
+
+    main table th,
+    main table td,
+    main table th:first-child,
+    main table td:first-child,
+    main table th:last-child,
+    main table td:last-child {
+        min-width: 0;
+        padding: 0.75rem 0.9rem !important;
+    }
+
+    main table td {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        border-bottom: 1px solid rgb(226 232 240 / 0.7);
+        text-align: right;
+    }
+
+    main table td:last-child {
+        border-bottom: 0;
+    }
+
+    main table td::before {
+        content: attr(data-label);
+        max-width: 42%;
+        flex: 0 0 42%;
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-align: left;
+        text-transform: uppercase;
+    }
+
+    main table td:empty {
+        display: none;
+    }
+
+    main table td > * {
+        min-width: 0;
+    }
 }
 
 main a.text-blue-700,
