@@ -77,6 +77,7 @@
                             'icon' => 'M3 7h18v12H3z M7 7V5h10v2',
                             'items' => [
                                 ['label' => 'Accounts Register', 'route' => 'accounts.index', 'modules' => ['savings', 'loans', 'investments'], 'permissions' => ['manage-accounts', 'manage-loans', 'manage-investments', 'view-reports'], 'icon' => 'M3 7h18v12H3z M7 7V5h10v2'],
+                                ['label' => 'Ledger Accounts', 'route' => 'ledger-accounts.index', 'module' => 'accounting', 'permissions' => ['manage-accounting'], 'icon' => 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'],
                                 ['label' => 'Savings Products', 'route' => 'savings-products.index', 'module' => 'savings', 'permissions' => ['manage-accounts'], 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
                                 ['label' => 'Savings Transfer', 'route' => 'savings-transfers.create', 'module' => 'savings', 'permissions' => ['post-transactions'], 'icon' => 'M7 7h12m0 0-4-4m4 4-4 4 M17 17H5m0 0 4-4m-4 4 4 4'],
                             ],

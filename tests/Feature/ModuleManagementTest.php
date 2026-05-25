@@ -650,7 +650,7 @@ it('shows ledger cash received into the drawer with a reversal action', function
         ->assertSee('Request reversal');
 });
 
-it('allows admins to edit ledger account attributes from drawer management', function () {
+it('allows admins to manage ledger account attributes from the accounts navigation', function () {
     [$organization, $branch, $otherBranch] = drawerAdminOrganization();
     enableTellerModule($organization);
     $admin = drawerAdminUser($organization, null, 'organization-admin', ['manage-accounting', 'manage-drawers', 'manage-users']);
@@ -684,12 +684,39 @@ it('allows admins to edit ledger account attributes from drawer management', fun
     $this->actingAs($admin)
         ->get(route('teller.index'))
         ->assertSuccessful()
-        ->assertSee('Edit OLD-LEDGER', false)
-        ->assertSee(route('teller.ledger-accounts.update', $ledgerAccount), false);
+        ->assertDontSee('Branch Ledger Accounts')
+        ->assertDontSee('Edit OLD-LEDGER', false);
 
     $this->actingAs($admin)
-        ->from(route('teller.index'))
-        ->put(route('teller.ledger-accounts.update', $ledgerAccount), [
+        ->get(route('ledger-accounts.index', ['search' => 'Old Ledger']))
+        ->assertSuccessful()
+        ->assertSee('Ledger Accounts')
+        ->assertSee('OLD-LEDGER')
+        ->assertSee('Old Ledger Name')
+        ->assertSee(route('ledger-accounts.update', $ledgerAccount), false);
+
+    $this->actingAs($admin)
+        ->from(route('ledger-accounts.index'))
+        ->post(route('ledger-accounts.store'), [
+            'branch_id' => $branch->id,
+            'suffix' => '5900',
+            'name' => 'New Dialog Ledger',
+            'type' => 'expense',
+            'normal_balance' => 'debit',
+            'drawer_direction' => 'cash_out',
+        ])
+        ->assertRedirect(route('ledger-accounts.index'))
+        ->assertSessionHas('status', 'Ledger account created.');
+
+    $this->assertDatabaseHas('chart_accounts', [
+        'branch_id' => $branch->id,
+        'code' => $branch->code.'-5900',
+        'name' => 'New Dialog Ledger',
+    ]);
+
+    $this->actingAs($admin)
+        ->from(route('ledger-accounts.index'))
+        ->put(route('ledger-accounts.update', $ledgerAccount), [
             'branch_id' => $otherBranch->id,
             'parent_id' => $parentAccount->id,
             'code' => 'NEW-LEDGER',
@@ -701,7 +728,7 @@ it('allows admins to edit ledger account attributes from drawer management', fun
             'is_system' => '1',
             'is_active' => '0',
         ])
-        ->assertRedirect(route('teller.index'))
+        ->assertRedirect(route('ledger-accounts.index'))
         ->assertSessionHas('status', 'Ledger account updated.');
 
     expect($ledgerAccount->fresh())

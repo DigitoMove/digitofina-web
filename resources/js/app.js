@@ -472,6 +472,59 @@ const initLoanReopenModal = () => {
     }
 };
 
+const initLedgerAccountModals = () => {
+    const modals = document.querySelectorAll('[data-ledger-modal]');
+    const openButtons = document.querySelectorAll('[data-ledger-modal-open]');
+
+    if (!modals.length || !openButtons.length) {
+        return;
+    }
+
+    const open = (modal) => {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        modal.querySelector('input:not([type="hidden"]), select, textarea')?.focus();
+    };
+
+    const close = (modal) => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    };
+
+    const closeAll = () => modals.forEach(close);
+
+    openButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const modal = document.getElementById(button.dataset.ledgerModalOpen || '');
+
+            if (modal) {
+                open(modal);
+            }
+        });
+    });
+
+    modals.forEach((modal) => {
+        modal.querySelectorAll('[data-ledger-modal-close]').forEach((button) => {
+            button.addEventListener('click', () => close(modal));
+        });
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                close(modal);
+            }
+        });
+
+        if (modal.dataset.open === '1') {
+            open(modal);
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeAll();
+        }
+    });
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     initSteps();
@@ -483,4 +536,5 @@ document.addEventListener('DOMContentLoaded', () => {
     initTellerLookup();
     initLoanRepairModal();
     initLoanReopenModal();
+    initLedgerAccountModals();
 });
