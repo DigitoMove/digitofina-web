@@ -258,9 +258,13 @@ class DashboardController extends Controller
         $selectedOrganization = app(TenantContext::class)->organization();
         $organizationIds = $selectedOrganization ? [$selectedOrganization->id] : null;
         $scope = fn ($query) => $organizationIds ? $query->whereIn('organization_id', $organizationIds) : $query;
+        $enabledModules = $selectedOrganization
+            ? app(ModuleService::class)->enabledSlugs($selectedOrganization)
+            : collect(ModuleCatalog::modules())->pluck('slug')->all();
 
         return view('dashboard.super-admin', [
             'selectedOrganization' => $selectedOrganization,
+            'enabledModules' => $enabledModules,
             'organizations' => Organization::query()->with('package')->orderBy('name')->get(),
             'packages' => Package::query()->where('status', 'active')->orderBy('name')->get(),
             'organizationCount' => Organization::query()->count(),

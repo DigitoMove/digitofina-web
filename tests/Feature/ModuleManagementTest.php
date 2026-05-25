@@ -75,6 +75,24 @@ it('hides disabled module navigation from the application shell', function () {
         ->assertDontSee('Savings Products');
 });
 
+it('shows only enabled package cards on the dashboard', function () {
+    $user = moduleManagementUser(['manage-clients', 'manage-loans', 'view-reports']);
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($user->organization);
+    $modules->enable($user->organization, Module::where('slug', 'loans')->firstOrFail(), $user);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertSuccessful()
+        ->assertSee('Loan applications')
+        ->assertSee('Loans in arrears')
+        ->assertSee('Total loans')
+        ->assertDontSee('Savings balance')
+        ->assertDontSee('Investment balance')
+        ->assertDontSee("Today's deposits");
+});
+
 it('renders a loan-only client dashboard without disabled financial modules', function () {
     $user = moduleManagementUser(['manage-clients', 'manage-loans']);
     $modules = app(ModuleService::class);

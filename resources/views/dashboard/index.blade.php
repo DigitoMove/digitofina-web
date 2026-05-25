@@ -47,7 +47,7 @@
     ];
     $cardModules = [
         'Total clients' => 'clients',
-        'Active accounts' => 'savings',
+        'Active accounts' => ['savings', 'loans', 'investments', 'shares', 'fixed-deposits'],
         'Loan applications' => 'loans',
         'Loans in arrears' => 'loans',
         'Due today' => 'loans',
@@ -62,7 +62,7 @@
         "Today's deposits" => 'teller',
         "Today's withdrawals" => 'teller',
         'Teller drawer balance' => 'teller',
-        'Pending approvals' => 'reports',
+        'Pending approvals' => ['loans', 'savings', 'investments', 'accounting'],
         'Branches' => 'users',
         'Active staff' => 'users',
         'Audit events today' => 'audit-logs',
@@ -73,7 +73,13 @@
         'Maturing this month' => 'investments',
         'Investment withdrawals' => 'investments',
     ];
-    $cards = array_values(array_filter($cards, fn (array $card): bool => $moduleEnabled($cardModules[$card[0]] ?? 'reports')));
+    $cardIsVisible = function (array $card) use ($cardModules, $moduleEnabled): bool {
+        $modules = $cardModules[$card[0]] ?? [];
+        $modules = is_array($modules) ? $modules : [$modules];
+
+        return $modules !== [] && collect($modules)->contains(fn (string $module): bool => $moduleEnabled($module));
+    };
+    $cards = array_values(array_filter($cards, $cardIsVisible));
     $essentialCardLabels = match (true) {
         $isCashierDashboard => ['Due today', "Today's deposits", "Today's withdrawals", 'Teller drawer balance'],
         $isLoanOfficerDashboard => ['Loan applications', 'Loans in arrears', 'Due today', 'Total loans'],

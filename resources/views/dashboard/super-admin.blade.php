@@ -39,16 +39,26 @@
 </section>
 
 @php
+    $moduleEnabled = fn (string $slug): bool => in_array($slug, $enabledModules ?? [], true);
     $cards = [
-        ['Organizations', $organizationCount, 'bg-brand-50 text-brand-800'],
-        ['Active organizations', $activeOrganizationCount, 'bg-emerald-50 text-emerald-700'],
-        ['Suspended/disabled', $suspendedOrganizationCount, 'bg-rose-50 text-rose-700'],
-        ['Staff users', $staffCount, 'bg-sky-50 text-sky-700'],
-        ['Clients', $clientCount, 'bg-cyan-50 text-cyan-700'],
-        ['Loan portfolio', number_format($loanBalance, 0).' UGX', 'bg-amber-50 text-amber-700'],
-        ['Savings balance', number_format($savingsBalance, 0).' UGX', 'bg-teal-50 text-teal-700'],
-        ['Investment balance', number_format($investmentBalance, 0).' UGX', 'bg-indigo-50 text-indigo-700'],
+        ['Organizations', $organizationCount, 'bg-brand-50 text-brand-800', ['platform']],
+        ['Active organizations', $activeOrganizationCount, 'bg-emerald-50 text-emerald-700', ['platform']],
+        ['Suspended/disabled', $suspendedOrganizationCount, 'bg-rose-50 text-rose-700', ['platform']],
+        ['Staff users', $staffCount, 'bg-sky-50 text-sky-700', ['users']],
+        ['Clients', $clientCount, 'bg-cyan-50 text-cyan-700', ['clients']],
+        ['Loan portfolio', number_format($loanBalance, 0).' UGX', 'bg-amber-50 text-amber-700', ['loans']],
+        ['Savings balance', number_format($savingsBalance, 0).' UGX', 'bg-teal-50 text-teal-700', ['savings']],
+        ['Investment balance', number_format($investmentBalance, 0).' UGX', 'bg-indigo-50 text-indigo-700', ['investments']],
     ];
+    $cards = array_values(array_filter($cards, function (array $card) use ($moduleEnabled, $selectedOrganization): bool {
+        $modules = $card[3];
+
+        if (in_array('platform', $modules, true)) {
+            return ! $selectedOrganization;
+        }
+
+        return collect($modules)->contains(fn (string $module): bool => $moduleEnabled($module));
+    }));
 @endphp
 
 <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
