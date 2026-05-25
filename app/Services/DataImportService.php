@@ -44,7 +44,7 @@ class DataImportService
             'clients' => [
                 'label' => 'Clients',
                 'description' => 'Register clients, generate their basic savings account, and optionally create a draft loan with a preview schedule.',
-                'columns' => ['client_number', 'first_name', 'middle_name', 'last_name', 'phone', 'branch_code', 'client_type', 'email', 'national_id', 'status', 'kyc_status', 'address', 'business_name', 'registered_at', 'loan_amount', 'loan_code', 'installments'],
+                'columns' => ['client_number', 'first_name', 'middle_name', 'last_name', 'phone', 'branch_code', 'client_type', 'email', 'national_id', 'status', 'kyc_status', 'address', 'business_name', 'registered_at', 'loan_application_date', 'loan_amount', 'loan_code', 'installments'],
             ],
             'savings_accounts' => [
                 'label' => 'Savings accounts',
@@ -166,7 +166,7 @@ class DataImportService
                         'record_type' => $model?->getMorphClass(),
                         'record_id' => $model?->getKey(),
                         'status' => 'imported',
-                        'message' => 'Imported successfully.',
+                        'message' => $model ? 'Imported successfully.' : 'Existing matching record found; no duplicate created.',
                     ]);
                 } catch (Throwable $exception) {
                     $row->update([
@@ -341,6 +341,7 @@ class DataImportService
         }
 
         $this->dateField($data, 'registered_at', $errors);
+        $this->dateField($data, 'loan_application_date', $errors, $data['registered_at'] ?? today()->toDateString());
 
         return $errors;
     }
@@ -444,7 +445,9 @@ class DataImportService
             $errors['client_number'][] = 'Client does not belong to the selected branch.';
         }
 
-        if (Loan::where('loan_number', $data['loan_number'] ?? null)->exists()) {
+        $existingLoanNumber = Loan::where('loan_number', $data['loan_number'] ?? null)->first();
+
+        if ($existingLoanNumber && (! $client || (int) $existingLoanNumber->client_id !== (int) $client->id || ! $existingLoanNumber->application_date?->isSameDay(Carbon::parse($data['application_date'])))) {
             $errors['loan_number'][] = 'Loan number already exists.';
         }
 
@@ -529,7 +532,7 @@ class DataImportService
             'clients' => $this->importClientWithDefaultAccounts($data, $user),
             'savings_accounts' => SavingsAccount::create($this->savingsAccountPayload($data, $user)),
             'opening_balances' => $this->postOpeningBalance($row, $data, $user),
-            'existing_loans' => Loan::create($this->loanPayload($data, $user)),
+            'existing_loans' => $this->importExistingLoan($data, $user),
             'repayment_schedules' => LoanSchedule::create($this->schedulePayload($data)),
             'chart_accounts' => ChartAccount::create($this->chartAccountPayload($data, $user)),
             default => null,
@@ -574,7 +577,7 @@ class DataImportService
     /**
      * @param  array<string, mixed>  $data
      */
-    private function importClientWithDefaultAccounts(array $data, User $user): Model
+    private function importClientWithDefaultAccounts(array $data, User $user): ?Model
     {
         if (($data['_client_number_generated'] ?? false) && Client::where('client_number', $data['client_number'])->exists()) {
             $branchForNumber = Branch::query()->findOrFail($data['branch_id']);
@@ -635,7 +638,7 @@ class DataImportService
     /**
      * @param  array<string, mixed>  $data
      */
-    private function createImportedDraftLoan(Client $client, Account $savingsAccount, array $data, User $user): Loan
+    private function createImportedDraftLoan(Client $client, Account $savingsAccount, array $data, User $user): ?Loan
     {
         $product = LoanProduct::query()
             ->where('code', strtoupper((string) ($data['loan_code'] ?? 'WEEKLY20')))
@@ -643,9 +646,13 @@ class DataImportService
                 $query->where('organization_id', $organizationId)->orWhereNull('organization_id');
             }))
             ->firstOrFail();
-        $applicationDate = Carbon::parse($data['registered_at'] ?? today()->toDateString());
+        $applicationDate = Carbon::parse($data['loan_application_date'] ?? $data['registered_at'] ?? today()->toDateString());
         $requestedAmount = (float) $data['loan_amount'];
         $installments = max(1, (int) ($data['installments'] ?? 4));
+
+        if ($this->loanExistsForImportedDate($client, $applicationDate)) {
+            return null;
+        }
 
         $loan = Loan::create([
             'organization_id' => $client->organization_id ?? $user->organization_id,
@@ -704,6 +711,14 @@ class DataImportService
         }
 
         $loan->update(['interest_balance' => round(collect($rows)->sum('interest'), 2)]);
+    }
+
+    private function loanExistsForImportedDate(Client $client, Carbon $applicationDate): bool
+    {
+        return Loan::query()
+            ->where('client_id', $client->id)
+            ->whereDate('application_date', $applicationDate->toDateString())
+            ->exists();
     }
 
     /**
@@ -798,6 +813,21 @@ class DataImportService
             'approved_at' => $data['approved_at'] ?? null,
             'disbursed_at' => $data['disbursed_at'] ?? null,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function importExistingLoan(array $data, User $user): ?Loan
+    {
+        $client = Client::where('client_number', $data['client_number'])->firstOrFail();
+        $applicationDate = Carbon::parse($data['application_date']);
+
+        if ($this->loanExistsForImportedDate($client, $applicationDate)) {
+            return null;
+        }
+
+        return Loan::create($this->loanPayload($data, $user));
     }
 
     /**

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Account;
 use App\Models\Branch;
 use App\Models\Client;
 use App\Models\Loan;
@@ -119,6 +120,56 @@ it('creates a draft loan for an existing imported client number', function () {
 
     expect(Client::where('client_number', '1001-C900004')->count())->toBe(1)
         ->and(Loan::where('client_id', $client->id)->where('status', 'draft')->where('requested_amount', 750000)->exists())->toBeTrue();
+});
+
+it('reimports existing clients without duplicating savings accounts or same-date loans', function () {
+    $user = importUser();
+    $product = importLoanProduct();
+    $client = Client::create([
+        'branch_id' => $user->branch_id,
+        'officer_id' => $user->id,
+        'client_number' => '1001-C900014',
+        'client_type' => 'individual',
+        'first_name' => 'Repeat',
+        'last_name' => 'Client',
+        'phone' => '+256701111234',
+        'status' => 'active',
+        'kyc_status' => 'verified',
+    ]);
+    Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'created_by' => $user->id,
+        'loan_number' => '1001-LN-900014',
+        'requested_amount' => 500000,
+        'approved_amount' => null,
+        'principal_balance' => 0,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 20,
+        'term_periods' => 4,
+        'repayment_frequency' => 'weekly',
+        'application_date' => '2026-02-01',
+        'status' => 'draft',
+    ]);
+
+    $sameDateCsv = "client_number,branch_code,loan_application_date,loan_amount,loan_code,installments\n1001-C900014,1001,2026-02-01,750000,WEEKLY20,6\n";
+    $sameDateBatch = importService()->createBatch($user, csvUpload('clients.csv', $sameDateCsv), 'clients');
+    importService()->commit($sameDateBatch, $user);
+
+    expect(Account::where('client_id', $client->id)->whereHas('accountType', fn ($query) => $query->where('category', 'savings'))->count())->toBe(1)
+        ->and(Loan::where('client_id', $client->id)->count())->toBe(1);
+
+    $differentDateCsv = "client_number,branch_code,loan_application_date,loan_amount,loan_code,installments\n1001-C900014,1001,2026-03-01,750000,WEEKLY20,6\n";
+    $differentDateBatch = importService()->createBatch($user, csvUpload('clients.csv', $differentDateCsv), 'clients');
+    importService()->commit($differentDateBatch, $user);
+
+    expect(Account::where('client_id', $client->id)->whereHas('accountType', fn ($query) => $query->where('category', 'savings'))->count())->toBe(1)
+        ->and(Loan::where('client_id', $client->id)->count())->toBe(2)
+        ->and(Loan::where('client_id', $client->id)->whereDate('application_date', '2026-03-01')->where('status', 'draft')->exists())->toBeTrue();
 });
 
 it('generates missing client numbers during client import', function () {
