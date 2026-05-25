@@ -66,7 +66,7 @@ function loanWorkflowClient(User $user, string $phone = '+256700000001'): Client
         'last_name' => fake()->lastName(),
         'phone' => $phone,
         'kyc_status' => 'verified',
-        'status' => 'active',
+        'status' => 'fully_paid',
     ]);
 }
 

@@ -1078,7 +1078,7 @@ class LoanService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if (in_array($loan->status, ['closed', 'fully_paid', 'written_off'], true)) {
+            if (in_array($loan->status, ['closed', 'written_off'], true)) {
                 throw new InvalidArgumentException('This loan is already closed.');
             }
 

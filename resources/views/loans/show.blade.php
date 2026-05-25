@@ -25,7 +25,7 @@
     $canReopenClosedLoan = (in_array($loan->status, ['closed', 'fully_paid'], true) || $loanAccountNeedsReopen) && auth()->user()->canAdministerLoanRepairs();
     $canRepairLoanTerms = in_array($loan->status, ['approved', 'disbursed', 'active', 'in_arrears'], true) && auth()->user()->canAdministerLoanRepairs();
     $outstandingLoanBalance = (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance;
-    $canClosePaidLoan = $outstandingLoanBalance <= 0 && ! in_array($loan->status, ['closed', 'fully_paid', 'written_off', 'cancelled', 'rejected'], true) && auth()->user()->canAdministerLoanRepairs();
+    $canClosePaidLoan = $outstandingLoanBalance <= 0 && ! in_array($loan->status, ['closed', 'written_off', 'cancelled', 'rejected'], true) && auth()->user()->canAdministerLoanRepairs();
     $canCloseLoanWithCoverage = $outstandingLoanBalance > 0 && in_array($loan->status, ['disbursed', 'active', 'in_arrears', 'restructured'], true) && auth()->user()->canAdministerLoanRepairs();
     $workflow = ['Draft', 'Appraisal', 'Approval', 'Approved', 'Disbursed', 'Closed'];
     $statusIndex = match (true) {
