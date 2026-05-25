@@ -200,6 +200,16 @@
                         @include('notifications.dropdown')
                         <span class="hidden text-slate-500 md:inline">{{ auth()->user()->branch?->name }}</span>
                         <a href="{{ route('profile.edit') }}" class="max-w-32 truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 hover:bg-brand-50 sm:max-w-none">{{ auth()->user()->name }}</a>
+                        <form method="POST" action="{{ route('logout') }}" class="sm:hidden">
+                            @csrf
+                            <button type="submit" class="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-red-50 hover:text-red-700" aria-label="Logout">
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewBox="0 0 24 24">
+                                    <path d="M10 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4" />
+                                    <path d="M15 7l5 5-5 5" />
+                                    <path d="M20 12H9" />
+                                </svg>
+                            </button>
+                        </form>
                         <form method="POST" action="{{ route('logout') }}" class="hidden sm:block">@csrf<button class="rounded-lg bg-slate-900 px-3 py-1.5 font-semibold text-white hover:bg-brand-800">Logout</button></form>
                     </div>
                 </div>
