@@ -65,7 +65,7 @@
                         <td class="px-4 py-3">{{ str($account->status)->headline() }}</td>
                         <td class="px-4 py-3 text-right">
                             @if($canRemoveSavingsPackage)
-                                <form method="POST" action="{{ route('savings-accounts.destroy', $account) }}" onsubmit="return confirm('Remove this savings product package? The basic savings account will remain.');">
+                                <form method="POST" action="{{ route('savings-accounts.destroy', $account) }}" data-confirm-title="Remove savings package" data-confirm-message="Remove this savings product package? The basic savings account will remain." data-confirm-label="Remove package" data-confirm-tone="warning">
                                     @csrf
                                     @method('DELETE')
                                     <button class="rounded bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">Remove Package</button>

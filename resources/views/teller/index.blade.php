@@ -187,7 +187,7 @@
                                                     <input name="opening_balance" type="number" min="0" step="100" value="{{ $managedDrawer->current_balance }}" class="w-28 rounded border-slate-300 text-sm" required>
                                                     <button class="rounded bg-brand-700 px-3 py-1 text-xs font-semibold text-white">Open</button>
                                                 </form>
-                                                <form method="POST" action="{{ route('teller.drawers.destroy', $managedDrawer) }}" onsubmit="return confirm('Delete this drawer? Only unused closed drawers can be deleted.');">
+                                                <form method="POST" action="{{ route('teller.drawers.destroy', $managedDrawer) }}" data-confirm-title="Delete drawer" data-confirm-message="Delete this drawer? Only unused closed drawers can be deleted." data-confirm-label="Delete drawer" data-confirm-tone="danger">
                                                     @csrf
                                                     @method('DELETE')
                                                     <button class="rounded border border-red-200 px-3 py-1 text-xs font-semibold text-red-700">Delete</button>

@@ -267,5 +267,24 @@
             </button>
         </nav>
     @endif
+    <div class="fixed inset-0 z-[120] hidden items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" data-confirm-dialog aria-hidden="true">
+        <div class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl ring-1 ring-slate-950/10" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
+            <div class="flex items-start gap-3">
+                <div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-amber-50 text-amber-700" data-confirm-icon>
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewBox="0 0 24 24">
+                        <path d="M12 9v4m0 4h.01 M10.3 4.6 2.6 18a1.8 1.8 0 0 0 1.6 2.7h15.6a1.8 1.8 0 0 0 1.6-2.7L13.7 4.6a1.9 1.9 0 0 0-3.4 0z" />
+                    </svg>
+                </div>
+                <div class="min-w-0 flex-1">
+                    <h2 id="confirm-dialog-title" class="text-lg font-semibold text-slate-950" data-confirm-title>Confirm action</h2>
+                    <p id="confirm-dialog-message" class="mt-2 text-sm leading-6 text-slate-600" data-confirm-message>Please confirm that you want to continue.</p>
+                </div>
+            </div>
+            <div class="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" data-confirm-cancel>Cancel</button>
+                <button type="button" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-800 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2" data-confirm-accept>Confirm</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

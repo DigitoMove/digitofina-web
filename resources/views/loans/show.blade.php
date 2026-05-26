@@ -159,7 +159,7 @@
                 <button type="button" data-loan-repair-close class="rounded-lg px-3 py-1 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900" aria-label="Close repair loan dialog">&times;</button>
             </div>
 
-            <form method="POST" action="{{ route('loans.repair-terms', $loan) }}" class="grid gap-4 md:grid-cols-2" onsubmit="return confirm('Repair this loan and regenerate its repayment schedule?');">
+            <form method="POST" action="{{ route('loans.repair-terms', $loan) }}" class="grid gap-4 md:grid-cols-2" data-confirm-title="Repair loan terms" data-confirm-message="Repair this loan and regenerate its repayment schedule?" data-confirm-label="Repair loan" data-confirm-tone="warning">
                 @csrf
                 <label class="text-sm font-medium text-slate-700">Loan product
                     <select name="loan_product_id" class="mt-1 w-full rounded border-slate-300" required>
@@ -205,7 +205,7 @@
                         <h2 class="text-lg font-semibold text-emerald-950">Close Fully Paid Loan</h2>
                         <p class="mt-1 text-sm text-emerald-900">This loan has no remaining principal, interest, fees, or penalties, but it is still marked {{ str($loan->status)->headline() }}. Close it and close the linked loan account.</p>
                     </div>
-                    <form method="POST" action="{{ route('loans.close-paid', $loan) }}" class="mt-auto grid gap-2" onsubmit="return confirm('Close this fully paid loan?');">
+                    <form method="POST" action="{{ route('loans.close-paid', $loan) }}" class="mt-auto grid gap-2" data-confirm-title="Close fully paid loan" data-confirm-message="Close this fully paid loan and close the linked loan account?" data-confirm-label="Close loan" data-confirm-tone="warning">
                         @csrf
                         <textarea name="reason" rows="2" required class="w-full rounded-lg border-emerald-200 bg-white text-sm focus:border-emerald-500 focus:ring-emerald-100" placeholder="Admin reason for closing this paid loan">{{ old('reason') }}</textarea>
                         @error('close_paid_reason')
@@ -260,7 +260,7 @@
                 <button type="button" data-loan-coverage-close class="rounded-lg px-3 py-1 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900" aria-label="Close balance coverage dialog">&times;</button>
             </div>
 
-            <form method="POST" action="{{ route('loans.close-with-coverage', $loan) }}" class="grid gap-4" onsubmit="return confirm('Close this loan and clear the remaining balance?');">
+            <form method="POST" action="{{ route('loans.close-with-coverage', $loan) }}" class="grid gap-4" data-confirm-title="Close loan with coverage" data-confirm-message="Close this loan and clear the remaining balance using the selected coverage method?" data-confirm-label="Close and record coverage" data-confirm-tone="danger">
                 @csrf
                 <div class="rounded-lg border border-rose-100 bg-rose-50 p-3 text-sm text-rose-900">
                     <div class="flex justify-between gap-3"><span>Principal</span><strong>UGX {{ number_format((float) $loan->principal_balance, 2) }}</strong></div>
@@ -313,7 +313,7 @@
                 <button type="button" data-loan-reopen-close class="rounded-lg px-3 py-1 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900" aria-label="Close reopen loan dialog">&times;</button>
             </div>
 
-            <form method="POST" action="{{ route('loans.reopen', $loan) }}" class="grid gap-4" onsubmit="return confirm('{{ $loanAccountNeedsReopen ? 'Reactivate this loan?' : 'Reopen this loan and clear all paid installment amounts?' }}');">
+            <form method="POST" action="{{ route('loans.reopen', $loan) }}" class="grid gap-4" data-confirm-title="{{ $loanAccountNeedsReopen ? 'Reactivate loan' : 'Reopen loan' }}" data-confirm-message="{{ $loanAccountNeedsReopen ? 'Reactivate this loan account so repayments can be posted?' : 'Reopen this loan and clear all paid installment amounts?' }}" data-confirm-label="{{ $loanAccountNeedsReopen ? 'Reactivate loan' : 'Reopen loan' }}" data-confirm-tone="warning">
                 @csrf
                 <label class="text-sm font-semibold text-slate-800">
                     Reason <x-required-badge />

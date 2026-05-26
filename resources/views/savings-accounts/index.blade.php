@@ -29,7 +29,7 @@
                     <div class="flex items-center gap-3">
                         <a href="{{ route('savings-accounts.show', $account) }}" class="font-medium text-blue-700">View</a>
                         @if($canRemoveSavingsPackage)
-                            <form method="POST" action="{{ route('savings-accounts.destroy', $account) }}" onsubmit="return confirm('Remove this savings product package?');">
+                            <form method="POST" action="{{ route('savings-accounts.destroy', $account) }}" data-confirm-title="Remove savings package" data-confirm-message="Remove this savings product package?" data-confirm-label="Remove package" data-confirm-tone="warning">
                                 @csrf
                                 @method('DELETE')
                                 <button class="font-medium text-red-700">Remove</button>

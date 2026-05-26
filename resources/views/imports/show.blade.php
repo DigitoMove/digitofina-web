@@ -10,13 +10,13 @@
             </div>
             <div class="flex flex-wrap gap-2">
                 @can('commit', $batch)
-                    <form method="POST" action="{{ route('imports.commit', $batch) }}" onsubmit="return confirm('Commit all valid rows in this import?')">
+                    <form method="POST" action="{{ route('imports.commit', $batch) }}" data-confirm-title="Commit import" data-confirm-message="Commit all valid rows in this import?" data-confirm-label="Commit rows" data-confirm-tone="warning">
                         @csrf
                         <button class="rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-50" @disabled($batch->invalid_rows > 0)>Commit import</button>
                     </form>
                 @endcan
                 @can('rollback', $batch)
-                    <form method="POST" action="{{ route('imports.rollback', $batch) }}" onsubmit="return confirm('Rollback safe rows from this import batch?')">
+                    <form method="POST" action="{{ route('imports.rollback', $batch) }}" data-confirm-title="Rollback import" data-confirm-message="Rollback safe rows from this import batch?" data-confirm-label="Rollback rows" data-confirm-tone="danger">
                         @csrf
                         <button class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100">Rollback safe rows</button>
                     </form>

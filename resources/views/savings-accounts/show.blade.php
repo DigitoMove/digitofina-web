@@ -13,7 +13,7 @@
         <a href="{{ route('savings-transfers.create', ['from' => $account->id]) }}" class="df-action-secondary">Transfer</a>
         <a href="{{ route('savings-accounts.statement', $account) }}" class="df-action-secondary">Statement</a>
         @if($canRemoveSavingsPackage)
-            <form method="POST" action="{{ route('savings-accounts.destroy', $account) }}" onsubmit="return confirm('Remove this savings product package? The client basic savings account will remain.');">
+            <form method="POST" action="{{ route('savings-accounts.destroy', $account) }}" data-confirm-title="Remove savings package" data-confirm-message="Remove this savings product package? The client basic savings account will remain." data-confirm-label="Remove package" data-confirm-tone="warning">
                 @csrf
                 @method('DELETE')
                 <button class="df-action-danger">Remove Package</button>

@@ -138,6 +138,93 @@ const initSidebar = () => {
     });
 };
 
+const initConfirmDialog = () => {
+    const dialog = document.querySelector('[data-confirm-dialog]');
+    const title = dialog?.querySelector('[data-confirm-title]');
+    const message = dialog?.querySelector('[data-confirm-message]');
+    const acceptButton = dialog?.querySelector('[data-confirm-accept]');
+    const cancelButton = dialog?.querySelector('[data-confirm-cancel]');
+    const icon = dialog?.querySelector('[data-confirm-icon]');
+    let pendingForm = null;
+
+    if (!dialog || !title || !message || !acceptButton || !cancelButton || !icon) {
+        return;
+    }
+
+    const toneClasses = {
+        danger: ['bg-red-50', 'text-red-700'],
+        warning: ['bg-amber-50', 'text-amber-700'],
+        neutral: ['bg-slate-100', 'text-slate-700'],
+    };
+    const buttonClasses = {
+        danger: ['bg-red-700', 'hover:bg-red-800', 'focus:ring-red-500'],
+        warning: ['bg-amber-600', 'hover:bg-amber-700', 'focus:ring-amber-500'],
+        neutral: ['bg-slate-900', 'hover:bg-brand-800', 'focus:ring-brand-500'],
+    };
+    const allIconClasses = Object.values(toneClasses).flat();
+    const allButtonClasses = Object.values(buttonClasses).flat();
+
+    const close = () => {
+        dialog.classList.add('hidden');
+        dialog.classList.remove('flex');
+        dialog.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('overflow-hidden');
+        pendingForm = null;
+    };
+
+    const open = (form) => {
+        const tone = form.dataset.confirmTone || 'warning';
+        pendingForm = form;
+        title.textContent = form.dataset.confirmTitle || 'Confirm action';
+        message.textContent = form.dataset.confirmMessage || 'Please confirm that you want to continue.';
+        acceptButton.textContent = form.dataset.confirmLabel || 'Confirm';
+        icon.classList.remove(...allIconClasses);
+        icon.classList.add(...(toneClasses[tone] || toneClasses.warning));
+        acceptButton.classList.remove(...allButtonClasses);
+        acceptButton.classList.add(...(buttonClasses[tone] || buttonClasses.warning));
+        dialog.classList.remove('hidden');
+        dialog.classList.add('flex');
+        dialog.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('overflow-hidden');
+        acceptButton.focus();
+    };
+
+    document.querySelectorAll('form[data-confirm-message]').forEach((form) => {
+        form.addEventListener('submit', (event) => {
+            if (form.dataset.confirmed === 'true') {
+                delete form.dataset.confirmed;
+
+                return;
+            }
+
+            event.preventDefault();
+            open(form);
+        });
+    });
+
+    acceptButton.addEventListener('click', () => {
+        if (!pendingForm) {
+            close();
+
+            return;
+        }
+
+        pendingForm.dataset.confirmed = 'true';
+        pendingForm.requestSubmit();
+    });
+    cancelButton.addEventListener('click', close);
+    dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) {
+            close();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !dialog.classList.contains('hidden')) {
+            close();
+        }
+    });
+};
+
 const formatMoney = (value) => {
     return new Intl.NumberFormat('en-UG', {
         minimumFractionDigits: 2,
@@ -598,6 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initRipples();
     initKeyboardFocus();
     initSidebar();
+    initConfirmDialog();
     initLoanSchedulePreview();
     initReportLauncher();
     initTellerLookup();
