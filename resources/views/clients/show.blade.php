@@ -132,6 +132,7 @@
         'other' => 'Other',
     ];
     $moduleFlags = $financialOverview['module_flags'] ?? [];
+    $clientTransactions = $clientTransactions ?? collect();
     $financialMetrics = collect([
         ['label' => 'Total Savings', 'value' => $financialOverview['total_savings'] ?? 0, 'tone' => 'text-emerald-700', 'show' => $moduleFlags['savings'] ?? false],
         ['label' => 'Total Investments', 'value' => $financialOverview['total_investments'] ?? 0, 'tone' => 'text-sky-700', 'show' => $moduleFlags['investments'] ?? false],
@@ -284,6 +285,7 @@
                 @if($loansEnabled || $groupSavingsEnabled)
                     <button type="button" class="df-tab" data-df-tab-target="loans">Loans & Groups</button>
                 @endif
+                <button type="button" class="df-tab" data-df-tab-target="transactions">Transactions</button>
                 <button type="button" class="df-tab" data-df-tab-target="kyc">KYC & Documents</button>
                 <button type="button" class="df-tab" data-df-tab-target="notes">Notes</button>
             </div>
@@ -490,6 +492,62 @@
                 @endif
             </section>
             @endif
+
+            <section data-df-tab-panel="transactions" class="df-panel overflow-hidden">
+                <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                    <div>
+                        <h2 class="font-semibold text-slate-950">Client Transactions</h2>
+                        <p class="mt-1 text-sm text-slate-500">Latest postings attached to this client’s accounts, with receipt links where available.</p>
+                    </div>
+                    <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{{ number_format($clientTransactions->count()) }} shown</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-left text-sm">
+                        <thead class="bg-slate-700 text-xs uppercase text-white">
+                            <tr>
+                                <th class="px-4 py-3 font-semibold">Date</th>
+                                <th class="px-4 py-3 font-semibold">Reference</th>
+                                <th class="px-4 py-3 font-semibold">Account</th>
+                                <th class="px-4 py-3 font-semibold">Type</th>
+                                <th class="px-4 py-3 font-semibold">Posted By</th>
+                                <th class="px-4 py-3 text-right font-semibold">Amount</th>
+                                <th class="px-4 py-3 text-right font-semibold">Receipt</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            @forelse($clientTransactions as $row)
+                                @php
+                                    $transaction = $row['transaction'];
+                                    $account = $row['account'];
+                                @endphp
+                                <tr class="odd:bg-white even:bg-slate-50 hover:bg-brand-50/70">
+                                    <td class="px-4 py-3 text-slate-600">{{ ($transaction->posted_at ?? $transaction->created_at)?->format('d-m-Y H:i') ?? 'N/A' }}</td>
+                                    <td class="px-4 py-3">
+                                        <a class="font-semibold text-brand-700 hover:text-brand-900" href="{{ route('receipts.show', $transaction) }}">{{ $transaction->reference }}</a>
+                                        @if(filled($transaction->description))
+                                            <div class="mt-1 max-w-72 text-xs text-slate-500">{{ $transaction->description }}</div>
+                                        @endif
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <a class="font-medium text-slate-900 hover:text-brand-800" href="{{ route('accounts.show', $account) }}">{{ $account->account_number }}</a>
+                                        <div class="text-xs text-slate-500">{{ $account->accountType?->name ?? 'Client account' }}</div>
+                                    </td>
+                                    <td class="px-4 py-3 text-slate-700">{{ $transaction->type?->name ?? 'Transaction' }}</td>
+                                    <td class="px-4 py-3 text-slate-600">{{ $transaction->user?->name ?? 'System' }}</td>
+                                    <td class="px-4 py-3 text-right font-semibold text-slate-900">UGX {{ number_format((float) $transaction->amount, 2) }}</td>
+                                    <td class="px-4 py-3 text-right">
+                                        <a class="text-sm font-semibold text-blue-700 hover:text-blue-900" href="{{ route('receipts.show', $transaction) }}">View receipt</a>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="7" class="px-4 py-8 text-center text-sm text-slate-500">No account transactions have been posted for this client yet.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </section>
 
             <section data-df-tab-panel="kyc" class="grid gap-5 xl:grid-cols-[1fr_1.1fr]">
                 <div class="df-panel p-5">

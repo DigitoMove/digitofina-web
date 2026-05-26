@@ -105,6 +105,10 @@ class ClientController extends Controller
             'branch',
             'officer',
             'accounts.accountType',
+            'accounts.transactions' => fn ($query) => $query
+                ->with(['type', 'user'])
+                ->latest('posted_at')
+                ->latest('id'),
             $moduleEnabled('savings') ? 'savingsAccounts.product' : null,
             $moduleEnabled('investments') ? 'investmentAccounts.plan' : null,
             $moduleEnabled('shares') ? 'shareAccounts.product' : null,
@@ -116,11 +120,20 @@ class ClientController extends Controller
             'notes.user',
             $moduleEnabled('group-savings') ? 'groups' : null,
         ]));
+        $clientTransactions = $client->accounts
+            ->flatMap(fn ($account) => $account->transactions->map(fn ($transaction): array => [
+                'account' => $account,
+                'transaction' => $transaction,
+            ]))
+            ->sortByDesc(fn (array $row) => $row['transaction']->posted_at ?? $row['transaction']->created_at)
+            ->take(50)
+            ->values();
 
         return view('clients.show', [
             'client' => $client,
             'enabledModules' => $enabledModules,
             'financialOverview' => $financialRelationships->clientOverview($client, $enabledModules),
+            'clientTransactions' => $clientTransactions,
             'canAssignClientOfficer' => $this->canAssignClientOfficer(request()),
             'assignableOfficers' => $this->assignableOfficers(request(), $client->branch_id)->get(),
         ]);

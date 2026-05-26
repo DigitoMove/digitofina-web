@@ -28,6 +28,7 @@ class ReceiptController extends Controller
     private function canView(Request $request, Transaction $transaction): bool
     {
         $user = $request->user();
+        $transaction->loadMissing('account.client');
 
         if ((int) $transaction->user_id === (int) $user->id) {
             return true;
@@ -40,6 +41,7 @@ class ReceiptController extends Controller
         return $user->canPerform('approve-reversals')
             || $user->canPerform('view-reports')
             || $user->canPerform('manage-accounts')
+            || ($transaction->account?->client && $user->can('view', $transaction->account->client))
             || ApiSecurity::hasGlobalBranchAccess($user);
     }
 }

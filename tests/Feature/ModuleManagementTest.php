@@ -15,6 +15,7 @@ use App\Models\Role;
 use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
 use App\Models\TellerDrawer;
+use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\ModuleService;
@@ -186,6 +187,67 @@ it('renders a savings-only client dashboard without loan workflow links', functi
         ->assertDontSee('Outstanding Loans')
         ->assertDontSee('Loan Accounts')
         ->assertDontSee('Due Repayments');
+});
+
+it('shows client account transactions with receipt links on the client dashboard', function () {
+    $user = moduleManagementUser(['manage-clients']);
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($user->organization);
+    $modules->enable($user->organization, Module::where('slug', 'savings')->firstOrFail(), $user);
+    $client = moduleManagementClient($user);
+    $accountType = AccountType::create([
+        'organization_id' => $user->organization_id,
+        'name' => 'Savings Account',
+        'code' => fake()->unique()->bothify('SAV-??'),
+        'category' => 'savings',
+        'is_active' => true,
+    ]);
+    $account = Account::create([
+        'organization_id' => $user->organization_id,
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'account_type_id' => $accountType->id,
+        'account_number' => fake()->unique()->numerify('1001-SAV-####'),
+        'account_name' => $client->full_name.' Savings',
+        'status' => 'active',
+        'balance' => 25000,
+        'opened_at' => today(),
+    ]);
+    $transactionType = TransactionType::create([
+        'organization_id' => $user->organization_id,
+        'name' => 'Deposit',
+        'code' => fake()->unique()->bothify('deposit-??'),
+        'direction' => 'credit',
+        'is_active' => true,
+    ]);
+    $transaction = Transaction::create([
+        'organization_id' => $user->organization_id,
+        'account_id' => $account->id,
+        'transaction_type_id' => $transactionType->id,
+        'branch_id' => $user->branch_id,
+        'user_id' => $user->id,
+        'reference' => 'TX-CLIENT-001',
+        'amount' => 25000,
+        'balance_after' => 25000,
+        'currency' => 'UGX',
+        'description' => 'Client deposit',
+        'status' => 'posted',
+        'posted_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('clients.show', $client))
+        ->assertSuccessful()
+        ->assertSee('Client Transactions')
+        ->assertSee('TX-CLIENT-001')
+        ->assertSee('href="'.route('receipts.show', $transaction).'"', false)
+        ->assertSee('View receipt');
+
+    $this->actingAs($user)
+        ->get(route('receipts.show', $transaction))
+        ->assertSuccessful()
+        ->assertSee('TX-CLIENT-001');
 });
 
 it('keeps branch-attached managers inside their branch across loan and savings lists', function () {
