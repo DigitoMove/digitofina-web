@@ -59,6 +59,14 @@ class DataWipeService
     }
 
     /**
+     * @return array<int, string>
+     */
+    public function defaultClearCategories(): array
+    {
+        return array_values(array_diff(array_keys($this->categories()), ['access_setup']));
+    }
+
+    /**
      * @param  array<int, string>  $categories
      * @return array{context: array<string, mixed>, categories: array<int, string>, tables: array<string, array{label: string, category: string, count: int}>, total: int}
      */

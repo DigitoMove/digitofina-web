@@ -85,7 +85,6 @@ class DataWipeController extends Controller
         $branches = Branch::query()
             ->withoutGlobalScope('tenant')
             ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
-            ->when(! $user->hasRole('super-admin') && $user->branch_id, fn (Builder $query): Builder => $query->where('id', $user->branch_id))
             ->orderBy('name')
             ->get();
 
@@ -98,6 +97,7 @@ class DataWipeController extends Controller
 
         return [
             'categories' => $wipes->categories(),
+            'defaultClearCategories' => $wipes->defaultClearCategories(),
             'organizations' => $organizations,
             'branches' => $branches,
             'users' => $users,

@@ -71,6 +71,21 @@ it('requires explicit confirmation before executing a wipe', function () {
         ->assertSessionHasErrors('confirmation');
 });
 
+it('opens as a branch reset for the logged in organization with operational categories marked to clear', function () {
+    [$admin, , $branch, $otherBranch] = dataWipeAdmin();
+
+    $this->actingAs($admin)
+        ->get(route('data-wipe.index'))
+        ->assertSuccessful()
+        ->assertSee('Branch Data Reset')
+        ->assertSee($branch->name)
+        ->assertSee($otherBranch->name)
+        ->assertSee('Clear/delete')
+        ->assertSee('Leave')
+        ->assertSee('name="scope_type"', false)
+        ->assertSee('value="branch"', false);
+});
+
 function dataWipeAdmin(): array
 {
     $organization = Organization::create([

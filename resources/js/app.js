@@ -662,10 +662,26 @@ const initLedgerAccountModals = () => {
 const initDataWipeTargets = () => {
     const scope = document.querySelector('[name="scope_type"]');
     const targets = document.querySelectorAll('[data-wipe-target]');
+    const categoryInputs = document.querySelectorAll('[data-wipe-category]');
+    const markButtons = document.querySelectorAll('[data-wipe-mark]');
 
     if (!scope || !targets.length) {
         return;
     }
+
+    const syncCategoryStates = () => {
+        categoryInputs.forEach((input) => {
+            const state = input.closest('label')?.querySelector('[data-wipe-state]');
+
+            if (state) {
+                state.textContent = input.checked ? 'Clear/delete' : 'Leave';
+                state.classList.toggle('bg-red-50', input.checked);
+                state.classList.toggle('text-red-700', input.checked);
+                state.classList.toggle('bg-slate-100', !input.checked);
+                state.classList.toggle('text-slate-600', !input.checked);
+            }
+        });
+    };
 
     const syncTargets = () => {
         targets.forEach((target) => {
@@ -676,7 +692,18 @@ const initDataWipeTargets = () => {
     };
 
     scope.addEventListener('change', syncTargets);
+    categoryInputs.forEach((input) => input.addEventListener('change', syncCategoryStates));
+    markButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const shouldClear = button.dataset.wipeMark === 'clear';
+            categoryInputs.forEach((input) => {
+                input.checked = shouldClear;
+            });
+            syncCategoryStates();
+        });
+    });
     syncTargets();
+    syncCategoryStates();
 };
 
 const initResponsiveTables = () => {

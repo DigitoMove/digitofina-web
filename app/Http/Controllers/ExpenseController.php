@@ -217,7 +217,7 @@ class ExpenseController extends Controller
         $likeSearch = "%{$search}%";
 
         return $query->where(function (Builder $query) use ($likeSearch): void {
-            $query->whereAny(['reference', 'description', 'status'], 'like', $likeSearch)
+            $query->whereAny(['transactions.reference', 'transactions.description', 'transactions.status'], 'like', $likeSearch)
                 ->orWhereHas('user', fn (Builder $query): Builder => $query->whereAny(['name', 'email'], 'like', $likeSearch))
                 ->orWhereHas('drawerSession.drawer.branch', fn (Builder $query): Builder => $query->whereAny(['name', 'code'], 'like', $likeSearch))
                 ->orWhereHas('journalEntries.chartAccount', fn (Builder $query): Builder => $query->whereAny(['code', 'name'], 'like', $likeSearch));

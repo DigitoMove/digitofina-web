@@ -871,6 +871,13 @@ it('lets drawer admins delete income ledger postings while removing cash from th
         ->assertSee('Money came in')
         ->assertSee('UGX 1,000.00');
 
+    $this->actingAs($admin)
+        ->get(route('expenses.index', ['search' => 'Cash income', 'branch_id' => $cashier->branch_id]))
+        ->assertSuccessful()
+        ->assertSee('Other Income')
+        ->assertSee('Cash income received')
+        ->assertSee('UGX 1,000.00');
+
     expect((float) $drawer->fresh()->current_balance)->toBe(1000.0);
 
     $this->actingAs($admin)
