@@ -662,6 +662,8 @@ const initLedgerAccountModals = () => {
 const initDataWipeTargets = () => {
     const scope = document.querySelector('[name="scope_type"]');
     const targets = document.querySelectorAll('[data-wipe-target]');
+    const branchTarget = document.querySelector('[data-wipe-target="branch"]');
+    const userTarget = document.querySelector('[data-wipe-target="user"]');
     const categoryInputs = document.querySelectorAll('[data-wipe-category]');
     const markButtons = document.querySelectorAll('[data-wipe-mark]');
 
@@ -685,13 +687,41 @@ const initDataWipeTargets = () => {
 
     const syncTargets = () => {
         targets.forEach((target) => {
-            const active = target.dataset.wipeTarget === scope.value;
+            const active = target.dataset.wipeTarget === scope.value
+                || (target.dataset.wipeTarget === 'branch' && scope.value === 'user');
             target.disabled = !active;
             target.closest('label').hidden = !active;
         });
+
+        syncUserOptions();
+    };
+
+    const syncUserOptions = () => {
+        if (!branchTarget || !userTarget) {
+            return;
+        }
+
+        const branchId = branchTarget.value;
+        const options = [...userTarget.options];
+        let firstVisible = null;
+
+        options.forEach((option) => {
+            const visible = !branchId || option.dataset.branchId === branchId;
+            option.hidden = !visible;
+            option.disabled = !visible;
+
+            if (visible && !firstVisible) {
+                firstVisible = option;
+            }
+        });
+
+        if (userTarget.selectedOptions[0]?.disabled && firstVisible) {
+            userTarget.value = firstVisible.value;
+        }
     };
 
     scope.addEventListener('change', syncTargets);
+    branchTarget?.addEventListener('change', syncUserOptions);
     categoryInputs.forEach((input) => input.addEventListener('change', syncCategoryStates));
     markButtons.forEach((button) => {
         button.addEventListener('click', () => {

@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
@@ -32,14 +33,18 @@ class DataWipeController extends Controller
         $data = $request->validate([
             'action' => ['required', Rule::in(['preview', 'wipe'])],
             'scope_type' => ['required', Rule::in(['organization', 'branch', 'user'])],
-            'target_id' => ['required', 'integer'],
+            'organization_id' => ['nullable', 'integer'],
+            'branch_id' => ['nullable', 'integer'],
+            'user_id' => ['nullable', 'integer'],
             'categories' => ['required', 'array', 'min:1'],
             'categories.*' => ['required', Rule::in($categoryKeys)],
             'confirmation' => ['nullable', 'string'],
         ]);
+        $targetId = $this->targetId($data);
+        $this->validateUserBranchTarget($data);
 
         try {
-            $preview = $wipes->preview($data['scope_type'], (int) $data['target_id'], $data['categories'], $request->user());
+            $preview = $wipes->preview($data['scope_type'], $targetId, $data['categories'], $request->user());
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['data_wipe' => $exception->getMessage()])->withInput();
         }
@@ -52,7 +57,7 @@ class DataWipeController extends Controller
             return back()->withErrors(['confirmation' => 'Type WIPE to confirm this destructive reset.'])->withInput();
         }
 
-        $result = $wipes->wipe($data['scope_type'], (int) $data['target_id'], $data['categories'], $request->user());
+        $result = $wipes->wipe($data['scope_type'], $targetId, $data['categories'], $request->user());
         $auditLogger->record('data_wipe.executed', null, [
             'scope' => $result['context'],
             'categories' => $result['categories'],
@@ -61,6 +66,52 @@ class DataWipeController extends Controller
         ]);
 
         return redirect()->route('data-wipe.index')->with('status', 'Data wipe completed. '.$result['total'].' row'.($result['total'] === 1 ? '' : 's').' removed.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function targetId(array $data): int
+    {
+        $field = match ($data['scope_type']) {
+            'organization' => 'organization_id',
+            'branch' => 'branch_id',
+            'user' => 'user_id',
+        };
+
+        if (empty($data[$field])) {
+            throw ValidationException::withMessages([
+                $field => 'Select the target to wipe.',
+            ]);
+        }
+
+        return (int) $data[$field];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function validateUserBranchTarget(array $data): void
+    {
+        if ($data['scope_type'] !== 'user') {
+            return;
+        }
+
+        if (empty($data['branch_id'])) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Select the branch for the user target.',
+            ]);
+        }
+
+        $targetUser = User::query()
+            ->withoutGlobalScope('tenant')
+            ->find((int) $data['user_id']);
+
+        if (! $targetUser || (int) $targetUser->branch_id !== (int) $data['branch_id']) {
+            throw ValidationException::withMessages([
+                'user_id' => 'Select a user who belongs to the selected branch.',
+            ]);
+        }
     }
 
     private function canWipeData(Request $request): bool

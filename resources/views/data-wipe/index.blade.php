@@ -2,7 +2,9 @@
 
 @php
     $oldScope = old('scope_type', request('scope_type', 'branch'));
-    $oldTarget = old('target_id', request('target_id'));
+    $oldOrganizationId = old('organization_id', request('organization_id', $organizations->first()?->id));
+    $oldBranchId = old('branch_id', request('branch_id', $branches->first()?->id));
+    $oldUserId = old('user_id', request('user_id', $users->firstWhere('branch_id', (int) $oldBranchId)?->id ?? $users->first()?->id));
     $oldCategories = old('categories', request('categories', $defaultClearCategories));
 @endphp
 
@@ -28,12 +30,12 @@
     <section class="df-panel p-5">
         <div class="grid gap-4 lg:grid-cols-3">
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2">Branch to reset <x-required-badge />
-                <select name="target_id" class="mt-1" data-wipe-target="branch" disabled>
+                <select name="branch_id" class="mt-1" data-wipe-target="branch">
                     @foreach($branches as $branch)
-                        <option value="{{ $branch->id }}" @selected((int) $oldTarget === $branch->id)>{{ $branch->name }}</option>
+                        <option value="{{ $branch->id }}" @selected((int) $oldBranchId === $branch->id)>{{ $branch->name }}</option>
                     @endforeach
                 </select>
-                <span class="mt-1 block text-xs text-slate-500">Branch choices are limited to the active organization context.</span>
+                <span class="mt-1 block text-xs text-slate-500">Branch choices are limited to the active organization context and can filter the user target.</span>
             </label>
 
             <label class="text-sm font-semibold text-slate-700">Reset mode <x-required-badge />
@@ -45,19 +47,20 @@
             </label>
 
             <label class="text-sm font-semibold text-slate-700">Organization target
-                <select name="target_id" class="mt-1" data-wipe-target="organization">
+                <select name="organization_id" class="mt-1" data-wipe-target="organization" disabled>
                     @foreach($organizations as $organization)
-                        <option value="{{ $organization->id }}" @selected((int) $oldTarget === $organization->id)>{{ $organization->name }}</option>
+                        <option value="{{ $organization->id }}" @selected((int) $oldOrganizationId === $organization->id)>{{ $organization->name }}</option>
                     @endforeach
                 </select>
             </label>
 
             <label class="text-sm font-semibold text-slate-700">User target
-                <select name="target_id" class="mt-1" data-wipe-target="user" disabled>
+                <select name="user_id" class="mt-1" data-wipe-target="user" disabled>
                     @foreach($users as $staff)
-                        <option value="{{ $staff->id }}" @selected((int) $oldTarget === $staff->id)>{{ $staff->name }} · {{ $staff->role?->name ?? 'No role' }} · {{ $staff->branch?->name ?? 'No branch' }}</option>
+                        <option value="{{ $staff->id }}" data-branch-id="{{ $staff->branch_id }}" @selected((int) $oldUserId === $staff->id)>{{ $staff->name }} · {{ $staff->role?->name ?? 'No role' }} · {{ $staff->branch?->name ?? 'No branch' }}</option>
                     @endforeach
                 </select>
+                <span class="mt-1 block text-xs text-slate-500">Only users from the selected branch can be wiped in user mode.</span>
             </label>
         </div>
     </section>

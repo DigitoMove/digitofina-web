@@ -27,7 +27,7 @@ it('previews and wipes branch client data with dependent records', function () {
         ->post(route('data-wipe.store'), [
             'action' => 'preview',
             'scope_type' => 'branch',
-            'target_id' => $branch->id,
+            'branch_id' => $branch->id,
             'categories' => ['clients'],
         ])
         ->assertSuccessful()
@@ -42,7 +42,7 @@ it('previews and wipes branch client data with dependent records', function () {
         ->post(route('data-wipe.store'), [
             'action' => 'wipe',
             'scope_type' => 'branch',
-            'target_id' => $branch->id,
+            'branch_id' => $branch->id,
             'categories' => ['clients'],
             'confirmation' => 'WIPE',
         ])
@@ -63,7 +63,7 @@ it('requires explicit confirmation before executing a wipe', function () {
         ->post(route('data-wipe.store'), [
             'action' => 'wipe',
             'scope_type' => 'branch',
-            'target_id' => $branch->id,
+            'branch_id' => $branch->id,
             'categories' => ['clients'],
             'confirmation' => 'DELETE',
         ])
@@ -83,7 +83,58 @@ it('opens as a branch reset for the logged in organization with operational cate
         ->assertSee('Clear/delete')
         ->assertSee('Leave')
         ->assertSee('name="scope_type"', false)
-        ->assertSee('value="branch"', false);
+        ->assertSee('value="branch"', false)
+        ->assertSee('name="branch_id"', false)
+        ->assertSee('name="user_id"', false);
+});
+
+it('allows selecting a branch and user target for user scoped data wipes', function () {
+    [$admin, $organization, $branch, $otherBranch] = dataWipeAdmin();
+    $client = dataWipeClient($organization, $branch);
+    $otherClient = dataWipeClient($organization, $branch);
+    $targetUser = User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $branch->id]);
+    $otherUser = User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $branch->id]);
+    $wrongBranchUser = User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $otherBranch->id]);
+    $targetTransaction = dataWipeTransaction($organization, $branch, $client, $targetUser);
+    $otherTransaction = dataWipeTransaction($organization, $branch, $otherClient, $otherUser);
+
+    $this->actingAs($admin)
+        ->post(route('data-wipe.store'), [
+            'action' => 'preview',
+            'scope_type' => 'user',
+            'branch_id' => $branch->id,
+            'user_id' => $targetUser->id,
+            'categories' => ['accounting'],
+        ])
+        ->assertSuccessful()
+        ->assertSee('Preview For '.$targetUser->name)
+        ->assertSee('Transactions');
+
+    $this->actingAs($admin)
+        ->post(route('data-wipe.store'), [
+            'action' => 'preview',
+            'scope_type' => 'user',
+            'branch_id' => $branch->id,
+            'user_id' => $wrongBranchUser->id,
+            'categories' => ['accounting'],
+        ])
+        ->assertRedirect()
+        ->assertSessionHasErrors('user_id');
+
+    $this->actingAs($admin)
+        ->post(route('data-wipe.store'), [
+            'action' => 'wipe',
+            'scope_type' => 'user',
+            'branch_id' => $branch->id,
+            'user_id' => $targetUser->id,
+            'categories' => ['accounting'],
+            'confirmation' => 'WIPE',
+        ])
+        ->assertRedirect(route('data-wipe.index'))
+        ->assertSessionHas('status');
+
+    $this->assertDatabaseMissing('transactions', ['id' => $targetTransaction->id]);
+    $this->assertDatabaseHas('transactions', ['id' => $otherTransaction->id]);
 });
 
 function dataWipeAdmin(): array
@@ -136,7 +187,7 @@ function dataWipeClient(Organization $organization, Branch $branch): Client
     ]);
 }
 
-function dataWipeTransaction(Organization $organization, Branch $branch, Client $client): Transaction
+function dataWipeTransaction(Organization $organization, Branch $branch, Client $client, ?User $user = null): Transaction
 {
     $accountType = AccountType::firstOrCreate(
         ['code' => 'SAVINGS'],
@@ -162,7 +213,7 @@ function dataWipeTransaction(Organization $organization, Branch $branch, Client 
         'account_id' => $account->id,
         'transaction_type_id' => $transactionType->id,
         'branch_id' => $branch->id,
-        'user_id' => User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $branch->id])->id,
+        'user_id' => ($user ?? User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $branch->id]))->id,
         'reference' => fake()->unique()->bothify('TX-####'),
         'amount' => 1000,
         'balance_after' => 1000,
