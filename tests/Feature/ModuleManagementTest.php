@@ -794,6 +794,31 @@ it('lets drawer admins list and delete branch expenses while restoring cashier d
         today(),
     );
     $expense = $journal->transaction;
+    $oldExpense = Transaction::create([
+        'organization_id' => $cashier->organization_id,
+        'transaction_type_id' => $expense->transaction_type_id,
+        'branch_id' => $cashier->branch_id,
+        'user_id' => $cashier->id,
+        'drawer_session_id' => $session->id,
+        'reference' => 'TX-OLD-EXPENSE',
+        'amount' => 2000,
+        'balance_after' => 2000,
+        'currency' => 'UGX',
+        'description' => 'Old receipt books',
+        'status' => 'posted',
+        'posted_at' => today()->subDays(10),
+    ]);
+    JournalEntry::create([
+        'organization_id' => $cashier->organization_id,
+        'branch_id' => $cashier->branch_id,
+        'transaction_id' => $oldExpense->id,
+        'chart_account_id' => $expenseAccount->id,
+        'reference' => $oldExpense->reference,
+        'account_name' => $expenseAccount->name,
+        'entry_type' => 'debit',
+        'amount' => 2000,
+        'posted_at' => today()->subDays(10),
+    ]);
 
     $this->actingAs($admin)
         ->get(route('expenses.index', ['branch_id' => $cashier->branch_id]))
@@ -808,6 +833,19 @@ it('lets drawer admins list and delete branch expenses while restoring cashier d
         ->assertSee('Stationery Expense')
         ->assertSee('Bought receipt books')
         ->assertSee('UGX 1,000.00');
+
+    $this->actingAs($admin)
+        ->get(route('expenses.index', [
+            'type' => 'expense',
+            'branch_id' => $cashier->branch_id,
+            'from' => today()->toDateString(),
+            'to' => today()->toDateString(),
+        ]))
+        ->assertSuccessful()
+        ->assertSee('Bought receipt books')
+        ->assertSee('UGX 1,000.00')
+        ->assertDontSee('Old receipt books')
+        ->assertDontSee('UGX 2,000.00');
 
     expect((float) $drawer->fresh()->current_balance)->toBe(4000.0);
 

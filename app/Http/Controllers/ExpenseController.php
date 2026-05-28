@@ -11,6 +11,7 @@ use App\Models\Transaction;
 use App\Services\AuditLogger;
 use App\Services\TenantContext;
 use App\Support\ApiSecurity;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,9 +27,15 @@ class ExpenseController extends Controller
         abort_unless($this->canManageExpenses($request), 403);
 
         $organizationId = $this->activeOrganizationId($request);
+        $validated = $request->validate([
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date', 'after_or_equal:from'],
+        ]);
         $branchId = $request->integer('branch_id') ?: null;
         $type = $this->ledgerType($request->string('type')->toString());
         $search = $request->string('search')->trim()->toString();
+        $from = filled($validated['from'] ?? null) ? $request->date('from')->startOfDay() : null;
+        $to = filled($validated['to'] ?? null) ? $request->date('to')->endOfDay() : null;
 
         $branches = Branch::query()
             ->withoutGlobalScope('tenant')
@@ -47,10 +54,11 @@ class ExpenseController extends Controller
             ->when($type, fn (Builder $query, string $type): Builder => $query->whereHas('journalEntries.chartAccount', fn (Builder $query): Builder => $query->where('type', $type)))
             ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->whereHas('drawerSession.drawer.branch', fn (Builder $query): Builder => $query->where('organization_id', $organizationId)))
             ->when($branchId, fn (Builder $query, int $branchId): Builder => $query->where('transactions.branch_id', $branchId))
+            ->tap(fn (Builder $query): Builder => $this->applyPeriod($query, $from, $to))
             ->when($search !== '', fn (Builder $query): Builder => $this->searchPostings($query, $search))
             ->latest('posted_at');
 
-        $totals = $this->postingTotals($request, $organizationId, $branchId, $search);
+        $totals = $this->postingTotals($request, $organizationId, $branchId, $search, $from, $to);
         $totalAmount = (clone $postingsQuery)->sum('amount');
         $postings = $postingsQuery->paginate(20)->withQueryString();
 
@@ -60,6 +68,8 @@ class ExpenseController extends Controller
             'postings' => $postings,
             'expenses' => $postings,
             'search' => $search,
+            'from' => $validated['from'] ?? '',
+            'to' => $validated['to'] ?? '',
             'type' => $type,
             'types' => $this->ledgerTypes(),
             'totals' => $totals,
@@ -189,7 +199,7 @@ class ExpenseController extends Controller
     /**
      * @return array<string, float>
      */
-    private function postingTotals(Request $request, ?int $organizationId, ?int $branchId, string $search): array
+    private function postingTotals(Request $request, ?int $organizationId, ?int $branchId, string $search, ?CarbonInterface $from, ?CarbonInterface $to): array
     {
         if (! Schema::hasColumn('journal_entries', 'chart_account_id')) {
             return collect($this->ledgerTypes())->mapWithKeys(fn ($label, string $type): array => [$type => 0.0])->all();
@@ -200,6 +210,7 @@ class ExpenseController extends Controller
             ->join('chart_accounts', 'chart_accounts.id', '=', 'journal_entries.chart_account_id')
             ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->whereHas('drawerSession.drawer.branch', fn (Builder $query): Builder => $query->where('organization_id', $organizationId)))
             ->when($branchId, fn (Builder $query, int $branchId): Builder => $query->where('transactions.branch_id', $branchId))
+            ->tap(fn (Builder $query): Builder => $this->applyPeriod($query, $from, $to))
             ->when($search !== '', fn (Builder $query): Builder => $this->searchPostings($query, $search))
             ->whereIn('chart_accounts.type', array_keys($this->ledgerTypes()))
             ->selectRaw('chart_accounts.type as ledger_type, SUM(transactions.amount) as total_amount')
@@ -210,6 +221,13 @@ class ExpenseController extends Controller
         return collect($this->ledgerTypes())
             ->mapWithKeys(fn ($label, string $type): array => [$type => (float) ($totals[$type] ?? 0)])
             ->all();
+    }
+
+    private function applyPeriod(Builder $query, ?CarbonInterface $from, ?CarbonInterface $to): Builder
+    {
+        return $query
+            ->when($from, fn (Builder $query): Builder => $query->where('transactions.posted_at', '>=', $from))
+            ->when($to, fn (Builder $query): Builder => $query->where('transactions.posted_at', '<=', $to));
     }
 
     private function searchPostings(Builder $query, string $search): Builder

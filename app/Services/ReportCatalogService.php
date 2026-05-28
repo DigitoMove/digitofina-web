@@ -164,6 +164,7 @@ class ReportCatalogService
             : Carbon::parse('2999-12-31')->endOfDay();
         $detail = (string) ($filters['detail'] ?? 'detailed');
         $branchId = isset($filters['branch_id']) && $filters['branch_id'] !== '' ? (int) $filters['branch_id'] : null;
+        $chartAccountId = isset($filters['chart_account_id']) && $filters['chart_account_id'] !== '' ? (int) $filters['chart_account_id'] : null;
         $search = trim((string) ($filters['search'] ?? ''));
         $payload = $definition['payload'];
         $interestBasis = in_array(($filters['interest_basis'] ?? $payload['interest_basis'] ?? 'collected'), ['collected', 'projected'], true)
@@ -180,7 +181,7 @@ class ReportCatalogService
             'clients' => $this->clients($payload, $from, $to, $branchId, $limit, $user),
             'officer_entries' => $this->officerEntries($from, $to, $branchId, $user),
             'chart_accounts' => $this->chartAccounts($branchId, $user),
-            'journal_entries' => $this->journalEntries($from, $to, $branchId, $limit, $user),
+            'journal_entries' => $this->journalEntries($from, $to, $branchId, $limit, $user, $chartAccountId),
             'journal_analysis' => $this->journalAnalysis($from, $to, $branchId, $user),
             'ledger_section' => $this->ledgerSection($payload, $from, $to, $branchId, $user),
             'accounting_statement' => $this->accountingStatement($payload, $from, $to, $branchId, $user),
@@ -524,11 +525,12 @@ class ReportCatalogService
         return [['Code', 'Name', 'Type', 'Normal Balance', 'Branch'], $rows, ['Accounts' => number_format($rows->count())]];
     }
 
-    private function journalEntries(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
+    private function journalEntries(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user, ?int $chartAccountId = null): array
     {
         $query = JournalEntry::query()
             ->with('chartAccount')
             ->whereBetween(DB::raw('coalesce(posted_at, created_at)'), [$from, $to])
+            ->when($chartAccountId, fn (Builder $query, int $chartAccountId): Builder => $query->where('chart_account_id', $chartAccountId))
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user));
 
         $rows = $query->latest()->limit($limit)->get()->map(fn (JournalEntry $entry): array => [
@@ -582,6 +584,7 @@ class ReportCatalogService
                     'from' => $from->toDateString(),
                     'to' => $to->toDateString(),
                     'branch_id' => $branchId,
+                    'chart_account_id' => $balance['id'],
                 ]),
             ],
         ]);
@@ -824,6 +827,7 @@ class ReportCatalogService
                 $credit = (float) ($total?->credit_total ?? 0);
 
                 return [
+                    'id' => $account->id,
                     'code' => $account->code,
                     'account' => $account->name,
                     'type' => $account->type,
@@ -844,6 +848,10 @@ class ReportCatalogService
      */
     private function statementRow(string $section, array $balance, string $report, CarbonInterface $from, CarbonInterface $to, ?int $branchId): array
     {
+        $entryUrl = $this->reportUrl('gl-account-transactions', $from, $to, $branchId, [
+            'chart_account_id' => $balance['id'] ?? null,
+        ]);
+
         return [
             'Section' => $section,
             'Code' => $balance['code'],
@@ -853,18 +861,25 @@ class ReportCatalogService
             'Amount' => $this->money((float) $balance['balance']),
             '_links' => [
                 'Section' => $this->reportUrl($report, $from, $to, $branchId),
-                'Account' => $this->reportUrl('gl-account-transactions', $from, $to, $branchId),
+                'Account' => $entryUrl,
+                'Debit' => $entryUrl,
+                'Credit' => $entryUrl,
+                'Amount' => $entryUrl,
             ],
         ];
     }
 
-    private function reportUrl(string $report, CarbonInterface $from, CarbonInterface $to, ?int $branchId): string
+    /**
+     * @param  array<string, mixed>  $extra
+     */
+    private function reportUrl(string $report, CarbonInterface $from, CarbonInterface $to, ?int $branchId, array $extra = []): string
     {
         return route('reports.show', array_filter([
             'report' => $report,
             'from' => $from->toDateString(),
             'to' => $to->toDateString(),
             'branch_id' => $branchId,
+            ...$extra,
         ], fn (mixed $value): bool => $value !== null && $value !== ''));
     }
 

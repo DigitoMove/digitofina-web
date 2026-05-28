@@ -23,9 +23,10 @@ it('generates accountant style income statement and balance sheet reports', func
     accountingReportEntry($branch, '1000', 'Cash on Hand', 'asset', 'debit', 'debit', 1000);
     accountingReportEntry($branch, '1200', 'Loans Receivable', 'asset', 'debit', 'debit', 500);
     accountingReportEntry($branch, '2100', 'Client Savings Liability', 'liability', 'credit', 'credit', 700);
-    accountingReportEntry($branch, '3000', 'Member Capital', 'equity', 'credit', 'credit', 600);
-    accountingReportEntry($branch, '4100', 'Loan Interest Income', 'income', 'credit', 'credit', 300);
-    accountingReportEntry($branch, '5200', 'Rent Expense', 'expense', 'debit', 'debit', 100);
+    accountingReportEntry($branch, '3000', 'Member Capital', 'equity', 'credit', 'credit', 675);
+    $interestIncome = accountingReportEntry($branch, '4100', 'Loan Interest Income', 'income', 'credit', 'credit', 300);
+    $rentExpense = accountingReportEntry($branch, '5200', 'Rent Expense', 'expense', 'debit', 'debit', 100);
+    accountingReportEntry($branch, '5300', 'Advertisement Expense', 'expense', 'debit', 'debit', 75);
 
     $service = app(ReportCatalogService::class);
     $filters = ['from' => today()->toDateString(), 'to' => today()->toDateString(), 'branch_id' => $branch->id];
@@ -36,23 +37,41 @@ it('generates accountant style income statement and balance sheet reports', func
     expect($incomeStatement['columns'])->toBe(['Section', 'Code', 'Account', 'Debit', 'Credit', 'Amount'])
         ->and($incomeRows['Loan Interest Income']['Amount'])->toBe('UGX 300.00')
         ->and($incomeRows['Rent Expense']['Amount'])->toBe('UGX 100.00')
-        ->and($incomeRows['Net Income']['Amount'])->toBe('UGX 200.00')
+        ->and($incomeRows['Advertisement Expense']['Amount'])->toBe('UGX 75.00')
+        ->and($incomeRows['Net Income']['Amount'])->toBe('UGX 125.00')
         ->and($incomeStatement['summary']['Income'])->toBe('UGX 300.00')
-        ->and($incomeStatement['summary']['Expenses'])->toBe('UGX 100.00')
-        ->and($incomeRows['Loan Interest Income']['_links'])->toHaveKey('Section');
+        ->and($incomeStatement['summary']['Expenses'])->toBe('UGX 175.00')
+        ->and($incomeRows['Loan Interest Income']['_links'])->toHaveKey('Section')
+        ->and($incomeRows['Loan Interest Income']['_links']['Account'])->toContain('chart_account_id='.$interestIncome->id)
+        ->and($incomeRows['Loan Interest Income']['_links']['Amount'])->toContain('chart_account_id='.$interestIncome->id)
+        ->and($incomeRows['Rent Expense']['_links']['Amount'])->toContain('chart_account_id='.$rentExpense->id);
+
+    $this->actingAs($admin)
+        ->get(route('reports.show', [
+            'report' => 'gl-account-transactions',
+            'from' => today()->toDateString(),
+            'to' => today()->toDateString(),
+            'branch_id' => $branch->id,
+            'chart_account_id' => $rentExpense->id,
+        ]))
+        ->assertSuccessful()
+        ->assertSee('Rent Expense')
+        ->assertSee('JE-ACCOUNTING-5200')
+        ->assertDontSee('Advertisement Expense')
+        ->assertDontSee('JE-ACCOUNTING-5300');
 
     $balanceSheet = $service->generate('balance-sheet', $filters, $admin);
     $balanceRows = $balanceSheet['rows']->keyBy('Account');
 
     expect($balanceRows['Total Assets']['Amount'])->toBe('UGX 1,500.00')
         ->and($balanceRows['Total Liabilities']['Amount'])->toBe('UGX 700.00')
-        ->and($balanceRows['Current / Retained Earnings']['Amount'])->toBe('UGX 200.00')
+        ->and($balanceRows['Current / Retained Earnings']['Amount'])->toBe('UGX 125.00')
         ->and($balanceRows['Total Equity']['Amount'])->toBe('UGX 800.00')
         ->and($balanceRows['Assets - Liabilities - Equity']['Amount'])->toBe('UGX 0.00')
         ->and($balanceSheet['summary']['Balance check'])->toBe('UGX 0.00');
 });
 
-function accountingReportEntry(Branch $branch, string $code, string $name, string $type, string $normalBalance, string $entryType, int $amount): void
+function accountingReportEntry(Branch $branch, string $code, string $name, string $type, string $normalBalance, string $entryType, int $amount): ChartAccount
 {
     $account = ChartAccount::create([
         'branch_id' => $branch->id,
@@ -74,4 +93,6 @@ function accountingReportEntry(Branch $branch, string $code, string $name, strin
         'status' => 'posted',
         'posted_at' => now(),
     ]);
+
+    return $account;
 }

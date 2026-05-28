@@ -31,6 +31,7 @@ class ReportController extends Controller
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'chart_account_id' => ['nullable', 'integer', 'exists:chart_accounts,id'],
             'detail' => ['nullable', 'in:brief,detailed'],
             'interest_basis' => ['nullable', 'in:collected,projected'],
             'search' => ['nullable', 'string', 'max:255'],

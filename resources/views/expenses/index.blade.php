@@ -16,7 +16,7 @@
 <section class="df-panel overflow-hidden">
     <div class="grid gap-3 border-b border-slate-200 p-5 md:grid-cols-5">
         @foreach($types as $typeValue => $typeLabel)
-            <a href="{{ route('expenses.index', array_filter(['type' => $typeValue, 'branch_id' => $branchId, 'search' => $search])) }}" class="rounded-lg border px-4 py-3 transition {{ $type === $typeValue ? 'border-brand-200 bg-brand-50 text-brand-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50' }}">
+            <a href="{{ route('expenses.index', array_filter(['type' => $typeValue, 'branch_id' => $branchId, 'search' => $search, 'from' => $from, 'to' => $to])) }}" class="rounded-lg border px-4 py-3 transition {{ $type === $typeValue ? 'border-brand-200 bg-brand-50 text-brand-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50' }}">
                 <span class="block text-xs font-semibold uppercase text-slate-500">{{ $typeLabel }}</span>
                 <span class="mt-1 block text-lg font-semibold">UGX {{ number_format($totals[$typeValue] ?? 0, 2) }}</span>
             </a>
@@ -37,9 +37,13 @@
                     <option value="{{ $branch->id }}" @selected((int) $branchId === $branch->id)>{{ $branch->name }}</option>
                 @endforeach
             </select>
+            <label class="sr-only" for="ledger-postings-from">From date</label>
+            <input id="ledger-postings-from" name="from" type="date" value="{{ $from }}" class="rounded border-slate-300 text-sm">
+            <label class="sr-only" for="ledger-postings-to">To date</label>
+            <input id="ledger-postings-to" name="to" type="date" value="{{ $to }}" class="rounded border-slate-300 text-sm">
             <input name="search" value="{{ $search }}" class="min-w-72 rounded border-slate-300 text-sm" placeholder="Search description, reference, cashier, branch, or account">
             <button class="df-action-secondary">Filter</button>
-            @if($search !== '' || $branchId || $type)
+            @if($search !== '' || $branchId || $type || $from || $to)
                 <a href="{{ route('expenses.index', $type ? ['type' => $type] : []) }}" class="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Clear</a>
             @endif
         </form>
