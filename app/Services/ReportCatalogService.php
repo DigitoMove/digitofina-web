@@ -234,7 +234,7 @@ class ReportCatalogService
             ->when(($payload['posted_by'] ?? null) === 'user', fn (Builder $query): Builder => $query->whereNotNull('user_id'))
             ->when(($payload['posted_by'] ?? null) === 'system', fn (Builder $query): Builder => $query->whereNull('user_id'))
             ->when($search !== '', fn (Builder $query): Builder => $this->searchTransactions($query, $search))
-            ->whereHas('account', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
 
         $rows = $query->latest('posted_at')->limit($limit)->get()->map(fn (Transaction $transaction): array => [
             'Date' => $transaction->posted_at?->format('d M Y H:i'),

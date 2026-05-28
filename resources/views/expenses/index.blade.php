@@ -37,7 +37,7 @@
                     <option value="{{ $branch->id }}" @selected((int) $branchId === $branch->id)>{{ $branch->name }}</option>
                 @endforeach
             </select>
-            <input name="search" value="{{ $search }}" class="min-w-72 rounded border-slate-300 text-sm" placeholder="Search reference, cashier, branch, or account">
+            <input name="search" value="{{ $search }}" class="min-w-72 rounded border-slate-300 text-sm" placeholder="Search description, reference, cashier, branch, or account">
             <button class="df-action-secondary">Filter</button>
             @if($search !== '' || $branchId || $type)
                 <a href="{{ route('expenses.index', $type ? ['type' => $type] : []) }}" class="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Clear</a>

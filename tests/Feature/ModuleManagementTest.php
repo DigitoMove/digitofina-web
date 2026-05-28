@@ -802,6 +802,13 @@ it('lets drawer admins list and delete branch expenses while restoring cashier d
         ->assertSee('Bought receipt books')
         ->assertSee('UGX 1,000.00');
 
+    $this->actingAs($admin)
+        ->get(route('expenses.index', ['type' => 'expense', 'search' => 'receipt books', 'branch_id' => $cashier->branch_id]))
+        ->assertSuccessful()
+        ->assertSee('Stationery Expense')
+        ->assertSee('Bought receipt books')
+        ->assertSee('UGX 1,000.00');
+
     expect((float) $drawer->fresh()->current_balance)->toBe(4000.0);
 
     $this->actingAs($admin)

@@ -236,6 +236,18 @@ it('filters posted transaction reports by description', function () {
         'status' => 'posted',
         'posted_at' => now(),
     ]);
+    $ledgerTransaction = Transaction::create([
+        'transaction_type_id' => $type->id,
+        'branch_id' => $branch->id,
+        'user_id' => $admin->id,
+        'reference' => 'TX-LEDGER-DESC',
+        'amount' => 75000,
+        'balance_after' => 75000,
+        'currency' => 'UGX',
+        'description' => 'Ledger drawer fuel expense',
+        'status' => 'posted',
+        'posted_at' => now(),
+    ]);
 
     $this->actingAs($admin)
         ->get(route('reports.show', ['report' => 'user-posted-transactions', 'search' => 'School fees']))
@@ -244,6 +256,13 @@ it('filters posted transaction reports by description', function () {
         ->assertSee('School fees savings deposit')
         ->assertDontSee('TX-DESC-HIDDEN')
         ->assertDontSee('Market collection deposit');
+
+    $this->actingAs($admin)
+        ->get(route('reports.show', ['report' => 'user-posted-transactions', 'search' => 'fuel']))
+        ->assertSuccessful()
+        ->assertSee('TX-LEDGER-DESC')
+        ->assertSee('Ledger drawer fuel expense')
+        ->assertSee('href="'.route('receipts.show', $ledgerTransaction).'"', false);
 });
 
 it('reopens a closed loan account when its payoff repayment is reversed', function () {
