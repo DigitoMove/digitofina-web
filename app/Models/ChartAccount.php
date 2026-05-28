@@ -42,6 +42,11 @@ class ChartAccount extends Model
         return $this->hasMany(JournalEntry::class);
     }
 
+    public function journalLines(): HasMany
+    {
+        return $this->hasMany(JournalLine::class);
+    }
+
     public function drawerEntryType(string $drawerDirection): ?string
     {
         return match ($drawerDirection) {

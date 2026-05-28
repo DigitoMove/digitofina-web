@@ -21,10 +21,13 @@ class LedgerAccountController extends Controller
         abort_unless($this->canManageLedgerAccounts($request), 403);
 
         $search = $request->string('search')->trim()->toString();
+        $type = $this->ledgerType($request->string('type')->toString());
 
         $accounts = ChartAccount::query()
-            ->with(['branch', 'parent'])
+            ->with(['branch.drawers', 'parent'])
+            ->withCount(['children', 'journalEntries', 'journalLines'])
             ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
+            ->when($type, fn (Builder $query, string $type): Builder => $query->where('type', $type))
             ->when($search !== '', function (Builder $query) use ($search): void {
                 $query->where(function (Builder $query) use ($search): void {
                     $query->whereAny(['code', 'name', 'type', 'normal_balance', 'drawer_direction'], 'like', "%{$search}%")
@@ -38,6 +41,7 @@ class LedgerAccountController extends Controller
             ->withQueryString();
 
         $branches = Branch::query()
+            ->with('drawers')
             ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->whereKey($request->user()->branch_id))
             ->orderBy('name')
             ->get();
@@ -54,6 +58,9 @@ class LedgerAccountController extends Controller
             'branches' => $branches,
             'parentAccounts' => $parentAccounts,
             'search' => $search,
+            'type' => $type,
+            'accountTypes' => $this->accountTypes(),
+            'canDeleteLedgerAccounts' => $this->canDeleteLedgerAccounts($request),
         ]);
     }
 
@@ -94,7 +101,7 @@ class LedgerAccountController extends Controller
 
         $auditLogger->record('ledger_account.created', $chartAccount, $chartAccount->toArray());
 
-        return redirect()->route('ledger-accounts.index')->with('status', 'Ledger account created.');
+        return redirect()->route('ledger-accounts.index', ['type' => $chartAccount->type])->with('status', 'Ledger account created.');
     }
 
     public function update(Request $request, ChartAccount $chartAccount, AuditLogger $auditLogger): RedirectResponse
@@ -165,7 +172,32 @@ class LedgerAccountController extends Controller
 
         $auditLogger->record('ledger_account.updated', $chartAccount, $chartAccount->fresh()->only(array_keys($oldValues)), $oldValues);
 
-        return redirect()->route('ledger-accounts.index', $request->only('search'))->with('status', 'Ledger account updated.');
+        return redirect()->route('ledger-accounts.index', $request->only('search', 'type'))->with('status', 'Ledger account updated.');
+    }
+
+    public function destroy(Request $request, ChartAccount $chartAccount, AuditLogger $auditLogger): RedirectResponse
+    {
+        abort_unless($this->canDeleteLedgerAccounts($request), 403);
+        $this->authorizeLedgerAccountAccess($request, $chartAccount);
+
+        $chartAccount->loadCount(['children', 'journalEntries', 'journalLines']);
+
+        if ($chartAccount->is_system || $chartAccount->is_cash_account) {
+            return back()->withErrors(['ledger_account' => 'System and cash ledger accounts cannot be deleted. Deactivate them if they should no longer be used.']);
+        }
+
+        if ($chartAccount->children_count > 0) {
+            return back()->withErrors(['ledger_account' => 'Delete or move child ledger accounts before deleting this account.']);
+        }
+
+        if ($chartAccount->journal_entries_count > 0 || $chartAccount->journal_lines_count > 0) {
+            return back()->withErrors(['ledger_account' => 'This ledger account has accounting activity and cannot be deleted. Deactivate it instead.']);
+        }
+
+        $auditLogger->record('ledger_account.deleted', $chartAccount, $chartAccount->toArray());
+        $chartAccount->delete();
+
+        return back()->with('status', 'Ledger account deleted.');
     }
 
     private function authorizeLedgerBranch(Request $request, Branch $branch): void
@@ -184,8 +216,33 @@ class LedgerAccountController extends Controller
             || ($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'));
     }
 
+    private function canDeleteLedgerAccounts(Request $request): bool
+    {
+        return $request->user()->hasRole('super-admin')
+            || $request->user()->hasRole('organization-admin');
+    }
+
     private function activeOrganizationId(Request $request): ?int
     {
         return app(TenantContext::class)->id() ?: $request->user()->organization_id;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function accountTypes(): array
+    {
+        return [
+            'expense' => 'Expenses',
+            'income' => 'Income',
+            'asset' => 'Assets',
+            'liability' => 'Liabilities',
+            'equity' => 'Capital',
+        ];
+    }
+
+    private function ledgerType(string $type): ?string
+    {
+        return array_key_exists($type, $this->accountTypes()) ? $type : null;
     }
 }

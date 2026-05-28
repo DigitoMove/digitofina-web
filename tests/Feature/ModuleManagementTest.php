@@ -5,7 +5,10 @@ use App\Models\AccountType;
 use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\Client;
+use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
+use App\Models\JournalEntry;
+use App\Models\JournalLine;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\Module;
@@ -20,6 +23,7 @@ use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\ModuleService;
 use App\Services\ReportCatalogService;
+use App\Services\TransactionPostingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
@@ -745,6 +749,141 @@ it('shows general ledger drawer expenses in cashier entries and allows reversal 
         ->assertSee('chart_account_id='.$expenseAccount->id.'&amp;lookup_scope=general_ledger', false);
 });
 
+it('lets drawer admins list and delete branch expenses while restoring cashier drawer cash', function () {
+    $cashier = moduleManagementUser(['post-transactions']);
+    enableTellerModule($cashier->organization);
+    $admin = drawerAdminUser($cashier->organization, null, 'organization-admin', ['manage-drawers']);
+    $expenseAccount = ChartAccount::create([
+        'organization_id' => $cashier->organization_id,
+        'branch_id' => $cashier->branch_id,
+        'code' => fake()->unique()->bothify('EXP-??'),
+        'name' => 'Stationery Expense',
+        'type' => 'expense',
+        'normal_balance' => 'debit',
+        'drawer_direction' => 'cash_out',
+        'is_cash_account' => false,
+        'is_system' => false,
+        'is_active' => true,
+    ]);
+    $drawer = TellerDrawer::create([
+        'organization_id' => $cashier->organization_id,
+        'branch_id' => $cashier->branch_id,
+        'assigned_user_id' => $cashier->id,
+        'name' => 'Main Drawer',
+        'code' => fake()->unique()->bothify('TDR-??'),
+        'current_balance' => 5000,
+        'status' => 'open',
+    ]);
+    $session = DrawerSession::create([
+        'organization_id' => $cashier->organization_id,
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $cashier->id,
+        'opening_balance' => 5000,
+        'status' => 'open',
+        'opened_at' => now(),
+    ]);
+    $this->actingAs($cashier);
+
+    $journal = app(TransactionPostingService::class)->postGeneralLedgerCash(
+        $expenseAccount,
+        $session,
+        'debit',
+        1000,
+        $cashier,
+        'Bought receipt books',
+        today(),
+    );
+    $expense = $journal->transaction;
+
+    $this->actingAs($admin)
+        ->get(route('expenses.index', ['branch_id' => $cashier->branch_id]))
+        ->assertSuccessful()
+        ->assertSee('Stationery Expense')
+        ->assertSee('Bought receipt books')
+        ->assertSee('UGX 1,000.00');
+
+    expect((float) $drawer->fresh()->current_balance)->toBe(4000.0);
+
+    $this->actingAs($admin)
+        ->delete(route('expenses.destroy', $expense))
+        ->assertRedirect()
+        ->assertSessionHas('status');
+
+    expect((float) $drawer->fresh()->current_balance)->toBe(5000.0)
+        ->and(Transaction::query()->whereKey($expense->id)->exists())->toBeFalse()
+        ->and(JournalEntry::query()->where('transaction_id', $expense->id)->exists())->toBeFalse()
+        ->and(JournalLine::query()->where('journal_entry_id', $journal->id)->exists())->toBeFalse()
+        ->and(DrawerMovement::query()->where('reference', $expense->reference)->exists())->toBeFalse()
+        ->and(DrawerMovement::query()->where('reference', $expense->reference.'-RESTORE')->where('type', 'cash_in')->exists())->toBeTrue();
+});
+
+it('lets drawer admins delete income ledger postings while removing cash from the cashier drawer', function () {
+    $cashier = moduleManagementUser(['post-transactions']);
+    enableTellerModule($cashier->organization);
+    $admin = drawerAdminUser($cashier->organization, null, 'organization-admin', ['manage-drawers']);
+    $incomeAccount = ChartAccount::create([
+        'organization_id' => $cashier->organization_id,
+        'branch_id' => $cashier->branch_id,
+        'code' => fake()->unique()->bothify('INC-??'),
+        'name' => 'Other Income',
+        'type' => 'income',
+        'normal_balance' => 'credit',
+        'drawer_direction' => 'cash_in',
+        'is_cash_account' => false,
+        'is_system' => false,
+        'is_active' => true,
+    ]);
+    $drawer = TellerDrawer::create([
+        'organization_id' => $cashier->organization_id,
+        'branch_id' => $cashier->branch_id,
+        'assigned_user_id' => $cashier->id,
+        'name' => 'Main Drawer',
+        'code' => fake()->unique()->bothify('TDR-??'),
+        'current_balance' => 0,
+        'status' => 'open',
+    ]);
+    $session = DrawerSession::create([
+        'organization_id' => $cashier->organization_id,
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $cashier->id,
+        'opening_balance' => 0,
+        'status' => 'open',
+        'opened_at' => now(),
+    ]);
+    $this->actingAs($cashier);
+
+    $journal = app(TransactionPostingService::class)->postGeneralLedgerCash(
+        $incomeAccount,
+        $session,
+        'credit',
+        1000,
+        $cashier,
+        'Cash income received',
+        today(),
+    );
+    $posting = $journal->transaction;
+
+    $this->actingAs($admin)
+        ->get(route('expenses.index', ['type' => 'income', 'branch_id' => $cashier->branch_id]))
+        ->assertSuccessful()
+        ->assertSee('Income')
+        ->assertSee('Other Income')
+        ->assertSee('Money came in')
+        ->assertSee('UGX 1,000.00');
+
+    expect((float) $drawer->fresh()->current_balance)->toBe(1000.0);
+
+    $this->actingAs($admin)
+        ->delete(route('expenses.destroy', $posting))
+        ->assertRedirect()
+        ->assertSessionHas('status');
+
+    expect((float) $drawer->fresh()->current_balance)->toBe(0.0)
+        ->and(Transaction::query()->whereKey($posting->id)->exists())->toBeFalse()
+        ->and(DrawerMovement::query()->where('reference', $posting->reference)->exists())->toBeFalse()
+        ->and(DrawerMovement::query()->where('reference', $posting->reference.'-RESTORE')->where('type', 'cash_out')->exists())->toBeTrue();
+});
+
 it('shows ledger cash received into the drawer with a reversal action', function () {
     $user = moduleManagementUser(['post-transactions']);
     enableTellerModule($user->organization);
@@ -836,6 +975,14 @@ it('allows admins to manage ledger account attributes from the accounts navigati
         'is_system' => false,
         'is_active' => true,
     ]);
+    TellerDrawer::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'name' => 'Branch Drawer',
+        'code' => 'BD-01',
+        'current_balance' => 0,
+        'status' => 'closed',
+    ]);
 
     $this->actingAs($admin)
         ->get(route('teller.index'))
@@ -844,11 +991,16 @@ it('allows admins to manage ledger account attributes from the accounts navigati
         ->assertDontSee('Edit OLD-LEDGER', false);
 
     $this->actingAs($admin)
-        ->get(route('ledger-accounts.index', ['search' => 'Old Ledger']))
+        ->get(route('ledger-accounts.index', ['type' => 'expense', 'search' => 'Old Ledger']))
         ->assertSuccessful()
-        ->assertSee('Ledger Accounts')
+        ->assertSee('Expenses')
+        ->assertSee('Income')
+        ->assertSee('Assets')
+        ->assertSee('Liabilities')
+        ->assertSee('Capital')
         ->assertSee('OLD-LEDGER')
         ->assertSee('Old Ledger Name')
+        ->assertSee('BD-01')
         ->assertSee(route('ledger-accounts.update', $ledgerAccount), false);
 
     $this->actingAs($admin)
@@ -861,7 +1013,7 @@ it('allows admins to manage ledger account attributes from the accounts navigati
             'normal_balance' => 'debit',
             'drawer_direction' => 'cash_out',
         ])
-        ->assertRedirect(route('ledger-accounts.index'))
+        ->assertRedirect(route('ledger-accounts.index', ['type' => 'expense']))
         ->assertSessionHas('status', 'Ledger account created.');
 
     $this->assertDatabaseHas('chart_accounts', [
@@ -884,7 +1036,7 @@ it('allows admins to manage ledger account attributes from the accounts navigati
             'is_system' => '1',
             'is_active' => '0',
         ])
-        ->assertRedirect(route('ledger-accounts.index'))
+        ->assertRedirect(route('ledger-accounts.index', ['type' => 'income']))
         ->assertSessionHas('status', 'Ledger account updated.');
 
     expect($ledgerAccount->fresh())
@@ -898,6 +1050,69 @@ it('allows admins to manage ledger account attributes from the accounts navigati
         ->is_cash_account->toBeTrue()
         ->is_system->toBeTrue()
         ->is_active->toBeFalse();
+});
+
+it('allows organization admins to delete unused ledger accounts but blocks accounts with activity', function () {
+    [$organization, $branch] = drawerAdminOrganization();
+    $admin = drawerAdminUser($organization, null, 'organization-admin', ['manage-accounting']);
+    app(ModuleService::class)->syncCatalog();
+    app(ModuleService::class)->syncDefaults($organization);
+    $organization->modules()->syncWithoutDetaching([
+        Module::where('slug', 'accounting')->firstOrFail()->id => ['is_enabled' => true, 'enabled_at' => now()],
+    ]);
+    $unusedAccount = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'code' => fake()->unique()->bothify('UNUSED-??'),
+        'name' => 'Unused Expense',
+        'type' => 'expense',
+        'normal_balance' => 'debit',
+        'drawer_direction' => 'cash_out',
+        'is_cash_account' => false,
+        'is_system' => false,
+        'is_active' => true,
+    ]);
+    $usedAccount = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'code' => fake()->unique()->bothify('USED-??'),
+        'name' => 'Used Expense',
+        'type' => 'expense',
+        'normal_balance' => 'debit',
+        'drawer_direction' => 'cash_out',
+        'is_cash_account' => false,
+        'is_system' => false,
+        'is_active' => true,
+    ]);
+    $journal = JournalEntry::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'chart_account_id' => $usedAccount->id,
+        'reference' => 'USED-ACCOUNT',
+        'account_name' => 'Used Expense',
+        'entry_type' => 'debit',
+        'amount' => 1000,
+    ]);
+    JournalLine::create([
+        'journal_entry_id' => $journal->id,
+        'chart_account_id' => $usedAccount->id,
+        'debit' => 1000,
+        'credit' => 0,
+    ]);
+
+    $this->actingAs($admin)
+        ->delete(route('ledger-accounts.destroy', $usedAccount))
+        ->assertRedirect()
+        ->assertSessionHasErrors('ledger_account');
+
+    $this->assertDatabaseHas('chart_accounts', ['id' => $usedAccount->id]);
+
+    $this->actingAs($admin)
+        ->delete(route('ledger-accounts.destroy', $unusedAccount))
+        ->assertRedirect()
+        ->assertSessionHas('status', 'Ledger account deleted.');
+
+    $this->assertDatabaseMissing('chart_accounts', ['id' => $unusedAccount->id]);
 });
 
 it('allows an organization admin to open an organization drawer for a teller', function () {

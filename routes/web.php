@@ -14,8 +14,10 @@ use App\Http\Controllers\ClientKycController;
 use App\Http\Controllers\ClientNoteController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DataImportController;
+use App\Http\Controllers\DataWipeController;
 use App\Http\Controllers\DueRepaymentController;
 use App\Http\Controllers\EndOfDayController;
+use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\LedgerAccountController;
 use App\Http\Controllers\LinkPreviewController;
 use App\Http\Controllers\LoanCollateralController;
@@ -92,6 +94,8 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::get('/module-visibility', [ModuleManagementController::class, 'visibility'])->name('modules.visibility');
     Route::get('/settings', [SystemSettingController::class, 'index'])->name('settings.index');
     Route::put('/settings', [SystemSettingController::class, 'update'])->name('settings.update');
+    Route::get('/data-wipe', [DataWipeController::class, 'index'])->name('data-wipe.index');
+    Route::post('/data-wipe', [DataWipeController::class, 'store'])->name('data-wipe.store');
     Route::get('/audit-logs', [AuditLogController::class, 'index'])->name('audit-logs.index');
     Route::get('/audit-logs/{auditLog}', [AuditLogController::class, 'show'])->name('audit-logs.show');
     Route::resource('clients', ClientController::class)->middleware('module:clients');
@@ -144,6 +148,7 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::get('/ledger-accounts', [LedgerAccountController::class, 'index'])->middleware('module:accounting')->name('ledger-accounts.index');
     Route::post('/ledger-accounts', [LedgerAccountController::class, 'store'])->middleware('module:accounting')->name('ledger-accounts.store');
     Route::put('/ledger-accounts/{chartAccount}', [LedgerAccountController::class, 'update'])->middleware('module:accounting')->name('ledger-accounts.update');
+    Route::delete('/ledger-accounts/{chartAccount}', [LedgerAccountController::class, 'destroy'])->middleware('module:accounting')->name('ledger-accounts.destroy');
     Route::get('/arrears', [ArrearsController::class, 'index'])->middleware('module:loans')->name('arrears.index');
     Route::post('/arrears/apply-penalties', [ArrearsController::class, 'applyPenalties'])->middleware('module:loans')->name('arrears.apply-penalties');
     Route::get('/due-repayments', [DueRepaymentController::class, 'index'])->middleware('module:loans')->name('due-repayments.index');
@@ -156,6 +161,8 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::post('/teller-drawer/{drawer}/close', [TellerDrawerController::class, 'closeDrawer'])->name('teller.drawers.close');
     Route::put('/teller-drawer/{drawer}', [TellerDrawerController::class, 'updateDrawer'])->name('teller.drawers.update');
     Route::delete('/teller-drawer/{drawer}', [TellerDrawerController::class, 'destroyDrawer'])->name('teller.drawers.destroy');
+    Route::get('/expenses', [ExpenseController::class, 'index'])->middleware('module:teller')->name('expenses.index');
+    Route::delete('/expenses/{expense}', [ExpenseController::class, 'destroy'])->middleware('module:teller')->name('expenses.destroy');
     Route::get('/non-cash-transactions', [NonCashTransactionController::class, 'index'])->middleware('module:teller')->name('non-cash.index');
     Route::post('/non-cash-transactions', [NonCashTransactionController::class, 'store'])->middleware('module:teller')->name('non-cash.store');
     Route::get('/end-of-day', [EndOfDayController::class, 'index'])->middleware('module:teller')->name('end-of-day.index');

@@ -659,6 +659,26 @@ const initLedgerAccountModals = () => {
     });
 };
 
+const initDataWipeTargets = () => {
+    const scope = document.querySelector('[name="scope_type"]');
+    const targets = document.querySelectorAll('[data-wipe-target]');
+
+    if (!scope || !targets.length) {
+        return;
+    }
+
+    const syncTargets = () => {
+        targets.forEach((target) => {
+            const active = target.dataset.wipeTarget === scope.value;
+            target.disabled = !active;
+            target.closest('label').hidden = !active;
+        });
+    };
+
+    scope.addEventListener('change', syncTargets);
+    syncTargets();
+};
+
 const initResponsiveTables = () => {
     document.querySelectorAll('main table').forEach((table) => {
         if (table.dataset.mobileReady === '1') {
@@ -693,5 +713,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initLoanReopenModal();
     initLoanCoverageModal();
     initLedgerAccountModals();
+    initDataWipeTargets();
     initResponsiveTables();
 });

@@ -1,20 +1,20 @@
 @extends('layouts.app')
 
 @php
-    $accountTypes = ['asset' => 'Asset', 'liability' => 'Liability', 'equity' => 'Equity', 'income' => 'Income', 'expense' => 'Expense'];
     $normalBalances = ['debit' => 'Debit', 'credit' => 'Credit'];
     $drawerDirections = ['cash_in' => 'Adds money to drawer', 'cash_out' => 'Takes money from drawer', 'both' => 'Can add or take drawer money'];
     $openCreateModal = old('_ledger_modal') === 'create';
+    $selectedTypeLabel = $type ? $accountTypes[$type] : 'All Ledger Accounts';
 @endphp
 
 @section('content')
 <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
     <div>
         <div class="text-sm font-semibold text-slate-500">Accounts</div>
-        <h1 class="df-title">Ledger Accounts</h1>
-        <p class="df-muted">Manage branch chart-of-account records used for teller, accounting, income, expense, asset, liability, and equity postings.</p>
+        <h1 class="df-title">{{ $selectedTypeLabel }}</h1>
+        <p class="df-muted">Manage branch chart-of-account records for expenses, income, assets, liabilities, capital, and drawer-aware postings.</p>
     </div>
-    <button type="button" class="df-action-primary" data-ledger-modal-open="ledger-create-modal">New Ledger Account</button>
+    <button type="button" class="df-action-primary" data-ledger-modal-open="ledger-create-modal">New {{ $type ? str($selectedTypeLabel)->singular() : 'Ledger Account' }}</button>
 </div>
 
 @if($errors->has('ledger_account'))
@@ -22,16 +22,25 @@
 @endif
 
 <section class="df-panel overflow-hidden">
+    <div class="flex flex-wrap gap-2 border-b border-slate-200 px-5 py-4">
+        <a href="{{ route('ledger-accounts.index') }}" class="rounded-lg px-3 py-2 text-sm font-semibold transition {{ $type ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-brand-700 text-white shadow-sm' }}">All</a>
+        @foreach($accountTypes as $typeValue => $typeLabel)
+            <a href="{{ route('ledger-accounts.index', ['type' => $typeValue]) }}" class="rounded-lg px-3 py-2 text-sm font-semibold transition {{ $type === $typeValue ? 'bg-brand-700 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200' }}">{{ $typeLabel }}</a>
+        @endforeach
+    </div>
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div>
-            <h2 class="font-semibold text-slate-950">All Ledger Accounts</h2>
+            <h2 class="font-semibold text-slate-950">{{ $selectedTypeLabel }}</h2>
             <p class="text-sm text-slate-500">{{ $accounts->total() }} account{{ $accounts->total() === 1 ? '' : 's' }} found.</p>
         </div>
         <form method="GET" action="{{ route('ledger-accounts.index') }}" class="flex flex-wrap items-center justify-end gap-2">
+            @if($type)
+                <input type="hidden" name="type" value="{{ $type }}">
+            @endif
             <input name="search" value="{{ $search }}" class="min-w-72 rounded border-slate-300 text-sm" placeholder="Search code, name, branch, type, or parent">
             <button class="df-action-secondary">Search</button>
-            @if($search !== '')
-                <a href="{{ route('ledger-accounts.index') }}" class="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Clear</a>
+            @if($search !== '' || $type)
+                <a href="{{ route('ledger-accounts.index', $type ? ['type' => $type] : []) }}" class="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Clear</a>
             @endif
         </form>
     </div>
@@ -45,7 +54,7 @@
                     <th>Name</th>
                     <th>Type</th>
                     <th>Parent</th>
-                    <th>Drawer Use</th>
+                    <th>Drawer Impact</th>
                     <th>Status</th>
                     <th class="text-right pr-3">Action</th>
                 </tr>
@@ -61,12 +70,32 @@
                         </td>
                         <td>{{ str($account->type)->headline() }} · {{ str($account->normal_balance)->headline() }}</td>
                         <td>{{ $account->parent ? $account->parent->code.' · '.$account->parent->name : 'No parent' }}</td>
-                        <td>{{ str($account->drawer_direction ?: 'both')->headline() }}</td>
+                        <td>
+                            <div>{{ str($account->drawer_direction ?: 'both')->headline() }}</div>
+                            <div class="text-xs text-slate-500">
+                                @if($account->branch?->drawers?->isNotEmpty())
+                                    {{ $account->branch->drawers->pluck('code')->join(', ') }}
+                                @elseif($account->branch)
+                                    No drawers configured
+                                @else
+                                    Not drawer-specific
+                                @endif
+                            </div>
+                        </td>
                         <td>
                             <span class="rounded px-2 py-1 text-xs font-semibold {{ $account->is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700' }}">{{ $account->is_active ? 'Active' : 'Inactive' }}</span>
                         </td>
                         <td class="pr-3 text-right">
-                            <button type="button" class="rounded border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" data-ledger-modal-open="ledger-edit-modal-{{ $account->id }}">Edit</button>
+                            <div class="flex flex-wrap justify-end gap-2">
+                                <button type="button" class="rounded border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" data-ledger-modal-open="ledger-edit-modal-{{ $account->id }}">Edit</button>
+                                @if($canDeleteLedgerAccounts)
+                                    <form method="POST" action="{{ route('ledger-accounts.destroy', $account) }}" data-confirm-title="Delete ledger account" data-confirm-message="Delete this ledger account? Accounts with activity, children, cash status, or system status will be blocked." data-confirm-label="Delete account" data-confirm-tone="danger">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button class="rounded border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50">Delete</button>
+                                    </form>
+                                @endif
+                            </div>
                         </td>
                     </tr>
                 @empty
@@ -109,7 +138,7 @@
             <label class="text-sm font-semibold text-slate-700">Account Type <x-required-badge />
                 <select name="type" class="mt-1" required>
                     @foreach($accountTypes as $value => $label)
-                        <option value="{{ $value }}" @selected(old('type') === $value)>{{ $label }}</option>
+                        <option value="{{ $value }}" @selected(old('type', $type) === $value)>{{ $label }}</option>
                     @endforeach
                 </select>
             </label>
@@ -126,6 +155,7 @@
                         <option value="{{ $value }}" @selected(old('drawer_direction') === $value)>{{ $label }}</option>
                     @endforeach
                 </select>
+                <span class="mt-1 block text-xs text-slate-500">The selected branch determines the specific drawers that can use this ledger account.</span>
             </label>
             <div class="flex justify-end gap-2 md:col-span-2">
                 <button type="button" class="df-action-secondary" data-ledger-modal-close>Cancel</button>
@@ -195,6 +225,13 @@
                             <option value="{{ $value }}" @selected(old('drawer_direction', $account->drawer_direction) === $value)>{{ $label }}</option>
                         @endforeach
                     </select>
+                    <span class="mt-1 block text-xs text-slate-500">
+                        @if($account->branch?->drawers?->isNotEmpty())
+                            Affects {{ $account->branch->drawers->pluck('code')->join(', ') }} when posted through a drawer.
+                        @else
+                            This branch has no configured drawers yet.
+                        @endif
+                    </span>
                 </label>
                 <div class="flex flex-wrap items-center gap-4 text-sm font-semibold text-slate-700 md:col-span-2">
                     <label class="inline-flex items-center gap-2">

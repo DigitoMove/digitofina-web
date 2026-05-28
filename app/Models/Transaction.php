@@ -43,6 +43,11 @@ class Transaction extends Model
         return $this->belongsTo(DrawerSession::class);
     }
 
+    public function drawerMovements(): HasMany
+    {
+        return $this->hasMany(DrawerMovement::class, 'reference', 'reference');
+    }
+
     public function reversal(): BelongsTo
     {
         return $this->belongsTo(self::class, 'reversed_by');

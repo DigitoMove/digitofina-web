@@ -42,6 +42,17 @@
                     $modulesEnabled = fn (array $slugs): bool => collect($slugs)->contains(fn (?string $slug): bool => $moduleEnabled($slug));
                     $canAny = fn (array $permissions): bool => $permissions === [] || collect($permissions)->contains(fn (string $permission): bool => $user->canPerform($permission));
                     $isRouteActive = fn (string $route): bool => request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*');
+                    $isItemActive = function (array $item) use ($isRouteActive): bool {
+                        if (! $isRouteActive($item['route'])) {
+                            return false;
+                        }
+
+                        if (($item['params'] ?? []) !== []) {
+                            return collect($item['params'])->every(fn ($value, $key): bool => request((string) $key) === $value);
+                        }
+
+                        return ! request()->routeIs('ledger-accounts.index') || request('type') === null;
+                    };
                     $canManageOrganization = $user->canPerform('manage-organization') || $user->hasRole('super-admin') || $user->hasRole('supervisor') || $user->hasRole('organization-admin');
                     $organizationRoute = $user->hasRole('super-admin') ? 'organizations.index' : 'organization.current';
                     $navGroups = ($user->isMember() || $isGlobalSuperAdmin) ? [] : [
@@ -67,6 +78,7 @@
                             'icon' => 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10',
                             'items' => [
                                 ['label' => 'Teller Drawer', 'route' => 'teller.index', 'module' => 'teller', 'permissions' => ['post-transactions', 'post-repayments', 'manage-drawers'], 'icon' => 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10'],
+                                ['label' => 'Drawer Ledger Postings', 'route' => 'expenses.index', 'module' => 'teller', 'permissions' => ['manage-drawers', 'manage-accounting'], 'icon' => 'M6 5h12v14H6z M9 9h6 M9 13h6 M9 17h3'],
                                 ['label' => 'Non-Cash Transactions', 'route' => 'non-cash.index', 'module' => 'teller', 'permissions' => ['post-transactions', 'manage-accounting'], 'icon' => 'M7 7h10M7 12h10M7 17h6 M4 5h16v14H4z'],
                                 ['label' => 'End of Day', 'route' => 'end-of-day.index', 'module' => 'teller', 'permissions' => ['manage-end-of-day', 'view-reports'], 'icon' => 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'],
                                 ['label' => 'Data Imports', 'route' => 'imports.index', 'module' => 'settings', 'permissions' => ['import-data', 'manage-settings'], 'icon' => 'M12 3v12m0 0 4-4m-4 4-4-4 M5 19h14 M5 15v4 M19 15v4'],
@@ -78,6 +90,11 @@
                             'items' => [
                                 ['label' => 'Accounts Register', 'route' => 'accounts.index', 'modules' => ['savings', 'loans', 'investments'], 'permissions' => ['manage-accounts', 'manage-loans', 'manage-investments', 'view-reports'], 'icon' => 'M3 7h18v12H3z M7 7V5h10v2'],
                                 ['label' => 'Ledger Accounts', 'route' => 'ledger-accounts.index', 'module' => 'accounting', 'permissions' => ['manage-accounting'], 'icon' => 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'],
+                                ['label' => 'Expense Accounts', 'route' => 'ledger-accounts.index', 'params' => ['type' => 'expense'], 'module' => 'accounting', 'permissions' => ['manage-accounting'], 'icon' => 'M6 5h12v14H6z M9 9h6 M9 13h6 M9 17h3'],
+                                ['label' => 'Income Accounts', 'route' => 'ledger-accounts.index', 'params' => ['type' => 'income'], 'module' => 'accounting', 'permissions' => ['manage-accounting'], 'icon' => 'M12 4v16 M7 9h7a3 3 0 0 1 0 6H7 M17 7h-5a3 3 0 0 0 0 6h5'],
+                                ['label' => 'Asset Accounts', 'route' => 'ledger-accounts.index', 'params' => ['type' => 'asset'], 'module' => 'accounting', 'permissions' => ['manage-accounting'], 'icon' => 'M4 8h16v10H4z M7 8V6h10v2 M8 13h8'],
+                                ['label' => 'Liability Accounts', 'route' => 'ledger-accounts.index', 'params' => ['type' => 'liability'], 'module' => 'accounting', 'permissions' => ['manage-accounting'], 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h5 M8 17h8'],
+                                ['label' => 'Capital Accounts', 'route' => 'ledger-accounts.index', 'params' => ['type' => 'equity'], 'module' => 'accounting', 'permissions' => ['manage-accounting'], 'icon' => 'M12 3l8 5-8 5-8-5 8-5z M4 13l8 5 8-5'],
                                 ['label' => 'Savings Products', 'route' => 'savings-products.index', 'module' => 'savings', 'permissions' => ['manage-accounts'], 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
                                 ['label' => 'Savings Transfer', 'route' => 'savings-transfers.create', 'module' => 'savings', 'permissions' => ['post-transactions'], 'icon' => 'M7 7h12m0 0-4-4m4 4-4 4 M17 17H5m0 0 4-4m-4 4 4 4'],
                             ],
@@ -97,6 +114,7 @@
                         $user->hasRole('super-admin') ? ['label' => 'Modules', 'route' => 'modules.index', 'icon' => 'M4 6h16M4 12h16M4 18h16'] : null,
                         (! $user->hasRole('super-admin') && ($user->hasRole('organization-admin') || $user->canPerform('manage-organization'))) ? ['label' => 'Module Visibility', 'route' => 'modules.visibility', 'icon' => 'M5 12h14 M12 5v14'] : null,
                         $user->canPerform('manage-settings') && $moduleEnabled('settings') ? ['label' => 'Company Settings', 'route' => 'settings.index', 'icon' => 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M4 12h2 M18 12h2 M12 4v2 M12 18v2'] : null,
+                        ($user->hasRole('super-admin') || $user->hasRole('organization-admin')) ? ['label' => 'Data Reset', 'route' => 'data-wipe.index', 'icon' => 'M5 6h14 M8 6V4h8v2 M7 10v9h10v-9 M10 13v3 M14 13v3'] : null,
                         $user->canPerform('view-audit-logs') && $moduleEnabled('audit-logs') ? ['label' => 'Audit Logs', 'route' => 'audit-logs.index', 'icon' => 'M5 4h14v16H5z M9 8h6 M9 12h6 M9 16h3'] : null,
                     ]));
                 @endphp
@@ -117,7 +135,7 @@
                     </a>
 
                     @foreach($navGroups as $group)
-                        @php($groupActive = collect($group['items'])->contains(fn ($item) => $isRouteActive($item['route'])))
+                        @php($groupActive = collect($group['items'])->contains(fn ($item) => $isItemActive($item)))
                         <details class="group/nav rounded-lg" {{ $groupActive ? 'open' : '' }}>
                             <summary class="flex cursor-pointer list-none items-center gap-3 rounded-lg px-3 py-2.5 font-medium text-slate-600 transition hover:bg-slate-50 hover:text-brand-900 [&::-webkit-details-marker]:hidden {{ $groupActive ? 'bg-brand-50 text-brand-900 ring-1 ring-brand-200 shadow-sm' : '' }}">
                                 <span class="grid h-8 w-8 place-items-center rounded-lg transition {{ $groupActive ? 'bg-brand-700 text-white' : 'bg-slate-100 text-brand-700' }}">
@@ -129,8 +147,8 @@
                             <div class="ml-4 mt-1 grid gap-1 border-l border-slate-200 pl-3">
                                 @foreach($group['items'] as $item)
                                     @php($route = $item['route'])
-                                    <a href="{{ route($route) }}" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition {{ $isRouteActive($route) ? 'bg-brand-50 text-brand-900' : 'text-slate-600 hover:bg-slate-50 hover:text-brand-900' }}">
-                                        <span class="grid h-7 w-7 place-items-center rounded-lg transition {{ $isRouteActive($route) ? 'bg-brand-700 text-white' : 'bg-slate-100 text-brand-700' }}">
+                                    <a href="{{ route($route, $item['params'] ?? []) }}" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition {{ $isItemActive($item) ? 'bg-brand-50 text-brand-900' : 'text-slate-600 hover:bg-slate-50 hover:text-brand-900' }}">
+                                        <span class="grid h-7 w-7 place-items-center rounded-lg transition {{ $isItemActive($item) ? 'bg-brand-700 text-white' : 'bg-slate-100 text-brand-700' }}">
                                             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="{{ $item['icon'] }}"/></svg>
                                         </span>
                                         <span class="truncate">{{ $item['label'] }}</span>
