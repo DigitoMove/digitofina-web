@@ -689,7 +689,7 @@ it('shows the full loan repayment amount when looking up a loan account', functi
         ->assertSee('Principal UGX 100,000.00');
 });
 
-it('shows general ledger drawer expenses in cashier entries and allows reversal requests', function () {
+it('shows general ledger drawer expenses in cashier entries without cashier reversal requests', function () {
     $user = moduleManagementUser(['post-transactions']);
     enableTellerModule($user->organization);
     $expenseAccount = ChartAccount::create([
@@ -745,7 +745,7 @@ it('shows general ledger drawer expenses in cashier entries and allows reversal 
         ->get($redirectUrl)
         ->assertSuccessful()
         ->assertSee('Stationery Expense')
-        ->assertSee('Request reversal')
+        ->assertDontSee('Request reversal')
         ->assertSee('chart_account_id='.$expenseAccount->id.'&amp;lookup_scope=general_ledger', false);
 });
 
@@ -936,7 +936,7 @@ it('lets drawer admins delete income ledger postings while removing cash from th
         ->and(DrawerMovement::query()->where('reference', $posting->reference.'-RESTORE')->where('type', 'cash_out')->exists())->toBeTrue();
 });
 
-it('shows ledger cash received into the drawer with a reversal action', function () {
+it('shows ledger cash received into the drawer without a cashier reversal action', function () {
     $user = moduleManagementUser(['post-transactions']);
     enableTellerModule($user->organization);
     $incomeAccount = ChartAccount::create([
@@ -994,7 +994,7 @@ it('shows ledger cash received into the drawer with a reversal action', function
         ->assertSee('Drawer Posted Transactions')
         ->assertSee('Bank Float Received')
         ->assertSee('Money came in')
-        ->assertSee('Request reversal');
+        ->assertDontSee('Request reversal');
 });
 
 it('allows admins to manage ledger account attributes from the accounts navigation', function () {

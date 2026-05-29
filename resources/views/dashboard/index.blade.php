@@ -135,7 +135,7 @@
     <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div>
             <h2 class="text-lg font-semibold text-slate-950">Recent Posted Transactions</h2>
-            <p class="text-sm text-slate-500">Latest cashier postings with reversal requests available for posted transactions.</p>
+            <p class="text-sm text-slate-500">Latest cashier postings. Reversal actions are restricted to admins and above.</p>
         </div>
         <a href="{{ route('reports.show', 'user-posted-transactions') }}" class="df-action-secondary">View all</a>
     </div>

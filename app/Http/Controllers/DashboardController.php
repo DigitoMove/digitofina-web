@@ -246,11 +246,19 @@ class DashboardController extends Controller
             $canRequest = $transaction->status === 'posted'
                 && ! $transaction->reversed_by
                 && ! $hasPendingReversal
-                && ((int) $transaction->user_id === (int) $user->id || $user->canPerform('approve-reversals'));
+                && $this->canAdminReverseTransactions($user);
 
             $transaction->setAttribute('can_request_reversal', $canRequest);
             $transaction->setAttribute('reversal_lock_note', null);
         });
+    }
+
+    private function canAdminReverseTransactions(User $user): bool
+    {
+        return $user->hasRole('super-admin')
+            || $user->hasRole('organization-admin')
+            || $user->canPerform('approve-reversals')
+            || $user->canPerform('override-maker-checker');
     }
 
     private function superAdminDashboard(Request $request): View

@@ -460,7 +460,7 @@
     <section class="df-panel mt-6 overflow-hidden">
         <div class="border-b border-slate-200 px-5 py-4">
             <h2 class="font-semibold text-slate-950">Pending Transaction Reversals</h2>
-            <p class="df-muted">Cashier reversal requests waiting for admin or supervisor approval.</p>
+            <p class="df-muted">Transaction reversal requests waiting for admin or supervisor approval.</p>
         </div>
         <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
@@ -569,7 +569,7 @@
                             @endif
                         </td>
                         <td class="text-right">
-                            @if($transaction->status === 'posted' && ! $pendingReversal && ! $transaction->reversed_by)
+                            @if($transaction->status === 'posted' && ! $pendingReversal && ! $transaction->reversed_by && (auth()->user()->hasRole('super-admin') || auth()->user()->hasRole('organization-admin') || auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker')))
                                 <details class="relative inline-block text-left">
                                     <summary class="cursor-pointer list-none rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white">Request reversal</summary>
                                     <form method="POST" action="{{ route('transactions.reversal-requests.store', $transaction) }}" class="absolute right-0 z-20 mt-2 grid w-72 gap-2 rounded-lg border border-amber-200 bg-white p-3 text-left shadow-xl">

@@ -174,7 +174,7 @@ class TransactionDeletionService
     {
         return $actor->hasRole('super-admin')
             || $actor->hasRole('organization-admin')
-            || $actor->canPerform('manage-drawers')
-            || $actor->canPerform('approve-reversals');
+            || $actor->canPerform('approve-reversals')
+            || $actor->canPerform('override-maker-checker');
     }
 }

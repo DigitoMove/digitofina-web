@@ -4,10 +4,11 @@
     $pendingReversal = $transaction->reversalRequests->firstWhere('status', 'pending');
     $journalAccount = $transaction->journalEntries->first()?->chartAccount;
     $canApproveReversal = auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker');
+    $canAdminReverse = auth()->user()->hasRole('super-admin') || auth()->user()->hasRole('organization-admin') || $canApproveReversal;
     $canRequestReversal = $transaction->status === 'posted'
         && ! $pendingReversal
         && ! $transaction->reversed_by
-        && (auth()->user()->canPerform('post-transactions') || auth()->id() === $transaction->user_id || $canApproveReversal);
+        && $canAdminReverse;
 @endphp
 
 <div class="mx-auto grid max-w-3xl gap-5">
@@ -36,7 +37,7 @@
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
                 <h2 class="text-base font-semibold text-slate-900">Reversal Control</h2>
-                <p class="text-sm text-slate-500">Cashier requests are approved or rejected by an admin or supervisor.</p>
+                <p class="text-sm text-slate-500">Reversals are restricted to admins and above.</p>
             </div>
             @if($pendingReversal)
                 <span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">Pending approval</span>

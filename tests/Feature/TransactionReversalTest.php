@@ -94,6 +94,36 @@ it('allows admins to request reversal for a posted transaction from a locked bac
         ->and($request->reason)->toBe('Correcting a backdated transaction');
 });
 
+it('blocks cashiers from requesting transaction reversals', function () {
+    [$admin, $branch, $type] = transactionDeletionContext();
+    $role = Role::create([
+        'organization_id' => $branch->organization_id,
+        'name' => 'Teller Cashier',
+        'slug' => 'teller-cashier',
+    ]);
+    $cashier = User::factory()->create([
+        'organization_id' => $branch->organization_id,
+        'branch_id' => $branch->id,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $transaction = transactionDeletionPosting($branch, $admin, $type, [
+        'reference' => 'TX-CASHIER-REVERSAL-BLOCKED',
+        'description' => 'Cashier cannot reverse this',
+    ]);
+
+    $this->actingAs($cashier)
+        ->from(route('receipts.show', $transaction))
+        ->post(route('transactions.reversal-requests.store', $transaction), [
+            'reason' => 'Cashier should not be able to reverse',
+        ])
+        ->assertRedirect(route('receipts.show', $transaction))
+        ->assertSessionHas('warning', 'You are not allowed to request a reversal for this transaction.');
+
+    expect(MakerCheckerRequest::query()->count())->toBe(0);
+});
+
 it('links listed posted transactions to their receipt details', function () {
     $branch = Branch::create([
         'code' => '1002',
@@ -299,6 +329,7 @@ it('finds transactions by reference and journal memo across all posted transacti
 it('deletes a drawer transaction by reference and restores the responsible drawer cash', function () {
     [$admin, $branch, $type] = transactionDeletionContext();
     $drawer = TellerDrawer::create([
+        'organization_id' => $branch->organization_id,
         'branch_id' => $branch->id,
         'assigned_user_id' => $admin->id,
         'name' => 'Deletion Drawer',
@@ -307,6 +338,7 @@ it('deletes a drawer transaction by reference and restores the responsible drawe
         'status' => 'open',
     ]);
     $session = DrawerSession::create([
+        'organization_id' => $branch->organization_id,
         'teller_drawer_id' => $drawer->id,
         'user_id' => $admin->id,
         'opening_balance' => 5000,
@@ -321,6 +353,7 @@ it('deletes a drawer transaction by reference and restores the responsible drawe
         'memo' => 'Delete by reference memo',
     ]);
     DrawerMovement::create([
+        'organization_id' => $branch->organization_id,
         'drawer_session_id' => $session->id,
         'user_id' => $admin->id,
         'type' => 'cash_out',
@@ -329,6 +362,43 @@ it('deletes a drawer transaction by reference and restores the responsible drawe
         'reference' => $transaction->reference,
         'description' => 'Drawer expense to delete',
     ]);
+    $chartAccountId = JournalEntry::query()
+        ->where('transaction_id', $transaction->id)
+        ->value('chart_account_id');
+
+    $this->actingAs($admin)
+        ->get(route('reports.show', [
+            'report' => 'gl-account-transactions',
+            'chart_account_id' => $chartAccountId,
+            'search' => 'Delete by reference memo',
+        ]))
+        ->assertSuccessful()
+        ->assertSee($transaction->reference)
+        ->assertSee('Delete')
+        ->assertSee('name="reference" value="'.$transaction->reference.'"', false);
+
+    $role = Role::create([
+        'organization_id' => $branch->organization_id,
+        'name' => 'Teller Cashier',
+        'slug' => 'teller-cashier',
+    ]);
+    $cashier = User::factory()->create([
+        'organization_id' => $branch->organization_id,
+        'branch_id' => $branch->id,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($cashier)
+        ->delete(route('transactions.delete-by-reference'), [
+            'reference' => $transaction->reference,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasErrors('reference');
+
+    expect((float) $drawer->fresh()->current_balance)->toBe(4000.0)
+        ->and(Transaction::query()->whereKey($transaction->id)->exists())->toBeTrue();
 
     $this->actingAs($admin)
         ->delete(route('transactions.delete-by-reference'), [
@@ -1026,7 +1096,13 @@ it('allows an organization admin to repair disbursed loan terms and regenerate t
 
 function transactionDeletionContext(): array
 {
+    $organization = Organization::create([
+        'name' => 'Transaction Tenant',
+        'slug' => fake()->unique()->slug(),
+        'status' => 'active',
+    ]);
     $branch = Branch::create([
+        'organization_id' => $organization->id,
         'code' => fake()->unique()->numerify('####'),
         'name' => 'Transaction Search Branch',
         'is_active' => true,
@@ -1043,6 +1119,7 @@ function transactionDeletionContext(): array
         'is_active' => true,
     ]);
     $type = TransactionType::create([
+        'organization_id' => $organization->id,
         'name' => 'Drawer Cash Out',
         'code' => fake()->unique()->bothify('drawer-cash-out-??'),
         'direction' => 'debit',
@@ -1056,6 +1133,7 @@ function transactionDeletionContext(): array
 function transactionDeletionPosting(Branch $branch, ?User $user, TransactionType $type, array $overrides = []): Transaction
 {
     $transaction = Transaction::create([
+        'organization_id' => $branch->organization_id,
         'transaction_type_id' => $type->id,
         'drawer_session_id' => $overrides['drawer_session_id'] ?? null,
         'branch_id' => $branch->id,
@@ -1069,6 +1147,7 @@ function transactionDeletionPosting(Branch $branch, ?User $user, TransactionType
         'posted_at' => $overrides['posted_at'] ?? now(),
     ]);
     $account = ChartAccount::create([
+        'organization_id' => $branch->organization_id,
         'branch_id' => $branch->id,
         'code' => fake()->unique()->bothify('GL-??'),
         'name' => $overrides['account_name'] ?? 'Search Fixture Account',
@@ -1077,6 +1156,7 @@ function transactionDeletionPosting(Branch $branch, ?User $user, TransactionType
         'is_active' => true,
     ]);
     $journal = JournalEntry::create([
+        'organization_id' => $branch->organization_id,
         'branch_id' => $branch->id,
         'chart_account_id' => $account->id,
         'transaction_id' => $transaction->id,
@@ -1089,6 +1169,7 @@ function transactionDeletionPosting(Branch $branch, ?User $user, TransactionType
         'posted_at' => $transaction->posted_at,
     ]);
     JournalLine::create([
+        'organization_id' => $branch->organization_id,
         'journal_entry_id' => $journal->id,
         'chart_account_id' => $account->id,
         'debit' => $transaction->amount,

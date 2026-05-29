@@ -182,7 +182,7 @@ class ReportCatalogService
             'clients' => $this->clients($payload, $from, $to, $branchId, $limit, $user),
             'officer_entries' => $this->officerEntries($from, $to, $branchId, $user),
             'chart_accounts' => $this->chartAccounts($branchId, $user),
-            'journal_entries' => $this->journalEntries($from, $to, $branchId, $limit, $user, $chartAccountId),
+            'journal_entries' => $this->journalEntries($from, $to, $branchId, $limit, $user, $chartAccountId, $search),
             'journal_analysis' => $this->journalAnalysis($from, $to, $branchId, $user),
             'ledger_section' => $this->ledgerSection($payload, $from, $to, $branchId, $user),
             'accounting_statement' => $this->accountingStatement($payload, $from, $to, $branchId, $user),
@@ -238,6 +238,8 @@ class ReportCatalogService
             ->when($search !== '', fn (Builder $query): Builder => $this->searchTransactions($query, $search))
             ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
 
+        $canDelete = $this->canAdminReverseTransactions($user);
+
         $rows = $query->latest('posted_at')->limit($limit)->get()->map(fn (Transaction $transaction): array => [
             'Date' => $transaction->posted_at?->format('d M Y H:i'),
             'Reference' => $transaction->reference,
@@ -246,12 +248,14 @@ class ReportCatalogService
             'Type' => $transaction->type?->name ?? 'N/A',
             'Amount' => $this->money((float) $transaction->amount),
             'Posted By' => $transaction->user?->name ?? 'System',
+            'Action' => $canDelete && $this->canDeleteTransactionRow($transaction) ? 'Delete' : 'Receipt',
+            '_delete_reference' => $canDelete && $this->canDeleteTransactionRow($transaction) ? $transaction->reference : null,
             '_links' => [
                 'Reference' => route('receipts.show', $transaction),
             ],
         ]);
 
-        return [['Date', 'Reference', 'Description', 'Client', 'Type', 'Amount', 'Posted By'], $rows, ['Total amount' => $this->money((float) $query->sum('amount'))]];
+        return [['Date', 'Reference', 'Description', 'Client', 'Type', 'Amount', 'Posted By', 'Action'], $rows, ['Total amount' => $this->money((float) $query->sum('amount'))]];
     }
 
     private function searchTransactions(Builder $query, string $search): Builder
@@ -532,13 +536,16 @@ class ReportCatalogService
         return [['Code', 'Name', 'Type', 'Normal Balance', 'Branch'], $rows, ['Accounts' => number_format($rows->count())]];
     }
 
-    private function journalEntries(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user, ?int $chartAccountId = null): array
+    private function journalEntries(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user, ?int $chartAccountId = null, string $search = ''): array
     {
         $query = JournalEntry::query()
-            ->with('chartAccount')
+            ->with(['chartAccount', 'transaction'])
             ->whereBetween(DB::raw('coalesce(posted_at, created_at)'), [$from, $to])
             ->when($chartAccountId, fn (Builder $query, int $chartAccountId): Builder => $query->where('chart_account_id', $chartAccountId))
+            ->when($search !== '', fn (Builder $query): Builder => $this->searchJournalEntries($query, $search))
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user));
+
+        $canDelete = $this->canAdminReverseTransactions($user);
 
         $rows = $query->latest()->limit($limit)->get()->map(fn (JournalEntry $entry): array => [
             'Date' => ($entry->posted_at ?? $entry->created_at)?->format('d M Y'),
@@ -547,9 +554,29 @@ class ReportCatalogService
             'Entry' => Str::headline($entry->entry_type),
             'Amount' => $this->money((float) $entry->amount),
             'Memo' => $entry->memo ?? $entry->description,
+            'Action' => $entry->transaction && $canDelete && $this->canDeleteTransactionRow($entry->transaction) ? 'Delete' : 'N/A',
+            '_delete_reference' => $entry->transaction && $canDelete && $this->canDeleteTransactionRow($entry->transaction) ? $entry->transaction->reference : null,
+            '_links' => $entry->transaction ? [
+                'Reference' => route('receipts.show', $entry->transaction),
+            ] : [],
         ]);
 
-        return [['Date', 'Reference', 'Account', 'Entry', 'Amount', 'Memo'], $rows, ['Entries' => number_format($query->count())]];
+        return [['Date', 'Reference', 'Account', 'Entry', 'Amount', 'Memo', 'Action'], $rows, ['Entries' => number_format($query->count())]];
+    }
+
+    private function searchJournalEntries(Builder $query, string $search): Builder
+    {
+        $likeSearch = "%{$search}%";
+
+        return $query->where(function (Builder $query) use ($likeSearch): void {
+            $query->whereAny(['reference', 'description', 'memo', 'account_name', 'entry_type', 'status'], 'like', $likeSearch)
+                ->orWhereHas('chartAccount', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['code', 'name', 'type'], 'like', $likeSearch);
+                })
+                ->orWhereHas('transaction', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['reference', 'description', 'status'], 'like', $likeSearch);
+                });
+        });
     }
 
     private function journalAnalysis(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
@@ -1477,6 +1504,22 @@ class ReportCatalogService
                     default => $entry->entry_type === 'credit' ? $amount : -$amount,
                 };
             });
+    }
+
+    private function canAdminReverseTransactions(User $user): bool
+    {
+        return $user->hasRole('super-admin')
+            || $user->hasRole('organization-admin')
+            || $user->canPerform('approve-reversals')
+            || $user->canPerform('override-maker-checker');
+    }
+
+    private function canDeleteTransactionRow(Transaction $transaction): bool
+    {
+        return $transaction->status === 'posted'
+            && $transaction->reversed_by === null
+            && $transaction->reversal_of_id === null
+            && filled($transaction->reference);
     }
 
     /**

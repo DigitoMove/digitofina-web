@@ -33,17 +33,18 @@
             <h2 class="font-semibold text-slate-950">Generated Results</h2>
             <p class="text-sm text-slate-500">{{ $rows->count() }} row{{ $rows->count() === 1 ? '' : 's' }} shown.</p>
         </div>
-        @if(in_array($definition['kind'], ['transactions', 'teller_transactions'], true))
+        @if(in_array($definition['kind'], ['transactions', 'teller_transactions', 'journal_entries'], true))
             <div class="grid gap-2">
                 <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="flex flex-wrap items-center justify-end gap-2">
                     <input type="hidden" name="from" value="{{ request('from') }}">
                     <input type="hidden" name="to" value="{{ request('to') }}">
                     <input type="hidden" name="branch_id" value="{{ $branchId }}">
+                    <input type="hidden" name="chart_account_id" value="{{ request('chart_account_id') }}">
                     <input type="hidden" name="detail" value="{{ $detail }}">
                     <input name="search" value="{{ $search }}" class="min-w-64 rounded border-slate-300 text-sm" placeholder="Search description, memo, reference, client, or account">
                     <button class="df-action-secondary">Search</button>
                     @if($search !== '')
-                        <a href="{{ route('reports.show', ['report' => $definition['slug'], 'from' => request('from'), 'to' => request('to'), 'branch_id' => $branchId, 'detail' => $detail]) }}" class="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Clear</a>
+                        <a href="{{ route('reports.show', ['report' => $definition['slug'], 'from' => request('from'), 'to' => request('to'), 'branch_id' => $branchId, 'chart_account_id' => request('chart_account_id'), 'detail' => $detail]) }}" class="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Clear</a>
                     @endif
                 </form>
                 @if($definition['kind'] === 'transactions')
@@ -86,7 +87,14 @@
                                 $cellLink = $row['_links'][$column] ?? null;
                             @endphp
                             <td class="whitespace-nowrap px-4 py-3">
-                                @if($cellLink)
+                                @if($column === 'Action' && ! empty($row['_delete_reference']))
+                                    <form method="POST" action="{{ route('transactions.delete-by-reference') }}" class="inline-flex" data-confirm-title="Delete transaction by reference" data-confirm-message="Delete this transaction, remove its journal entries, and reverse the responsible drawer cash movement?" data-confirm-label="Delete transaction" data-confirm-tone="danger">
+                                        @csrf
+                                        @method('DELETE')
+                                        <input type="hidden" name="reference" value="{{ $row['_delete_reference'] }}">
+                                        <button class="df-action-danger px-3 py-1.5 text-xs">Delete</button>
+                                    </form>
+                                @elseif($cellLink)
                                     <a href="{{ $cellLink }}" class="font-semibold text-blue-700 hover:text-blue-900 hover:underline">{{ $row[$column] ?? '' }}</a>
                                 @else
                                     {{ $row[$column] ?? '' }}

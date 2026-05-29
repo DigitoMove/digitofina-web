@@ -104,9 +104,10 @@ class TransactionReversalController extends Controller
             return false;
         }
 
-        return $user->canPerform('post-transactions')
+        return $user->hasRole('super-admin')
+            || $user->hasRole('organization-admin')
             || $user->canPerform('approve-reversals')
-            || (int) $transaction->user_id === (int) $user->id;
+            || $user->canPerform('override-maker-checker');
     }
 
     private function canCheck(Request $request, MakerCheckerRequest $makerCheckerRequest): bool
