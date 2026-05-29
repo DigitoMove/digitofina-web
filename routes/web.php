@@ -39,6 +39,7 @@ use App\Http\Controllers\SavingsProductController;
 use App\Http\Controllers\SavingsTransactionController;
 use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\TellerDrawerController;
+use App\Http\Controllers\TransactionDeletionController;
 use App\Http\Controllers\TransactionReversalController;
 use App\Http\Controllers\UserManagementController;
 use Illuminate\Support\Facades\Route;
@@ -178,6 +179,7 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::post('/imports/{import}/commit', [DataImportController::class, 'commit'])->name('imports.commit');
     Route::post('/imports/{import}/rollback', [DataImportController::class, 'rollback'])->name('imports.rollback');
     Route::get('/receipts/{transaction}', [ReceiptController::class, 'show'])->name('receipts.show');
+    Route::delete('/transactions/delete-by-reference', [TransactionDeletionController::class, 'destroyByReference'])->name('transactions.delete-by-reference');
     Route::post('/receipts/{transaction}/reversal-request', [TransactionReversalController::class, 'store'])->name('transactions.reversal-requests.store');
     Route::post('/transaction-reversal-requests/{makerCheckerRequest}/approve', [TransactionReversalController::class, 'approve'])->name('transactions.reversal-requests.approve');
     Route::post('/transaction-reversal-requests/{makerCheckerRequest}/reject', [TransactionReversalController::class, 'reject'])->name('transactions.reversal-requests.reject');

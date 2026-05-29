@@ -213,7 +213,7 @@ class TellerDrawerController extends Controller
                     $query->whereAny(['name', 'code'], 'like', $likeSearch);
                 })
                 ->orWhereHas('journalEntries', function (Builder $query) use ($likeSearch): void {
-                    $query->whereAny(['description', 'reference'], 'like', $likeSearch)
+                    $query->whereAny(['description', 'reference', 'memo', 'account_name'], 'like', $likeSearch)
                         ->orWhereHas('chartAccount', function (Builder $query) use ($likeSearch): void {
                             $query->whereAny(['code', 'name'], 'like', $likeSearch);
                         });

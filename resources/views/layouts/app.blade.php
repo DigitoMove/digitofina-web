@@ -78,7 +78,7 @@
                             'icon' => 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10',
                             'items' => [
                                 ['label' => 'Teller Drawer', 'route' => 'teller.index', 'module' => 'teller', 'permissions' => ['post-transactions', 'post-repayments', 'manage-drawers'], 'icon' => 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10'],
-                                ['label' => 'Transaction Search', 'route' => 'reports.show', 'params' => ['report' => 'user-posted-transactions'], 'module' => 'teller', 'permissions' => ['post-transactions', 'manage-drawers', 'view-reports'], 'icon' => 'M10 5a5 5 0 1 0 3.5 8.5L19 19 M8 10h4'],
+                                ['label' => 'Transaction Search', 'route' => 'reports.show', 'params' => ['report' => 'all-posted-transactions'], 'module' => 'teller', 'permissions' => ['post-transactions', 'manage-drawers', 'view-reports'], 'icon' => 'M10 5a5 5 0 1 0 3.5 8.5L19 19 M8 10h4'],
                                 ['label' => 'Drawer Ledger Postings', 'route' => 'expenses.index', 'module' => 'teller', 'permissions' => ['manage-drawers', 'manage-accounting'], 'icon' => 'M6 5h12v14H6z M9 9h6 M9 13h6 M9 17h3'],
                                 ['label' => 'Non-Cash Transactions', 'route' => 'non-cash.index', 'module' => 'teller', 'permissions' => ['post-transactions', 'manage-accounting'], 'icon' => 'M7 7h10M7 12h10M7 17h6 M4 5h16v14H4z'],
                                 ['label' => 'End of Day', 'route' => 'end-of-day.index', 'module' => 'teller', 'permissions' => ['manage-end-of-day', 'view-reports'], 'icon' => 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'],

@@ -46,6 +46,7 @@ class ReportCatalogService
     public function definitions(?User $user = null): array
     {
         $definitions = [
+            $this->report('all-posted-transactions', 'Posted Transactions', 'All Posted Transactions', 'transactions'),
             $this->report('user-posted-transactions', 'Posted Transactions', 'User Posted Transactions', 'transactions', ['posted_by' => 'user']),
             $this->report('system-posted-transactions', 'Posted Transactions', 'System Posted Transactions', 'transactions', ['posted_by' => 'system']),
             $this->report('daily-teller-transactions', 'Posted Transactions', 'Daily Teller Transactions', 'teller_transactions'),
@@ -267,6 +268,12 @@ class ReportCatalogService
                 })
                 ->orWhereHas('type', function (Builder $query) use ($likeSearch): void {
                     $query->whereAny(['name', 'code'], 'like', $likeSearch);
+                })
+                ->orWhereHas('journalEntries', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['description', 'reference', 'memo', 'account_name'], 'like', $likeSearch)
+                        ->orWhereHas('chartAccount', function (Builder $query) use ($likeSearch): void {
+                            $query->whereAny(['code', 'name'], 'like', $likeSearch);
+                        });
                 });
         });
     }

@@ -3,8 +3,13 @@
 use App\Models\Account;
 use App\Models\AccountType;
 use App\Models\Branch;
+use App\Models\ChartAccount;
 use App\Models\Client;
+use App\Models\DrawerMovement;
+use App\Models\DrawerSession;
 use App\Models\FinancialDay;
+use App\Models\JournalEntry;
+use App\Models\JournalLine;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\LoanRepayment;
@@ -15,6 +20,7 @@ use App\Models\Module;
 use App\Models\Organization;
 use App\Models\OrganizationModule;
 use App\Models\Role;
+use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
@@ -263,6 +269,79 @@ it('filters posted transaction reports by description', function () {
         ->assertSee('TX-LEDGER-DESC')
         ->assertSee('Ledger drawer fuel expense')
         ->assertSee('href="'.route('receipts.show', $ledgerTransaction).'"', false);
+});
+
+it('finds transactions by reference and journal memo across all posted transactions', function () {
+    [$admin, $branch, $type] = transactionDeletionContext();
+    $memoMatch = transactionDeletionPosting($branch, $admin, $type, [
+        'reference' => 'TX-MEMO-SEARCH',
+        'description' => 'Plain posting',
+        'memo' => 'Special counter memo',
+    ]);
+    $referenceMatch = transactionDeletionPosting($branch, $admin, $type, [
+        'reference' => 'SYS-REFERENCE-SEARCH',
+        'description' => 'Reference generated posting',
+        'memo' => 'No memo match',
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('reports.show', ['report' => 'all-posted-transactions', 'search' => 'Special counter memo']))
+        ->assertSuccessful()
+        ->assertSee($memoMatch->reference)
+        ->assertDontSee($referenceMatch->reference);
+
+    $this->actingAs($admin)
+        ->get(route('reports.show', ['report' => 'all-posted-transactions', 'search' => 'SYS-REFERENCE-SEARCH']))
+        ->assertSuccessful()
+        ->assertSee($referenceMatch->reference);
+});
+
+it('deletes a drawer transaction by reference and restores the responsible drawer cash', function () {
+    [$admin, $branch, $type] = transactionDeletionContext();
+    $drawer = TellerDrawer::create([
+        'branch_id' => $branch->id,
+        'assigned_user_id' => $admin->id,
+        'name' => 'Deletion Drawer',
+        'code' => 'DEL-TDR',
+        'current_balance' => 4000,
+        'status' => 'open',
+    ]);
+    $session = DrawerSession::create([
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $admin->id,
+        'opening_balance' => 5000,
+        'status' => 'open',
+        'opened_at' => now(),
+    ]);
+    $transaction = transactionDeletionPosting($branch, $admin, $type, [
+        'drawer_session_id' => $session->id,
+        'reference' => 'TX-DELETE-REFERENCE',
+        'amount' => 1000,
+        'description' => 'Drawer expense to delete',
+        'memo' => 'Delete by reference memo',
+    ]);
+    DrawerMovement::create([
+        'drawer_session_id' => $session->id,
+        'user_id' => $admin->id,
+        'type' => 'cash_out',
+        'amount' => 1000,
+        'balance_after' => 4000,
+        'reference' => $transaction->reference,
+        'description' => 'Drawer expense to delete',
+    ]);
+
+    $this->actingAs($admin)
+        ->delete(route('transactions.delete-by-reference'), [
+            'reference' => $transaction->reference,
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('status');
+
+    expect((float) $drawer->fresh()->current_balance)->toBe(5000.0)
+        ->and(Transaction::query()->whereKey($transaction->id)->exists())->toBeFalse()
+        ->and(JournalEntry::query()->where('transaction_id', $transaction->id)->exists())->toBeFalse()
+        ->and(DrawerMovement::query()->where('reference', $transaction->reference)->exists())->toBeFalse()
+        ->and(DrawerMovement::query()->where('reference', $transaction->reference.'-DELETE')->where('type', 'cash_in')->exists())->toBeTrue();
 });
 
 it('reopens a closed loan account when its payoff repayment is reversed', function () {
@@ -944,3 +1023,78 @@ it('allows an organization admin to repair disbursed loan terms and regenerate t
         ->and($loanAccount->fresh()->status)->toBe('active')
         ->and((float) $loanAccount->fresh()->balance)->toBe((float) $loan->principal_balance + (float) $loan->interest_balance);
 });
+
+function transactionDeletionContext(): array
+{
+    $branch = Branch::create([
+        'code' => fake()->unique()->numerify('####'),
+        'name' => 'Transaction Search Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $role = Role::create([
+        'name' => 'Super Admin',
+        'slug' => 'super-admin',
+    ]);
+    $admin = User::factory()->create([
+        'branch_id' => null,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $type = TransactionType::create([
+        'name' => 'Drawer Cash Out',
+        'code' => fake()->unique()->bothify('drawer-cash-out-??'),
+        'direction' => 'debit',
+        'affects_cash_drawer' => true,
+        'is_active' => true,
+    ]);
+
+    return [$admin, $branch, $type];
+}
+
+function transactionDeletionPosting(Branch $branch, ?User $user, TransactionType $type, array $overrides = []): Transaction
+{
+    $transaction = Transaction::create([
+        'transaction_type_id' => $type->id,
+        'drawer_session_id' => $overrides['drawer_session_id'] ?? null,
+        'branch_id' => $branch->id,
+        'user_id' => $user?->id,
+        'reference' => $overrides['reference'] ?? fake()->unique()->bothify('TX-SEARCH-####'),
+        'amount' => $overrides['amount'] ?? 500,
+        'balance_after' => $overrides['balance_after'] ?? 0,
+        'currency' => 'UGX',
+        'description' => $overrides['description'] ?? 'Transaction search fixture',
+        'status' => 'posted',
+        'posted_at' => $overrides['posted_at'] ?? now(),
+    ]);
+    $account = ChartAccount::create([
+        'branch_id' => $branch->id,
+        'code' => fake()->unique()->bothify('GL-??'),
+        'name' => $overrides['account_name'] ?? 'Search Fixture Account',
+        'type' => 'expense',
+        'normal_balance' => 'debit',
+        'is_active' => true,
+    ]);
+    $journal = JournalEntry::create([
+        'branch_id' => $branch->id,
+        'chart_account_id' => $account->id,
+        'transaction_id' => $transaction->id,
+        'reference' => $transaction->reference,
+        'account_name' => $account->name,
+        'entry_type' => 'debit',
+        'amount' => $transaction->amount,
+        'memo' => $overrides['memo'] ?? null,
+        'status' => 'posted',
+        'posted_at' => $transaction->posted_at,
+    ]);
+    JournalLine::create([
+        'journal_entry_id' => $journal->id,
+        'chart_account_id' => $account->id,
+        'debit' => $transaction->amount,
+        'credit' => 0,
+        'narration' => $overrides['memo'] ?? null,
+    ]);
+
+    return $transaction;
+}
