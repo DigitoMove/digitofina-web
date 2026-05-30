@@ -414,7 +414,7 @@
     </section>
 </div>
 
-<div class="mt-6 grid gap-5 xl:grid-cols-[1fr_320px]">
+{{-- <div class="mt-6 grid gap-5 xl:grid-cols-[1fr_320px]">
     <section class="df-panel overflow-hidden">
         <div class="border-b border-slate-200 px-5 py-4">
             <h2 class="font-semibold text-slate-950">Recent Drawer Movement</h2>
@@ -454,7 +454,7 @@
             <a href="{{ route('reports.show', 'expected-loan-payments') }}" class="df-action-secondary justify-start">Expected Loan Payments</a>
         </div>
     </aside>
-</div>
+</div> --}}
 
 @if($canApproveReversals)
     <section class="df-panel mt-6 overflow-hidden">
