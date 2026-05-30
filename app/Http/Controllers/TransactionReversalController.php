@@ -106,6 +106,7 @@ class TransactionReversalController extends Controller
 
         return $user->hasRole('super-admin')
             || $user->hasRole('organization-admin')
+            || $user->hasRole('teller-cashier')
             || $user->canPerform('approve-reversals')
             || $user->canPerform('override-maker-checker');
     }
