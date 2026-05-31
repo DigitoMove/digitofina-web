@@ -10,6 +10,10 @@ use App\Models\Client;
 use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
 use App\Models\FixedDepositAccount;
+use App\Models\InvestmentAccount;
+use App\Models\InvestmentPlan;
+use App\Models\InvestmentTransaction;
+use App\Models\InvestorAccount;
 use App\Models\JournalEntry;
 use App\Models\Loan;
 use App\Models\LoanDisbursement;
@@ -124,6 +128,16 @@ class ReportCatalogService
             $this->report('liquidated-term-deposit-accounts', 'Term Deposits', 'Liquidated Term Deposit Accounts', 'term_deposits', ['status' => 'liquidated'], false),
             $this->report('cancelled-term-deposit-accounts', 'Term Deposits', 'Cancelled Term Deposit Accounts', 'term_deposits', ['status' => 'cancelled'], false),
             $this->report('term-deposits-maturity-report', 'Term Deposits', 'Term Deposits Maturity Report', 'term_deposits', ['maturity' => true]),
+            $this->report('investment-accounts', 'Investments', 'Investment Accounts', 'investment_accounts', [], false),
+            $this->report('active-investments', 'Investments', 'Active Investments', 'investment_accounts', ['status' => 'active'], false),
+            $this->report('matured-investments', 'Investments', 'Matured Investments', 'investment_accounts', ['status' => 'matured', 'date_column' => 'maturity_date']),
+            $this->report('investment-maturities', 'Investments', 'Investment Maturities', 'investment_accounts', ['status_in' => ['active', 'matured'], 'date_column' => 'maturity_date']),
+            $this->report('investment-contributions', 'Investments', 'Investment Contributions', 'investment_transactions', ['types' => ['new_investment_deposit', 'top_up'], 'label' => 'Contributions']),
+            $this->report('investment-withdrawals', 'Investments', 'Investment Withdrawals', 'investment_transactions', ['types' => ['withdrawal'], 'label' => 'Withdrawals']),
+            $this->report('investment-returns', 'Investments', 'Investment Returns', 'investment_transactions', ['types' => ['return_posting', 'reinvestment'], 'label' => 'Returns']),
+            $this->report('investment-plan-performance', 'Investments', 'Investment Plan Performance', 'investment_plan_performance', [], false),
+            $this->report('investment-branch-performance', 'Investments', 'Investment Branch Performance', 'investment_branch_performance', [], false),
+            $this->report('investment-officer-performance', 'Investments', 'Investment Officer Performance', 'investment_officer_performance', [], false),
             $this->report('current-accounts-register', 'Current Accounts', 'Current Accounts Register', 'accounts', ['category' => 'current'], false),
         ];
 
@@ -199,6 +213,11 @@ class ReportCatalogService
             'loan_book' => $this->loanBook($branchId, $detail === 'brief' ? 100 : 5000, $user),
             'loan_repayments' => $this->loanRepayments($from, $to, $branchId, $limit, $user),
             'term_deposits' => $this->termDeposits($payload, $from, $to, $limit),
+            'investment_accounts' => $this->investmentAccounts($payload, $from, $to, $branchId, $limit, $user),
+            'investment_transactions' => $this->investmentTransactions($payload, $from, $to, $branchId, $limit, $user),
+            'investment_plan_performance' => $this->investmentPlanPerformance($branchId, $user),
+            'investment_branch_performance' => $this->investmentBranchPerformance($branchId, $user),
+            'investment_officer_performance' => $this->investmentOfficerPerformance($branchId, $user),
             'settings' => $this->settings($payload),
             default => $this->placeholderRows($definition),
         };
@@ -216,6 +235,7 @@ class ReportCatalogService
             'Savings', 'Current Accounts' => 'savings',
             'Shares' => 'shares',
             'Term Deposits' => 'fixed-deposits',
+            'Investments' => 'investments',
             'Loan Application', 'Loan Accounts', 'Profitability' => 'loans',
             'Accounting' => 'accounting',
             'Treasury', 'Posted Transactions' => in_array($definition['kind'], ['journal_entries', 'journal_analysis', 'accounting_statement', 'chart_accounts'], true)
@@ -1305,9 +1325,11 @@ class ReportCatalogService
 
         $rows = $loans->map(function (Loan $loan): array {
             $schedules = $loan->schedules;
+            $arrearsCutoff = today()->subDay();
             $overdueSchedules = $schedules
                 ->where('outstanding_amount', '>', 0)
-                ->filter(fn (LoanSchedule $schedule): bool => $schedule->status === 'overdue' || $schedule->due_date?->lt(today()));
+                ->where('status', '!=', 'paid')
+                ->filter(fn (LoanSchedule $schedule): bool => $schedule->due_date?->lt($arrearsCutoff));
             $arrearsDays = (int) $overdueSchedules->max(fn (LoanSchedule $schedule): int => (int) ($schedule->days_overdue ?: ($schedule->due_date ? $this->calendar->businessDaysBetween($schedule->due_date, today()) : 0)));
             $isArrears = in_array($loan->status, ['active', 'in_arrears'], true)
                 && ($overdueSchedules->isNotEmpty() || $loan->status === 'in_arrears');
@@ -1376,9 +1398,8 @@ class ReportCatalogService
         $query = LoanSchedule::query()
             ->with(['loan.client', 'loan.product'])
             ->excludingCancelledLoans()
-            ->when($payload['arrears'] ?? false, fn (Builder $query): Builder => $query->forActiveArrearsLoans())
+            ->when($payload['arrears'] ?? false, fn (Builder $query): Builder => $query->eligibleForArrears(today()))
             ->where('outstanding_amount', '>', 0)
-            ->when($payload['arrears'] ?? false, fn (Builder $query): Builder => $query->whereDate('due_date', '<', today()))
             ->when($payload['future'] ?? false, fn (Builder $query): Builder => $query->whereBetween('due_date', [$from, $to]))
             ->whereHas('loan', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
 
@@ -1435,6 +1456,173 @@ class ReportCatalogService
         return [['Date', 'Loan', 'Client', 'Amount', 'Principal', 'Interest', 'Officer'], $rows, ['Recovered' => $this->money((float) $query->sum('amount'))]];
     }
 
+    private function investmentAccounts(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
+    {
+        $dateColumn = $payload['date_column'] ?? null;
+        $query = InvestmentAccount::query()
+            ->with(['client', 'plan', 'branch'])
+            ->when($payload['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
+            ->when($payload['status_in'] ?? null, fn (Builder $query, array $statuses): Builder => $query->whereIn('status', $statuses))
+            ->when($dateColumn, fn (Builder $query, string $column): Builder => $query->whereBetween($column, [$from, $to]))
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+
+        $rows = (clone $query)->orderBy('maturity_date')->limit($limit)->get()->map(fn (InvestmentAccount $account): array => [
+            'Investment No.' => $account->investment_number,
+            'Client' => $account->client?->full_name ?? 'N/A',
+            'Plan' => $account->plan?->name ?? 'N/A',
+            'Branch' => $account->branch?->name ?? 'N/A',
+            'Principal' => $this->money((float) $account->principal_amount),
+            'Balance' => $this->money((float) $account->current_balance),
+            'Expected Return' => $this->money((float) $account->expected_return_amount),
+            'Actual Return' => $this->money((float) $account->actual_return_amount),
+            'Maturity' => $account->maturity_date?->format('d M Y') ?? 'N/A',
+            'Status' => Str::headline($account->status),
+        ]);
+
+        return [
+            ['Investment No.', 'Client', 'Plan', 'Branch', 'Principal', 'Balance', 'Expected Return', 'Actual Return', 'Maturity', 'Status'],
+            $rows,
+            [
+                'Investments' => number_format((clone $query)->count()),
+                'Balance' => $this->money((float) (clone $query)->sum('current_balance')),
+                'Expected returns' => $this->money((float) (clone $query)->sum('expected_return_amount')),
+                'Actual returns' => $this->money((float) (clone $query)->sum('actual_return_amount')),
+            ],
+        ];
+    }
+
+    private function investmentTransactions(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
+    {
+        $types = $payload['types'] ?? [];
+        $query = InvestmentTransaction::query()
+            ->with(['client', 'investmentAccount.client', 'investmentAccount.plan'])
+            ->whereBetween('transaction_date', [$from, $to])
+            ->when($types !== [], fn (Builder $query): Builder => $query->whereIn('type', $types))
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+
+        $rows = (clone $query)->latest('transaction_date')->limit($limit)->get()->map(fn (InvestmentTransaction $transaction): array => [
+            'Date' => $transaction->transaction_date?->format('d M Y'),
+            'Reference' => $transaction->reference,
+            'Client' => $transaction->client?->full_name ?? $transaction->investmentAccount?->client?->full_name ?? 'N/A',
+            'Investment' => $transaction->investmentAccount?->investment_number ?? 'N/A',
+            'Plan' => $transaction->investmentAccount?->plan?->name ?? 'N/A',
+            'Type' => Str::headline($transaction->type),
+            'Amount' => $this->money((float) $transaction->amount),
+            'Balance After' => $this->money((float) $transaction->balance_after),
+            'Status' => Str::headline($transaction->status),
+        ]);
+
+        return [
+            ['Date', 'Reference', 'Client', 'Investment', 'Plan', 'Type', 'Amount', 'Balance After', 'Status'],
+            $rows,
+            [
+                $payload['label'] ?? 'Transactions' => number_format((clone $query)->count()),
+                'Amount' => $this->money((float) (clone $query)->sum('amount')),
+            ],
+        ];
+    }
+
+    private function investmentPlanPerformance(?int $branchId, User $user): array
+    {
+        $plans = ApiSecurity::scopeTenant(InvestmentPlan::query(), $user)
+            ->withCount([
+                'investmentAccounts' => fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user),
+            ])
+            ->withSum([
+                'investmentAccounts as invested_balance' => fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user),
+            ], 'current_balance')
+            ->withSum([
+                'investmentAccounts as expected_returns' => fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user),
+            ], 'expected_return_amount')
+            ->withSum([
+                'investmentAccounts as actual_returns' => fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user),
+            ], 'actual_return_amount')
+            ->when($branchId, fn (Builder $query): Builder => $query->whereHas('investmentAccounts', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user)))
+            ->orderByDesc('invested_balance')
+            ->get();
+
+        $rows = $plans->map(fn (InvestmentPlan $plan): array => [
+            'Plan' => $plan->name,
+            'Code' => $plan->code,
+            'Type' => Str::headline($plan->type),
+            'Risk' => Str::headline($plan->risk_level),
+            'Investments' => number_format((int) $plan->investment_accounts_count),
+            'Balance' => $this->money((float) $plan->invested_balance),
+            'Expected Returns' => $this->money((float) $plan->expected_returns),
+            'Actual Returns' => $this->money((float) $plan->actual_returns),
+            'Status' => Str::headline($plan->status),
+        ]);
+
+        return [
+            ['Plan', 'Code', 'Type', 'Risk', 'Investments', 'Balance', 'Expected Returns', 'Actual Returns', 'Status'],
+            $rows,
+            [
+                'Plans' => number_format($rows->count()),
+                'Balance' => $this->money((float) $plans->sum('invested_balance')),
+                'Actual returns' => $this->money((float) $plans->sum('actual_returns')),
+            ],
+        ];
+    }
+
+    private function investmentBranchPerformance(?int $branchId, User $user): array
+    {
+        $performance = InvestmentAccount::query()
+            ->leftJoin('branches', 'branches.id', '=', 'investment_accounts.branch_id')
+            ->selectRaw('investment_accounts.branch_id, coalesce(branches.name, "Unassigned") as branch_name, count(*) as investments, coalesce(sum(current_balance), 0) as balance, coalesce(sum(expected_return_amount), 0) as expected_returns, coalesce(sum(actual_return_amount), 0) as actual_returns')
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
+            ->groupBy('investment_accounts.branch_id', 'branches.name')
+            ->orderByDesc('balance')
+            ->get();
+
+        $rows = $performance->map(fn (InvestmentAccount $account): array => [
+            'Branch' => $account->branch_name,
+            'Investments' => number_format((int) $account->investments),
+            'Balance' => $this->money((float) $account->balance),
+            'Expected Returns' => $this->money((float) $account->expected_returns),
+            'Actual Returns' => $this->money((float) $account->actual_returns),
+        ]);
+
+        return [
+            ['Branch', 'Investments', 'Balance', 'Expected Returns', 'Actual Returns'],
+            $rows,
+            [
+                'Branches' => number_format($rows->count()),
+                'Balance' => $this->money((float) $performance->sum('balance')),
+                'Actual returns' => $this->money((float) $performance->sum('actual_returns')),
+            ],
+        ];
+    }
+
+    private function investmentOfficerPerformance(?int $branchId, User $user): array
+    {
+        $performance = InvestorAccount::query()
+            ->leftJoin('users', 'users.id', '=', 'investor_accounts.assigned_officer_id')
+            ->selectRaw('investor_accounts.assigned_officer_id, coalesce(users.name, "Unassigned") as officer_name, count(*) as investors, coalesce(sum(total_invested), 0) as total_invested, coalesce(sum(current_investment_balance), 0) as balance, coalesce(sum(total_returns_earned), 0) as returns_earned, coalesce(sum(total_withdrawn), 0) as withdrawn')
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
+            ->groupBy('investor_accounts.assigned_officer_id', 'users.name')
+            ->orderByDesc('balance')
+            ->get();
+
+        $rows = $performance->map(fn (InvestorAccount $account): array => [
+            'Officer' => $account->officer_name,
+            'Investors' => number_format((int) $account->investors),
+            'Total Invested' => $this->money((float) $account->total_invested),
+            'Balance' => $this->money((float) $account->balance),
+            'Returns Earned' => $this->money((float) $account->returns_earned),
+            'Withdrawn' => $this->money((float) $account->withdrawn),
+        ]);
+
+        return [
+            ['Officer', 'Investors', 'Total Invested', 'Balance', 'Returns Earned', 'Withdrawn'],
+            $rows,
+            [
+                'Officers' => number_format($rows->count()),
+                'Balance' => $this->money((float) $performance->sum('balance')),
+                'Returns earned' => $this->money((float) $performance->sum('returns_earned')),
+            ],
+        ];
+    }
+
     private function termDeposits(array $payload, CarbonInterface $from, CarbonInterface $to, int $limit): array
     {
         $query = FixedDepositAccount::query()
@@ -1478,12 +1666,14 @@ class ReportCatalogService
 
     private function scopeBranch(Builder $query, ?int $branchId, User $user): Builder
     {
+        $branchColumn = $query->getModel()->qualifyColumn('branch_id');
+
         if ($branchId) {
-            return $query->where('branch_id', $branchId);
+            return $query->where($branchColumn, $branchId);
         }
 
         if (! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id) {
-            return $query->where('branch_id', $user->branch_id);
+            return $query->where($branchColumn, $user->branch_id);
         }
 
         return $query;

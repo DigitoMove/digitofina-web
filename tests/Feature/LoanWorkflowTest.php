@@ -9,6 +9,7 @@ use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
 use App\Models\Guarantor;
 use App\Models\Loan;
+use App\Models\LoanPenalty;
 use App\Models\LoanProduct;
 use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
@@ -21,11 +22,13 @@ use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
+use App\Services\LoanApplicationService;
 use App\Services\LoanService;
 use App\Services\ModuleService;
 use App\Services\TransactionPostingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\ViewErrorBag;
+use Illuminate\Validation\ValidationException;
 
 uses(RefreshDatabase::class);
 
@@ -64,6 +67,9 @@ function loanWorkflowClient(User $user, string $phone = '+256700000001'): Client
         'client_type' => 'individual',
         'first_name' => fake()->firstName(),
         'last_name' => fake()->lastName(),
+        'gender' => 'female',
+        'date_of_birth' => today()->subYears(30),
+        'national_id' => fake()->unique()->bothify('CM##########??'),
         'phone' => $phone,
         'kyc_status' => 'verified',
         'status' => 'fully_paid',
@@ -195,6 +201,14 @@ it('lets an admin appraise approve and disburse a loan in one shortcut', functio
         'repayment_frequency' => 'monthly',
         'purpose' => 'Fast stock purchase',
         'status' => 'draft',
+    ]);
+    Guarantor::create([
+        'loan_id' => $loan->id,
+        'type' => 'external',
+        'name' => 'Fast Track Guarantor',
+        'phone' => '+256700000003',
+        'guaranteed_amount' => 700_000,
+        'status' => 'accepted',
     ]);
 
     $this->actingAs($user)
@@ -541,6 +555,67 @@ it('returns a form error when approving a loan without required accepted guarant
     expect($loan->fresh()->status)->toBe('submitted');
 });
 
+it('requires complete individual client biodata before creating a loan', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $client->update([
+        'national_id' => null,
+        'date_of_birth' => null,
+        'gender' => null,
+    ]);
+    $product = loanWorkflowProduct();
+
+    expect(fn () => app(LoanApplicationService::class)->submit([
+        'client_id' => $client->id,
+        'loan_product_id' => $product->id,
+        'requested_amount' => 500_000,
+        'term_periods' => 2,
+        'repayment_frequency' => 'monthly',
+        'purpose' => 'Input purchase',
+    ], $user))
+        ->toThrow(ValidationException::class);
+
+    expect(Loan::query()->count())->toBe(0);
+});
+
+it('requires at least one guarantor before submitting a loan for approval', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $savings = loanWorkflowSavingsAccount($user, $client);
+    $loanAccount = Account::create([
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'account_type_id' => AccountType::where('category', 'loan')->value('id'),
+        'account_number' => '1001-LN-'.fake()->unique()->numerify('#######'),
+        'account_name' => $client->full_name.' Loan',
+        'status' => 'active',
+        'balance' => 0,
+        'opened_at' => today(),
+    ]);
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'savings_account_id' => $savings->id,
+        'loan_account_id' => $loanAccount->id,
+        'loan_number' => '1001-LN-NOGUAR',
+        'requested_amount' => 500_000,
+        'principal_balance' => 0,
+        'interest_rate' => 24,
+        'term_periods' => 2,
+        'repayment_frequency' => 'monthly',
+        'purpose' => 'Input purchase',
+        'status' => 'under_review',
+    ]);
+
+    expect(fn () => app(LoanService::class)->submitForApproval($loan, $user))
+        ->toThrow(InvalidArgumentException::class, 'Attach at least one guarantor before sending this loan for approval.');
+
+    expect($loan->fresh()->status)->toBe('under_review');
+});
+
 it('deducts the requested amount application fee from savings when rejecting a loan', function () {
     $user = loanWorkflowUser();
     $client = loanWorkflowClient($user);
@@ -706,6 +781,42 @@ it('excludes cancelled loans from arrears listings and penalty calculations', fu
         'application_date' => today()->subMonth(),
         'status' => 'cancelled',
     ]);
+    $rejectedLoan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'created_by' => $user->id,
+        'loan_number' => '1009-LN-REJECTED',
+        'requested_amount' => 200000,
+        'principal_balance' => 200000,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 20,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'application_date' => today()->subMonth(),
+        'status' => 'rejected',
+    ]);
+    $draftLoan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'created_by' => $user->id,
+        'loan_number' => '1009-LN-DRAFT',
+        'requested_amount' => 200000,
+        'principal_balance' => 200000,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 20,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'application_date' => today()->subMonth(),
+        'status' => 'draft',
+    ]);
 
     LoanSchedule::create([
         'loan_id' => $activeLoan->id,
@@ -731,16 +842,153 @@ it('excludes cancelled loans from arrears listings and penalty calculations', fu
         'status' => 'overdue',
         'days_overdue' => 10,
     ]);
+    $rejectedSchedule = LoanSchedule::create([
+        'loan_id' => $rejectedLoan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subDays(10),
+        'principal_due' => 200000,
+        'interest_due' => 0,
+        'total_due' => 200000,
+        'outstanding_amount' => 200000,
+        'balance_due' => 200000,
+        'status' => 'overdue',
+        'days_overdue' => 10,
+    ]);
+    $draftSchedule = LoanSchedule::create([
+        'loan_id' => $draftLoan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subDays(10),
+        'principal_due' => 200000,
+        'interest_due' => 0,
+        'total_due' => 200000,
+        'outstanding_amount' => 200000,
+        'balance_due' => 200000,
+        'status' => 'overdue',
+        'days_overdue' => 10,
+    ]);
 
     $this->actingAs($user)
         ->get(route('arrears.index'))
         ->assertSuccessful()
         ->assertSee('1009-LN-ACTIVE')
         ->assertDontSee('1009-LN-CANCELLED')
-        ->assertDontSee('300,000.00');
+        ->assertDontSee('1009-LN-REJECTED')
+        ->assertDontSee('1009-LN-DRAFT')
+        ->assertDontSee('700,000.00');
 
     expect(app(LoanService::class)->applyOverduePenalties($cancelledLoan, today()))->toBe(0)
-        ->and($cancelledSchedule->fresh()->outstanding_amount)->toBe('200000.00');
+        ->and(app(LoanService::class)->applyOverduePenalties($rejectedLoan, today()))->toBe(0)
+        ->and(app(LoanService::class)->applyOverduePenalties($draftLoan, today()))->toBe(0)
+        ->and($cancelledSchedule->fresh()->outstanding_amount)->toBe('200000.00')
+        ->and($rejectedSchedule->fresh()->outstanding_amount)->toBe('200000.00')
+        ->and($draftSchedule->fresh()->outstanding_amount)->toBe('200000.00');
+});
+
+it('waits one extra day before treating an unpaid schedule as arrears', function () {
+    $user = loanWorkflowUser();
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $client = loanWorkflowClient($user);
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'created_by' => $user->id,
+        'loan_number' => '1001-LN-GRACE',
+        'requested_amount' => 100000,
+        'principal_balance' => 100000,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 20,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'application_date' => today()->subMonth(),
+        'status' => 'active',
+    ]);
+    $schedule = LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subDay(),
+        'principal_due' => 100000,
+        'interest_due' => 0,
+        'total_due' => 100000,
+        'outstanding_amount' => 100000,
+        'balance_due' => 100000,
+        'status' => 'pending',
+        'days_overdue' => 0,
+    ]);
+
+    expect(LoanSchedule::query()->eligibleForArrears(today())->whereKey($schedule->id)->exists())->toBeFalse()
+        ->and(app(LoanService::class)->applyOverduePenalties($loan, today()))->toBe(0)
+        ->and($schedule->fresh()->status)->toBe('pending');
+
+    $schedule->update(['due_date' => today()->subDays(2)]);
+
+    expect(LoanSchedule::query()->eligibleForArrears(today())->whereKey($schedule->id)->exists())->toBeTrue()
+        ->and(app(LoanService::class)->applyOverduePenalties($loan, today()))->toBe(1)
+        ->and($schedule->fresh()->status)->toBe('overdue')
+        ->and($loan->fresh()->status)->toBe('in_arrears');
+});
+
+it('applies rounded penalties to the missed schedule only', function () {
+    $user = loanWorkflowUser();
+    $product = loanWorkflowProduct([
+        'penalty_rate' => 1,
+        'require_guarantors' => false,
+        'minimum_guarantors' => 0,
+    ]);
+    $client = loanWorkflowClient($user);
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'created_by' => $user->id,
+        'loan_number' => '1001-LN-PENALTY',
+        'requested_amount' => 200000,
+        'principal_balance' => 200000,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 20,
+        'term_periods' => 2,
+        'repayment_frequency' => 'monthly',
+        'application_date' => today()->subMonths(2),
+        'status' => 'active',
+    ]);
+    $missedSchedule = LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subDays(2),
+        'principal_due' => 17850,
+        'interest_due' => 0,
+        'total_due' => 17850,
+        'outstanding_amount' => 17850,
+        'balance_due' => 17850,
+        'status' => 'pending',
+        'days_overdue' => 0,
+    ]);
+    $futureSchedule = LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 2,
+        'due_date' => today()->addMonth(),
+        'principal_due' => 100000,
+        'interest_due' => 0,
+        'total_due' => 100000,
+        'outstanding_amount' => 100000,
+        'balance_due' => 100000,
+        'status' => 'pending',
+        'days_overdue' => 0,
+    ]);
+
+    expect(app(LoanService::class)->applyOverduePenalties($loan, today()))->toBe(1)
+        ->and((float) $missedSchedule->fresh()->penalty_due)->toBe(200.0)
+        ->and((float) $missedSchedule->fresh()->outstanding_amount)->toBe(18050.0)
+        ->and((float) $futureSchedule->fresh()->penalty_due)->toBe(0.0)
+        ->and((float) $loan->fresh()->penalty_balance)->toBe(200.0);
+
+    expect((float) LoanPenalty::where('loan_schedule_id', $missedSchedule->id)->value('amount'))->toBe(200.0);
 });
 
 it('shows arrears only for active branch loans', function () {

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\LoanSchedule;
+use App\Support\CurrencyDenomination;
 use Carbon\CarbonInterface;
 
 class PenaltyCalculationService
@@ -11,11 +12,13 @@ class PenaltyCalculationService
     {
         $balance = (float) $schedule->outstanding_amount;
 
-        return match ($type) {
-            'fixed' => round($rate, 2),
-            'daily', 'weekly', 'monthly' => round($balance * ($rate / 100), 2),
-            default => round($balance * ($rate / 100), 2),
+        $amount = match ($type) {
+            'fixed' => $rate,
+            'daily', 'weekly', 'monthly' => $balance * ($rate / 100),
+            default => $balance * ($rate / 100),
         };
+
+        return $this->roundToCurrencyUnit($amount);
     }
 
     public function penaltyDate(LoanSchedule $schedule, CarbonInterface $asOf, string $type, ?string $repaymentFrequency = null): CarbonInterface
@@ -52,5 +55,14 @@ class PenaltyCalculationService
             'weekly', 'bi-weekly' => 'weekly',
             default => 'monthly',
         };
+    }
+
+    private function roundToCurrencyUnit(float $amount): float
+    {
+        if ($amount <= 0) {
+            return 0.0;
+        }
+
+        return (float) (round($amount / CurrencyDenomination::MINIMUM_UNIT) * CurrencyDenomination::MINIMUM_UNIT);
     }
 }

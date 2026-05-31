@@ -171,9 +171,8 @@ class EndOfDayService
 
             $overdueInstallments = LoanSchedule::query()
                 ->excludingCancelledLoans()
+                ->eligibleForArrears($date)
                 ->whereHas('loan', fn ($query) => $query->where('branch_id', $branch->id))
-                ->where('status', 'overdue')
-                ->where('outstanding_amount', '>', 0)
                 ->count();
 
             $journalLines = JournalLine::query()
@@ -235,6 +234,7 @@ class EndOfDayService
         LoanSchedule::query()
             ->with(['loan.client'])
             ->excludingCancelledLoans()
+            ->forActiveArrearsLoans()
             ->whereHas('loan', fn ($query) => $query->where('branch_id', $branch->id))
             ->where('outstanding_amount', '>', 0)
             ->where(fn ($query) => $query

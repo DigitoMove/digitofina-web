@@ -88,6 +88,7 @@ class TellerDrawerController extends Controller
         $dueToday = LoanSchedule::query()
             ->with(['loan.client', 'loan.loanAccount'])
             ->excludingCancelledLoans()
+            ->forActiveArrearsLoans()
             ->whereHas('loan', function (Builder $query) use ($branchId): void {
                 $query->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId));
             })

@@ -25,6 +25,7 @@ class LoanController extends Controller
 
         $loansQuery = ApiSecurity::scopeTenant(Loan::query(), $request->user())
             ->with(['client', 'product', 'officer'])
+            ->forOperationalListing()
             ->tap(fn ($query) => $request->user()->isMember() ? $query : $visibility->scope($query, $request->user()))
             ->when($request->user()->isMember(), fn ($query) => $query->where('client_id', $request->user()->client?->id))
             ->when($request->string('search')->toString(), function ($query, string $search): void {

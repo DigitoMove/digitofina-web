@@ -33,6 +33,7 @@ class LoanApplicationService
         $applicationDate = CarbonImmutable::parse($data['application_date'] ?? today()->toDateString())->toDateString();
         $assignedOfficer = $this->assignedOfficer($data, $officer);
         CurrencyDenomination::assertValid($requestedAmount, 'Requested amount');
+        $this->ensureClientBioComplete($client);
 
         if ($requestedAmount < (float) $product->min_amount || $requestedAmount > (float) $product->max_amount) {
             throw ValidationException::withMessages(['requested_amount' => 'Requested amount is outside the selected product limits.']);
@@ -110,6 +111,25 @@ class LoanApplicationService
         }
 
         return $assignedOfficer;
+    }
+
+    private function ensureClientBioComplete(Client $client): void
+    {
+        if ($client->client_type !== 'individual') {
+            return;
+        }
+
+        if (blank($client->national_id)) {
+            throw ValidationException::withMessages(['client_id' => 'The selected client must have a National ID / NIN before a loan can be created.']);
+        }
+
+        if (blank($client->date_of_birth)) {
+            throw ValidationException::withMessages(['client_id' => 'The selected client must have a date of birth before a loan can be created.']);
+        }
+
+        if (blank($client->gender)) {
+            throw ValidationException::withMessages(['client_id' => 'The selected client must have a gender before a loan can be created.']);
+        }
     }
 
     private function writePreviewSchedule(Loan $loan, float $principal): void

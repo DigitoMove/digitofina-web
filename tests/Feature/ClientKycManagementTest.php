@@ -2,9 +2,13 @@
 
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\Module;
+use App\Models\Organization;
+use App\Models\OrganizationModule;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\ModuleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -13,21 +17,37 @@ uses(RefreshDatabase::class);
 
 function phaseTwoAdmin(): User
 {
+    $organization = Organization::create([
+        'name' => 'Client KYC Tenant',
+        'slug' => fake()->unique()->slug(),
+        'status' => 'active',
+    ]);
     $branch = Branch::create([
+        'organization_id' => $organization->id,
         'code' => '1001',
         'name' => 'Luweero',
         'is_active' => true,
         'status' => 'active',
     ]);
+    app(ModuleService::class)->syncCatalog();
+
+    Module::query()
+        ->whereIn('slug', ['clients', 'documents'])
+        ->get()
+        ->each(fn (Module $module): OrganizationModule => OrganizationModule::firstOrCreate(
+            ['organization_id' => $organization->id, 'module_id' => $module->id],
+            ['is_enabled' => true, 'enabled_at' => now()],
+        ));
 
     $permissions = collect(['manage-clients', 'verify-kyc'])->map(
-        fn (string $slug): Permission => Permission::create(['name' => str($slug)->headline(), 'slug' => $slug])
+        fn (string $slug): Permission => Permission::create(['organization_id' => $organization->id, 'name' => str($slug)->headline(), 'slug' => $slug])
     );
 
-    $role = Role::create(['name' => 'Administrator', 'slug' => 'administrator']);
+    $role = Role::create(['organization_id' => $organization->id, 'name' => 'Administrator', 'slug' => 'administrator']);
     $role->permissions()->sync($permissions->pluck('id')->all());
 
     return User::factory()->create([
+        'organization_id' => $organization->id,
         'branch_id' => $branch->id,
         'role_id' => $role->id,
         'status' => 'active',
@@ -45,6 +65,8 @@ it('registers a client with kyc details', function () {
         'client_type' => 'individual',
         'first_name' => 'Grace',
         'last_name' => 'Nabukeera',
+        'gender' => 'female',
+        'date_of_birth' => today()->subYears(28)->toDateString(),
         'phone' => '+256700111222',
         'national_id' => 'CM12345678',
         'kyc_status' => 'pending',
@@ -64,10 +86,31 @@ it('registers a client with kyc details', function () {
         ->and($client->kyc_documents['address_confirmed'])->toBeFalse();
 });
 
+it('requires individual clients to have nin date of birth and gender', function () {
+    $admin = phaseTwoAdmin();
+
+    $this->actingAs($admin)
+        ->from(route('clients.create'))
+        ->post(route('clients.store'), [
+            'branch_id' => $admin->branch_id,
+            'client_type' => 'individual',
+            'first_name' => 'Grace',
+            'last_name' => 'Nabukeera',
+            'phone' => '+256700111223',
+            'kyc_status' => 'pending',
+            'status' => 'active',
+        ])
+        ->assertRedirect(route('clients.create'))
+        ->assertSessionHasErrors(['gender', 'date_of_birth', 'national_id']);
+
+    expect(Client::query()->count())->toBe(0);
+});
+
 it('stores client documents on the private local disk', function () {
     Storage::fake('local');
     $admin = phaseTwoAdmin();
     $client = Client::create([
+        'organization_id' => $admin->organization_id,
         'branch_id' => $admin->branch_id,
         'officer_id' => $admin->id,
         'client_number' => '1001-C000001',

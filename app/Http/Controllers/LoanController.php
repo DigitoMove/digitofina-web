@@ -28,6 +28,7 @@ class LoanController extends Controller
     {
         $loans = Loan::query()
             ->with(['client', 'product', 'officer'])
+            ->forOperationalListing()
             ->tap(fn ($query) => $visibility->scope($query, $request->user()))
             ->when($request->string('search')->toString(), function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
@@ -40,7 +41,7 @@ class LoanController extends Controller
                 });
             })
             ->when($request->string('status')->toString(), fn ($query, string $status) => $query->where('status', $status))
-            ->when($request->string('status_group')->toString() === 'applications', fn ($query) => $query->whereIn('status', ['draft', 'under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved']))
+            ->when($request->string('status_group')->toString() === 'applications', fn ($query) => $query->whereIn('status', ['under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved']))
             ->when($request->string('loan_type')->toString(), fn ($query, string $loanType) => $query->where('loan_type', $loanType))
             ->when($request->integer('officer_id'), fn ($query, int $officerId) => $query->where('officer_id', $officerId))
             ->when($request->integer('loan_product_id'), fn ($query, int $productId) => $query->where('loan_product_id', $productId))

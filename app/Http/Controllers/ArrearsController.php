@@ -51,13 +51,8 @@ class ArrearsController extends Controller
         $schedules = LoanSchedule::query()
             ->with(['loan.branch', 'loan.client', 'loan.officer', 'loan.product'])
             ->excludingCancelledLoans()
-            ->forActiveArrearsLoans()
+            ->eligibleForArrears(now())
             ->whereHas('loan', $loanScope)
-            ->where('outstanding_amount', '>', 0)
-            ->where(function ($query): void {
-                $query->where('status', 'overdue')
-                    ->orWhereDate('due_date', '<', now()->toDateString());
-            })
             ->when($data['bucket'] ?? null, function ($query, string $bucket): void {
                 match ($bucket) {
                     '1-30' => $query->whereBetween('days_overdue', [1, 30]),
@@ -74,11 +69,9 @@ class ArrearsController extends Controller
 
         $loanArrears = LoanSchedule::query()
             ->excludingCancelledLoans()
-            ->forActiveArrearsLoans()
+            ->eligibleForArrears(now())
             ->whereHas('loan', $loanScope)
             ->whereIn('loan_id', $schedules->getCollection()->pluck('loan_id')->unique())
-            ->where('outstanding_amount', '>', 0)
-            ->whereDate('due_date', '<', now()->toDateString())
             ->selectRaw('loan_id, sum(outstanding_amount) as cumulative_due, max(days_overdue) as stored_days_overdue')
             ->groupBy('loan_id')
             ->get()

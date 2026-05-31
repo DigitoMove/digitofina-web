@@ -13,6 +13,11 @@
         && $canPostLoanRepayment
         && in_array($loan->status, ['active', 'in_arrears'], true)
         && $loan->loanAccount;
+    $clientBioComplete = $loan->client?->client_type !== 'individual'
+        || (filled($loan->client?->national_id) && filled($loan->client?->date_of_birth) && filled($loan->client?->gender));
+    $hasAttachedGuarantor = $loan->loanGuarantors
+        ->whereNotIn('status', ['rejected', 'released'])
+        ->isNotEmpty();
     $hasVisibleWorkflowAction = $canAssignOfficer
         || $canCancel
         || $canFastTrackLoan
@@ -108,9 +113,15 @@
             @csrf
             <div>
                 <div class="text-sm font-semibold text-slate-950">Approval queue</div>
-                <div class="text-sm text-slate-500">Send the appraised application to the approver.</div>
+                <div class="text-sm text-slate-500">Send the appraised application to the approver after biodata and guarantor checks are complete.</div>
+                @unless($clientBioComplete)
+                    <div class="mt-2 text-xs font-semibold text-coral-700">Client NIN, date of birth, and gender are required.</div>
+                @endunless
+                @unless($hasAttachedGuarantor)
+                    <div class="mt-2 text-xs font-semibold text-coral-700">Attach at least one guarantor before approval submission.</div>
+                @endunless
             </div>
-            <button class="df-action-primary">Submit for Approval</button>
+            <button @disabled(! $clientBioComplete || ! $hasAttachedGuarantor) class="df-action-primary disabled:pointer-events-none disabled:bg-slate-300">Submit for Approval</button>
         </form>
     @endif
 

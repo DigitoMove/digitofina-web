@@ -13,6 +13,7 @@
         'Loan Application' => ['bg-cyan-50 text-cyan-800 border-cyan-200', 'bg-cyan-100 text-cyan-800'],
         'Loan Accounts' => ['bg-blue-50 text-blue-800 border-blue-200', 'bg-blue-100 text-blue-800'],
         'Term Deposits' => ['bg-lime-50 text-lime-800 border-lime-200', 'bg-lime-100 text-lime-800'],
+        'Investments' => ['bg-teal-50 text-teal-800 border-teal-200', 'bg-teal-100 text-teal-800'],
         'Current Accounts' => ['bg-zinc-50 text-zinc-800 border-zinc-200', 'bg-zinc-100 text-zinc-800'],
     ];
 @endphp

@@ -74,6 +74,7 @@ class DashboardController extends Controller
             ->scopeRepaymentCalendar($query, $user)
             ->when($selectedCalendarBranchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
         $canViewRepaymentCalendarAmounts = ! ($user->isTellerCashier() || $user->hasRole('loan-officer'));
+        $arrearsCutoffDate = $today->copy()->subDay()->toDateString();
         $dueToday = collect();
         $dueTodayTotals = null;
         $nextRepayments = collect();
@@ -83,6 +84,7 @@ class DashboardController extends Controller
             $dueToday = LoanSchedule::query()
                 ->with(['loan.client', 'loan.product'])
                 ->excludingCancelledLoans()
+                ->forActiveArrearsLoans()
                 ->whereHas('loan', $calendarScope)
                 ->where('outstanding_amount', '>', 0)
                 ->where('status', '!=', 'paid')
@@ -92,6 +94,7 @@ class DashboardController extends Controller
                 ->get();
             $dueTodayTotals = LoanSchedule::query()
                 ->excludingCancelledLoans()
+                ->forActiveArrearsLoans()
                 ->whereHas('loan', $calendarScope)
                 ->where('outstanding_amount', '>', 0)
                 ->where('status', '!=', 'paid')
@@ -101,6 +104,7 @@ class DashboardController extends Controller
             $nextRepayments = LoanSchedule::query()
                 ->with(['loan.client', 'loan.product'])
                 ->excludingCancelledLoans()
+                ->forActiveArrearsLoans()
                 ->whereHas('loan', $calendarScope)
                 ->where('outstanding_amount', '>', 0)
                 ->where('status', '!=', 'paid')
@@ -111,6 +115,7 @@ class DashboardController extends Controller
                 ->get();
             $calendarCounts = LoanSchedule::query()
                 ->excludingCancelledLoans()
+                ->forActiveArrearsLoans()
                 ->whereHas('loan', $calendarScope)
                 ->whereDate('due_date', '>=', $monthStart->toDateString())
                 ->whereDate('due_date', '<=', $monthEnd->toDateString())
@@ -121,7 +126,7 @@ class DashboardController extends Controller
                     count(distinct case when due_date >= ? and outstanding_amount > 0 and status != 'paid' then loan_id end) as upcoming_total,
                     count(distinct case when due_date < ? and outstanding_amount > 0 and status != 'paid' then loan_id end) as overdue_total,
                     coalesce(sum(case when outstanding_amount > 0 and status != 'paid' then outstanding_amount else 0 end), 0) as amount
-                ", [$today->toDateString(), $today->toDateString()])
+                ", [$arrearsCutoffDate, $arrearsCutoffDate])
                 ->groupBy('due_date')
                 ->get()
                 ->keyBy(fn (LoanSchedule $schedule): string => $schedule->due_date->toDateString());
@@ -145,18 +150,14 @@ class DashboardController extends Controller
             });
         $arrearsCount = $loansEnabled ? LoanSchedule::query()
             ->excludingCancelledLoans()
-            ->forActiveArrearsLoans()
+            ->eligibleForArrears($today)
             ->whereHas('loan', $calendarScope)
-            ->where('outstanding_amount', '>', 0)
-            ->whereDate('due_date', '<', $today->toDateString())
             ->distinct('loan_id')
             ->count('loan_id') : 0;
         $arrearsAmount = $loansEnabled ? LoanSchedule::query()
             ->excludingCancelledLoans()
-            ->forActiveArrearsLoans()
+            ->eligibleForArrears($today)
             ->whereHas('loan', $calendarScope)
-            ->where('outstanding_amount', '>', 0)
-            ->whereDate('due_date', '<', $today->toDateString())
             ->sum('outstanding_amount') : 0;
         $loanApplications = $loansEnabled ? Loan::query()
             ->whereIn('status', ['draft', 'under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved'])

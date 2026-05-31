@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Client;
 use App\Models\User;
 use App\Support\CurrencyDenomination;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -70,6 +71,22 @@ class StoreLoanApplicationRequest extends FormRequest
                     $validator->errors()->add('loan_type', 'Only supervisors can create commercial loans.');
 
                     return;
+                }
+
+                $client = Client::query()->find($this->integer('client_id'));
+
+                if ($client && $client->client_type === 'individual') {
+                    if (blank($client->national_id)) {
+                        $validator->errors()->add('client_id', 'The selected client must have a National ID / NIN before a loan can be created.');
+                    }
+
+                    if (blank($client->date_of_birth)) {
+                        $validator->errors()->add('client_id', 'The selected client must have a date of birth before a loan can be created.');
+                    }
+
+                    if (blank($client->gender)) {
+                        $validator->errors()->add('client_id', 'The selected client must have a gender before a loan can be created.');
+                    }
                 }
 
                 if ($this->input('loan_type') === 'commercial' && ! $assignedOfficerId) {

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -39,11 +41,29 @@ class LoanSchedule extends Model
 
     public function scopeExcludingCancelledLoans(Builder $query): Builder
     {
-        return $query->whereHas('loan', fn (Builder $query): Builder => $query->where('status', '!=', 'cancelled'));
+        return $query->whereHas('loan', fn (Builder $query): Builder => $query->whereNotIn('status', [
+            'draft',
+            'rejected',
+            'cancelled',
+            'written_off',
+        ]));
     }
 
     public function scopeForActiveArrearsLoans(Builder $query): Builder
     {
-        return $query->whereHas('loan', fn (Builder $query): Builder => $query->whereIn('status', ['active', 'in_arrears']));
+        return $query->whereHas('loan', fn (Builder $query): Builder => $query->forArrears());
+    }
+
+    public function scopeEligibleForArrears(Builder $query, CarbonInterface|string|null $asOf = null): Builder
+    {
+        $asOf = $asOf instanceof CarbonInterface
+            ? $asOf
+            : CarbonImmutable::parse($asOf ?: today()->toDateString());
+
+        return $query
+            ->forActiveArrearsLoans()
+            ->where('outstanding_amount', '>', 0)
+            ->where('status', '!=', 'paid')
+            ->whereDate('due_date', '<', $asOf->copy()->subDay()->toDateString());
     }
 }

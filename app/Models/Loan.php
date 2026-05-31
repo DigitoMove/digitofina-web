@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToTenant;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -10,6 +11,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Loan extends Model
 {
     use BelongsToTenant;
+
+    public const ARREARS_STATUSES = ['active', 'in_arrears'];
+
+    public const LISTING_STATUSES = ['approved', 'disbursed', 'active', 'in_arrears', 'restructured', 'fully_paid', 'closed'];
 
     protected $guarded = [];
 
@@ -123,5 +128,15 @@ class Loan extends Model
     public function securities(): HasMany
     {
         return $this->hasMany(LoanSecurity::class);
+    }
+
+    public function scopeForArrears(Builder $query): Builder
+    {
+        return $query->whereIn('status', self::ARREARS_STATUSES);
+    }
+
+    public function scopeForOperationalListing(Builder $query): Builder
+    {
+        return $query->whereIn('status', self::LISTING_STATUSES);
     }
 }

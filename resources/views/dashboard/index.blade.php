@@ -38,12 +38,12 @@
         ['Branches', $branchCount, 'bg-slate-100 text-slate-700', 'from-slate-500 to-brand-600', [44, 50, 54, 58, 62], route('branches.index')],
         ['Active staff', $staffCount, 'bg-lime-50 text-lime-700', 'from-lime-500 to-emerald-500', [32, 43, 52, 68, 73], route('users.index')],
         ['Audit events today', $auditEventsToday, 'bg-slate-100 text-slate-700', 'from-slate-600 to-slate-800', [20, 42, 30, 56, 48], route('audit-logs.index')],
-        ['Total investors', $totalInvestors, 'bg-cyan-50 text-cyan-700', 'from-cyan-500 to-teal-500', [35, 48, 52, 70, 82], route('reports.index')],
-        ['Active investments', $totalActiveInvestments, 'bg-teal-50 text-teal-700', 'from-teal-500 to-emerald-500', [30, 42, 55, 63, 76], route('reports.index')],
-        ['Investment balance', number_format($totalInvestmentBalance, 2).' UGX', 'bg-indigo-50 text-indigo-700', 'from-indigo-500 to-sky-500', [40, 46, 66, 72, 88], route('reports.index')],
-        ['Returns posted', number_format($totalReturnsPosted, 2).' UGX', 'bg-lime-50 text-lime-700', 'from-lime-500 to-green-500', [26, 45, 50, 62, 78], route('reports.index')],
-        ['Maturing this month', $investmentsMaturingThisMonth, 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [28, 36, 48, 60, 74], route('reports.index')],
-        ['Investment withdrawals', number_format($investmentWithdrawalsThisMonth, 2).' UGX', 'bg-rose-50 text-rose-700', 'from-rose-500 to-red-500', [18, 34, 46, 42, 58], route('reports.index')],
+        ['Total investors', $totalInvestors, 'bg-cyan-50 text-cyan-700', 'from-cyan-500 to-teal-500', [35, 48, 52, 70, 82], route('reports.show', 'investment-officer-performance')],
+        ['Active investments', $totalActiveInvestments, 'bg-teal-50 text-teal-700', 'from-teal-500 to-emerald-500', [30, 42, 55, 63, 76], route('reports.show', 'active-investments')],
+        ['Investment balance', number_format($totalInvestmentBalance, 2).' UGX', 'bg-indigo-50 text-indigo-700', 'from-indigo-500 to-sky-500', [40, 46, 66, 72, 88], route('reports.show', 'investment-plan-performance')],
+        ['Returns posted', number_format($totalReturnsPosted, 2).' UGX', 'bg-lime-50 text-lime-700', 'from-lime-500 to-green-500', [26, 45, 50, 62, 78], route('reports.show', 'investment-returns')],
+        ['Maturing this month', $investmentsMaturingThisMonth, 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [28, 36, 48, 60, 74], route('reports.show', ['report' => 'investment-maturities', 'from' => now()->startOfMonth()->toDateString(), 'to' => now()->endOfMonth()->toDateString()])],
+        ['Investment withdrawals', number_format($investmentWithdrawalsThisMonth, 2).' UGX', 'bg-rose-50 text-rose-700', 'from-rose-500 to-red-500', [18, 34, 46, 42, 58], route('reports.show', ['report' => 'investment-withdrawals', 'from' => now()->startOfMonth()->toDateString(), 'to' => now()->endOfMonth()->toDateString()])],
     ];
     $cardModules = [
         'Total clients' => 'clients',

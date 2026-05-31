@@ -52,11 +52,13 @@ class LoanService
         }
 
         return DB::transaction(function () use ($loan, $approver, $approvedAmount, $comments) {
-            $loan = Loan::query()->with(['product', 'loanGuarantors', 'collaterals'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+            $loan = Loan::query()->with(['client', 'product', 'loanGuarantors', 'collaterals'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
 
             if (! in_array($loan->status, ['submitted', 'under_review', 'recommended', 'pending_guarantor_approval', 'pending_collateral_verification'], true)) {
                 throw new InvalidArgumentException('Only submitted loans can be approved.');
             }
+
+            $this->ensureLoanClientBioComplete($loan);
 
             if ($approvedAmount < (float) $loan->product->min_amount || $approvedAmount > (float) $loan->product->max_amount) {
                 throw new InvalidArgumentException('Approved amount is outside the product amount limits.');
@@ -65,6 +67,8 @@ class LoanService
             if ($loan->product->require_guarantors && $loan->loanGuarantors()->where('status', 'accepted')->count() < (int) $loan->product->minimum_guarantors) {
                 throw new InvalidArgumentException('This product requires accepted guarantors before approval.');
             }
+
+            $this->ensureMinimumGuarantorsAttached($loan);
 
             if ($loan->product->require_collateral && ! $loan->collaterals()->where('status', 'verified')->exists()) {
                 throw new InvalidArgumentException('This product requires verified collateral before approval.');
@@ -636,11 +640,14 @@ class LoanService
         abort_unless($user->canPerform('manage-loans'), 403);
 
         return DB::transaction(function () use ($loan): Loan {
-            $loan = Loan::query()->with('product')->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+            $loan = Loan::query()->with(['client', 'product', 'loanGuarantors'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
 
             if ($loan->status !== 'under_review') {
                 throw new InvalidArgumentException('Only appraised loans can be submitted for approval.');
             }
+
+            $this->ensureLoanClientBioComplete($loan);
+            $this->ensureMinimumGuarantorsAttached($loan);
 
             $status = match (true) {
                 $loan->product->require_guarantors => 'pending_guarantor_approval',
@@ -1218,6 +1225,30 @@ class LoanService
             + (float) $loan->penalty_balance;
     }
 
+    private function ensureLoanClientBioComplete(Loan $loan): void
+    {
+        $client = $loan->client;
+
+        if (! $client || $client->client_type !== 'individual') {
+            return;
+        }
+
+        if (blank($client->national_id) || blank($client->date_of_birth) || blank($client->gender)) {
+            throw new InvalidArgumentException('The loan client must have National ID / NIN, date of birth, and gender before this loan can continue.');
+        }
+    }
+
+    private function ensureMinimumGuarantorsAttached(Loan $loan): void
+    {
+        $hasGuarantor = $loan->loanGuarantors()
+            ->whereNotIn('status', ['rejected', 'released'])
+            ->exists();
+
+        if (! $hasGuarantor) {
+            throw new InvalidArgumentException('Attach at least one guarantor before sending this loan for approval.');
+        }
+    }
+
     public function applyOverduePenalties(?Loan $loan = null, ?CarbonInterface $asOf = null, ?int $branchId = null): int
     {
         $asOf = $asOf ?: now();
@@ -1226,10 +1257,7 @@ class LoanService
         $query = LoanSchedule::query()
             ->with('loan.product')
             ->excludingCancelledLoans()
-            ->forActiveArrearsLoans()
-            ->whereDate('due_date', '<', $asOf->toDateString())
-            ->where('outstanding_amount', '>', 0)
-            ->where('status', '!=', 'paid');
+            ->eligibleForArrears($asOf);
 
         if ($loan) {
             $query->where('loan_id', $loan->id);
