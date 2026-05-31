@@ -73,6 +73,7 @@ class DashboardController extends Controller
         $calendarScope = fn (Builder $query): Builder => $visibility
             ->scopeRepaymentCalendar($query, $user)
             ->when($selectedCalendarBranchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
+        $canViewRepaymentCalendarAmounts = ! ($user->isTellerCashier() || $user->hasRole('loan-officer'));
         $dueToday = collect();
         $dueTodayTotals = null;
         $nextRepayments = collect();
@@ -111,13 +112,14 @@ class DashboardController extends Controller
             $calendarCounts = LoanSchedule::query()
                 ->excludingCancelledLoans()
                 ->whereHas('loan', $calendarScope)
-                ->whereBetween('due_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+                ->whereDate('due_date', '>=', $monthStart->toDateString())
+                ->whereDate('due_date', '<=', $monthEnd->toDateString())
                 ->selectRaw("
                     due_date,
-                    count(*) as total,
-                    sum(case when outstanding_amount > 0 and status != 'paid' then 1 else 0 end) as open_total,
-                    sum(case when due_date >= ? and outstanding_amount > 0 and status != 'paid' then 1 else 0 end) as upcoming_total,
-                    sum(case when due_date < ? and outstanding_amount > 0 and status != 'paid' then 1 else 0 end) as overdue_total,
+                    count(distinct loan_id) as total,
+                    count(distinct case when outstanding_amount > 0 and status != 'paid' then loan_id end) as open_total,
+                    count(distinct case when due_date >= ? and outstanding_amount > 0 and status != 'paid' then loan_id end) as upcoming_total,
+                    count(distinct case when due_date < ? and outstanding_amount > 0 and status != 'paid' then loan_id end) as overdue_total,
                     coalesce(sum(case when outstanding_amount > 0 and status != 'paid' then outstanding_amount else 0 end), 0) as amount
                 ", [$today->toDateString(), $today->toDateString()])
                 ->groupBy('due_date')
@@ -224,6 +226,7 @@ class DashboardController extends Controller
             'cashierRecentTransactions' => $cashierRecentTransactions,
             'calendarDays' => $calendarDays,
             'calendarMonth' => $today,
+            'canViewRepaymentCalendarAmounts' => $canViewRepaymentCalendarAmounts,
             'arrearsCount' => $arrearsCount,
             'arrearsAmount' => $arrearsAmount,
             'loanApplications' => $loanApplications,

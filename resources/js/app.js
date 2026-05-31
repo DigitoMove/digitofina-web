@@ -142,12 +142,13 @@ const initConfirmDialog = () => {
     const dialog = document.querySelector('[data-confirm-dialog]');
     const title = dialog?.querySelector('[data-confirm-title]');
     const message = dialog?.querySelector('[data-confirm-message]');
+    const summary = dialog?.querySelector('[data-confirm-summary]');
     const acceptButton = dialog?.querySelector('[data-confirm-accept]');
     const cancelButton = dialog?.querySelector('[data-confirm-cancel]');
     const icon = dialog?.querySelector('[data-confirm-icon]');
     let pendingForm = null;
 
-    if (!dialog || !title || !message || !acceptButton || !cancelButton || !icon) {
+    if (!dialog || !title || !message || !summary || !acceptButton || !cancelButton || !icon) {
         return;
     }
 
@@ -163,6 +164,12 @@ const initConfirmDialog = () => {
     };
     const allIconClasses = Object.values(toneClasses).flat();
     const allButtonClasses = Object.values(buttonClasses).flat();
+    const escapeHtml = (value) => String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
 
     const close = () => {
         dialog.classList.add('hidden');
@@ -178,6 +185,25 @@ const initConfirmDialog = () => {
         title.textContent = form.dataset.confirmTitle || 'Confirm action';
         message.textContent = form.dataset.confirmMessage || 'Please confirm that you want to continue.';
         acceptButton.textContent = form.dataset.confirmLabel || 'Confirm';
+        const summaryRows = [...form.querySelectorAll('[data-confirm-summary-label]')]
+            .map((field) => {
+                const label = field.dataset.confirmSummaryLabel;
+                const value = field.dataset.confirmSummaryValue
+                    || (field.tagName === 'SELECT' ? field.selectedOptions?.[0]?.textContent : field.value)
+                    || field.textContent
+                    || '';
+
+                return [label, value.trim()];
+            })
+            .filter(([label, value]) => label && value);
+
+        summary.innerHTML = summaryRows.map(([label, value]) => `
+            <div class="grid gap-1 px-3 py-2 sm:grid-cols-[8rem_1fr] sm:gap-3">
+                <dt class="font-semibold text-slate-500">${escapeHtml(label)}</dt>
+                <dd class="break-words font-medium text-slate-950">${escapeHtml(value)}</dd>
+            </div>
+        `).join('');
+        summary.classList.toggle('hidden', summaryRows.length === 0);
         icon.classList.remove(...allIconClasses);
         icon.classList.add(...(toneClasses[tone] || toneClasses.warning));
         acceptButton.classList.remove(...allButtonClasses);

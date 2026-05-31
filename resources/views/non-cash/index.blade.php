@@ -113,10 +113,12 @@
 
     <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <h2 class="text-base font-semibold text-slate-900">3. Post Non-Cash Entry</h2>
-        <form method="POST" action="{{ route('non-cash.store') }}" class="mt-4 grid gap-4 lg:grid-cols-4">
+        <form method="POST" action="{{ route('non-cash.store') }}" class="mt-4 grid gap-4 lg:grid-cols-4" data-confirm-title="Review non-cash transaction" data-confirm-message="Please confirm these details before posting. This helps avoid reversal requests." data-confirm-label="Post non-cash transaction" data-confirm-tone="neutral">
             @csrf
             <input type="hidden" name="account_id" value="{{ old('account_id', $selectedAccount?->id) }}">
             <input type="hidden" name="chart_account_id" value="{{ old('chart_account_id', $selectedLedger?->id) }}">
+            <input type="hidden" data-confirm-summary-label="Account" data-confirm-summary-value="{{ $selectedAccount ? $selectedAccount->account_number.' · '.($selectedAccount->client?->full_name ?? $selectedAccount->account_name) : 'None selected' }}">
+            <input type="hidden" data-confirm-summary-label="Offset ledger" data-confirm-summary-value="{{ $selectedLedger ? $selectedLedger->code.' · '.$selectedLedger->name : 'None selected' }}">
 
             <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
                 <div class="text-xs font-semibold uppercase text-slate-500">Selected account</div>
@@ -130,7 +132,7 @@
             </div>
             <label class="grid gap-1 text-sm">
                 <span class="font-medium text-slate-700">Transaction type</span>
-                <select name="transaction_type_id" required class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100">
+                <select name="transaction_type_id" required class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100" data-confirm-summary-label="Transaction type">
                     <option value="">Choose type</option>
                     @foreach($transactionTypes as $type)
                         <option value="{{ $type->id }}" @selected((int) old('transaction_type_id') === $type->id)>{{ $type->name }}</option>
@@ -139,15 +141,15 @@
             </label>
             <label class="grid gap-1 text-sm">
                 <span class="font-medium text-slate-700">Transaction date</span>
-                <input type="date" name="transaction_date" value="{{ old('transaction_date', today()->toDateString()) }}" required class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100">
+                <input type="date" name="transaction_date" value="{{ old('transaction_date', today()->toDateString()) }}" required class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100" data-confirm-summary-label="Date">
             </label>
             <label class="grid gap-1 text-sm lg:col-span-2">
                 <span class="font-medium text-slate-700">Amount</span>
-                <input type="number" name="amount" value="{{ old('amount') }}" min="100" step="100" required class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100" placeholder="100">
+                <input type="number" name="amount" value="{{ old('amount') }}" min="100" step="100" required class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100" placeholder="100" data-confirm-summary-label="Amount">
             </label>
             <label class="grid gap-1 text-sm lg:col-span-2">
                 <span class="font-medium text-slate-700">Reason / narration</span>
-                <input name="description" value="{{ old('description') }}" required class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100" placeholder="Loan clearance adjustment, bank transfer, internal correction...">
+                <input name="description" value="{{ old('description') }}" required class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100" placeholder="Loan clearance adjustment, bank transfer, internal correction..." data-confirm-summary-label="Reason">
             </label>
             <div class="lg:col-span-4">
                 <button class="rounded-lg bg-brand-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-slate-300" @disabled(! $selectedAccount || ! $selectedLedger)>Post Non-Cash Transaction</button>

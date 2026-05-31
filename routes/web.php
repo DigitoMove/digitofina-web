@@ -181,6 +181,7 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::get('/receipts/{transaction}', [ReceiptController::class, 'show'])->name('receipts.show');
     Route::delete('/transactions/delete-by-reference', [TransactionDeletionController::class, 'destroyByReference'])->name('transactions.delete-by-reference');
     Route::post('/receipts/{transaction}/reversal-request', [TransactionReversalController::class, 'store'])->name('transactions.reversal-requests.store');
+    Route::get('/transaction-reversal-requests', [TransactionReversalController::class, 'index'])->middleware('module:teller')->name('transaction-reversal-requests.index');
     Route::post('/transaction-reversal-requests/{makerCheckerRequest}/approve', [TransactionReversalController::class, 'approve'])->name('transactions.reversal-requests.approve');
     Route::post('/transaction-reversal-requests/{makerCheckerRequest}/reject', [TransactionReversalController::class, 'reject'])->name('transactions.reversal-requests.reject');
     Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');

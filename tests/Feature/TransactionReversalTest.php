@@ -19,6 +19,7 @@ use App\Models\MakerCheckerRequest;
 use App\Models\Module;
 use App\Models\Organization;
 use App\Models\OrganizationModule;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\TellerDrawer;
 use App\Models\Transaction;
@@ -94,12 +95,18 @@ it('allows admins to request reversal for a posted transaction from a locked bac
         ->and($request->reason)->toBe('Correcting a backdated transaction');
 });
 
-it('blocks cashiers from requesting transaction reversals', function () {
+it('allows teller cashiers to request transaction reversals', function () {
     [$admin, $branch, $type] = transactionDeletionContext();
     $role = Role::create([
         'organization_id' => $branch->organization_id,
         'name' => 'Teller Cashier',
         'slug' => 'teller-cashier',
+    ]);
+    $role->permissions()->sync([
+        Permission::firstOrCreate(
+            ['slug' => 'request-reversals'],
+            ['organization_id' => $branch->organization_id, 'name' => 'Request Reversals'],
+        )->id,
     ]);
     $cashier = User::factory()->create([
         'organization_id' => $branch->organization_id,
@@ -116,12 +123,41 @@ it('blocks cashiers from requesting transaction reversals', function () {
     $this->actingAs($cashier)
         ->from(route('receipts.show', $transaction))
         ->post(route('transactions.reversal-requests.store', $transaction), [
-            'reason' => 'Cashier should not be able to reverse',
+            'reason' => 'Cashier spotted a posting mistake',
         ])
         ->assertRedirect(route('receipts.show', $transaction))
-        ->assertSessionHas('warning', 'You are not allowed to request a reversal for this transaction.');
+        ->assertSessionHas('status', 'Reversal request submitted for admin or supervisor approval.');
 
-    expect(MakerCheckerRequest::query()->count())->toBe(0);
+    expect(MakerCheckerRequest::query()->count())->toBe(1)
+        ->and(MakerCheckerRequest::first()->reason)->toBe('Cashier spotted a posting mistake');
+});
+
+it('shows transaction reversal requests on a dedicated admin page', function () {
+    [$admin, $branch, $type] = transactionDeletionContext();
+    $transaction = transactionDeletionPosting($branch, $admin, $type, [
+        'reference' => 'TX-REVERSAL-LISTED',
+        'description' => 'Listed pending reversal',
+    ]);
+
+    MakerCheckerRequest::create([
+        'organization_id' => $branch->organization_id,
+        'branch_id' => $branch->id,
+        'subject_type' => $transaction->getMorphClass(),
+        'subject_id' => $transaction->id,
+        'requested_by' => $admin->id,
+        'action' => 'transaction_reversal',
+        'required_permission' => 'approve-reversals',
+        'amount' => $transaction->amount,
+        'status' => 'pending',
+        'reason' => 'Duplicate customer posting',
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('transaction-reversal-requests.index'))
+        ->assertSuccessful()
+        ->assertSee('Transaction Reversal Requests')
+        ->assertSee('TX-REVERSAL-LISTED')
+        ->assertSee('Duplicate customer posting');
 });
 
 it('links listed posted transactions to their receipt details', function () {

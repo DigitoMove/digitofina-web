@@ -11,6 +11,7 @@ use App\Models\JournalEntry;
 use App\Models\JournalLine;
 use App\Models\Loan;
 use App\Models\LoanProduct;
+use App\Models\LoanSchedule;
 use App\Models\Module;
 use App\Models\Organization;
 use App\Models\Permission;
@@ -96,6 +97,70 @@ it('shows only enabled package cards on the dashboard', function () {
         ->assertDontSee('Savings balance')
         ->assertDontSee('Investment balance')
         ->assertDontSee("Today's deposits");
+});
+
+it('hides repayment calendar amounts for loan officers', function () {
+    $user = moduleManagementUser(['manage-loans', 'view-reports']);
+    $loanOfficerRole = Role::firstOrCreate(
+        ['slug' => 'loan-officer'],
+        ['organization_id' => $user->organization_id, 'name' => 'Loan Officer']
+    );
+    Permission::whereIn('slug', ['manage-loans', 'view-reports'])
+        ->pluck('id')
+        ->each(fn (int $permissionId) => $loanOfficerRole->permissions()->syncWithoutDetaching([$permissionId]));
+    $user->update(['role_id' => $loanOfficerRole->id]);
+
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($user->organization);
+    $modules->enable($user->organization, Module::where('slug', 'loans')->firstOrFail(), $user);
+
+    $client = moduleManagementClient($user);
+    $product = LoanProduct::create([
+        'organization_id' => $user->organization_id,
+        'name' => 'Officer Calendar Loan',
+        'code' => fake()->unique()->bothify('OC-??'),
+        'min_amount' => 1000,
+        'max_amount' => 1000000,
+        'annual_interest_rate' => 12,
+        'interest_method' => 'flat',
+        'repayment_frequency' => 'monthly',
+        'default_term_months' => 6,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $loan = Loan::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'client_id' => $client->id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => fake()->unique()->numerify('1001-LN-######'),
+        'requested_amount' => 250000,
+        'approved_amount' => 250000,
+        'principal_balance' => 0,
+        'interest_balance' => 0,
+        'interest_rate' => 12,
+        'term_periods' => 6,
+        'repayment_frequency' => 'monthly',
+        'status' => 'active',
+    ]);
+    LoanSchedule::create([
+        'organization_id' => $user->organization_id,
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today(),
+        'principal_due' => 123400,
+        'total_due' => 123400,
+        'outstanding_amount' => 123400,
+        'status' => 'pending',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertSuccessful()
+        ->assertSee('1 loan not collected')
+        ->assertDontSee('UGX 123,400');
 });
 
 it('renders a loan-only client dashboard without disabled financial modules', function () {

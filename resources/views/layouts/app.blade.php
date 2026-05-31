@@ -50,8 +50,7 @@
                         if (($item['params'] ?? []) !== []) {
                             return collect($item['params'])->every(fn ($value, $key): bool => (request((string) $key) ?? request()->route((string) $key)) === $value);
                         }
-
-                        return ! request()->routeIs('ledger-accounts.index') || request('type') === null;
+                        return true;
                     };
                     $canManageOrganization = $user->canPerform('manage-organization') || $user->hasRole('super-admin') || $user->hasRole('supervisor') || $user->hasRole('organization-admin');
                     $organizationRoute = $user->hasRole('super-admin') ? 'organizations.index' : 'organization.current';
@@ -78,6 +77,7 @@
                             'icon' => 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10',
                             'items' => [
                                 ['label' => 'Teller Drawer', 'route' => 'teller.index', 'module' => 'teller', 'permissions' => ['post-transactions', 'post-repayments', 'manage-drawers'], 'icon' => 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10'],
+                                ['label' => 'Reversal Requests', 'route' => 'transaction-reversal-requests.index', 'module' => 'teller', 'permissions' => ['approve-reversals', 'override-maker-checker'], 'icon' => 'M7 7h10M7 12h7m-7 5h5 M17 14l3 3-3 3 M20 17H9'],
                                 ['label' => 'Transaction Search', 'route' => 'reports.show', 'params' => ['report' => 'all-posted-transactions'], 'module' => 'teller', 'permissions' => ['post-transactions', 'manage-drawers', 'view-reports'], 'icon' => 'M10 5a5 5 0 1 0 3.5 8.5L19 19 M8 10h4'],
                                 ['label' => 'Drawer Ledger Postings', 'route' => 'expenses.index', 'module' => 'teller', 'permissions' => ['manage-drawers', 'manage-accounting'], 'icon' => 'M6 5h12v14H6z M9 9h6 M9 13h6 M9 17h3'],
                                 ['label' => 'Non-Cash Transactions', 'route' => 'non-cash.index', 'module' => 'teller', 'permissions' => ['post-transactions', 'manage-accounting'], 'icon' => 'M7 7h10M7 12h10M7 17h6 M4 5h16v14H4z'],
@@ -91,11 +91,6 @@
                             'items' => [
                                 ['label' => 'Accounts Register', 'route' => 'accounts.index', 'modules' => ['savings', 'loans', 'investments'], 'permissions' => ['manage-accounts', 'manage-loans', 'manage-investments', 'view-reports'], 'icon' => 'M3 7h18v12H3z M7 7V5h10v2'],
                                 ['label' => 'Ledger Accounts', 'route' => 'ledger-accounts.index', 'module' => 'accounting', 'permissions' => ['manage-accounting'], 'icon' => 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'],
-                                ['label' => 'Expense Accounts', 'route' => 'ledger-accounts.index', 'params' => ['type' => 'expense'], 'module' => 'accounting', 'permissions' => ['manage-accounting'], 'icon' => 'M6 5h12v14H6z M9 9h6 M9 13h6 M9 17h3'],
-                                ['label' => 'Income Accounts', 'route' => 'ledger-accounts.index', 'params' => ['type' => 'income'], 'module' => 'accounting', 'permissions' => ['manage-accounting'], 'icon' => 'M12 4v16 M7 9h7a3 3 0 0 1 0 6H7 M17 7h-5a3 3 0 0 0 0 6h5'],
-                                ['label' => 'Asset Accounts', 'route' => 'ledger-accounts.index', 'params' => ['type' => 'asset'], 'module' => 'accounting', 'permissions' => ['manage-accounting'], 'icon' => 'M4 8h16v10H4z M7 8V6h10v2 M8 13h8'],
-                                ['label' => 'Liability Accounts', 'route' => 'ledger-accounts.index', 'params' => ['type' => 'liability'], 'module' => 'accounting', 'permissions' => ['manage-accounting'], 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h5 M8 17h8'],
-                                ['label' => 'Capital Accounts', 'route' => 'ledger-accounts.index', 'params' => ['type' => 'equity'], 'module' => 'accounting', 'permissions' => ['manage-accounting'], 'icon' => 'M12 3l8 5-8 5-8-5 8-5z M4 13l8 5 8-5'],
                                 ['label' => 'Savings Products', 'route' => 'savings-products.index', 'module' => 'savings', 'permissions' => ['manage-accounts'], 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
                                 ['label' => 'Savings Transfer', 'route' => 'savings-transfers.create', 'module' => 'savings', 'permissions' => ['post-transactions'], 'icon' => 'M7 7h12m0 0-4-4m4 4-4 4 M17 17H5m0 0 4-4m-4 4 4 4'],
                             ],
@@ -297,6 +292,7 @@
                 <div class="min-w-0 flex-1">
                     <h2 id="confirm-dialog-title" class="text-lg font-semibold text-slate-950" data-confirm-title>Confirm action</h2>
                     <p id="confirm-dialog-message" class="mt-2 text-sm leading-6 text-slate-600" data-confirm-message>Please confirm that you want to continue.</p>
+                    <dl class="mt-4 hidden divide-y divide-slate-200 rounded-lg border border-slate-200 bg-slate-50 text-sm" data-confirm-summary></dl>
                 </div>
             </div>
             <div class="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

@@ -6,12 +6,51 @@ use App\Models\MakerCheckerRequest;
 use App\Models\Transaction;
 use App\Services\FinancialControlService;
 use App\Support\ApiSecurity;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\View\View;
 use InvalidArgumentException;
 
 class TransactionReversalController extends Controller
 {
+    public function index(Request $request): View
+    {
+        abort_unless($this->canApproveReversals($request), 403);
+
+        $status = in_array($request->string('status')->toString(), ['pending', 'approved', 'rejected'], true)
+            ? $request->string('status')->toString()
+            : 'pending';
+        $search = $request->string('search')->trim()->toString();
+
+        $requests = MakerCheckerRequest::query()
+            ->with(['requestedBy', 'checkedBy', 'branch', 'subject.account.client', 'subject.type'])
+            ->where('action', 'transaction_reversal')
+            ->where('status', $status)
+            ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
+            ->when($search !== '', function (Builder $query) use ($search): void {
+                $query->where(function (Builder $query) use ($search): void {
+                    $query->whereAny(['reason', 'checker_comments', 'status'], 'like', "%{$search}%")
+                        ->orWhereHasMorph('subject', [Transaction::class], function (Builder $query) use ($search): void {
+                            $query->whereAny(['reference', 'description', 'status'], 'like', "%{$search}%")
+                                ->orWhereHas('account', fn (Builder $query): Builder => $query->whereAny(['account_number', 'account_name'], 'like', "%{$search}%"))
+                                ->orWhereHas('account.client', fn (Builder $query): Builder => $query->whereAny(['client_number', 'first_name', 'middle_name', 'last_name', 'business_name'], 'like', "%{$search}%"));
+                        })
+                        ->orWhereHas('requestedBy', fn (Builder $query): Builder => $query->where('name', 'like', "%{$search}%"));
+                });
+            })
+            ->latest()
+            ->paginate(20)
+            ->withQueryString();
+
+        return view('transaction-reversal-requests.index', [
+            'requests' => $requests,
+            'status' => $status,
+            'search' => $search,
+            'statuses' => ['pending' => 'Pending', 'approved' => 'Approved', 'rejected' => 'Rejected'],
+        ]);
+    }
+
     public function store(Request $request, Transaction $transaction, FinancialControlService $controls): RedirectResponse
     {
         if (! $this->canRequest($request, $transaction)) {
@@ -107,6 +146,7 @@ class TransactionReversalController extends Controller
         return $user->hasRole('super-admin')
             || $user->hasRole('organization-admin')
             || $user->hasRole('teller-cashier')
+            || $user->canPerform('request-reversals')
             || $user->canPerform('approve-reversals')
             || $user->canPerform('override-maker-checker');
     }
@@ -115,12 +155,19 @@ class TransactionReversalController extends Controller
     {
         $user = $request->user();
 
-        if (! ($user->canPerform('approve-reversals') || $user->canPerform('override-maker-checker'))) {
+        if (! $this->canApproveReversals($request)) {
             return false;
         }
 
         return (int) $makerCheckerRequest->branch_id === (int) $user->branch_id
             || ApiSecurity::hasGlobalBranchAccess($user)
             || $user->canPerform('override-maker-checker');
+    }
+
+    private function canApproveReversals(Request $request): bool
+    {
+        $user = $request->user();
+
+        return $user->canPerform('approve-reversals') || $user->canPerform('override-maker-checker');
     }
 }

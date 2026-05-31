@@ -327,7 +327,7 @@
             </div>
             <span class="df-badge">UGX 100 minimum denomination</span>
         </div>
-        <form method="POST" action="{{ route('teller.post') }}" class="mt-4 grid gap-4 md:grid-cols-2">
+        <form method="POST" action="{{ route('teller.post') }}" class="mt-4 grid gap-4 md:grid-cols-2" data-confirm-title="Review transaction" data-confirm-message="Please confirm these details before posting. This helps avoid reversal requests." data-confirm-label="Post transaction" data-confirm-tone="neutral">
             @csrf
             @if($errors->any())
                 <div class="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700 md:col-span-2">{{ $errors->first() }}</div>
@@ -335,9 +335,10 @@
             <input type="hidden" name="account_scope" value="{{ $selectedChartAccount ? 'general_ledger' : 'client_account' }}">
             <input type="hidden" name="account_number" value="{{ $account?->account_number ?? request('account_number') }}">
             <input type="hidden" name="chart_account_id" value="{{ $selectedChartAccount?->id ?? request('chart_account_id') }}">
+            <input type="hidden" data-confirm-summary-label="Target" data-confirm-summary-value="{{ $selectedChartAccount ? $selectedChartAccount->code.' · '.$selectedChartAccount->name : ($account ? $account->account_number.' · '.$account->account_name : 'No account selected') }}">
             @if(! $isLedgerPosting)
                 <label class="text-sm font-semibold text-slate-700">Client Money Direction <x-required-badge />
-                    <select name="transaction_type_id" class="mt-1">
+                    <select name="transaction_type_id" class="mt-1" data-confirm-summary-label="Transaction type">
                         @foreach($availableTransactionTypes as $type)
                             <option value="{{ $type->id }}">{{ $type->name }}</option>
                         @endforeach
@@ -359,9 +360,10 @@
             @if($isLedgerPosting)
                 @if($selectedLedgerEntryType)
                     <input type="hidden" name="gl_entry_type" value="{{ $selectedLedgerEntryType }}">
+                    <input type="hidden" data-confirm-summary-label="Money direction" data-confirm-summary-value="{{ $selectedLedgerEntryType === 'credit' ? 'Money coming in / receipt' : 'Money going out / payment' }}">
                 @else
                     <label class="text-sm font-semibold text-slate-700">Money Direction <x-required-badge />
-                        <select name="gl_entry_type" class="mt-1">
+                        <select name="gl_entry_type" class="mt-1" data-confirm-summary-label="Money direction">
                             <option value="credit" @selected(old('gl_entry_type') === 'credit')>Money coming in / receipt</option>
                             <option value="debit" @selected(old('gl_entry_type') === 'debit')>Money going out / payment</option>
                         </select>
@@ -369,16 +371,16 @@
                 @endif
             @endif
             <label class="text-sm font-semibold text-slate-700">Cheque No
-                <input name="cheque_number" class="mt-1">
+                <input name="cheque_number" class="mt-1" data-confirm-summary-label="Cheque no.">
             </label>
             <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge />
-                <input name="amount" type="number" min="100" step="100" class="mt-1" required>
+                <input name="amount" type="number" min="100" step="100" class="mt-1" required data-confirm-summary-label="Amount">
             </label>
             <label class="text-sm font-semibold text-slate-700">Transaction Date <x-required-badge />
-                <input name="transaction_date" type="date" max="{{ today()->toDateString() }}" value="{{ old('transaction_date', today()->toDateString()) }}" class="mt-1" required>
+                <input name="transaction_date" type="date" max="{{ today()->toDateString() }}" value="{{ old('transaction_date', today()->toDateString()) }}" class="mt-1" required data-confirm-summary-label="Date">
             </label>
             <label class="text-sm font-semibold text-slate-700 md:col-span-2">Transaction Description
-                <textarea name="description" rows="3" class="mt-1"></textarea>
+                <textarea name="description" rows="3" class="mt-1" data-confirm-summary-label="Description"></textarea>
             </label>
             <div class="flex flex-wrap gap-2 md:col-span-2">
                 <button @disabled(!$session) class="df-action-primary disabled:pointer-events-none disabled:bg-slate-400">Post Transaction</button>
@@ -569,7 +571,7 @@
                             @endif
                         </td>
                         <td class="text-right">
-                            @if($transaction->status === 'posted' && ! $pendingReversal && ! $transaction->reversed_by && (auth()->user()->hasRole('super-admin') || auth()->user()->hasRole('organization-admin') || auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker')))
+                            @if($transaction->status === 'posted' && ! $pendingReversal && ! $transaction->reversed_by && (auth()->user()->hasRole('super-admin') || auth()->user()->hasRole('organization-admin') || auth()->user()->hasRole('teller-cashier') || auth()->user()->canPerform('request-reversals') || auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker')))
                                 <details class="relative inline-block text-left">
                                     <summary class="cursor-pointer list-none rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white">Request reversal</summary>
                                     <form method="POST" action="{{ route('transactions.reversal-requests.store', $transaction) }}" class="absolute right-0 z-20 mt-2 grid w-72 gap-2 rounded-lg border border-amber-200 bg-white p-3 text-left shadow-xl">
