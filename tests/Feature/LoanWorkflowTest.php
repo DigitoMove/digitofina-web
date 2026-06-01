@@ -1098,9 +1098,9 @@ it('repairs unpaid monthly schedules to start one business month after applicati
         ->dueDate($applicationDate, 1, 'monthly')
         ->toDateString();
 
-    expect($schedule->fresh()->due_date?->toDateString())->toBe($expectedDueDate)
-        ->and($totals['loans'])->toBe(1)
+    expect($totals['loans'])->toBe(1)
         ->and($totals['schedules'])->toBe(1)
+        ->and($schedule->fresh()->due_date?->toDateString())->toBe($expectedDueDate)
         ->and($schedule->fresh()->status)->toBe('pending')
         ->and((float) $schedule->fresh()->penalty_due)->toBe(0.0)
         ->and((float) $schedule->fresh()->outstanding_amount)->toBe(500000.0)

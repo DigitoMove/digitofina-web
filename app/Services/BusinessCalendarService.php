@@ -26,7 +26,7 @@ class BusinessCalendarService
         $added = 0;
 
         while ($added < $days) {
-            $cursor->addDay();
+            $cursor = $cursor->addDay();
 
             if ($this->isBusinessDay($cursor, $organizationId)) {
                 $added++;
@@ -41,7 +41,7 @@ class BusinessCalendarService
         $cursor = $date->copy();
 
         while (! $this->isBusinessDay($cursor, $organizationId)) {
-            $cursor->addDay();
+            $cursor = $cursor->addDay();
         }
 
         return $cursor;
@@ -60,7 +60,7 @@ class BusinessCalendarService
         $cursor = $start->copy();
 
         while ($cursor->lessThan($end)) {
-            $cursor->addDay();
+            $cursor = $cursor->addDay();
 
             if ($cursor->lessThanOrEqualTo($end) && $this->isBusinessDay($cursor, $organizationId)) {
                 $days++;
