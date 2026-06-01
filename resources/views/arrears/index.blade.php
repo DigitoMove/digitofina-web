@@ -6,7 +6,14 @@
         <h1 class="df-title">Loan Arrears</h1>
     </div>
     @if($canRunManualPenalties)
-        <form method="POST" action="{{ route('arrears.apply-penalties', ['branch_id' => $selectedBranchId ?: null]) }}">@csrf<button class="df-action-danger">Run Penalties</button></form>
+        <div class="flex flex-wrap gap-2">
+            <form method="POST" action="{{ route('arrears.apply-penalties', ['branch_id' => $selectedBranchId ?: null]) }}">@csrf<button class="df-action-danger">Run Penalties</button></form>
+            <form method="POST" action="{{ route('arrears.clear-penalties') }}" onsubmit="return confirm('Clear all pending penalties for the selected branch scope?')">
+                @csrf
+                <input type="hidden" name="branch_id" value="{{ $selectedBranchId ?: '' }}">
+                <button class="df-action-secondary">Clear All Penalties</button>
+            </form>
+        </div>
     @endif
 </div>
 <form class="df-panel mb-4 p-4">
@@ -47,16 +54,16 @@
 </form>
 <div class="overflow-hidden rounded border bg-white">
     <table class="w-full text-left text-sm">
-        <thead class="bg-slate-50"><tr><th class="p-3">Client</th><th>Loan</th><th>Branch</th><th>Officer</th><th>Due schedules</th><th>Earliest due</th><th>Max days due</th><th>Amount to clear</th><th>Penalty</th><th>Status</th></tr></thead>
+        <thead class="bg-slate-50"><tr><th class="p-3">Client</th><th>Loan</th><th>Branch</th><th>Officer</th><th>Due schedules</th><th>Earliest due</th><th>Max days due</th><th>Missed amount</th><th>Penalty</th><th>Total to pay</th><th>Status</th><th></th></tr></thead>
         <tbody>
             @forelse($loans as $loan)
                 @php
                     $arrearsSchedules = $loan->schedules;
                     $earliestSchedule = $arrearsSchedules->first();
                     $maxDaysDue = $arrearsSchedules->max(fn ($schedule) => (int) ($schedule->days_overdue ?: ($schedule->due_date ? $calendar->businessDaysBetween($schedule->due_date, now()) : 0)));
-                    $scheduleSummary = $arrearsSchedules
-                        ->map(fn ($schedule) => '#'.$schedule->installment_number.' ('.$schedule->due_date?->format('d M Y').')')
-                        ->implode(', ');
+                    $penaltyToClear = max(0, (float) $loan->arrears_penalty_due - (float) $loan->arrears_penalty_paid);
+                    $missedAmount = max(0, (float) $loan->arrears_cumulative_due - $penaltyToClear);
+                    $totalToPay = $missedAmount + $penaltyToClear;
                 @endphp
                 <tr class="border-t">
                     <td class="p-3">{{ $loan->client?->full_name ?? 'N/A' }}</td>
@@ -65,16 +72,45 @@
                     <td>{{ $loan->officer?->name ?? 'Unassigned' }}</td>
                     <td>
                         <div class="font-semibold text-slate-900">{{ number_format((int) $loan->arrears_schedules_count) }} due</div>
-                        <div class="max-w-xs text-xs text-slate-500">{{ $scheduleSummary }}</div>
+                        <div class="mt-2 max-w-sm space-y-2 text-xs text-slate-500">
+                            @foreach($arrearsSchedules as $schedule)
+                                @php
+                                    $schedulePenalty = max(0, (float) $schedule->penalty_due - (float) $schedule->penalty_paid);
+                                    $scheduleMissed = max(0, (float) $schedule->outstanding_amount - $schedulePenalty);
+                                @endphp
+                                <div class="rounded border border-slate-200 p-2">
+                                    <div class="font-semibold text-slate-700">#{{ $schedule->installment_number }} · {{ $schedule->due_date?->format('d M Y') }}</div>
+                                    <div>Missed UGX {{ number_format($scheduleMissed, 2) }}</div>
+                                    <div>Penalty UGX {{ number_format($schedulePenalty, 2) }}</div>
+                                    @if($canRunManualPenalties && $schedulePenalty > 0)
+                                        <form method="POST" action="{{ route('arrears.clear-penalties') }}" class="mt-2" onsubmit="return confirm('Clear this schedule penalty?')">
+                                            @csrf
+                                            <input type="hidden" name="loan_schedule_id" value="{{ $schedule->id }}">
+                                            <button class="font-semibold text-red-700">Clear schedule penalty</button>
+                                        </form>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
                     </td>
                     <td>{{ $earliestSchedule?->due_date?->format('d M Y') ?? 'N/A' }}</td>
                     <td>{{ number_format((int) $maxDaysDue) }}</td>
-                    <td class="font-semibold text-red-700">UGX {{ number_format((float) $loan->arrears_cumulative_due, 2) }}</td>
-                    <td>UGX {{ number_format((float) $loan->arrears_penalty_due, 2) }}</td>
+                    <td class="font-semibold text-red-700">UGX {{ number_format($missedAmount, 2) }}</td>
+                    <td>UGX {{ number_format($penaltyToClear, 2) }}</td>
+                    <td class="font-semibold text-slate-900">UGX {{ number_format($totalToPay, 2) }}</td>
                     <td><span class="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">{{ str($loan->status)->headline() }}</span></td>
+                    <td>
+                        @if($canRunManualPenalties && $penaltyToClear > 0)
+                            <form method="POST" action="{{ route('arrears.clear-penalties') }}" onsubmit="return confirm('Clear all pending penalties for this loan?')">
+                                @csrf
+                                <input type="hidden" name="loan_id" value="{{ $loan->id }}">
+                                <button class="font-semibold text-red-700">Clear loan penalties</button>
+                            </form>
+                        @endif
+                    </td>
                 </tr>
             @empty
-                <tr><td colspan="10" class="p-6 text-center text-slate-500">No overdue loans found.</td></tr>
+                <tr><td colspan="12" class="p-6 text-center text-slate-500">No overdue loans found.</td></tr>
             @endforelse
         </tbody>
     </table>

@@ -152,6 +152,7 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::delete('/ledger-accounts/{chartAccount}', [LedgerAccountController::class, 'destroy'])->middleware('module:accounting')->name('ledger-accounts.destroy');
     Route::get('/arrears', [ArrearsController::class, 'index'])->middleware('module:loans')->name('arrears.index');
     Route::post('/arrears/apply-penalties', [ArrearsController::class, 'applyPenalties'])->middleware('module:loans')->name('arrears.apply-penalties');
+    Route::post('/arrears/clear-penalties', [ArrearsController::class, 'clearPenalties'])->middleware('module:loans')->name('arrears.clear-penalties');
     Route::get('/due-repayments', [DueRepaymentController::class, 'index'])->middleware('module:loans')->name('due-repayments.index');
     Route::get('/teller-drawer', [TellerDrawerController::class, 'index'])->middleware('module:teller')->name('teller.index');
     Route::post('/teller-drawer/managed-post', [TellerDrawerController::class, 'postManagedDrawer'])->name('teller.managed-post');

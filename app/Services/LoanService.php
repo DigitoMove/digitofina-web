@@ -1570,6 +1570,79 @@ class LoanService
     }
 
     /**
+     * @return array{schedules:int, amount:float}
+     */
+    public function clearPendingPenalties(?Loan $loan = null, ?LoanSchedule $schedule = null, ?int $branchId = null, ?User $actor = null): array
+    {
+        $totals = ['schedules' => 0, 'amount' => 0.0];
+
+        $query = LoanSchedule::query()
+            ->with('loan.loanAccount')
+            ->whereColumn('penalty_due', '>', 'penalty_paid');
+
+        if ($loan) {
+            $query->where('loan_id', $loan->id);
+        }
+
+        if ($schedule) {
+            $query->whereKey($schedule->id);
+        }
+
+        if ($branchId) {
+            $query->whereHas('loan', fn ($query) => $query->where('branch_id', $branchId));
+        }
+
+        if ($actor && ! $actor->hasGlobalOrganizationAccess() && $actor->organization_id !== null) {
+            $query->whereHas('loan', fn ($query) => $query->where('organization_id', $actor->organization_id));
+        }
+
+        foreach ($query->cursor() as $candidate) {
+            DB::transaction(function () use ($candidate, $actor, &$totals): void {
+                $schedule = LoanSchedule::query()->whereKey($candidate->id)->lockForUpdate()->firstOrFail();
+                $loan = Loan::query()->with('loanAccount')->whereKey($schedule->loan_id)->lockForUpdate()->firstOrFail();
+                $penaltyDue = (float) $schedule->penalty_due;
+                $penaltyPaid = (float) $schedule->penalty_paid;
+                $penaltyToClear = max(0, $penaltyDue - $penaltyPaid);
+
+                if ($penaltyToClear <= 0) {
+                    return;
+                }
+
+                $schedule->update([
+                    'penalty_due' => $penaltyPaid,
+                    'total_due' => max((float) $schedule->total_paid, (float) $schedule->total_due - $penaltyToClear),
+                    'outstanding_amount' => max(0, (float) $schedule->outstanding_amount - $penaltyToClear),
+                    'balance_due' => max(0, (float) $schedule->balance_due - $penaltyToClear),
+                ]);
+
+                $loan->update(['penalty_balance' => max(0, (float) $loan->penalty_balance - $penaltyToClear)]);
+
+                if ($loan->loan_account_id) {
+                    $loan->loanAccount()->update([
+                        'balance' => max(0, (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + max(0, (float) $loan->penalty_balance - $penaltyToClear)),
+                    ]);
+                }
+
+                LoanPenalty::query()
+                    ->where('loan_schedule_id', $schedule->id)
+                    ->where('status', 'pending')
+                    ->update(['status' => 'waived']);
+
+                $totals['schedules']++;
+                $totals['amount'] += $penaltyToClear;
+
+                $this->auditLogger->record('loan.penalties_cleared', $loan->fresh(), [
+                    'loan_schedule_id' => $schedule->id,
+                    'amount' => $penaltyToClear,
+                    'cleared_by' => $actor?->id,
+                ], actor: $actor);
+            });
+        }
+
+        return $totals;
+    }
+
+    /**
      * @return array{allocations:list<array{loan_schedule_id:int, penalty_paid:float, fees_paid:float, interest_paid:float, principal_paid:float, total_paid:float}>, totals:array{penalty:float, fees:float, interest:float, principal:float}, applied:float}
      */
     private function allocateSchedulePayments(Loan $loan, float $amount): array

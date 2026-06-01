@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Branch;
 use App\Models\Loan;
 use App\Models\LoanProduct;
+use App\Models\LoanSchedule;
 use App\Models\User;
 use App\Services\BusinessCalendarService;
 use App\Services\LoanService;
@@ -76,6 +77,7 @@ class ArrearsController extends Controller
             ->withCount(['schedules as arrears_schedules_count' => $arrearsScheduleScope])
             ->withSum(['schedules as arrears_cumulative_due' => $arrearsScheduleScope], 'outstanding_amount')
             ->withSum(['schedules as arrears_penalty_due' => $arrearsScheduleScope], 'penalty_due')
+            ->withSum(['schedules as arrears_penalty_paid' => $arrearsScheduleScope], 'penalty_paid')
             ->withMin(['schedules as arrears_earliest_due_date' => $arrearsScheduleScope], 'due_date')
             ->orderBy('arrears_earliest_due_date')
             ->orderBy('loan_number')
@@ -116,6 +118,45 @@ class ArrearsController extends Controller
         $count = $service->applyOverduePenalties($loan, branchId: $branchId ?: null);
 
         return back()->with('status', "{$count} overdue installment(s) checked.");
+    }
+
+    public function clearPenalties(Request $request, LoanService $service): RedirectResponse
+    {
+        abort_unless($this->canRunManualPenalties($request), 403);
+
+        $data = $request->validate([
+            'loan_id' => ['nullable', 'integer', 'exists:loans,id'],
+            'loan_schedule_id' => ['nullable', 'integer', 'exists:loan_schedules,id'],
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+        ]);
+
+        $canFilterBranch = ApiSecurity::hasGlobalBranchAccess($request->user());
+        $branchId = $canFilterBranch ? (int) ($data['branch_id'] ?? 0) : (int) $request->user()->branch_id;
+        $loan = ($data['loan_id'] ?? null) ? Loan::query()->findOrFail((int) $data['loan_id']) : null;
+        $schedule = ($data['loan_schedule_id'] ?? null)
+            ? LoanSchedule::query()->with('loan')->findOrFail((int) $data['loan_schedule_id'])
+            : null;
+
+        if ($loan) {
+            ApiSecurity::assertTenantAccess($request->user(), $loan);
+        }
+
+        if ($schedule?->loan) {
+            ApiSecurity::assertTenantAccess($request->user(), $schedule->loan);
+        }
+
+        $totals = $service->clearPendingPenalties(
+            loan: $loan,
+            schedule: $schedule,
+            branchId: $branchId ?: null,
+            actor: $request->user(),
+        );
+
+        return back()->with('status', sprintf(
+            'Cleared UGX %s in penalties from %d schedule(s).',
+            number_format($totals['amount'], 2),
+            $totals['schedules'],
+        ));
     }
 
     private function canRunManualPenalties(Request $request): bool
