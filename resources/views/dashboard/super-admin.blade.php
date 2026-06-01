@@ -49,6 +49,8 @@
         ['Loan portfolio', number_format($loanBalance, 0).' UGX', 'bg-amber-50 text-amber-700', ['loans']],
         ['Savings balance', number_format($savingsBalance, 0).' UGX', 'bg-teal-50 text-teal-700', ['savings']],
         ['Investment balance', number_format($investmentBalance, 0).' UGX', 'bg-indigo-50 text-indigo-700', ['investments']],
+        ['Active branches', $branchCount, 'bg-slate-100 text-slate-700', ['platform', 'users']],
+        ['Active accounts', $activeAccountCount, 'bg-emerald-50 text-emerald-700', ['savings', 'loans', 'investments']],
     ];
     $cards = array_values(array_filter($cards, function (array $card) use ($moduleEnabled, $selectedOrganization): bool {
         $modules = $card[3];
@@ -59,6 +61,7 @@
 
         return collect($modules)->contains(fn (string $module): bool => $moduleEnabled($module));
     }));
+    $cards = array_slice($cards, 0, 8);
 @endphp
 
 <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

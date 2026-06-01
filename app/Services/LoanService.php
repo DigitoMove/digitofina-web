@@ -745,16 +745,21 @@ class LoanService
                 throw new InvalidArgumentException('Application fee cannot exceed the approved loan amount.');
             }
 
-            $netAmount = max(0, round((float) $loan->approved_amount - $fees, 2));
+            $approvedAmount = round((float) $loan->approved_amount, 2);
+            $feeCoveredFromSavings = $fees > 0 && round((float) $savings->balance, 2) >= $fees;
+            $feeDeductedFromProceeds = $feeCoveredFromSavings ? 0.0 : $fees;
+            $netAmount = max(0, round($approvedAmount - $feeDeductedFromProceeds, 2));
             $type = TransactionType::query()->where('code', 'loan_disbursement')->firstOrFail();
             $applicationFeeIncomeCode = $this->applicationFeeIncomeCode($loan);
             $journals = [
-                ['account_code' => '1200', 'entry_type' => 'debit', 'amount' => $loan->approved_amount, 'memo' => 'Loan principal raised'],
+                ['account_code' => '1200', 'entry_type' => 'debit', 'amount' => $approvedAmount, 'memo' => 'Loan principal raised'],
                 ['account_code' => '2100', 'entry_type' => 'credit', 'amount' => $netAmount, 'memo' => 'Loan proceeds credited to savings'],
             ];
 
-            if ($fees > 0) {
-                $journals[] = ['account_code' => $applicationFeeIncomeCode, 'entry_type' => 'credit', 'amount' => $fees, 'memo' => 'Loan application fee deducted'];
+            if ($feeCoveredFromSavings) {
+                $this->deductDisbursementApplicationFeeFromSavings($loan, $savings, $user, $fees);
+            } elseif ($fees > 0) {
+                $journals[] = ['account_code' => $applicationFeeIncomeCode, 'entry_type' => 'credit', 'amount' => $fees, 'memo' => 'Loan application fee deducted from proceeds'];
             }
 
             $disbursementDate = $this->effectiveWorkflowDate($loan);
@@ -765,7 +770,7 @@ class LoanService
                 'branch_id' => $loan->branch_id,
                 'loan_id' => $loan->id,
                 'disbursed_by' => $user->id,
-                'disbursed_amount' => $loan->approved_amount,
+                'disbursed_amount' => $approvedAmount,
                 'fees_deducted' => $fees,
                 'net_amount' => $netAmount,
                 'payment_method' => $paymentMethod,
@@ -787,6 +792,8 @@ class LoanService
                 'amount' => $loan->approved_amount,
                 'application_fee_basis' => $requestedAmountForFee,
                 'application_fee' => $fees,
+                'application_fee_source' => $feeCoveredFromSavings ? 'savings' : 'loan_proceeds',
+                'net_amount_credited' => $netAmount,
             ]);
             $freshLoan = $loan->refresh()->loadMissing('client', 'officer');
             $loanUrl = route('loans.show', $freshLoan);
@@ -819,6 +826,64 @@ class LoanService
 
             return $freshLoan;
         });
+    }
+
+    private function deductDisbursementApplicationFeeFromSavings(Loan $loan, Account $savings, User $user, float $fee): Transaction
+    {
+        $postedAt = $this->effectiveWorkflowDate($loan);
+
+        $savings->decrement('balance', $fee);
+        $savings->refresh();
+
+        $type = TransactionType::query()->firstOrCreate(
+            ['code' => 'loan_application_fee'],
+            ['name' => 'Loan Application Fee', 'direction' => 'debit'],
+        );
+
+        $transaction = Transaction::create([
+            'organization_id' => $savings->organization_id,
+            'account_id' => $savings->id,
+            'transaction_type_id' => $type->id,
+            'branch_id' => $savings->branch_id,
+            'user_id' => $user->id,
+            'reference' => 'TX'.now()->format('ymdHis').Str::upper(Str::random(5)),
+            'amount' => $fee,
+            'balance_after' => $savings->balance,
+            'description' => "Loan application fee paid from savings for loan {$loan->loan_number}",
+            'posted_at' => $postedAt,
+            'created_at' => $postedAt,
+            'updated_at' => now(),
+        ]);
+
+        foreach ([
+            ['account_code' => '2100', 'entry_type' => 'debit', 'memo' => 'Client savings liability reduced for loan application fee'],
+            ['account_code' => $this->applicationFeeIncomeCode($loan), 'entry_type' => 'credit', 'memo' => 'Loan application fee income paid from savings'],
+        ] as $journal) {
+            $chartAccount = ChartAccount::query()->where('code', $journal['account_code'])->first();
+
+            JournalEntry::create([
+                'organization_id' => $savings->organization_id,
+                'branch_id' => $savings->branch_id,
+                'created_by' => $user->id,
+                'posted_by' => $user->id,
+                'journal_number' => 'JE'.now()->format('ymdHis').Str::upper(Str::random(4)),
+                'journal_date' => $postedAt->toDateString(),
+                'description' => "Loan application fee paid from savings for loan {$loan->loan_number}",
+                'status' => 'posted',
+                'posted_at' => $postedAt,
+                'chart_account_id' => $chartAccount?->id,
+                'account_name' => $chartAccount?->name,
+                'transaction_id' => $transaction->id,
+                'reference' => $transaction->reference,
+                'entry_type' => $journal['entry_type'],
+                'amount' => $fee,
+                'memo' => $journal['memo'],
+                'created_at' => $postedAt,
+                'updated_at' => now(),
+            ]);
+        }
+
+        return $transaction;
     }
 
     public function generateSchedule(Loan $loan, CarbonInterface $startDate): void
@@ -1249,7 +1314,7 @@ class LoanService
         }
     }
 
-    public function applyOverduePenalties(?Loan $loan = null, ?CarbonInterface $asOf = null, ?int $branchId = null): int
+    public function applyOverduePenalties(?Loan $loan = null, ?CarbonInterface $asOf = null, ?int $branchId = null, ?int $officerId = null): int
     {
         $asOf = $asOf ?: now();
         $count = 0;
@@ -1265,6 +1330,10 @@ class LoanService
 
         if ($branchId) {
             $query->whereHas('loan', fn ($query) => $query->where('branch_id', $branchId));
+        }
+
+        if ($officerId) {
+            $query->whereHas('loan', fn ($query) => $query->where('officer_id', $officerId));
         }
 
         foreach ($query->cursor() as $schedule) {

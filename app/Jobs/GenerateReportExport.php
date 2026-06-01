@@ -109,9 +109,8 @@ class GenerateReportExport implements ShouldQueue
                 ->all(),
             'arrears', 'arrears_report' => LoanSchedule::query()
                 ->excludingCancelledLoans()
+                ->eligibleForArrears(now())
                 ->whereHas('loan', fn ($query) => $query->where('organization_id', $export->organization_id)->when($export->branch_id, fn ($query, int $branchId) => $query->where('branch_id', $branchId)))
-                ->where('outstanding_amount', '>', 0)
-                ->whereDate('due_date', '<', now())
                 ->latest()
                 ->limit(5000)
                 ->get(['loan_id', 'installment_number', 'due_date', 'outstanding_amount', 'days_overdue', 'status', 'updated_at'])

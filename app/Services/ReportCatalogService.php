@@ -142,15 +142,17 @@ class ReportCatalogService
         ];
 
         if (! $user || $user->hasRole('super-admin') || ! $user->organization) {
-            return $definitions;
+            return $this->filterCashierLoanReports($definitions, $user);
         }
 
         $enabledModules = app(ModuleService::class)->enabledSlugs($user->organization);
 
-        return array_values(array_filter(
+        $definitions = array_values(array_filter(
             $definitions,
             fn (array $definition): bool => in_array($this->moduleForReport($definition), $enabledModules, true)
         ));
+
+        return $this->filterCashierLoanReports($definitions, $user);
     }
 
     /**
@@ -243,6 +245,27 @@ class ReportCatalogService
                 : 'teller',
             default => 'reports',
         };
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $definitions
+     * @return array<int, array<string, mixed>>
+     */
+    private function filterCashierLoanReports(array $definitions, ?User $user): array
+    {
+        if (! $user?->isTellerCashier()) {
+            return $definitions;
+        }
+
+        return array_values(array_filter(
+            $definitions,
+            fn (array $definition): bool => ! in_array($definition['slug'], [
+                'loan-accounts-in-arrears',
+                'loan-aging-report',
+                'portfolio-at-risk',
+                'expected-loan-payments',
+            ], true)
+        ));
     }
 
     /**
@@ -829,19 +852,20 @@ class ReportCatalogService
             'Branch' => $disbursement->branch?->name ?? 'N/A',
             'Loan' => $disbursement->loan?->loan_number ?? 'N/A',
             'Client' => $disbursement->loan?->client?->full_name ?? 'N/A',
-            'Gross Disbursed' => $this->money((float) $disbursement->disbursed_amount),
-            'Application Fee' => $this->money((float) $disbursement->fees_deducted),
-            'Net To Savings' => $this->money((float) $disbursement->net_amount),
+            'Gross Principal' => $this->money((float) $disbursement->disbursed_amount),
+            'Application Fee Charged' => $this->money((float) $disbursement->fees_deducted),
+            'Net Credited' => $this->money((float) $disbursement->net_amount),
             'Disbursed By' => $disbursement->disbursedBy?->name ?? 'N/A',
         ]);
 
         return [
-            ['Date', 'Branch', 'Loan', 'Client', 'Gross Disbursed', 'Application Fee', 'Net To Savings', 'Disbursed By'],
+            ['Date', 'Branch', 'Loan', 'Client', 'Gross Principal', 'Application Fee Charged', 'Net Credited', 'Disbursed By'],
             $rows,
             [
-                'Application fees' => $this->money((float) (clone $query)->sum('fees_deducted')),
+                'Application fees charged' => $this->money((float) (clone $query)->sum('fees_deducted')),
                 'Loans disbursed' => number_format((clone $query)->count()),
-                'Gross disbursed' => $this->money((float) (clone $query)->sum('disbursed_amount')),
+                'Gross principal disbursed' => $this->money((float) (clone $query)->sum('disbursed_amount')),
+                'Net credited to savings' => $this->money((float) (clone $query)->sum('net_amount')),
             ],
         ];
     }
@@ -1027,7 +1051,7 @@ class ReportCatalogService
         $margin = $totalIncome > 0 ? ($profit / $totalIncome) * 100 : 0;
 
         $rows = collect([
-            ['Section' => 'Income', 'Metric' => 'Application fees received', 'Amount' => $this->money($applicationFees), 'Note' => 'Fees deducted at disbursement.'],
+            ['Section' => 'Income', 'Metric' => 'Application fees received', 'Amount' => $this->money($applicationFees), 'Note' => 'Fees charged at disbursement, paid from savings or loan proceeds.'],
             ['Section' => 'Income', 'Metric' => 'Projected interest', 'Amount' => $this->money($interestAccrued), 'Note' => 'All scheduled interest due in the period.'],
             ['Section' => 'Income', 'Metric' => 'Interest collected', 'Amount' => $this->money($interestCollected), 'Note' => 'Actual interest received through repayments.'],
             ['Section' => 'Income', 'Metric' => 'Interest shown in income', 'Amount' => $this->money($interestShown), 'Note' => $interestBasis === 'projected' ? 'Projected interest is included in income.' : 'Only collected interest is included in income.'],
@@ -1241,7 +1265,7 @@ class ReportCatalogService
             ->when($payload['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->when($payload['status_in'] ?? null, fn (Builder $query, array $statuses): Builder => $query->whereIn('status', $statuses))
             ->when($dateColumn, fn (Builder $query, string $column): Builder => $query->whereBetween($column, [$from, $to]))
-            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user));
+            ->tap(fn (Builder $query) => $this->scopeLoanReport($query, $branchId, $user));
 
         $rows = $query->latest()->limit($limit)->get()->map(fn (Loan $loan): array => [
             'Loan No.' => $loan->loan_number,
@@ -1269,13 +1293,17 @@ class ReportCatalogService
             'Date' => $disbursement->disbursement_date?->format('d M Y'),
             'Loan' => $disbursement->loan?->loan_number ?? 'N/A',
             'Client' => $disbursement->loan?->client?->full_name ?? 'N/A',
-            'Gross' => $this->money((float) $disbursement->disbursed_amount),
-            'Fees' => $this->money((float) $disbursement->fees_deducted),
-            'Net' => $this->money((float) $disbursement->net_amount),
+            'Gross Principal' => $this->money((float) $disbursement->disbursed_amount),
+            'Application Fee Charged' => $this->money((float) $disbursement->fees_deducted),
+            'Net Credited' => $this->money((float) $disbursement->net_amount),
             'By' => $disbursement->disbursedBy?->name ?? 'N/A',
         ]);
 
-        return [['Date', 'Loan', 'Client', 'Gross', 'Fees', 'Net', 'By'], $rows, ['Net disbursed' => $this->money((float) $query->sum('net_amount'))]];
+        return [['Date', 'Loan', 'Client', 'Gross Principal', 'Application Fee Charged', 'Net Credited', 'By'], $rows, [
+            'Gross principal disbursed' => $this->money((float) (clone $query)->sum('disbursed_amount')),
+            'Application fees charged' => $this->money((float) (clone $query)->sum('fees_deducted')),
+            'Net credited to savings' => $this->money((float) (clone $query)->sum('net_amount')),
+        ]];
     }
 
     private function loanBook(?int $branchId, int $limit, User $user): array
@@ -1317,7 +1345,7 @@ class ReportCatalogService
         $loans = Loan::query()
             ->with(['client', 'product', 'loanAccount', 'officer', 'schedules'])
             ->whereIn('status', ['approved', 'disbursed', 'active', 'in_arrears', 'restructured', 'fully_paid', 'closed'])
-            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
+            ->tap(fn (Builder $query) => $this->scopeLoanReport($query, $branchId, $user))
             ->orderBy('loan_product_id')
             ->orderBy('loan_number')
             ->limit($limit)
@@ -1400,8 +1428,9 @@ class ReportCatalogService
             ->excludingCancelledLoans()
             ->when($payload['arrears'] ?? false, fn (Builder $query): Builder => $query->eligibleForArrears(today()))
             ->where('outstanding_amount', '>', 0)
+            ->where('status', '!=', 'paid')
             ->when($payload['future'] ?? false, fn (Builder $query): Builder => $query->whereBetween('due_date', [$from, $to]))
-            ->whereHas('loan', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+            ->whereHas('loan', fn (Builder $query): Builder => $this->scopeRepaymentReport($query, $branchId, $user));
 
         $rows = $query->orderBy('due_date')->limit($limit)->get()->map(fn (LoanSchedule $schedule): array => [
             'Due Date' => $schedule->due_date?->format('d M Y'),
@@ -1419,7 +1448,7 @@ class ReportCatalogService
     private function loanSummary(?int $branchId, User $user): array
     {
         $rows = Loan::query()
-            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
+            ->tap(fn (Builder $query) => $this->scopeLoanReport($query, $branchId, $user))
             ->selectRaw('status, count(*) as loans, sum(principal_balance) as principal, sum(interest_balance) as interest, sum(penalty_balance) as penalty')
             ->groupBy('status')
             ->orderBy('status')
@@ -1677,6 +1706,20 @@ class ReportCatalogService
         }
 
         return $query;
+    }
+
+    private function scopeLoanReport(Builder $query, ?int $branchId, User $user): Builder
+    {
+        app(LoanVisibilityService::class)->scope($query, $user);
+
+        return $branchId ? $query->where($query->getModel()->qualifyColumn('branch_id'), $branchId) : $query;
+    }
+
+    private function scopeRepaymentReport(Builder $query, ?int $branchId, User $user): Builder
+    {
+        app(LoanVisibilityService::class)->scopeRepaymentCalendar($query, $user);
+
+        return $branchId ? $query->where($query->getModel()->qualifyColumn('branch_id'), $branchId) : $query;
     }
 
     private function journalTypeNet(string $type, CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): float

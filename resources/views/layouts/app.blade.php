@@ -68,7 +68,7 @@
                             'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5',
                             'items' => [
                                 ['label' => 'Loans', 'route' => 'loans.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'view-reports'], 'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5'],
-                                ['label' => 'Arrears', 'route' => 'arrears.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'post-repayments', 'view-reports'], 'icon' => 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
+                                ['label' => 'Arrears', 'route' => 'arrears.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'view-reports'], 'hide_for_cashier' => true, 'icon' => 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
                                 ['label' => 'Loan Products', 'route' => 'loan-products.index', 'module' => 'loans', 'permissions' => ['manage-loans'], 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
                             ],
                         ],
@@ -96,7 +96,7 @@
                             ],
                         ],
                     ];
-                    $itemVisible = fn (array $item): bool => $modulesEnabled($item['modules'] ?? [$item['module'] ?? null]) && $canAny($item['permissions'] ?? []);
+                    $itemVisible = fn (array $item): bool => ! (($item['hide_for_cashier'] ?? false) && $user->isTellerCashier()) && $modulesEnabled($item['modules'] ?? [$item['module'] ?? null]) && $canAny($item['permissions'] ?? []);
                     $navGroups = array_values(array_filter(array_map(function (array $group) use ($itemVisible): array {
                         $group['items'] = array_values(array_filter($group['items'], $itemVisible));
 

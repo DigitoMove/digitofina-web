@@ -9,6 +9,7 @@ use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
 use App\Models\Guarantor;
 use App\Models\Loan;
+use App\Models\LoanDisbursement;
 use App\Models\LoanPenalty;
 use App\Models\LoanProduct;
 use App\Models\LoanRepayment;
@@ -18,6 +19,7 @@ use App\Models\Module;
 use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\SystemSetting;
 use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\TransactionType;
@@ -25,6 +27,7 @@ use App\Models\User;
 use App\Services\LoanApplicationService;
 use App\Services\LoanService;
 use App\Services\ModuleService;
+use App\Services\ReportCatalogService;
 use App\Services\TransactionPostingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\ViewErrorBag;
@@ -119,6 +122,68 @@ function loanWorkflowSavingsAccount(User $user, Client $client): Account
         'status' => 'active',
         'balance' => 250_000,
         'opened_at' => today(),
+    ]);
+}
+
+function loanWorkflowOrganizationWithModules(User $user, array $moduleSlugs): Organization
+{
+    $organization = Organization::create([
+        'name' => fake()->unique()->company(),
+        'slug' => fake()->unique()->slug(),
+        'status' => 'active',
+    ]);
+
+    Branch::whereKey($user->branch_id)->update(['organization_id' => $organization->id]);
+    $user->update(['organization_id' => $organization->id]);
+
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($organization);
+
+    foreach ($moduleSlugs as $moduleSlug) {
+        $modules->enable($organization, Module::where('slug', $moduleSlug)->firstOrFail(), $user);
+    }
+
+    return $organization;
+}
+
+function loanWorkflowTrackedLoan(User $officer, Client $client, LoanProduct $product, string $loanNumber, string $status): Loan
+{
+    return Loan::create([
+        'organization_id' => $officer->organization_id,
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $officer->id,
+        'created_by' => $officer->id,
+        'loan_number' => $loanNumber,
+        'requested_amount' => 300000,
+        'approved_amount' => 300000,
+        'principal_balance' => 300000,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 20,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'application_date' => today()->subMonth(),
+        'status' => $status,
+    ]);
+}
+
+function loanWorkflowSchedule(Loan $loan, mixed $dueDate, string $status, float $outstandingAmount = 300000): LoanSchedule
+{
+    return LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => $dueDate,
+        'principal_due' => 300000,
+        'interest_due' => 0,
+        'total_due' => 300000,
+        'outstanding_amount' => $outstandingAmount,
+        'balance_due' => $outstandingAmount,
+        'status' => $status,
+        'days_overdue' => method_exists($dueDate, 'lt') && $dueDate->lt(today()) ? 2 : 0,
     ]);
 }
 
@@ -234,6 +299,113 @@ it('lets an admin appraise approve and disburse a loan in one shortcut', functio
         ->and((float) $loan->approved_amount)->toBe(700000.0)
         ->and($loan->schedules)->toHaveCount(4)
         ->and($loan->disbursements)->toHaveCount(1);
+});
+
+it('charges the disbursement application fee from savings when savings can cover it', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $savings = loanWorkflowSavingsAccount($user, $client);
+
+    SystemSetting::withoutGlobalScope('tenant')->create([
+        'key' => 'loan_application_fee_ranges',
+        'label' => 'Loan application fee ranges',
+        'value' => json_encode([['min' => 1, 'max' => null, 'fee' => 15_000]]),
+        'type' => 'json',
+        'group' => 'loans',
+    ]);
+
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'savings_account_id' => $savings->id,
+        'loan_number' => '1001-LN-FEE-SAV',
+        'requested_amount' => 500_000,
+        'approved_amount' => 500_000,
+        'principal_balance' => 500_000,
+        'interest_rate' => 24,
+        'term_periods' => 2,
+        'repayment_frequency' => 'monthly',
+        'purpose' => 'Stock purchase',
+        'status' => 'approved',
+        'approved_by' => $user->id,
+        'approved_at' => today(),
+    ]);
+
+    app(LoanService::class)->disburseToSavings($loan, $user);
+
+    $disbursement = LoanDisbursement::firstOrFail();
+    $feeTransaction = Transaction::where('description', 'like', '%paid from savings%')->firstOrFail();
+    $report = app(ReportCatalogService::class)->generate('loan-disbursements', [
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+        'branch_id' => $user->branch_id,
+    ], $user);
+
+    expect((float) $savings->fresh()->balance)->toBe(735_000.0)
+        ->and((float) $disbursement->disbursed_amount)->toBe(500_000.0)
+        ->and((float) $disbursement->fees_deducted)->toBe(15_000.0)
+        ->and((float) $disbursement->net_amount)->toBe(500_000.0)
+        ->and((float) $feeTransaction->amount)->toBe(15_000.0)
+        ->and((float) $feeTransaction->balance_after)->toBe(235_000.0)
+        ->and($report['summary']['Gross principal disbursed'])->toBe('UGX 500,000.00')
+        ->and($report['summary']['Application fees charged'])->toBe('UGX 15,000.00')
+        ->and($report['summary']['Net credited to savings'])->toBe('UGX 500,000.00');
+});
+
+it('deducts the disbursement application fee from proceeds when savings cannot cover it', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $savings = loanWorkflowSavingsAccount($user, $client);
+    $savings->update(['balance' => 10_000]);
+
+    SystemSetting::withoutGlobalScope('tenant')->create([
+        'key' => 'loan_application_fee_ranges',
+        'label' => 'Loan application fee ranges',
+        'value' => json_encode([['min' => 1, 'max' => null, 'fee' => 15_000]]),
+        'type' => 'json',
+        'group' => 'loans',
+    ]);
+
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'savings_account_id' => $savings->id,
+        'loan_number' => '1001-LN-FEE-PRO',
+        'requested_amount' => 500_000,
+        'approved_amount' => 500_000,
+        'principal_balance' => 500_000,
+        'interest_rate' => 24,
+        'term_periods' => 2,
+        'repayment_frequency' => 'monthly',
+        'purpose' => 'Stock purchase',
+        'status' => 'approved',
+        'approved_by' => $user->id,
+        'approved_at' => today(),
+    ]);
+
+    app(LoanService::class)->disburseToSavings($loan, $user);
+
+    $disbursement = LoanDisbursement::firstOrFail();
+    $report = app(ReportCatalogService::class)->generate('loan-disbursements', [
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+        'branch_id' => $user->branch_id,
+    ], $user);
+
+    expect((float) $savings->fresh()->balance)->toBe(495_000.0)
+        ->and((float) $disbursement->disbursed_amount)->toBe(500_000.0)
+        ->and((float) $disbursement->fees_deducted)->toBe(15_000.0)
+        ->and((float) $disbursement->net_amount)->toBe(485_000.0)
+        ->and(Transaction::where('description', 'like', '%paid from savings%')->exists())->toBeFalse()
+        ->and($report['summary']['Gross principal disbursed'])->toBe('UGX 500,000.00')
+        ->and($report['summary']['Application fees charged'])->toBe('UGX 15,000.00')
+        ->and($report['summary']['Net credited to savings'])->toBe('UGX 485,000.00');
 });
 
 it('allocates repayments and releases loan guarantees when fully paid', function () {
@@ -1082,4 +1254,108 @@ it('shows arrears only for active branch loans', function () {
         ->assertSee('1001-LN-ACTIVE-BRANCH')
         ->assertDontSee('1001-LN-APPROVED-ONLY')
         ->assertDontSee('2002-LN-ACTIVE-OTHER');
+});
+
+it('scopes arrears and due repayment views to the assigned loan officer', function () {
+    $admin = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($admin, ['loans', 'reports']);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
+    $officerRole = Role::firstOrCreate(['slug' => 'loan-officer'], ['name' => 'Loan Officer']);
+    Permission::whereIn('slug', ['manage-loans', 'view-reports'])->pluck('id')->each(fn (int $permissionId) => $officerRole->permissions()->syncWithoutDetaching([$permissionId]));
+    $adminRole = Role::firstOrCreate(['slug' => 'organization-admin'], ['name' => 'Organization Admin']);
+    Permission::whereIn('slug', ['manage-loans', 'view-reports'])->pluck('id')->each(fn (int $permissionId) => $adminRole->permissions()->syncWithoutDetaching([$permissionId]));
+    $admin->update(['role_id' => $adminRole->id]);
+    $officer = User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $admin->branch_id, 'role_id' => $officerRole->id, 'status' => 'active', 'is_active' => true]);
+    $otherOfficer = User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $admin->branch_id, 'role_id' => $officerRole->id, 'status' => 'active', 'is_active' => true]);
+    $officerClient = loanWorkflowClient($officer, '+256700110001');
+    $otherClient = loanWorkflowClient($otherOfficer, '+256700110002');
+    $officerClient->update(['organization_id' => $organization->id]);
+    $otherClient->update(['organization_id' => $organization->id]);
+
+    $ownArrears = loanWorkflowTrackedLoan($officer, $officerClient, $product, '1001-LN-OFFICER-ARREARS', 'active');
+    $otherArrears = loanWorkflowTrackedLoan($otherOfficer, $otherClient, $product, '1001-LN-OTHER-ARREARS', 'active');
+    $ownDueToday = loanWorkflowTrackedLoan($officer, $officerClient, $product, '1001-LN-OFFICER-DUE', 'active');
+    $otherDueToday = loanWorkflowTrackedLoan($otherOfficer, $otherClient, $product, '1001-LN-OTHER-DUE', 'active');
+    $ownFuture = loanWorkflowTrackedLoan($officer, $officerClient, $product, '1001-LN-OFFICER-FUTURE', 'active');
+
+    loanWorkflowSchedule($ownArrears, today()->subDays(2), 'overdue');
+    loanWorkflowSchedule($otherArrears, today()->subDays(2), 'overdue');
+    loanWorkflowSchedule($ownDueToday, today(), 'pending');
+    loanWorkflowSchedule($otherDueToday, today(), 'pending');
+    loanWorkflowSchedule($ownFuture, today()->addDay(), 'pending');
+
+    $this->actingAs($officer)
+        ->get(route('arrears.index'))
+        ->assertSuccessful()
+        ->assertSee('1001-LN-OFFICER-ARREARS')
+        ->assertDontSee('1001-LN-OTHER-ARREARS');
+
+    $this->actingAs($officer)
+        ->get(route('reports.show', 'loan-accounts-in-arrears'))
+        ->assertSuccessful()
+        ->assertSee('1001-LN-OFFICER-ARREARS')
+        ->assertDontSee('1001-LN-OTHER-ARREARS');
+
+    $this->actingAs($officer)
+        ->get(route('due-repayments.index'))
+        ->assertSuccessful()
+        ->assertSee('1001-LN-OFFICER-DUE')
+        ->assertDontSee('1001-LN-OTHER-DUE')
+        ->assertDontSee('1001-LN-OFFICER-FUTURE');
+
+    $this->actingAs($officer)
+        ->get(route('dashboard'))
+        ->assertSuccessful()
+        ->assertDontSee('Next Repayments')
+        ->assertDontSee('1001-LN-OFFICER-FUTURE');
+
+    $this->actingAs($admin)
+        ->get(route('arrears.index'))
+        ->assertSuccessful()
+        ->assertSee('1001-LN-OFFICER-ARREARS')
+        ->assertSee('1001-LN-OTHER-ARREARS');
+});
+
+it('limits cashier repayment visibility to unpaid installments due today', function () {
+    $admin = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($admin, ['loans', 'reports', 'teller']);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
+    $cashierRole = Role::firstOrCreate(['slug' => 'teller-cashier'], ['name' => 'Teller Cashier']);
+    Permission::whereIn('slug', ['post-repayments', 'view-reports'])->pluck('id')->each(fn (int $permissionId) => $cashierRole->permissions()->syncWithoutDetaching([$permissionId]));
+    $cashier = User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $admin->branch_id, 'role_id' => $cashierRole->id, 'status' => 'active', 'is_active' => true]);
+    $client = loanWorkflowClient($admin, '+256700120001');
+    $client->update(['organization_id' => $organization->id]);
+    $todayLoan = loanWorkflowTrackedLoan($admin, $client, $product, '1001-LN-CASHIER-TODAY', 'active');
+    $futureLoan = loanWorkflowTrackedLoan($admin, $client, $product, '1001-LN-CASHIER-FUTURE', 'active');
+    $paidLoan = loanWorkflowTrackedLoan($admin, $client, $product, '1001-LN-CASHIER-PAID', 'active');
+    $approvedLoan = loanWorkflowTrackedLoan($admin, $client, $product, '1001-LN-CASHIER-APPROVED', 'approved');
+
+    loanWorkflowSchedule($todayLoan, today(), 'pending');
+    loanWorkflowSchedule($futureLoan, today()->addDay(), 'pending');
+    loanWorkflowSchedule($paidLoan, today(), 'paid', 0);
+    loanWorkflowSchedule($approvedLoan, today(), 'pending');
+
+    $this->actingAs($cashier)
+        ->get(route('due-repayments.index', ['date' => today()->addDay()->toDateString()]))
+        ->assertSuccessful()
+        ->assertSee(today()->format('d M Y'))
+        ->assertSee('1001-LN-CASHIER-TODAY')
+        ->assertDontSee('1001-LN-CASHIER-FUTURE')
+        ->assertDontSee('1001-LN-CASHIER-PAID')
+        ->assertDontSee('1001-LN-CASHIER-APPROVED');
+
+    $this->actingAs($cashier)
+        ->get(route('dashboard'))
+        ->assertSuccessful()
+        ->assertSee('Due today')
+        ->assertDontSee('Next Repayments')
+        ->assertDontSee('1001-LN-CASHIER-FUTURE');
+
+    expect($this->actingAs($cashier)->get(route('arrears.index'))->isSuccessful())->toBeFalse();
+
+    $this->actingAs($cashier)
+        ->get(route('reports.show', 'loan-accounts-in-arrears'))
+        ->assertNotFound();
 });

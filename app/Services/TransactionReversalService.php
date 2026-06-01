@@ -297,8 +297,7 @@ class TransactionReversalService
         }
 
         return $loan->schedules()
-            ->where('outstanding_amount', '>', 0)
-            ->whereDate('due_date', '<', today())
+            ->eligibleForArrears(today())
             ->exists() ? 'in_arrears' : 'active';
     }
 

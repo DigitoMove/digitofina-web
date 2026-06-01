@@ -32,7 +32,7 @@
             </select>
         </label>
         <label class="text-sm font-semibold text-slate-700">Officer
-            <select name="officer_id" class="mt-1">
+            <select name="officer_id" class="mt-1" @disabled(! $canFilterOfficer)>
                 <option value="">All officers</option>
                 @foreach($officers as $officer)
                     <option value="{{ $officer->id }}" @selected((int) request('officer_id') === $officer->id)>{{ $officer->name }}</option>

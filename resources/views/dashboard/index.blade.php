@@ -21,57 +21,25 @@
         ['Total clients', $totalClients, 'bg-brand-50 text-brand-800', 'from-brand-500 to-brand-600', [38, 58, 44, 68, 74], route('clients.index')],
         ['Active accounts', $activeAccounts, 'bg-emerald-50 text-emerald-700', 'from-emerald-500 to-emerald-600', [46, 52, 63, 57, 78], route('accounts.index')],
         ['Loan applications', $loanApplications, 'bg-sky-50 text-sky-700', 'from-sky-500 to-blue-600', [30, 45, 62, 58, 75], route('loans.index', ['status_group' => 'applications'])],
+        ['Loan portfolio', number_format($totalLoans, 2).' UGX', 'bg-brand-50 text-brand-800', 'from-brand-600 to-sun-400', [35, 48, 65, 62, 80], route('loans.index')],
         ['Loans in arrears', $arrearsCount, 'bg-red-50 text-red-700', 'from-red-500 to-rose-600', [20, 34, 48, 42, 60], route('arrears.index')],
         ['Due today', $dueTodayCount, 'bg-violet-50 text-violet-700', 'from-violet-500 to-indigo-600', [24, 38, 50, 70, 64], route('due-repayments.index')],
-        ['Total savings', number_format($totalSavings, 2).' UGX', 'bg-brand-50 text-brand-800', 'from-brand-500 to-forest-500', [42, 55, 61, 76, 84], route('accounts.index')],
         ['Savings balance', number_format($savingsLedgerBalance, 2).' UGX', 'bg-teal-50 text-teal-700', 'from-teal-500 to-cyan-500', [40, 50, 58, 70, 86], route('savings-accounts.index')],
-        ['Savings growth', number_format($savingsGrowthThisMonth, 2).' UGX', 'bg-emerald-50 text-emerald-700', 'from-emerald-500 to-green-500', [26, 39, 44, 60, 79], route('reports.index')],
-        ['Active savers', $activeSavers, 'bg-cyan-50 text-cyan-700', 'from-cyan-500 to-sky-500', [34, 48, 58, 63, 75], route('savings-accounts.index')],
-        ['Target progress', ($targetSavingsAmount > 0 ? number_format(($targetSavingsProgress / $targetSavingsAmount) * 100, 1) : '0.0').'%', 'bg-indigo-50 text-indigo-700', 'from-indigo-500 to-blue-500', [18, 30, 44, 58, 70], route('reports.index')],
-        ['Fixed maturing soon', $fixedSavingsMaturingSoon, 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [22, 34, 48, 62, 80], route('reports.index')],
-        ['Dormant savings', $dormantSavingsAccounts, 'bg-slate-100 text-slate-700', 'from-slate-500 to-slate-700', [16, 28, 35, 46, 55], route('savings-accounts.index', ['status' => 'dormant'])],
-        ['Total loans', number_format($totalLoans, 2).' UGX', 'bg-brand-50 text-brand-800', 'from-brand-600 to-sun-400', [35, 48, 65, 62, 80], route('loans.index')],
+        ['Investment balance', number_format($totalInvestmentBalance, 2).' UGX', 'bg-indigo-50 text-indigo-700', 'from-indigo-500 to-sky-500', [40, 46, 66, 72, 88], route('reports.show', 'investment-plan-performance')],
         ["Today's deposits", number_format($todayDeposits, 2).' UGX', 'bg-green-50 text-green-700', 'from-green-500 to-emerald-500', [28, 44, 50, 72, 88], route('reports.index')],
         ["Today's withdrawals", number_format($todayWithdrawals, 2).' UGX', 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [24, 40, 38, 52, 46], route('reports.index')],
-        ['Teller drawer balance', number_format($drawerBalance, 2).' UGX', 'bg-sun-50 text-sun-600', 'from-sun-400 to-brand-600', [34, 47, 57, 51, 69], route('teller.index')],
-        ['Pending approvals', $pendingApprovals, 'bg-rose-50 text-rose-700', 'from-rose-500 to-pink-500', [18, 26, 44, 32, 54], route('reports.index')],
-        ['Branches', $branchCount, 'bg-slate-100 text-slate-700', 'from-slate-500 to-brand-600', [44, 50, 54, 58, 62], route('branches.index')],
-        ['Active staff', $staffCount, 'bg-lime-50 text-lime-700', 'from-lime-500 to-emerald-500', [32, 43, 52, 68, 73], route('users.index')],
-        ['Audit events today', $auditEventsToday, 'bg-slate-100 text-slate-700', 'from-slate-600 to-slate-800', [20, 42, 30, 56, 48], route('audit-logs.index')],
-        ['Total investors', $totalInvestors, 'bg-cyan-50 text-cyan-700', 'from-cyan-500 to-teal-500', [35, 48, 52, 70, 82], route('reports.show', 'investment-officer-performance')],
-        ['Active investments', $totalActiveInvestments, 'bg-teal-50 text-teal-700', 'from-teal-500 to-emerald-500', [30, 42, 55, 63, 76], route('reports.show', 'active-investments')],
-        ['Investment balance', number_format($totalInvestmentBalance, 2).' UGX', 'bg-indigo-50 text-indigo-700', 'from-indigo-500 to-sky-500', [40, 46, 66, 72, 88], route('reports.show', 'investment-plan-performance')],
-        ['Returns posted', number_format($totalReturnsPosted, 2).' UGX', 'bg-lime-50 text-lime-700', 'from-lime-500 to-green-500', [26, 45, 50, 62, 78], route('reports.show', 'investment-returns')],
-        ['Maturing this month', $investmentsMaturingThisMonth, 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [28, 36, 48, 60, 74], route('reports.show', ['report' => 'investment-maturities', 'from' => now()->startOfMonth()->toDateString(), 'to' => now()->endOfMonth()->toDateString()])],
-        ['Investment withdrawals', number_format($investmentWithdrawalsThisMonth, 2).' UGX', 'bg-rose-50 text-rose-700', 'from-rose-500 to-red-500', [18, 34, 46, 42, 58], route('reports.show', ['report' => 'investment-withdrawals', 'from' => now()->startOfMonth()->toDateString(), 'to' => now()->endOfMonth()->toDateString()])],
     ];
     $cardModules = [
         'Total clients' => 'clients',
         'Active accounts' => ['savings', 'loans', 'investments', 'shares', 'fixed-deposits'],
         'Loan applications' => 'loans',
+        'Loan portfolio' => 'loans',
         'Loans in arrears' => 'loans',
         'Due today' => 'loans',
-        'Total savings' => 'savings',
         'Savings balance' => 'savings',
-        'Savings growth' => 'savings',
-        'Active savers' => 'savings',
-        'Target progress' => 'savings',
-        'Fixed maturing soon' => 'fixed-deposits',
-        'Dormant savings' => 'savings',
-        'Total loans' => 'loans',
         "Today's deposits" => 'teller',
         "Today's withdrawals" => 'teller',
-        'Teller drawer balance' => 'teller',
-        'Pending approvals' => ['loans', 'savings', 'investments', 'accounting'],
-        'Branches' => 'users',
-        'Active staff' => 'users',
-        'Audit events today' => 'audit-logs',
-        'Total investors' => 'investments',
-        'Active investments' => 'investments',
         'Investment balance' => 'investments',
-        'Returns posted' => 'investments',
-        'Maturing this month' => 'investments',
-        'Investment withdrawals' => 'investments',
     ];
     $cardIsVisible = function (array $card) use ($cardModules, $moduleEnabled): bool {
         $modules = $cardModules[$card[0]] ?? [];
@@ -81,13 +49,13 @@
     };
     $cards = array_values(array_filter($cards, $cardIsVisible));
     $essentialCardLabels = match (true) {
-        $isCashierDashboard => ['Due today', "Today's deposits", "Today's withdrawals", 'Teller drawer balance'],
-        $isLoanOfficerDashboard => ['Loan applications', 'Loans in arrears', 'Due today', 'Total loans'],
+        $isCashierDashboard => ['Due today', "Today's deposits", "Today's withdrawals"],
+        $isLoanOfficerDashboard => ['Loan applications', 'Loan portfolio', 'Loans in arrears', 'Due today'],
         default => null,
     };
     $cards = $essentialCardLabels
         ? array_values(array_filter($cards, fn (array $card): bool => in_array($card[0], $essentialCardLabels, true)))
-        : $cards;
+        : array_slice($cards, 0, 8);
 
     $cashRows = [
         ["Today's deposits", $todayDeposits, 'bg-emerald-500'],
@@ -97,8 +65,7 @@
     $cashMax = max(1, $todayDeposits, $todayWithdrawals, $drawerBalance);
 
     $portfolioRows = [
-        ['Savings', $totalSavings, 'bg-teal-500', 'savings'],
-        ['Tracked savings', $savingsLedgerBalance, 'bg-cyan-600', 'savings'],
+        ['Savings', $savingsLedgerBalance, 'bg-cyan-600', 'savings'],
         ['Loans', $totalLoans, 'bg-brand-700', 'loans'],
         ['Investments', $totalInvestmentBalance, 'bg-cyan-600', 'investments'],
         ['Drawer cash', $drawerBalance, 'bg-amber-500', 'teller'],
@@ -225,7 +192,7 @@
 </section>
 @endif
 
-@if($moduleEnabled('loans'))
+@if($moduleEnabled('loans') && $canViewRepaymentScheduleWidgets)
 <div class="mt-6 grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
     <section class="df-panel p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">

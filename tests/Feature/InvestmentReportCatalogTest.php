@@ -71,18 +71,23 @@ it('generates investment account, transaction, and performance reports', functio
         ->assertSee('UGX 125,000.00');
 });
 
-it('wires dashboard investment cards to investment reports', function () {
+it('wires the retained dashboard investment card to the investment report', function () {
     $user = investmentReportUser();
 
     $this->actingAs($user)
         ->get(route('dashboard'))
         ->assertSuccessful()
-        ->assertSee(route('reports.show', 'investment-officer-performance'), false)
-        ->assertSee(route('reports.show', 'active-investments'), false)
+        ->assertSee('Investment balance')
         ->assertSee(route('reports.show', 'investment-plan-performance'), false)
-        ->assertSee(route('reports.show', 'investment-returns'), false)
-        ->assertSee('investment-maturities', false)
-        ->assertSee('investment-withdrawals', false);
+        ->assertDontSee(route('reports.show', 'investment-officer-performance'), false)
+        ->assertDontSee(route('reports.show', 'active-investments'), false)
+        ->assertDontSee(route('reports.show', 'investment-returns'), false)
+        ->assertDontSee('investment-maturities', false)
+        ->assertDontSee('investment-withdrawals', false)
+        ->assertDontSee('Active investments')
+        ->assertDontSee('Returns posted')
+        ->assertDontSee('Maturing this month')
+        ->assertDontSee('Investment withdrawals');
 });
 
 function investmentReportUser(): User

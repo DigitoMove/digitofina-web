@@ -21,7 +21,9 @@ class DueRepaymentController extends Controller
             'date' => ['nullable', 'date'],
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
         ]);
-        $date = CarbonImmutable::parse($data['date'] ?? today()->toDateString());
+        $date = $request->user()->isTellerCashier()
+            ? CarbonImmutable::today()
+            : CarbonImmutable::parse($data['date'] ?? today()->toDateString());
         $canFilterBranch = ApiSecurity::hasGlobalBranchAccess($request->user());
         $branchId = $canFilterBranch ? (int) ($data['branch_id'] ?? 0) : (int) $request->user()->branch_id;
         $scheduleQuery = LoanSchedule::query()
@@ -31,10 +33,10 @@ class DueRepaymentController extends Controller
             ->whereHas('loan', fn (Builder $query): Builder => $visibility
                 ->scopeRepaymentCalendar($query, $request->user())
                 ->when($branchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId)))
-            ->whereDate('due_date', $date->toDateString());
-        $totalAmount = (float) (clone $scheduleQuery)
             ->where('outstanding_amount', '>', 0)
             ->where('status', '!=', 'paid')
+            ->whereDate('due_date', $date->toDateString());
+        $totalAmount = (float) (clone $scheduleQuery)
             ->sum('outstanding_amount');
         $schedules = $scheduleQuery
             ->orderBy('due_date')

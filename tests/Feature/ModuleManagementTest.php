@@ -93,10 +93,108 @@ it('shows only enabled package cards on the dashboard', function () {
         ->assertSuccessful()
         ->assertSee('Loan applications')
         ->assertSee('Loans in arrears')
-        ->assertSee('Total loans')
+        ->assertSee('Loan portfolio')
         ->assertDontSee('Savings balance')
         ->assertDontSee('Investment balance')
+        ->assertDontSee('Target progress')
+        ->assertDontSee('Dormant savings')
         ->assertDontSee("Today's deposits");
+});
+
+it('shows only the eight most relevant super admin dashboard cards', function () {
+    $superRole = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $user = User::factory()->create([
+        'role_id' => $superRole->id,
+        'organization_id' => null,
+        'branch_id' => null,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+
+    $activeOrganization = Organization::create(['name' => 'Active SACCO', 'slug' => fake()->unique()->slug(), 'status' => 'active']);
+    Organization::create(['name' => 'Suspended SACCO', 'slug' => fake()->unique()->slug(), 'status' => 'suspended']);
+    $branch = Branch::create([
+        'organization_id' => $activeOrganization->id,
+        'code' => fake()->unique()->numerify('####'),
+        'name' => 'Main Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    User::factory()->create([
+        'organization_id' => $activeOrganization->id,
+        'branch_id' => $branch->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $client = Client::create([
+        'organization_id' => $activeOrganization->id,
+        'branch_id' => $branch->id,
+        'client_number' => fake()->unique()->numerify('1001-C######'),
+        'client_type' => 'individual',
+        'first_name' => 'Dashboard',
+        'last_name' => 'Client',
+        'phone' => fake()->unique()->numerify('+2567########'),
+        'status' => 'active',
+    ]);
+    $savingsProduct = SavingsProduct::create([
+        'organization_id' => $activeOrganization->id,
+        'name' => 'Ordinary Savings',
+        'code' => fake()->unique()->bothify('SAV-??'),
+        'minimum_balance' => 0,
+        'interest_rate' => 0,
+        'status' => 'active',
+    ]);
+    SavingsAccount::create([
+        'organization_id' => $activeOrganization->id,
+        'branch_id' => $branch->id,
+        'client_id' => $client->id,
+        'savings_product_id' => $savingsProduct->id,
+        'account_number' => fake()->unique()->numerify('SAV-######'),
+        'opening_date' => today(),
+        'current_balance' => 250000,
+        'available_balance' => 250000,
+        'status' => 'active',
+    ]);
+    $loanProduct = LoanProduct::create([
+        'organization_id' => $activeOrganization->id,
+        'name' => 'Business Loan',
+        'code' => fake()->unique()->bothify('LN-??'),
+        'min_amount' => 1000,
+        'max_amount' => 1000000,
+        'annual_interest_rate' => 12,
+        'interest_method' => 'flat',
+        'repayment_frequency' => 'monthly',
+        'default_term_months' => 6,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    Loan::create([
+        'organization_id' => $activeOrganization->id,
+        'branch_id' => $branch->id,
+        'client_id' => $client->id,
+        'loan_product_id' => $loanProduct->id,
+        'loan_number' => fake()->unique()->numerify('1001-LN-######'),
+        'requested_amount' => 500000,
+        'principal_balance' => 400000,
+        'interest_rate' => 12,
+        'term_periods' => 6,
+        'repayment_frequency' => 'monthly',
+        'status' => 'in_arrears',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertSuccessful()
+        ->assertSee('Organizations')
+        ->assertSee('Active organizations')
+        ->assertSee('Suspended/disabled')
+        ->assertSee('Staff users')
+        ->assertSee('Clients')
+        ->assertSee('Loan portfolio')
+        ->assertSee('Savings balance')
+        ->assertSee('Investment balance')
+        ->assertDontSee('Active branches')
+        ->assertDontSee('Active accounts');
 });
 
 it('hides repayment calendar amounts for loan officers', function () {

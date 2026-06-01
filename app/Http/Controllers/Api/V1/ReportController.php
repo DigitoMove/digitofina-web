@@ -23,6 +23,7 @@ use App\Models\ReportExport;
 use App\Models\SavingsAccount;
 use App\Models\SavingsGoal;
 use App\Models\SavingsTransaction;
+use App\Services\LoanVisibilityService;
 use App\Services\ModuleService;
 use App\Support\ApiResponse;
 use App\Support\ApiSecurity;
@@ -31,7 +32,7 @@ use Illuminate\Http\Request;
 
 class ReportController extends Controller
 {
-    public function dashboard(Request $request): JsonResponse
+    public function dashboard(Request $request, LoanVisibilityService $visibility): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
         $moduleEnabled = fn (string $module): bool => $this->moduleEnabled($request, $module);
@@ -40,8 +41,8 @@ class ReportController extends Controller
             'clients' => ApiSecurity::scopeTenant(Client::query(), $request->user())->count(),
             'active_clients' => ApiSecurity::scopeTenant(Client::query(), $request->user())->where('status', 'active')->count(),
             'total_savings' => $moduleEnabled('savings') ? (float) ApiSecurity::scopeTenant(SavingsAccount::query(), $request->user())->sum('current_balance') : null,
-            'loan_portfolio' => $moduleEnabled('loans') ? (float) ApiSecurity::scopeTenant(Loan::query(), $request->user())->whereIn('status', ['approved', 'active', 'in_arrears'])->sum('principal_balance') : null,
-            'arrears' => $moduleEnabled('loans') ? (float) LoanSchedule::query()->excludingCancelledLoans()->eligibleForArrears(now())->whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->sum('outstanding_amount') : null,
+            'loan_portfolio' => $moduleEnabled('loans') ? (float) $visibility->scope(ApiSecurity::scopeTenant(Loan::query(), $request->user()), $request->user())->whereIn('status', ['approved', 'active', 'in_arrears'])->sum('principal_balance') : null,
+            'arrears' => $moduleEnabled('loans') ? (float) LoanSchedule::query()->excludingCancelledLoans()->eligibleForArrears(now())->whereHas('loan', fn ($query) => $visibility->scopeRepaymentCalendar(ApiSecurity::scopeTenant($query, $request->user()), $request->user()))->sum('outstanding_amount') : null,
             'deposits_today' => $moduleEnabled('savings') ? (float) ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user())->where('type', 'deposit')->whereDate('transaction_date', today())->sum('amount') : null,
             'withdrawals_today' => $moduleEnabled('savings') ? (float) ApiSecurity::scopeTenant(SavingsTransaction::query(), $request->user())->where('type', 'withdrawal')->whereDate('transaction_date', today())->sum('amount') : null,
             'total_investors' => $moduleEnabled('investments') ? ApiSecurity::scopeTenant(InvestorAccount::query(), $request->user())->where('status', 'active')->count() : null,
@@ -158,13 +159,14 @@ class ReportController extends Controller
         return ApiResponse::data($rows, 'Loan report retrieved.');
     }
 
-    public function arrears(Request $request): JsonResponse
+    public function arrears(Request $request, LoanVisibilityService $visibility): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports'), 403);
-        $this->requireModule($request, 'teller');
+        abort_if($request->user()->isTellerCashier(), 403);
+        $this->requireModule($request, 'loans');
 
         return ApiResponse::collection(
-            LoanScheduleResource::collection(LoanSchedule::query()->with('loan.client')->excludingCancelledLoans()->eligibleForArrears(now())->whereHas('loan', fn ($query) => ApiSecurity::scopeTenant($query, $request->user()))->paginate($request->integer('per_page', 30))),
+            LoanScheduleResource::collection(LoanSchedule::query()->with('loan.client')->excludingCancelledLoans()->eligibleForArrears(now())->whereHas('loan', fn ($query) => $visibility->scopeRepaymentCalendar(ApiSecurity::scopeTenant($query, $request->user()), $request->user()))->paginate($request->integer('per_page', 30))),
             'Arrears report retrieved.'
         );
     }

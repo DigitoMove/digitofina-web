@@ -21,6 +21,7 @@ class ArrearsController extends Controller
     public function index(Request $request, LoanVisibilityService $visibility, BusinessCalendarService $calendar): View
     {
         abort_unless(auth()->user()->canPerform('manage-loans') || auth()->user()->canPerform('view-reports'), 403);
+        abort_if($request->user()->isTellerCashier(), 403);
 
         $data = $request->validate([
             'bucket' => ['nullable', 'string', 'in:1-30,31-60,61-90,91-180,180+'],
@@ -31,11 +32,12 @@ class ArrearsController extends Controller
         ]);
         $canFilterBranch = ApiSecurity::hasGlobalBranchAccess($request->user());
         $branchId = $canFilterBranch ? (int) ($data['branch_id'] ?? 0) : (int) $request->user()->branch_id;
+        $canFilterOfficer = ! $request->user()->hasRole('loan-officer');
         $loanScope = fn (Builder $query): Builder => $visibility
             ->scopeRepaymentCalendar($query, $request->user())
             ->when($branchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId))
             ->when($data['loan_product_id'] ?? null, fn (Builder $query, int $productId): Builder => $query->where('loan_product_id', $productId))
-            ->when($data['officer_id'] ?? null, fn (Builder $query, int $officerId): Builder => $query->where('officer_id', $officerId))
+            ->when($canFilterOfficer && ($data['officer_id'] ?? null), fn (Builder $query): Builder => $query->where('officer_id', (int) $data['officer_id']))
             ->when($data['search'] ?? null, function (Builder $query, string $search): Builder {
                 return $query->where(function (Builder $query) use ($search): void {
                     $query->where('loan_number', 'like', "%{$search}%")
@@ -90,10 +92,12 @@ class ArrearsController extends Controller
                 ->with('role')
                 ->where('status', 'active')
                 ->when($branchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId))
+                ->when(! $canFilterOfficer, fn (Builder $query): Builder => $query->whereKey($request->user()->id))
                 ->whereHas('role', fn (Builder $query): Builder => $query->whereIn('slug', ['branch-manager', 'loan-officer']))
                 ->orderBy('name')
                 ->get(),
             'canFilterBranch' => $canFilterBranch,
+            'canFilterOfficer' => $canFilterOfficer,
             'selectedBranchId' => $branchId,
         ]);
     }
@@ -101,11 +105,17 @@ class ArrearsController extends Controller
     public function applyPenalties(Request $request, LoanService $service): RedirectResponse
     {
         abort_unless(auth()->user()->canPerform('manage-loans'), 403);
+        abort_if($request->user()->isTellerCashier(), 403);
 
         $canFilterBranch = ApiSecurity::hasGlobalBranchAccess($request->user());
         $loan = $request->integer('loan_id') ? Loan::findOrFail($request->integer('loan_id')) : null;
+        if ($loan && $request->user()->hasRole('loan-officer')) {
+            abort_unless((int) $loan->officer_id === (int) $request->user()->id, 403);
+        }
+
         $branchId = $canFilterBranch ? $request->integer('branch_id') : (int) $request->user()->branch_id;
-        $count = $service->applyOverduePenalties($loan, branchId: $branchId ?: null);
+        $officerId = $request->user()->hasRole('loan-officer') ? (int) $request->user()->id : null;
+        $count = $service->applyOverduePenalties($loan, branchId: $branchId ?: null, officerId: $officerId);
 
         return back()->with('status', "{$count} overdue installment(s) checked.");
     }

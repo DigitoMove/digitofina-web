@@ -254,6 +254,7 @@ class LoanWorkflowController extends Controller
     public function arrears(Request $request, LoanVisibilityService $visibility): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-loans') || $request->user()->canPerform('view-reports'), 403);
+        abort_if($request->user()->isTellerCashier(), 403);
 
         $arrearsQuery = LoanSchedule::query()
             ->with('loan')
