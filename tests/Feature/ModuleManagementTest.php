@@ -257,7 +257,9 @@ it('hides repayment calendar amounts for loan officers', function () {
     $this->actingAs($user)
         ->get(route('dashboard'))
         ->assertSuccessful()
-        ->assertSee('1 loan not collected')
+        ->assertSee('Due today')
+        ->assertDontSee('Repayment Calendar')
+        ->assertDontSee('Next Repayments')
         ->assertDontSee('UGX 123,400');
 });
 
