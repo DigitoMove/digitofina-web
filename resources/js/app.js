@@ -782,6 +782,147 @@ const initResponsiveTables = () => {
     });
 };
 
+const initTableExports = () => {
+    const escapeHtml = (value) => String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    const fileSafe = (value) => String(value || 'export')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 80) || 'export';
+    const tableTitle = (table, index) => {
+        const explicit = table.dataset.exportTitle;
+
+        if (explicit) {
+            return explicit;
+        }
+
+        const panel = table.closest('.df-panel, section, article, main');
+        const heading = panel?.querySelector('h1, h2, h3') || document.querySelector('main h1');
+
+        return heading?.textContent?.trim() || `Table ${index + 1}`;
+    };
+    const cellText = (cell) => cell.textContent.replace(/\s+/g, ' ').trim();
+    const rowsFor = (table) => [...table.querySelectorAll('tr')]
+        .map((row) => [...row.children]
+            .filter((cell) => !cell.matches('[data-export-exclude]'))
+            .map(cellText))
+        .filter((row) => row.some((value) => value !== ''));
+    const csvFor = (rows) => rows
+        .map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','))
+        .join('\r\n');
+    const download = (content, filename, type) => {
+        const blob = new Blob([content], { type });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    };
+    const excelFor = (title, rows) => `
+        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+        <head><meta charset="utf-8"></head>
+        <body>
+            <table>
+                <caption>${escapeHtml(title)}</caption>
+                ${rows.map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join('')}
+            </table>
+        </body>
+        </html>
+    `;
+    const printPdf = (title, rows) => {
+        const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=800');
+
+        if (!printWindow) {
+            window.print();
+
+            return;
+        }
+
+        printWindow.document.write(`
+            <!doctype html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>${escapeHtml(title)}</title>
+                <style>
+                    body { font-family: Arial, sans-serif; color: #0f172a; margin: 24px; }
+                    h1 { font-size: 20px; margin: 0 0 6px; }
+                    p { color: #64748b; margin: 0 0 18px; font-size: 12px; }
+                    table { border-collapse: collapse; width: 100%; font-size: 11px; }
+                    th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; vertical-align: top; }
+                    th { background: #f1f5f9; }
+                    tr:nth-child(even) td { background: #f8fafc; }
+                    @page { size: landscape; margin: 14mm; }
+                </style>
+            </head>
+            <body>
+                <h1>${escapeHtml(title)}</h1>
+                <p>Generated ${escapeHtml(new Date().toLocaleString())}</p>
+                <table>${rows.map((row, rowIndex) => `
+                    <tr>${row.map((value) => `<${rowIndex === 0 ? 'th' : 'td'}>${escapeHtml(value)}</${rowIndex === 0 ? 'th' : 'td'}>`).join('')}</tr>
+                `).join('')}</table>
+                <script>window.addEventListener('load', () => { window.print(); });<\/script>
+            </body>
+            </html>
+        `);
+        printWindow.document.close();
+    };
+
+    document.querySelectorAll('main table:not([data-exportable="false"])').forEach((table, index) => {
+        if (table.dataset.exportReady === '1') {
+            return;
+        }
+
+        const rows = rowsFor(table);
+
+        if (rows.length === 0) {
+            return;
+        }
+
+        const title = tableTitle(table, index);
+        const toolbar = document.createElement('div');
+        toolbar.className = 'mb-2 flex flex-wrap items-center justify-end gap-2 text-xs';
+        toolbar.dataset.tableExportToolbar = '1';
+        toolbar.innerHTML = `
+            <span class="mr-auto font-semibold text-slate-500">Export table</span>
+            <button type="button" class="rounded border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm hover:bg-slate-50" data-table-export="csv">CSV</button>
+            <button type="button" class="rounded border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm hover:bg-slate-50" data-table-export="xls">Excel</button>
+            <button type="button" class="rounded border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm hover:bg-slate-50" data-table-export="pdf">PDF</button>
+        `;
+
+        const tableParent = table.parentElement;
+        const insertHost = tableParent?.classList.contains('overflow-auto') ? tableParent.parentElement : tableParent;
+        const insertBefore = tableParent?.classList.contains('overflow-auto') ? tableParent : table;
+
+        insertHost?.insertBefore(toolbar, insertBefore);
+        toolbar.querySelectorAll('[data-table-export]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const currentRows = rowsFor(table);
+                const filename = `${fileSafe(title)}-${new Date().toISOString().slice(0, 10)}`;
+
+                if (button.dataset.tableExport === 'csv') {
+                    download(csvFor(currentRows), `${filename}.csv`, 'text/csv;charset=utf-8');
+                } else if (button.dataset.tableExport === 'xls') {
+                    download(excelFor(title, currentRows), `${filename}.xls`, 'application/vnd.ms-excel;charset=utf-8');
+                } else {
+                    printPdf(title, currentRows);
+                }
+            });
+        });
+
+        table.dataset.exportReady = '1';
+    });
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     initSteps();
@@ -797,5 +938,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initLoanCoverageModal();
     initLedgerAccountModals();
     initDataWipeTargets();
+    initTableExports();
     initResponsiveTables();
 });
