@@ -83,6 +83,9 @@ class LoanService
                 'approved_by' => $approver->id,
                 'approved_at' => $workflowDate->toDateString(),
             ]);
+            $loan->loanGuarantors()
+                ->whereNotIn('status', ['rejected', 'released'])
+                ->update(['guaranteed_amount' => $approvedAmount]);
 
             $this->generateSchedule($loan->refresh()->load('product'), $workflowDate);
 
@@ -478,6 +481,9 @@ class LoanService
                 'repayment_frequency' => $repaymentFrequency,
                 'required_savings_amount' => round($approvedAmount * ((float) $product->required_savings_percentage / 100), 2),
             ]);
+            $loan->loanGuarantors()
+                ->whereNotIn('status', ['rejected', 'released'])
+                ->update(['guaranteed_amount' => $approvedAmount]);
 
             $this->generateSchedule($loan->refresh()->load('product'), $scheduleStartDate);
             $freshLoan = $loan->refresh();

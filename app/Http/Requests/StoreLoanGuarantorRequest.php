@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Loan;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -15,8 +16,14 @@ class StoreLoanGuarantorRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $loan = $this->route('loan');
+        $guaranteedAmount = $loan instanceof Loan
+            ? ((float) $loan->approved_amount > 0 ? (float) $loan->approved_amount : (float) $loan->requested_amount)
+            : $this->input('guaranteed_amount');
+
         $this->merge([
             'status' => $this->input('status', 'pending'),
+            'guaranteed_amount' => $guaranteedAmount,
         ]);
     }
 

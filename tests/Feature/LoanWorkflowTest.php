@@ -247,6 +247,156 @@ it('approves and disburses a loan with guarantor checks and a repayment schedule
         ->and((float) $loan->interest_balance)->toBeGreaterThan(0.0);
 });
 
+it('copies guarantors from the client most recent loan with guarantors', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $oldGuarantorClient = loanWorkflowClient($user, '+256700000010');
+    $recentGuarantorClient = loanWorkflowClient($user, '+256700000011');
+    $product = loanWorkflowProduct();
+    loanWorkflowSavingsAccount($user, $client);
+
+    $olderLoan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '1001-LN-OLD-GUA',
+        'requested_amount' => 400_000,
+        'principal_balance' => 0,
+        'interest_rate' => 24,
+        'term_periods' => 3,
+        'repayment_frequency' => 'monthly',
+        'application_date' => today()->subMonths(3),
+        'status' => 'closed',
+    ]);
+    Guarantor::create([
+        'loan_id' => $olderLoan->id,
+        'guarantor_client_id' => $oldGuarantorClient->id,
+        'type' => 'existing_client',
+        'name' => $oldGuarantorClient->full_name,
+        'phone' => '+256700000010',
+        'guaranteed_amount' => 400_000,
+        'status' => 'accepted',
+    ]);
+
+    $recentLoan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '1001-LN-NEW-GUA',
+        'requested_amount' => 600_000,
+        'principal_balance' => 0,
+        'interest_rate' => 24,
+        'term_periods' => 4,
+        'repayment_frequency' => 'monthly',
+        'application_date' => today()->subMonth(),
+        'status' => 'active',
+    ]);
+    Guarantor::create([
+        'loan_id' => $recentLoan->id,
+        'guarantor_client_id' => $recentGuarantorClient->id,
+        'type' => 'existing_client',
+        'name' => $recentGuarantorClient->full_name,
+        'phone' => '+256700000011',
+        'relationship' => 'Business partner',
+        'guaranteed_amount' => 600_000,
+        'status' => 'accepted',
+    ]);
+
+    $loan = app(LoanApplicationService::class)->submit([
+        'client_id' => $client->id,
+        'loan_product_id' => $product->id,
+        'requested_amount' => 800_000,
+        'term_periods' => 6,
+        'repayment_frequency' => 'monthly',
+        'purpose' => 'Restocking',
+        'source_of_repayment' => 'Business sales',
+    ], $user);
+
+    $guarantor = $loan->loanGuarantors()->firstOrFail();
+
+    expect($loan->loanGuarantors()->count())->toBe(1)
+        ->and($guarantor->guarantor_client_id)->toBe($recentGuarantorClient->id)
+        ->and($guarantor->name)->toBe($recentGuarantorClient->full_name)
+        ->and($guarantor->relationship)->toBe('Business partner')
+        ->and((float) $guarantor->guaranteed_amount)->toBe(800_000.0)
+        ->and($guarantor->status)->toBe('accepted');
+});
+
+it('uses the loan amount for manually attached guarantors and approved guarantor coverage', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $guarantorClient = loanWorkflowClient($user, '+256700000012');
+    $product = loanWorkflowProduct();
+    loanWorkflowSavingsAccount($user, $client);
+
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '1001-LN-GUA-AMT',
+        'requested_amount' => 1_000_000,
+        'principal_balance' => 0,
+        'interest_rate' => 24,
+        'term_periods' => 6,
+        'repayment_frequency' => 'monthly',
+        'purpose' => 'Stock purchase',
+        'status' => 'submitted',
+    ]);
+
+    $this->actingAs($user)->post(route('loans.guarantors.store', $loan), [
+        'type' => 'existing_client',
+        'guarantor_client_id' => $guarantorClient->id,
+        'name' => $guarantorClient->full_name,
+        'guaranteed_amount' => 50_000,
+        'status' => 'accepted',
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $guarantor = $loan->loanGuarantors()->firstOrFail();
+
+    expect((float) $guarantor->guaranteed_amount)->toBe(1_000_000.0);
+
+    app(LoanService::class)->approve($loan, $user, 850_000, 'Approved lower than requested.');
+
+    expect((float) $guarantor->fresh()->guaranteed_amount)->toBe(850_000.0);
+});
+
+it('leaves a new loan without guarantors when the client has no prior loan guarantors', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct();
+    loanWorkflowSavingsAccount($user, $client);
+
+    Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '1001-LN-NO-GUA',
+        'requested_amount' => 400_000,
+        'principal_balance' => 0,
+        'interest_rate' => 24,
+        'term_periods' => 3,
+        'repayment_frequency' => 'monthly',
+        'application_date' => today()->subMonth(),
+        'status' => 'closed',
+    ]);
+
+    $loan = app(LoanApplicationService::class)->submit([
+        'client_id' => $client->id,
+        'loan_product_id' => $product->id,
+        'requested_amount' => 800_000,
+        'term_periods' => 6,
+        'repayment_frequency' => 'monthly',
+        'purpose' => 'Restocking',
+        'source_of_repayment' => 'Business sales',
+    ], $user);
+
+    expect($loan->loanGuarantors()->exists())->toBeFalse();
+});
+
 it('lets an admin appraise approve and disburse a loan in one shortcut', function () {
     $user = loanWorkflowUser();
     $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
@@ -1284,6 +1434,26 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
     loanWorkflowSchedule($ownDueToday, today(), 'pending');
     loanWorkflowSchedule($otherDueToday, today(), 'pending');
     loanWorkflowSchedule($ownFuture, today()->addDay(), 'pending');
+    LoanRepayment::create([
+        'organization_id' => $organization->id,
+        'loan_id' => $ownArrears->id,
+        'client_id' => $officerClient->id,
+        'branch_id' => $officer->branch_id,
+        'received_by' => $admin->id,
+        'amount' => 125000,
+        'principal_paid' => 125000,
+        'paid_at' => today(),
+    ]);
+    LoanRepayment::create([
+        'organization_id' => $organization->id,
+        'loan_id' => $otherArrears->id,
+        'client_id' => $otherClient->id,
+        'branch_id' => $otherOfficer->branch_id,
+        'received_by' => $admin->id,
+        'amount' => 95000,
+        'principal_paid' => 95000,
+        'paid_at' => today(),
+    ]);
 
     $this->actingAs($officer)
         ->get(route('arrears.index'))
@@ -1307,7 +1477,14 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
     $this->actingAs($officer)
         ->get(route('dashboard'))
         ->assertSuccessful()
-        ->assertDontSee('Next Repayments')
+        ->assertSee('Repayment Calendar')
+        ->assertSee('Due Today')
+        ->assertSee('Recent Loan Payments')
+        ->assertSee('1001-LN-OFFICER-DUE')
+        ->assertSee('1001-LN-OFFICER-ARREARS')
+        ->assertSee('UGX 125,000.00')
+        ->assertDontSee('1001-LN-OTHER-DUE')
+        ->assertDontSee('UGX 95,000.00')
         ->assertDontSee('1001-LN-OFFICER-FUTURE');
 
     $this->actingAs($admin)
@@ -1350,7 +1527,10 @@ it('limits cashier repayment visibility to unpaid installments due today', funct
         ->get(route('dashboard'))
         ->assertSuccessful()
         ->assertSee('Due today')
-        ->assertDontSee('Next Repayments')
+        ->assertSee('Repayment Calendar')
+        ->assertSee('Due Today')
+        ->assertSee('1001-LN-CASHIER-TODAY')
+        ->assertDontSee('UGX 300,000')
         ->assertDontSee('1001-LN-CASHIER-FUTURE');
 
     expect($this->actingAs($cashier)->get(route('arrears.index'))->isSuccessful())->toBeFalse();

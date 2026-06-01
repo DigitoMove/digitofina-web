@@ -8,6 +8,7 @@ use App\Models\Client;
 use App\Models\InvestmentPlan;
 use App\Models\InvestorAccount;
 use App\Models\Loan;
+use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
 use App\Models\Organization;
 use App\Models\Package;
@@ -55,6 +56,8 @@ class DashboardController extends Controller
         $investmentsEnabled = $moduleIsEnabled('investments');
         $tellerEnabled = $moduleIsEnabled('teller');
         $usersEnabled = $moduleIsEnabled('users');
+        $isCashierDashboard = $user->isTellerCashier();
+        $isLoanOfficerDashboard = $user->hasRole('loan-officer');
         $drawer = $user->drawerSessions()->with('drawer')->where('status', 'open')->latest()->first()?->drawer;
         $today = CarbonImmutable::today();
         $monthStart = $today->startOfMonth();
@@ -64,13 +67,14 @@ class DashboardController extends Controller
         $calendarScope = fn (Builder $query): Builder => $visibility
             ->scopeRepaymentCalendar($query, $user)
             ->when($selectedCalendarBranchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
-        $canViewRepaymentCalendarAmounts = ! ($user->isTellerCashier() || $user->hasRole('loan-officer'));
-        $canViewRepaymentScheduleWidgets = ! ($user->isTellerCashier() || $user->hasRole('loan-officer'));
+        $canViewRepaymentCalendarAmounts = ! ($isCashierDashboard || $isLoanOfficerDashboard);
+        $showRepaymentScheduleWidgets = true;
         $arrearsCutoffDate = $today->copy()->subDay()->toDateString();
         $dueToday = collect();
         $dueTodayTotals = null;
         $nextRepayments = collect();
         $calendarCounts = collect();
+        $officerRecentRepayments = collect();
 
         if ($loansEnabled) {
             $dueToday = LoanSchedule::query()
@@ -93,7 +97,7 @@ class DashboardController extends Controller
                 ->whereDate('due_date', $today->toDateString())
                 ->selectRaw('count(*) as total, coalesce(sum(outstanding_amount), 0) as amount')
                 ->first();
-            if ($canViewRepaymentScheduleWidgets) {
+            if ($showRepaymentScheduleWidgets) {
                 $nextRepayments = LoanSchedule::query()
                     ->with(['loan.client', 'loan.product'])
                     ->excludingCancelledLoans()
@@ -123,6 +127,21 @@ class DashboardController extends Controller
                     ->groupBy('due_date')
                     ->get()
                     ->keyBy(fn (LoanSchedule $schedule): string => $schedule->due_date->toDateString());
+            }
+
+            if ($isCashierDashboard || $isLoanOfficerDashboard) {
+                $nextRepayments = $dueToday;
+            }
+
+            if ($isLoanOfficerDashboard) {
+                $officerRecentRepayments = LoanRepayment::query()
+                    ->with(['loan.client', 'receivedBy'])
+                    ->whereHas('loan', fn (Builder $query): Builder => $query->where('officer_id', $user->id))
+                    ->whereNull('reversed_at')
+                    ->latest('paid_at')
+                    ->latest()
+                    ->limit(8)
+                    ->get();
             }
         }
         $calendarDays = collect(CarbonPeriod::create($monthStart->startOfWeek(CarbonInterface::SUNDAY), $monthEnd->endOfWeek(CarbonInterface::SATURDAY)))
@@ -199,10 +218,11 @@ class DashboardController extends Controller
             'dueTodayAmount' => (float) ($dueTodayTotals?->amount ?? 0),
             'nextRepayments' => $nextRepayments,
             'cashierRecentTransactions' => $cashierRecentTransactions,
+            'officerRecentRepayments' => $officerRecentRepayments,
             'calendarDays' => $calendarDays,
             'calendarMonth' => $today,
             'canViewRepaymentCalendarAmounts' => $canViewRepaymentCalendarAmounts,
-            'canViewRepaymentScheduleWidgets' => $canViewRepaymentScheduleWidgets,
+            'showRepaymentScheduleWidgets' => $showRepaymentScheduleWidgets,
             'arrearsCount' => $arrearsCount,
             'arrearsAmount' => $arrearsAmount,
             'loanApplications' => $loanApplications,

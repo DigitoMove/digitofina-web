@@ -58,7 +58,13 @@ class LoanApplicationService
         ]);
 
         $this->writePreviewSchedule($loan->refresh()->load('product'), $requestedAmount);
+        $copiedGuarantors = $this->copyRecentGuarantors($loan);
         $this->auditLogger->record('loan.created', $loan, $loan->toArray());
+        if ($copiedGuarantors > 0) {
+            $this->auditLogger->record('loan.guarantors_reused', $loan, [
+                'copied_guarantors' => $copiedGuarantors,
+            ]);
+        }
         $freshLoan = $loan->refresh()->loadMissing('client', 'officer');
         $loanUrl = route('loans.show', $freshLoan);
         $this->notifications->notifyLoanOfficer(
@@ -79,6 +85,47 @@ class LoanApplicationService
         );
 
         return $freshLoan;
+    }
+
+    private function copyRecentGuarantors(Loan $loan): int
+    {
+        $sourceLoan = Loan::query()
+            ->with(['loanGuarantors' => fn ($query) => $query
+                ->whereNotIn('status', ['rejected', 'released'])
+                ->oldest('id')])
+            ->where('client_id', $loan->client_id)
+            ->whereKeyNot($loan->id)
+            ->whereHas('loanGuarantors', fn ($query) => $query->whereNotIn('status', ['rejected', 'released']))
+            ->orderByDesc('application_date')
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $sourceLoan) {
+            return 0;
+        }
+
+        foreach ($sourceLoan->loanGuarantors as $guarantor) {
+            $loan->loanGuarantors()->create([
+                'organization_id' => $loan->organization_id,
+                'guarantor_client_id' => $guarantor->guarantor_client_id,
+                'type' => $guarantor->type,
+                'name' => $guarantor->name,
+                'phone' => $guarantor->phone,
+                'national_id' => $guarantor->national_id,
+                'address' => $guarantor->address,
+                'relationship' => $guarantor->relationship,
+                'guaranteed_amount' => $this->guaranteedAmount($loan),
+                'document_path' => $guarantor->document_path,
+                'status' => $guarantor->status,
+            ]);
+        }
+
+        return $sourceLoan->loanGuarantors->count();
+    }
+
+    private function guaranteedAmount(Loan $loan): float
+    {
+        return (float) $loan->approved_amount > 0 ? (float) $loan->approved_amount : (float) $loan->requested_amount;
     }
 
     /**

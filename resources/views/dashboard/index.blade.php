@@ -192,13 +192,22 @@
 </section>
 @endif
 
-@if($moduleEnabled('loans') && $canViewRepaymentScheduleWidgets)
+@if($moduleEnabled('loans') && $showRepaymentScheduleWidgets)
 <div class="mt-6 grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
     <section class="df-panel p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h2 class="text-lg font-semibold text-slate-950">Repayment Calendar</h2>
-                <p class="text-sm text-slate-500">{{ $calendarMonth->format('F Y') }} next repayments distributed by scheduled due date.</p>
+                <p class="text-sm text-slate-500">
+                    {{ $calendarMonth->format('F Y') }}
+                    @if($isCashierDashboard)
+                        branch loans due by scheduled date.
+                    @elseif($isLoanOfficerDashboard)
+                        loans assigned to you by scheduled date.
+                    @else
+                        next repayments distributed by scheduled due date.
+                    @endif
+                </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 @if($canFilterCalendarBranch)
@@ -252,12 +261,12 @@
     <section class="df-panel p-5">
         <div class="flex items-center justify-between gap-3">
             <div>
-                <h2 class="text-lg font-semibold text-slate-950">Next Repayments</h2>
-                <p class="text-sm text-slate-500">Upcoming clients expected to pay.</p>
+                <h2 class="text-lg font-semibold text-slate-950">{{ $isCompactDashboard ? 'Due Today' : 'Next Repayments' }}</h2>
+                <p class="text-sm text-slate-500">{{ $isCompactDashboard ? 'Clients expected to pay today.' : 'Upcoming clients expected to pay.' }}</p>
             </div>
             <div class="text-right">
                 <div class="text-2xl font-semibold text-slate-950">{{ $nextRepayments->count() }}</div>
-                <div class="text-xs text-slate-500">Upcoming</div>
+                <div class="text-xs text-slate-500">{{ $isCompactDashboard ? 'Today' : 'Upcoming' }}</div>
             </div>
         </div>
         <div class="mt-5 divide-y divide-slate-200">
@@ -282,12 +291,52 @@
                     </div>
                 </div>
             @empty
-                <div class="py-10 text-center text-sm text-slate-500">No upcoming repayments are scheduled.</div>
+                <div class="py-10 text-center text-sm text-slate-500">{{ $isCompactDashboard ? 'No loan repayments are due today.' : 'No upcoming repayments are scheduled.' }}</div>
             @endforelse
         </div>
         <a href="{{ route('due-repayments.index', array_filter(['branch_id' => $selectedCalendarBranchId])) }}" class="mt-4 inline-flex text-sm font-semibold text-brand-700">View due today</a>
     </section>
 </div>
+@endif
+
+@if($isLoanOfficerDashboard && $moduleEnabled('loans'))
+<section class="df-panel mt-6 overflow-hidden">
+    <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+        <div>
+            <h2 class="text-lg font-semibold text-slate-950">Recent Loan Payments</h2>
+            <p class="text-sm text-slate-500">Latest repayments posted on loans assigned to you.</p>
+        </div>
+        <a href="{{ route('reports.show', 'loan-recovery') }}" class="df-action-secondary">View report</a>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+            <thead class="bg-slate-50 text-slate-600">
+                <tr>
+                    <th class="p-3">Date</th>
+                    <th>Client</th>
+                    <th>Loan</th>
+                    <th>Received by</th>
+                    <th class="text-right">Amount</th>
+                    <th class="text-right">Receipt</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($officerRecentRepayments as $repayment)
+                    <tr class="border-t border-slate-200">
+                        <td class="p-3 whitespace-nowrap">{{ $repayment->paid_at?->format('d M Y') }}</td>
+                        <td class="font-medium text-slate-950">{{ $repayment->loan?->client?->full_name ?? $repayment->client?->full_name ?? 'Client' }}</td>
+                        <td><a href="{{ route('loans.show', $repayment->loan) }}" class="font-semibold text-blue-700">{{ $repayment->loan?->loan_number }}</a></td>
+                        <td>{{ $repayment->receivedBy?->name ?? 'System' }}</td>
+                        <td class="text-right font-semibold whitespace-nowrap">UGX {{ number_format((float) $repayment->amount, 2) }}</td>
+                        <td class="text-right"><a href="{{ route('loan-repayments.receipt', $repayment) }}" class="text-sm font-semibold text-blue-700">Open</a></td>
+                    </tr>
+                @empty
+                    <tr><td colspan="6" class="p-8 text-center text-slate-500">No repayments have been posted for your loans yet.</td></tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+</section>
 @endif
 
 @if(($moduleEnabled('teller') && (! $isCompactDashboard || $isCashierDashboard)) || (count($portfolioRows) > 0 && ! $isCompactDashboard))
