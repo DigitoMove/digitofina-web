@@ -27,6 +27,7 @@
     $outstandingLoanBalance = (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance;
     $canClosePaidLoan = $outstandingLoanBalance <= 0 && ! in_array($loan->status, ['closed', 'written_off', 'cancelled', 'rejected'], true) && auth()->user()->canAdministerLoanRepairs();
     $canCloseLoanWithCoverage = $outstandingLoanBalance > 0 && in_array($loan->status, ['disbursed', 'active', 'in_arrears', 'restructured'], true) && auth()->user()->canAdministerLoanRepairs();
+    $canWriteOffLoan = auth()->user()->canWriteOffLoans();
     $workflow = ['Draft', 'Appraisal', 'Approval', 'Approved', 'Disbursed', 'Closed'];
     $statusIndex = match (true) {
         $loan->status === 'draft' => 0,
@@ -279,7 +280,9 @@
                     Coverage method <x-required-badge />
                     <select name="coverage_method" required class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100">
                         <option value="organization_covered" @selected(old('coverage_method') === 'organization_covered')>Covered by organization</option>
-                        <option value="write_off" @selected(old('coverage_method') === 'write_off')>Write off remaining balance</option>
+                        @if($canWriteOffLoan)
+                            <option value="write_off" @selected(old('coverage_method') === 'write_off')>Write off remaining balance</option>
+                        @endif
                         <option value="external_settlement" @selected(old('coverage_method') === 'external_settlement')>Settled outside system</option>
                     </select>
                 </label>

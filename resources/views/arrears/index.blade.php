@@ -5,7 +5,9 @@
         <p class="df-muted">Only active and in-arrears loans are included.</p>
         <h1 class="df-title">Loan Arrears</h1>
     </div>
-    <form method="POST" action="{{ route('arrears.apply-penalties', ['branch_id' => $selectedBranchId ?: null]) }}">@csrf<button class="df-action-danger">Run Penalties</button></form>
+    @if($canRunManualPenalties)
+        <form method="POST" action="{{ route('arrears.apply-penalties', ['branch_id' => $selectedBranchId ?: null]) }}">@csrf<button class="df-action-danger">Run Penalties</button></form>
+    @endif
 </div>
 <form class="df-panel mb-4 p-4">
     <div class="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[minmax(18rem,1fr)_repeat(4,minmax(9.5rem,12rem))_auto_auto]">

@@ -820,6 +820,44 @@ it('lets an admin close a loan with remaining balance coverage recorded', functi
         ->and($writeOff->reason)->toContain('BOARD-001');
 });
 
+it('requires write off permission before a loan can be written off from coverage actions', function () {
+    $user = loanWorkflowUser();
+    $role = Role::create(['name' => 'Repair Operator', 'slug' => 'repair-operator']);
+    $role->permissions()->sync(Permission::whereIn('slug', ['manage-loans', 'approve-reversals'])->pluck('id')->all());
+    $user->update(['role_id' => $role->id]);
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '1001-LN-NO-WRITEOFF',
+        'requested_amount' => 100000,
+        'approved_amount' => 100000,
+        'principal_balance' => 100000,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 12,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'status' => 'active',
+    ]);
+
+    expect($user->fresh()->canWriteOffLoans())->toBeFalse();
+
+    $response = $this->actingAs($user)
+        ->post(route('loans.close-with-coverage', $loan), [
+            'coverage_method' => 'write_off',
+            'reason' => 'Trying to write off without permission.',
+        ]);
+
+    expect($response->isForbidden() || $response->isRedirect())->toBeTrue()
+        ->and($loan->fresh()->status)->toBe('active')
+        ->and(LoanWriteOff::where('loan_id', $loan->id)->exists())->toBeFalse();
+});
+
 it('shows a loan when the legacy guarantors payload is empty', function () {
     $user = loanWorkflowUser();
     $client = loanWorkflowClient($user);
@@ -1382,8 +1420,12 @@ it('waits one extra day before treating an unpaid schedule as arrears', function
 
 it('applies rounded penalties to the missed schedule only', function () {
     $user = loanWorkflowUser();
+    SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
+        ['organization_id' => null, 'key' => 'loan_arrears_penalty_rate'],
+        ['label' => 'Loan arrears penalty rate', 'value' => '1', 'type' => 'number', 'group' => 'loans']
+    );
     $product = loanWorkflowProduct([
-        'penalty_rate' => 1,
+        'penalty_rate' => 99,
         'require_guarantors' => false,
         'minimum_guarantors' => 0,
     ]);
@@ -1409,7 +1451,7 @@ it('applies rounded penalties to the missed schedule only', function () {
     $missedSchedule = LoanSchedule::create([
         'loan_id' => $loan->id,
         'installment_number' => 1,
-        'due_date' => today()->subDays(2),
+        'due_date' => today()->subDays(3),
         'principal_due' => 17850,
         'interest_due' => 0,
         'total_due' => 17850,
@@ -1586,7 +1628,12 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->get(route('arrears.index'))
         ->assertSuccessful()
         ->assertSee('1001-LN-OFFICER-ARREARS')
-        ->assertDontSee('1001-LN-OTHER-ARREARS');
+        ->assertDontSee('1001-LN-OTHER-ARREARS')
+        ->assertDontSee('Run Penalties');
+
+    $manualPenaltyResponse = $this->actingAs($officer)
+        ->post(route('arrears.apply-penalties'));
+    expect($manualPenaltyResponse->isForbidden() || $manualPenaltyResponse->isRedirect())->toBeTrue();
 
     $this->actingAs($officer)
         ->get(route('reports.show', 'loan-accounts-in-arrears'))
@@ -1617,6 +1664,7 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
     $this->actingAs($admin)
         ->get(route('arrears.index'))
         ->assertSuccessful()
+        ->assertSee('Run Penalties')
         ->assertSee('1001-LN-OFFICER-ARREARS')
         ->assertSee('1001-LN-OTHER-ARREARS');
 });

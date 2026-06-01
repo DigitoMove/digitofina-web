@@ -3,11 +3,22 @@
 @section('content')
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div>
-        <div class="text-sm font-semibold text-slate-500">{{ $definition['category'] }}</div>
+        <div class="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
+            <span class="rounded bg-slate-100 px-2 py-1">{{ $definition['group'] ?? $definition['category'] }}</span>
+            <span class="rounded bg-slate-100 px-2 py-1">{{ $definition['category'] }}</span>
+        </div>
         <h1 class="df-title">{{ $definition['title'] }}</h1>
-        <p class="df-muted">
+        <p class="df-muted max-w-3xl">
+            {{ $definition['description'] ?? 'Generated report results.' }}
+        </p>
+        <p class="mt-1 text-sm text-slate-500">
             {{ $definition['usesDates'] ? $from->format('d M Y').' to '.$to->format('d M Y') : 'Point-in-time report' }}
             · {{ str($detail)->headline() }}
+            @if($branchId)
+                · Branch filtered
+            @elseif($canChooseBranch)
+                · All branches
+            @endif
         </p>
     </div>
     <div class="flex flex-wrap gap-2">

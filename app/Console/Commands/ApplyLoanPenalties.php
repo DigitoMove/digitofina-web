@@ -13,8 +13,8 @@ class ApplyLoanPenalties extends Command
 {
     public function handle(): int
     {
-        PostBulkPenalties::dispatch();
-        $this->info('Queued overdue loan penalty posting.');
+        PostBulkPenalties::dispatchSync();
+        $this->info('Completed overdue loan penalty posting.');
 
         return self::SUCCESS;
     }

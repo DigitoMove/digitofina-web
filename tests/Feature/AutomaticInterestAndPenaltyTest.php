@@ -10,6 +10,7 @@ use App\Models\LoanProduct;
 use App\Models\LoanSchedule;
 use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
+use App\Models\SystemSetting;
 use App\Services\LoanService;
 use App\Services\SavingsInterestService;
 use Carbon\CarbonImmutable;
@@ -112,53 +113,31 @@ it('queues and posts due savings interest from the scheduled job', function () {
         ->and($account->transactions()->where('type', 'interest_posting')->count())->toBe(1);
 });
 
-it('applies loan penalties only once per configured weekly or monthly period', function () {
+it('applies organization setting penalties once per overdue grace-adjusted day', function () {
     $branch = automaticPostingBranch();
     $client = automaticPostingClient($branch);
-    $weeklyProduct = LoanProduct::create([
-        'name' => 'Weekly Penalty Loan',
-        'code' => 'WPL',
-        'annual_interest_rate' => 24,
-        'interest_method' => 'declining_balance',
-        'repayment_frequency' => 'weekly',
-        'default_term_months' => 6,
-        'penalty_type' => 'weekly',
-        'penalty_rate' => 5,
-        'status' => 'active',
-        'is_active' => true,
-    ]);
-    $monthlyProduct = LoanProduct::create([
-        'name' => 'Monthly Penalty Loan',
-        'code' => 'MPL',
+    SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
+        ['organization_id' => null, 'key' => 'loan_arrears_penalty_rate'],
+        ['label' => 'Loan arrears penalty rate', 'value' => '3', 'type' => 'number', 'group' => 'loans']
+    );
+    $product = LoanProduct::create([
+        'name' => 'Settings Penalty Loan',
+        'code' => 'SPL',
         'annual_interest_rate' => 24,
         'interest_method' => 'declining_balance',
         'repayment_frequency' => 'monthly',
         'default_term_months' => 6,
-        'penalty_type' => 'monthly',
-        'penalty_rate' => 10,
+        'penalty_type' => 'percentage',
+        'penalty_rate' => 99,
         'status' => 'active',
         'is_active' => true,
     ]);
 
-    $weeklyLoan = Loan::create([
+    $loan = Loan::create([
         'client_id' => $client->id,
         'branch_id' => $branch->id,
-        'loan_product_id' => $weeklyProduct->id,
-        'loan_number' => 'LN-WEEKLY',
-        'requested_amount' => 500_000,
-        'approved_amount' => 500_000,
-        'principal_balance' => 500_000,
-        'interest_balance' => 0,
-        'interest_rate' => 24,
-        'term_periods' => 6,
-        'repayment_frequency' => 'weekly',
-        'status' => 'active',
-    ]);
-    $monthlyLoan = Loan::create([
-        'client_id' => $client->id,
-        'branch_id' => $branch->id,
-        'loan_product_id' => $monthlyProduct->id,
-        'loan_number' => 'LN-MONTHLY',
+        'loan_product_id' => $product->id,
+        'loan_number' => 'LN-SETTING-PENALTY',
         'requested_amount' => 500_000,
         'approved_amount' => 500_000,
         'principal_balance' => 500_000,
@@ -169,21 +148,20 @@ it('applies loan penalties only once per configured weekly or monthly period', f
         'status' => 'active',
     ]);
 
-    LoanSchedule::create(['loan_id' => $weeklyLoan->id, 'installment_number' => 1, 'due_date' => '2026-05-01', 'principal_due' => 100_000, 'total_due' => 100_000, 'outstanding_amount' => 100_000, 'balance_due' => 100_000, 'status' => 'pending']);
-    LoanSchedule::create(['loan_id' => $monthlyLoan->id, 'installment_number' => 1, 'due_date' => '2026-04-01', 'principal_due' => 100_000, 'total_due' => 100_000, 'outstanding_amount' => 100_000, 'balance_due' => 100_000, 'status' => 'pending']);
+    $schedule = LoanSchedule::create(['loan_id' => $loan->id, 'installment_number' => 1, 'due_date' => '2026-05-11', 'principal_due' => 100_000, 'total_due' => 100_000, 'outstanding_amount' => 100_000, 'balance_due' => 100_000, 'status' => 'pending']);
 
     $loanService = app(LoanService::class);
-    $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-15'), branchId: $branch->id);
-    $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-16'), branchId: $branch->id);
+    $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-13'), branchId: $branch->id);
+    $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-13'), branchId: $branch->id);
 
-    expect(LoanPenalty::where('loan_id', $weeklyLoan->id)->count())->toBe(1)
-        ->and((float) $weeklyLoan->fresh()->penalty_balance)->toBe(5000.0)
-        ->and(LoanPenalty::where('loan_id', $monthlyLoan->id)->count())->toBe(1)
-        ->and((float) $monthlyLoan->fresh()->penalty_balance)->toBe(10000.0);
+    expect(LoanPenalty::where('loan_id', $loan->id)->count())->toBe(1)
+        ->and((float) $loan->fresh()->penalty_balance)->toBe(3000.0)
+        ->and((float) $schedule->fresh()->penalty_due)->toBe(3000.0)
+        ->and((int) $schedule->fresh()->days_overdue)->toBe(1);
 
-    $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-19'), branchId: $branch->id);
-    $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-06-01'), branchId: $branch->id);
+    $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-14'), branchId: $branch->id);
 
-    expect(LoanPenalty::where('loan_id', $weeklyLoan->id)->count())->toBe(3)
-        ->and(LoanPenalty::where('loan_id', $monthlyLoan->id)->count())->toBe(2);
+    expect(LoanPenalty::where('loan_id', $loan->id)->count())->toBe(2)
+        ->and((float) $loan->fresh()->penalty_balance)->toBe(6000.0)
+        ->and((float) $schedule->fresh()->penalty_due)->toBe(6000.0);
 });

@@ -96,6 +96,12 @@ class User extends Authenticatable
             || $this->canPerform('override-maker-checker');
     }
 
+    public function canWriteOffLoans(): bool
+    {
+        return $this->hasAnyRole(['super-admin', 'organization-admin'])
+            || $this->canPerform('write-off-loans');
+    }
+
     public function isMember(): bool
     {
         return $this->hasRole('member');

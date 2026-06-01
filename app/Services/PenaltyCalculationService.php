@@ -10,12 +10,12 @@ class PenaltyCalculationService
 {
     public function calculate(LoanSchedule $schedule, float $rate, string $type = 'percentage', int $daysOverdue = 0, ?string $repaymentFrequency = null): float
     {
-        $balance = (float) $schedule->outstanding_amount;
+        $balance = max(0, (float) $schedule->outstanding_amount - (float) $schedule->penalty_due);
+        $chargeableDays = max(1, $daysOverdue);
 
         $amount = match ($type) {
             'fixed' => $rate,
-            'daily', 'weekly', 'monthly' => $balance * ($rate / 100),
-            default => $balance * ($rate / 100),
+            default => $balance * ($rate / 100) * $chargeableDays,
         };
 
         return $this->roundToCurrencyUnit($amount);

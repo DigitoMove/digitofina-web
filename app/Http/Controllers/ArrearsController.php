@@ -101,24 +101,25 @@ class ArrearsController extends Controller
             'canFilterBranch' => $canFilterBranch,
             'canFilterOfficer' => $canFilterOfficer,
             'selectedBranchId' => $branchId,
+            'canRunManualPenalties' => $this->canRunManualPenalties($request),
         ]);
     }
 
     public function applyPenalties(Request $request, LoanService $service): RedirectResponse
     {
-        abort_unless(auth()->user()->canPerform('manage-loans'), 403);
-        abort_if($request->user()->isTellerCashier(), 403);
+        abort_unless($this->canRunManualPenalties($request), 403);
 
         $canFilterBranch = ApiSecurity::hasGlobalBranchAccess($request->user());
         $loan = $request->integer('loan_id') ? Loan::findOrFail($request->integer('loan_id')) : null;
-        if ($loan && $request->user()->hasRole('loan-officer')) {
-            abort_unless((int) $loan->officer_id === (int) $request->user()->id, 403);
-        }
 
         $branchId = $canFilterBranch ? $request->integer('branch_id') : (int) $request->user()->branch_id;
-        $officerId = $request->user()->hasRole('loan-officer') ? (int) $request->user()->id : null;
-        $count = $service->applyOverduePenalties($loan, branchId: $branchId ?: null, officerId: $officerId);
+        $count = $service->applyOverduePenalties($loan, branchId: $branchId ?: null);
 
         return back()->with('status', "{$count} overdue installment(s) checked.");
+    }
+
+    private function canRunManualPenalties(Request $request): bool
+    {
+        return $request->user()?->hasAnyRole(['super-admin', 'organization-admin']) === true;
     }
 }

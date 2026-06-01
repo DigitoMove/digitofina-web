@@ -16,6 +16,7 @@ class ReportController extends Controller
 
         return view('reports.index', [
             'groups' => $reports->grouped($request->user()),
+            'priorityReports' => $reports->priorityReports($request->user()),
             'branches' => Branch::query()->orderBy('name')->get(),
             'canChooseBranch' => ApiSecurity::hasGlobalBranchAccess($request->user()),
             'defaultFrom' => today()->toDateString(),

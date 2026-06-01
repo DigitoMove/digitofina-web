@@ -41,7 +41,28 @@ class ReportCatalogService
      */
     public function grouped(?User $user = null): Collection
     {
-        return collect($this->definitions($user))->groupBy('category');
+        return collect($this->definitions($user))
+            ->sortBy([
+                ['group_order', 'asc'],
+                ['sort_order', 'asc'],
+                ['title', 'asc'],
+            ])
+            ->groupBy('group');
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function priorityReports(?User $user = null): Collection
+    {
+        return collect($this->definitions($user))
+            ->where('is_priority', true)
+            ->sortBy([
+                ['group_order', 'asc'],
+                ['sort_order', 'asc'],
+                ['title', 'asc'],
+            ])
+            ->values();
     }
 
     /**
@@ -140,6 +161,8 @@ class ReportCatalogService
             $this->report('investment-officer-performance', 'Investments', 'Investment Officer Performance', 'investment_officer_performance', [], false),
             $this->report('current-accounts-register', 'Current Accounts', 'Current Accounts Register', 'accounts', ['category' => 'current'], false),
         ];
+
+        $definitions = array_map(fn (array $definition): array => $this->decorateReport($definition), $definitions);
 
         if (! $user || $user->hasRole('super-admin') || ! $user->organization) {
             return $this->filterCashierLoanReports($definitions, $user);
@@ -266,6 +289,165 @@ class ReportCatalogService
                 'expected-loan-payments',
             ], true)
         ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     * @return array<string, mixed>
+     */
+    private function decorateReport(array $definition): array
+    {
+        $metadata = $this->reportMetadata($definition);
+
+        return $definition + $metadata;
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     * @return array{group: string, group_order: int, sort_order: int, description: string, is_priority: bool}
+     */
+    private function reportMetadata(array $definition): array
+    {
+        $slug = (string) $definition['slug'];
+        $category = (string) $definition['category'];
+        $kind = (string) $definition['kind'];
+
+        $group = match (true) {
+            in_array($slug, ['income-statement', 'balance-sheet', 'trial-balance', 'profitability-summary', 'projected-profitability-summary', 'branch-profitability-standing'], true) => 'Executive Financial Pack',
+            in_array($category, ['Accounting', 'Posted Transactions'], true) => 'General Ledger & Controls',
+            in_array($category, ['Treasury'], true) => 'Treasury, Cash & Reconciliation',
+            in_array($category, ['Loan Application', 'Loan Accounts', 'Profitability'], true) => 'Credit Portfolio & Risk',
+            in_array($category, ['Savings', 'Current Accounts', 'Shares', 'Term Deposits'], true) => 'Deposits & Member Funds',
+            $category === 'Investments' => 'Investments & Managed Funds',
+            $category === 'Clients' => 'Client & Relationship Management',
+            default => 'Operational Registers',
+        };
+
+        $groupOrder = [
+            'Executive Financial Pack' => 10,
+            'General Ledger & Controls' => 20,
+            'Treasury, Cash & Reconciliation' => 30,
+            'Credit Portfolio & Risk' => 40,
+            'Deposits & Member Funds' => 50,
+            'Investments & Managed Funds' => 60,
+            'Client & Relationship Management' => 70,
+            'Operational Registers' => 90,
+        ][$group];
+
+        $sortOrder = [
+            'income-statement' => 10,
+            'balance-sheet' => 20,
+            'trial-balance' => 30,
+            'profitability-summary' => 40,
+            'projected-profitability-summary' => 45,
+            'branch-profitability-standing' => 50,
+            'gl-account-transactions' => 110,
+            'gl-transaction-analysis' => 120,
+            'chart-of-accounts' => 130,
+            'all-posted-transactions' => 140,
+            'cash-balances' => 210,
+            'drawer-balances-by-teller' => 220,
+            'branch-period-summary' => 230,
+            'daily-teller-transactions' => 240,
+            'portfolio-summary' => 310,
+            'loan-book' => 320,
+            'portfolio-at-risk' => 330,
+            'loan-aging-report' => 340,
+            'loan-accounts-in-arrears' => 350,
+            'loan-disbursements' => 360,
+            'loan-recovery' => 370,
+            'expected-loan-payments' => 380,
+            'opened-savings-accounts' => 410,
+            'savings-accounts-by-balances' => 420,
+            'current-accounts-register' => 430,
+            'share-balances' => 440,
+            'term-deposits-maturity-report' => 450,
+            'investment-plan-performance' => 510,
+            'investment-branch-performance' => 520,
+            'investment-officer-performance' => 530,
+            'client-register' => 610,
+            'officer-entries' => 620,
+        ][$slug] ?? 900;
+
+        return [
+            'group' => $group,
+            'group_order' => $groupOrder,
+            'sort_order' => $sortOrder,
+            'description' => $this->reportDescription($slug, $category, $kind),
+            'is_priority' => in_array($slug, [
+                'income-statement',
+                'balance-sheet',
+                'trial-balance',
+                'profitability-summary',
+                'branch-profitability-standing',
+                'cash-balances',
+                'portfolio-summary',
+                'portfolio-at-risk',
+                'loan-book',
+                'loan-disbursements',
+                'loan-recovery',
+                'savings-accounts-by-balances',
+                'investment-plan-performance',
+            ], true),
+        ];
+    }
+
+    private function reportDescription(string $slug, string $category, string $kind): string
+    {
+        $descriptions = [
+            'income-statement' => 'Revenue, expenses, and surplus for the selected period.',
+            'balance-sheet' => 'Assets, liabilities, and equity position at the reporting date.',
+            'trial-balance' => 'Debit and credit control totals for ledger review.',
+            'profitability-summary' => 'Management view of fees, interest, expenses, loan capital, and profit.',
+            'projected-profitability-summary' => 'Profitability view using projected interest where needed.',
+            'branch-profitability-standing' => 'Branch ranking for income, collections, portfolio standing, and net result.',
+            'gl-account-transactions' => 'Drill into posted journal entries by account, memo, reference, branch, and period.',
+            'gl-transaction-analysis' => 'Ledger totals grouped for accounting review.',
+            'chart-of-accounts' => 'Configured accounts used for accounting classification and posting.',
+            'all-posted-transactions' => 'Complete transaction register with search and admin deletion controls.',
+            'user-posted-transactions' => 'Transactions posted by the logged-in user.',
+            'system-posted-transactions' => 'Automated or system-generated transaction activity.',
+            'cash-balances' => 'Cash account and drawer balances for treasury review.',
+            'drawer-balances-by-teller' => 'Teller drawer accountability and cash position.',
+            'branch-period-summary' => 'Branch cash movement, teller activity, and period reconciliation totals.',
+            'daily-teller-transactions' => 'Daily teller activity for cash and counter operations.',
+            'portfolio-summary' => 'Loan portfolio totals by status with principal, interest, fees, and penalties.',
+            'loan-book' => 'Full loan book for portfolio, product, balance, and maturity review.',
+            'portfolio-at-risk' => 'Outstanding overdue exposure for credit-risk monitoring.',
+            'loan-aging-report' => 'Aged overdue installments and collection pressure points.',
+            'loan-accounts-in-arrears' => 'Loans currently past due and requiring follow-up.',
+            'loan-disbursements' => 'Gross principal disbursed, fees charged, and net credited to clients.',
+            'loan-recovery' => 'Principal and interest collections over the selected period.',
+            'expected-loan-payments' => 'Scheduled repayments expected in the selected period.',
+            'application-fees-income' => 'Application fees charged at disbursement.',
+            'loan-interest-income' => 'Loan interest accumulated or collected for the selected basis.',
+            'savings-accounts-by-balances' => 'Savings balances by account for liability and liquidity analysis.',
+            'opened-savings-accounts' => 'New savings accounts opened during the period.',
+            'current-accounts-register' => 'Current account register and balances.',
+            'share-balances' => 'Member share capital balances.',
+            'term-deposits-maturity-report' => 'Term deposits approaching or reaching maturity.',
+            'investment-plan-performance' => 'Plan-level investment balances, returns, and performance.',
+            'investment-branch-performance' => 'Investment performance by branch.',
+            'investment-officer-performance' => 'Investment performance by responsible officer.',
+            'client-register' => 'Client master list for member and KYC review.',
+            'officer-entries' => 'Entries created by officers during the selected period.',
+        ];
+
+        if (isset($descriptions[$slug])) {
+            return $descriptions[$slug];
+        }
+
+        return match ($kind) {
+            'accounts' => "Account register filtered for {$category}.",
+            'loans' => "Loan register filtered for {$category}.",
+            'loan_schedules' => 'Loan schedule and repayment obligation details.',
+            'loan_repayments' => 'Loan repayment activity for the selected period.',
+            'investment_accounts' => 'Investment account register and balances.',
+            'investment_transactions' => 'Investment transaction movement for the selected period.',
+            'term_deposits' => 'Term deposit account and maturity register.',
+            'shares' => 'Share account register and balances.',
+            default => "Operational report for {$category}.",
+        };
     }
 
     /**

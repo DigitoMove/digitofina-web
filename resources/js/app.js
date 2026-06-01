@@ -399,6 +399,7 @@ const initReportLauncher = () => {
     const modal = document.querySelector('[data-report-modal]');
     const form = document.querySelector('[data-report-form]');
     const title = document.querySelector('[data-report-modal-title]');
+    const description = document.querySelector('[data-report-modal-description]');
     const dateFields = document.querySelector('[data-report-date-fields]');
     const detailField = document.querySelector('[data-report-detail-field]');
     const interestField = document.querySelector('[data-report-interest-field]');
@@ -418,6 +419,10 @@ const initReportLauncher = () => {
 
             if (title) {
                 title.textContent = button.dataset.reportTitle || 'Generate Report';
+            }
+
+            if (description) {
+                description.textContent = button.dataset.reportDescription || 'Choose the filters, then generate the report.';
             }
 
             if (dateFields) {

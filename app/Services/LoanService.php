@@ -1323,6 +1323,10 @@ class LoanService
                 throw new InvalidArgumentException('This loan cannot be closed with balance coverage.');
             }
 
+            if ($coverageMethod === 'write_off' && ! $user->canWriteOffLoans()) {
+                throw new InvalidArgumentException('You do not have permission to write off loans.');
+            }
+
             $principalBalance = (float) $loan->principal_balance;
             $interestBalance = (float) $loan->interest_balance;
             $feesBalance = (float) $loan->fees_balance;
@@ -1454,28 +1458,24 @@ class LoanService
                     return;
                 }
 
-                $days = $this->calendar->businessDaysBetween($schedule->due_date, $asOf, $loan->organization_id ? (int) $loan->organization_id : null);
-                $penaltyType = $loan->product?->penalty_type ?: 'percentage';
-                $penaltyRate = (float) ($loan->product?->penalty_rate ?? 0);
-                $penaltyRate = $penaltyRate > 0 ? $penaltyRate : (float) SystemSetting::value('loan_arrears_penalty_rate', 2, $loan->organization_id ? (int) $loan->organization_id : null);
+                $daysOverdue = $this->calendar->businessDaysBetween($schedule->due_date, $asOf, $loan->organization_id ? (int) $loan->organization_id : null);
+                $chargeableDays = max(0, $daysOverdue - 1);
+                $penaltyRate = (float) SystemSetting::value('loan_arrears_penalty_rate', 2, $loan->organization_id ? (int) $loan->organization_id : null);
                 $repaymentFrequency = $loan->repayment_frequency ?: $loan->product?->repayment_frequency;
-                [$penaltyPeriodStart, $penaltyPeriodEnd] = $this->penalties->penaltyPeriod(
-                    $schedule,
-                    $asOf,
-                    $penaltyType,
-                    $repaymentFrequency,
-                );
-                $alreadyApplied = LoanPenalty::query()
+                $alreadyChargedDays = (int) LoanPenalty::query()
                     ->where('loan_schedule_id', $schedule->id)
-                    ->whereDate('calculated_for_date', '>=', $penaltyPeriodStart->toDateString())
-                    ->whereDate('calculated_for_date', '<=', $penaltyPeriodEnd->toDateString())
+                    ->max('days_overdue');
+                $daysToCharge = max(0, $chargeableDays - $alreadyChargedDays);
+                $alreadyAppliedToday = LoanPenalty::query()
+                    ->where('loan_schedule_id', $schedule->id)
+                    ->whereDate('calculated_for_date', $asOf->toDateString())
                     ->exists();
 
-                $penaltyAmount = $alreadyApplied ? 0 : $this->penalties->calculate(
+                $penaltyAmount = ($daysToCharge <= 0 || $alreadyAppliedToday) ? 0 : $this->penalties->calculate(
                     $schedule,
                     $penaltyRate,
-                    $penaltyType,
-                    $days,
+                    'percentage',
+                    $daysToCharge,
                     $repaymentFrequency,
                 );
 
@@ -1484,7 +1484,7 @@ class LoanService
                         'loan_id' => $loan->id,
                         'loan_schedule_id' => $schedule->id,
                         'amount' => $penaltyAmount,
-                        'days_overdue' => $days,
+                        'days_overdue' => $chargeableDays,
                         'calculated_for_date' => $asOf->toDateString(),
                         'status' => 'pending',
                     ]);
@@ -1496,7 +1496,7 @@ class LoanService
                     $loan->increment('penalty_balance', $penaltyAmount);
                 }
 
-                $schedule->update(['status' => 'overdue', 'days_overdue' => $days]);
+                $schedule->update(['status' => 'overdue', 'days_overdue' => $chargeableDays]);
                 $loan->update(['status' => 'in_arrears']);
                 $count++;
             });

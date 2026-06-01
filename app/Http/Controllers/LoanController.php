@@ -317,6 +317,7 @@ class LoanController extends Controller
             'coverage_reference' => ['nullable', 'string', 'max:120'],
             'reason' => ['required', 'string', 'max:1000'],
         ]);
+        abort_unless($data['coverage_method'] !== 'write_off' || $request->user()->canWriteOffLoans(), 403);
 
         try {
             $service->closeWithBalanceCoverage(
