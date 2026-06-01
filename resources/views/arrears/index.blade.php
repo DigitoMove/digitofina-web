@@ -45,27 +45,37 @@
 </form>
 <div class="overflow-hidden rounded border bg-white">
     <table class="w-full text-left text-sm">
-        <thead class="bg-slate-50"><tr><th class="p-3">Client</th><th>Loan</th><th>Branch</th><th>Officer</th><th>Due date</th><th>Days due</th><th>Installment due</th><th>Cumulative due</th><th>Penalty</th><th>Status</th></tr></thead>
+        <thead class="bg-slate-50"><tr><th class="p-3">Client</th><th>Loan</th><th>Branch</th><th>Officer</th><th>Due schedules</th><th>Earliest due</th><th>Max days due</th><th>Amount to clear</th><th>Penalty</th><th>Status</th></tr></thead>
         <tbody>
-            @forelse($schedules as $schedule)
-                @php($cumulative = $loanArrears->get($schedule->loan_id))
+            @forelse($loans as $loan)
+                @php
+                    $arrearsSchedules = $loan->schedules;
+                    $earliestSchedule = $arrearsSchedules->first();
+                    $maxDaysDue = $arrearsSchedules->max(fn ($schedule) => (int) ($schedule->days_overdue ?: ($schedule->due_date ? $calendar->businessDaysBetween($schedule->due_date, now()) : 0)));
+                    $scheduleSummary = $arrearsSchedules
+                        ->map(fn ($schedule) => '#'.$schedule->installment_number.' ('.$schedule->due_date?->format('d M Y').')')
+                        ->implode(', ');
+                @endphp
                 <tr class="border-t">
-                    <td class="p-3">{{ $schedule->loan->client->full_name }}</td>
-                    <td><a class="font-semibold text-blue-700" href="{{ route('loans.show', $schedule->loan) }}">{{ $schedule->loan->loan_number }}</a><div class="text-slate-500">{{ $schedule->loan->product->name }}</div></td>
-                    <td>{{ $schedule->loan->branch?->name ?? 'Unassigned' }}</td>
-                    <td>{{ $schedule->loan->officer?->name ?? 'Unassigned' }}</td>
-                    <td>{{ $schedule->due_date->format('d M Y') }}</td>
-                    <td>{{ $schedule->days_overdue ?: $calendar->businessDaysBetween($schedule->due_date, now()) }}</td>
-                    <td>UGX {{ number_format($schedule->outstanding_amount, 2) }}</td>
-                    <td>UGX {{ number_format($cumulative?->cumulative_due ?? $schedule->outstanding_amount, 2) }}</td>
-                    <td>UGX {{ number_format($schedule->penalty_due, 2) }}</td>
-                    <td><span class="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">{{ str($schedule->status)->headline() }}</span></td>
+                    <td class="p-3">{{ $loan->client?->full_name ?? 'N/A' }}</td>
+                    <td><a class="font-semibold text-blue-700" href="{{ route('loans.show', $loan) }}">{{ $loan->loan_number }}</a><div class="text-slate-500">{{ $loan->product?->name ?? 'N/A' }}</div></td>
+                    <td>{{ $loan->branch?->name ?? 'Unassigned' }}</td>
+                    <td>{{ $loan->officer?->name ?? 'Unassigned' }}</td>
+                    <td>
+                        <div class="font-semibold text-slate-900">{{ number_format((int) $loan->arrears_schedules_count) }} due</div>
+                        <div class="max-w-xs text-xs text-slate-500">{{ $scheduleSummary }}</div>
+                    </td>
+                    <td>{{ $earliestSchedule?->due_date?->format('d M Y') ?? 'N/A' }}</td>
+                    <td>{{ number_format((int) $maxDaysDue) }}</td>
+                    <td class="font-semibold text-red-700">UGX {{ number_format((float) $loan->arrears_cumulative_due, 2) }}</td>
+                    <td>UGX {{ number_format((float) $loan->arrears_penalty_due, 2) }}</td>
+                    <td><span class="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">{{ str($loan->status)->headline() }}</span></td>
                 </tr>
             @empty
-                <tr><td colspan="10" class="p-6 text-center text-slate-500">No overdue installments found.</td></tr>
+                <tr><td colspan="10" class="p-6 text-center text-slate-500">No overdue loans found.</td></tr>
             @endforelse
         </tbody>
     </table>
 </div>
-<div class="mt-4">{{ $schedules->links() }}</div>
+<div class="mt-4">{{ $loans->links() }}</div>
 @endsection

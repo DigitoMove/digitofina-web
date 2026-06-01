@@ -24,6 +24,7 @@ use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
+use App\Services\BusinessCalendarService;
 use App\Services\LoanApplicationService;
 use App\Services\LoanService;
 use App\Services\ModuleService;
@@ -243,6 +244,7 @@ it('approves and disburses a loan with guarantor checks and a repayment schedule
 
     expect($loan->status)->toBe('active')
         ->and($loan->schedules)->toHaveCount(6)
+        ->and($loan->schedules->first()->due_date?->toDateString())->toBe(app(BusinessCalendarService::class)->dueDate(today(), 1, 'monthly')->toDateString())
         ->and($loan->disbursements)->toHaveCount(1)
         ->and((float) $loan->interest_balance)->toBeGreaterThan(0.0);
 });
@@ -326,6 +328,7 @@ it('copies guarantors from the client most recent loan with guarantors', functio
 
 it('uses the loan amount for manually attached guarantors and approved guarantor coverage', function () {
     $user = loanWorkflowUser();
+    $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
     $client = loanWorkflowClient($user);
     $guarantorClient = loanWorkflowClient($user, '+256700000012');
     $product = loanWorkflowProduct();
@@ -1045,6 +1048,67 @@ it('marks overdue schedules and applies configured penalties', function () {
         ->and($loan->fresh()->status)->toBe('in_arrears');
 });
 
+it('repairs unpaid monthly schedules to start one business month after application', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    loanWorkflowSavingsAccount($user, $client);
+    $applicationDate = today();
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '1001-LN-MONTHLY-REPAIR',
+        'requested_amount' => 500000,
+        'approved_amount' => 500000,
+        'principal_balance' => 500000,
+        'penalty_balance' => 10000,
+        'interest_rate' => 24,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'application_date' => $applicationDate,
+        'status' => 'in_arrears',
+    ]);
+    $schedule = LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => $applicationDate,
+        'principal_due' => 500000,
+        'interest_due' => 0,
+        'penalty_due' => 10000,
+        'total_due' => 510000,
+        'outstanding_amount' => 510000,
+        'balance_due' => 510000,
+        'status' => 'overdue',
+        'days_overdue' => 1,
+    ]);
+    LoanPenalty::create([
+        'loan_id' => $loan->id,
+        'loan_schedule_id' => $schedule->id,
+        'amount' => 10000,
+        'days_overdue' => 1,
+        'calculated_for_date' => $applicationDate,
+        'status' => 'pending',
+    ]);
+
+    $totals = app(LoanService::class)->repairMonthlyScheduleDates();
+
+    $expectedDueDate = app(BusinessCalendarService::class)
+        ->dueDate($applicationDate, 1, 'monthly')
+        ->toDateString();
+
+    expect($schedule->fresh()->due_date?->toDateString())->toBe($expectedDueDate)
+        ->and($totals['loans'])->toBe(1)
+        ->and($totals['schedules'])->toBe(1)
+        ->and($schedule->fresh()->status)->toBe('pending')
+        ->and((float) $schedule->fresh()->penalty_due)->toBe(0.0)
+        ->and((float) $schedule->fresh()->outstanding_amount)->toBe(500000.0)
+        ->and((float) $loan->fresh()->penalty_balance)->toBe(0.0)
+        ->and($loan->fresh()->status)->toBe('active')
+        ->and(LoanPenalty::where('loan_schedule_id', $schedule->id)->exists())->toBeFalse();
+});
+
 it('excludes cancelled loans from arrears listings and penalty calculations', function () {
     $branch = Branch::create(['code' => '1009', 'name' => 'Arrears Branch', 'is_active' => true, 'status' => 'active']);
     $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
@@ -1204,6 +1268,69 @@ it('excludes cancelled loans from arrears listings and penalty calculations', fu
         ->and($cancelledSchedule->fresh()->outstanding_amount)->toBe('200000.00')
         ->and($rejectedSchedule->fresh()->outstanding_amount)->toBe('200000.00')
         ->and($draftSchedule->fresh()->outstanding_amount)->toBe('200000.00');
+});
+
+it('combines multiple overdue schedules into one arrears listing row per loan', function () {
+    $user = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($user, ['loans']);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
+    $client = loanWorkflowClient($user, '+256700220001');
+    $client->update(['organization_id' => $organization->id]);
+    $loan = Loan::create([
+        'organization_id' => $organization->id,
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'created_by' => $user->id,
+        'loan_number' => '1001-LN-MULTI-ARREARS',
+        'requested_amount' => 300000,
+        'principal_balance' => 300000,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 20,
+        'term_periods' => 2,
+        'repayment_frequency' => 'monthly',
+        'application_date' => today()->subMonths(2),
+        'status' => 'active',
+    ]);
+
+    LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subDays(15),
+        'principal_due' => 100000,
+        'interest_due' => 0,
+        'total_due' => 100000,
+        'outstanding_amount' => 100000,
+        'balance_due' => 100000,
+        'status' => 'overdue',
+        'days_overdue' => 15,
+    ]);
+    LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 2,
+        'due_date' => today()->subDays(5),
+        'principal_due' => 200000,
+        'interest_due' => 0,
+        'total_due' => 200000,
+        'outstanding_amount' => 200000,
+        'balance_due' => 200000,
+        'status' => 'overdue',
+        'days_overdue' => 5,
+    ]);
+
+    $response = $this->actingAs($user)
+        ->get(route('arrears.index'))
+        ->assertSuccessful()
+        ->assertSee('2 due')
+        ->assertSee('#1')
+        ->assertSee('#2')
+        ->assertSee('UGX 300,000.00');
+
+    expect(substr_count($response->getContent(), '1001-LN-MULTI-ARREARS'))->toBe(1);
 });
 
 it('waits one extra day before treating an unpaid schedule as arrears', function () {

@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Branch;
 use App\Models\Loan;
 use App\Models\LoanProduct;
-use App\Models\LoanSchedule;
 use App\Models\User;
 use App\Services\BusinessCalendarService;
 use App\Services\LoanService;
@@ -50,11 +49,9 @@ class ArrearsController extends Controller
                 });
             });
 
-        $schedules = LoanSchedule::query()
-            ->with(['loan.branch', 'loan.client', 'loan.officer', 'loan.product'])
+        $arrearsScheduleScope = fn ($query) => $query
             ->excludingCancelledLoans()
             ->eligibleForArrears(now())
-            ->whereHas('loan', $loanScope)
             ->when($data['bucket'] ?? null, function ($query, string $bucket): void {
                 match ($bucket) {
                     '1-30' => $query->whereBetween('days_overdue', [1, 30]),
@@ -64,24 +61,29 @@ class ArrearsController extends Controller
                     '180+' => $query->where('days_overdue', '>', 180),
                     default => null,
                 };
-            })
-            ->orderBy('due_date')
+            });
+
+        $loans = Loan::query()
+            ->with([
+                'branch',
+                'client',
+                'officer',
+                'product',
+                'schedules' => fn ($query) => $arrearsScheduleScope($query)->orderBy('due_date'),
+            ])
+            ->tap($loanScope)
+            ->whereHas('schedules', $arrearsScheduleScope)
+            ->withCount(['schedules as arrears_schedules_count' => $arrearsScheduleScope])
+            ->withSum(['schedules as arrears_cumulative_due' => $arrearsScheduleScope], 'outstanding_amount')
+            ->withSum(['schedules as arrears_penalty_due' => $arrearsScheduleScope], 'penalty_due')
+            ->withMin(['schedules as arrears_earliest_due_date' => $arrearsScheduleScope], 'due_date')
+            ->orderBy('arrears_earliest_due_date')
+            ->orderBy('loan_number')
             ->paginate(20)
             ->withQueryString();
 
-        $loanArrears = LoanSchedule::query()
-            ->excludingCancelledLoans()
-            ->eligibleForArrears(now())
-            ->whereHas('loan', $loanScope)
-            ->whereIn('loan_id', $schedules->getCollection()->pluck('loan_id')->unique())
-            ->selectRaw('loan_id, sum(outstanding_amount) as cumulative_due, max(days_overdue) as stored_days_overdue')
-            ->groupBy('loan_id')
-            ->get()
-            ->keyBy('loan_id');
-
         return view('arrears.index', [
-            'schedules' => $schedules,
-            'loanArrears' => $loanArrears,
+            'loans' => $loans,
             'calendar' => $calendar,
             'branches' => Branch::query()
                 ->when(! $canFilterBranch, fn (Builder $query): Builder => $query->whereKey($request->user()->branch_id))
