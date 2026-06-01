@@ -843,6 +843,7 @@ class ReportCatalogService
         $query = LoanDisbursement::query()
             ->with(['branch', 'loan.client', 'disbursedBy'])
             ->whereBetween('disbursement_date', [$from, $to])
+            ->where('status', 'successful')
             ->where('fees_deducted', '>', 0)
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
@@ -1017,6 +1018,7 @@ class ReportCatalogService
     {
         $applicationFees = (float) LoanDisbursement::query()
             ->whereBetween('disbursement_date', [$from, $to])
+            ->where('status', 'successful')
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->sum('fees_deducted');
@@ -1027,6 +1029,7 @@ class ReportCatalogService
             ->sum('interest_due');
         $interestCollected = (float) LoanRepayment::query()
             ->whereBetween('paid_at', [$from, $to])
+            ->where('status', 'successful')
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->sum('interest_paid');
@@ -1034,15 +1037,18 @@ class ReportCatalogService
         $expenses = $this->journalTypeNet('expense', $from, $to, $branchId, $user);
         $capitalDisbursed = (float) LoanDisbursement::query()
             ->whereBetween('disbursement_date', [$from, $to])
+            ->where('status', 'successful')
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->sum('disbursed_amount');
         $principalRecovered = (float) LoanRepayment::query()
             ->whereBetween('paid_at', [$from, $to])
+            ->where('status', 'successful')
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->sum('principal_paid');
         $loanCapitalOutstanding = (float) Loan::query()
+            ->whereIn('status', ['disbursed', 'active', 'in_arrears', 'restructured', 'fully_paid', 'closed'])
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
             ->sum('principal_balance');
         $interestShown = $interestBasis === 'projected' ? $interestAccrued : $interestCollected;
@@ -1150,12 +1156,13 @@ class ReportCatalogService
             ->whereBetween('due_date', [$from, $to])
             ->whereHas('loan', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
             ->sum('total_due');
-        $totalLoans = (float) Loan::query()
-            ->whereNotIn('status', ['draft', 'submitted', 'under_review', 'cancelled', 'rejected', 'written_off'])
+        $totalLoans = (float) LoanDisbursement::query()
+            ->whereBetween('disbursement_date', [$from, $to])
+            ->where('status', 'successful')
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
-            ->sum(DB::raw('coalesce(approved_amount, requested_amount)'));
+            ->sum('disbursed_amount');
         $currentStanding = (float) Loan::query()
-            ->whereIn('status', ['approved', 'disbursed', 'active', 'in_arrears', 'restructured'])
+            ->whereIn('status', ['disbursed', 'active', 'in_arrears', 'restructured', 'fully_paid', 'closed'])
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
             ->selectRaw('sum(principal_balance + interest_balance + fees_balance + penalty_balance) as standing')
             ->value('standing');
@@ -1285,7 +1292,7 @@ class ReportCatalogService
         $query = LoanDisbursement::query()
             ->with(['loan.client', 'disbursedBy'])
             ->whereBetween('disbursement_date', [$from, $to])
-            ->when($payload['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
+            ->when($payload['status'] ?? 'successful', fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
 

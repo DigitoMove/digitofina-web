@@ -49,9 +49,9 @@ var e=(e,t)=>{let n=e.querySelectorAll(`[data-df-tab-target]`),r=e.querySelector
                 <script>window.addEventListener('load', () => { window.print(); });<\/script>
             </body>
             </html>
-        `),r.document.close()};document.querySelectorAll(`main table:not([data-exportable="false"])`).forEach((e,r)=>{if(e.dataset.exportReady===`1`||i(e).length===0)return;let l=n(e,r),u=document.createElement(`div`);u.className=`mb-2 flex flex-wrap items-center justify-end gap-2 text-xs`,u.dataset.tableExportToolbar=`1`,u.innerHTML=`
-            <span class="mr-auto font-semibold text-slate-500">Export table</span>
-            <button type="button" class="rounded border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm hover:bg-slate-50" data-table-export="csv">CSV</button>
-            <button type="button" class="rounded border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm hover:bg-slate-50" data-table-export="xls">Excel</button>
-            <button type="button" class="rounded border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm hover:bg-slate-50" data-table-export="pdf">PDF</button>
+        `),r.document.close()};document.querySelectorAll(`main table:not([data-exportable="false"])`).forEach((e,r)=>{if(e.dataset.exportReady===`1`||i(e).length===0)return;let l=n(e,r),u=document.createElement(`div`);u.className=`mb-2 flex flex-wrap items-center justify-end gap-2 rounded-md bg-slate-50 px-4 py-2 text-xs`,u.dataset.tableExportToolbar=`1`,u.innerHTML=`
+            <span class="mr-auto pl-2 font-semibold text-slate-700">Export table</span>
+            <button type="button" class="rounded border border-emerald-700 bg-emerald-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-emerald-700" data-table-export="csv">CSV</button>
+            <button type="button" class="rounded border border-blue-700 bg-blue-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-blue-700" data-table-export="xls">Excel</button>
+            <button type="button" class="mr-2 rounded border border-rose-700 bg-rose-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-rose-700" data-table-export="pdf">PDF</button>
         `;let d=e.parentElement,f=d?.classList.contains(`overflow-auto`)?d.parentElement:d,p=d?.classList.contains(`overflow-auto`)?d:e;f?.insertBefore(u,p),u.querySelectorAll(`[data-table-export]`).forEach(n=>{n.addEventListener(`click`,()=>{let r=i(e),u=`${t(l)}-${new Date().toISOString().slice(0,10)}`;n.dataset.tableExport===`csv`?o(a(r),`${u}.csv`,`text/csv;charset=utf-8`):n.dataset.tableExport===`xls`?o(s(l,r),`${u}.xls`,`application/vnd.ms-excel;charset=utf-8`):c(l,r)})}),e.dataset.exportReady=`1`})};document.addEventListener(`DOMContentLoaded`,()=>{t(),r(),i(),a(),o(),s(),l(),u(),d(),f(),p(),m(),h(),g(),v(),_()});

@@ -55,6 +55,15 @@ it('reports profitability standing by branch with an all branches total', functi
         'penalty_balance' => 0,
         'status' => 'disbursed',
     ]);
+    $closedLoan = profitabilityReportLoan($luweero, $product, [
+        'loan_number' => 'LN-PROFIT-CLOSED',
+        'approved_amount' => 700,
+        'principal_balance' => 0,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'status' => 'closed',
+    ]);
 
     profitabilityReportLedger($luweero, 'income', 'credit', 900);
     profitabilityReportLedger($luweero, 'expense', 'debit', 200);
@@ -81,6 +90,28 @@ it('reports profitability standing by branch with an all branches total', functi
         'transaction_reference' => 'DISB-PROFIT-002',
         'disbursement_date' => today(),
         'status' => 'successful',
+    ]);
+    LoanDisbursement::create([
+        'branch_id' => $luweero->id,
+        'loan_id' => $closedLoan->id,
+        'disbursed_amount' => 700,
+        'fees_deducted' => 0,
+        'net_amount' => 700,
+        'payment_method' => 'cash',
+        'transaction_reference' => 'DISB-PROFIT-CLOSED',
+        'disbursement_date' => today(),
+        'status' => 'successful',
+    ]);
+    LoanDisbursement::create([
+        'branch_id' => $luweero->id,
+        'loan_id' => $luweeroLoan->id,
+        'disbursed_amount' => 500,
+        'fees_deducted' => 500,
+        'net_amount' => 0,
+        'payment_method' => 'cash',
+        'transaction_reference' => 'DISB-PROFIT-REVERSED',
+        'disbursement_date' => today(),
+        'status' => 'reversed',
     ]);
 
     LoanSchedule::create([
@@ -129,6 +160,14 @@ it('reports profitability standing by branch with an all branches total', functi
         'from' => today()->toDateString(),
         'to' => today()->toDateString(),
     ], $admin);
+    $disbursementReport = app(ReportCatalogService::class)->generate('loan-disbursements', [
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+    ], $admin);
+    $applicationFeesReport = app(ReportCatalogService::class)->generate('application-fees-income', [
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+    ], $admin);
 
     expect($report['definition']['category'])->toBe('Profitability')
         ->and($report['columns'])->toBe(['Branch', 'Income', 'Expenses', 'Total Loans', 'Interest', 'Expected', 'Collected', 'Current Standing', 'Net']);
@@ -137,20 +176,23 @@ it('reports profitability standing by branch with an all branches total', functi
 
     expect($rows['Luweero']['Income'])->toBe('UGX 900.00')
         ->and($rows['Luweero']['Expenses'])->toBe('UGX 200.00')
-        ->and($rows['Luweero']['Total Loans'])->toBe('UGX 1,000.00')
+        ->and($rows['Luweero']['Total Loans'])->toBe('UGX 1,700.00')
         ->and($rows['Luweero']['Interest'])->toBe('UGX 120.00')
         ->and($rows['Luweero']['Expected'])->toBe('UGX 300.00')
         ->and($rows['Luweero']['Collected'])->toBe('UGX 250.00')
         ->and($rows['Luweero']['Current Standing'])->toBe('UGX 475.00')
         ->and($rows['All Branches']['Income'])->toBe('UGX 1,000.00')
         ->and($rows['All Branches']['Expenses'])->toBe('UGX 230.00')
-        ->and($rows['All Branches']['Total Loans'])->toBe('UGX 3,000.00')
+        ->and($rows['All Branches']['Total Loans'])->toBe('UGX 3,700.00')
         ->and($rows['All Branches']['Interest'])->toBe('UGX 200.00')
         ->and($rows['All Branches']['Expected'])->toBe('UGX 900.00')
         ->and($rows['All Branches']['Collected'])->toBe('UGX 650.00')
         ->and($rows['All Branches']['Current Standing'])->toBe('UGX 2,075.00')
         ->and($rows['All Branches']['Net'])->toBe('UGX 770.00')
-        ->and($report['summary']['Branches'])->toBe('2');
+        ->and($report['summary']['Branches'])->toBe('2')
+        ->and($disbursementReport['summary']['Gross principal disbursed'])->toBe('UGX 3,700.00')
+        ->and($disbursementReport['summary']['Application fees charged'])->toBe('UGX 70.00')
+        ->and($applicationFeesReport['summary']['Application fees charged'])->toBe('UGX 70.00');
 });
 
 it('can include projected loan interest in profitability reports', function () {

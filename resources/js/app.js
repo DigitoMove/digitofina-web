@@ -890,13 +890,13 @@ const initTableExports = () => {
 
         const title = tableTitle(table, index);
         const toolbar = document.createElement('div');
-        toolbar.className = 'mb-2 flex flex-wrap items-center justify-end gap-2 text-xs';
+        toolbar.className = 'mb-2 flex flex-wrap items-center justify-end gap-2 rounded-md bg-slate-50 px-4 py-2 text-xs';
         toolbar.dataset.tableExportToolbar = '1';
         toolbar.innerHTML = `
-            <span class="mr-auto font-semibold text-slate-500">Export table</span>
-            <button type="button" class="rounded border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm hover:bg-slate-50" data-table-export="csv">CSV</button>
-            <button type="button" class="rounded border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm hover:bg-slate-50" data-table-export="xls">Excel</button>
-            <button type="button" class="rounded border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm hover:bg-slate-50" data-table-export="pdf">PDF</button>
+            <span class="mr-auto pl-2 font-semibold text-slate-700">Export table</span>
+            <button type="button" class="rounded border border-emerald-700 bg-emerald-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-emerald-700" data-table-export="csv">CSV</button>
+            <button type="button" class="rounded border border-blue-700 bg-blue-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-blue-700" data-table-export="xls">Excel</button>
+            <button type="button" class="mr-2 rounded border border-rose-700 bg-rose-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-rose-700" data-table-export="pdf">PDF</button>
         `;
 
         const tableParent = table.parentElement;
