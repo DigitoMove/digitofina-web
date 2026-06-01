@@ -94,6 +94,14 @@ const initKeyboardFocus = () => {
     });
 };
 
+const initFlashToasts = () => {
+    document.querySelectorAll('[data-flash-toast]').forEach((toast) => {
+        toast.querySelector('[data-flash-dismiss]')?.addEventListener('click', () => {
+            toast.remove();
+        });
+    });
+};
+
 const initSidebar = () => {
     const sidebar = document.querySelector('[data-sidebar]');
     const openButtons = document.querySelectorAll('[data-sidebar-open]');
@@ -933,6 +941,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSteps();
     initRipples();
     initKeyboardFocus();
+    initFlashToasts();
     initSidebar();
     initConfirmDialog();
     initLoanSchedulePreview();

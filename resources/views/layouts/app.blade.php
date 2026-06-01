@@ -237,13 +237,22 @@
             <main class="df-page flex-1 p-4 sm:p-6">
                 <div class="fixed right-4 top-20 z-50 grid w-[min(24rem,calc(100vw-2rem))] gap-3">
                     @if (session('status'))
-                        <div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-lg">{{ session('status') }}</div>
+                        <div class="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-lg" data-flash-toast>
+                            <div class="min-w-0 flex-1">{{ session('status') }}</div>
+                            <button type="button" class="-mr-1 grid h-6 w-6 shrink-0 place-items-center rounded-full text-emerald-700 transition hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" aria-label="Close notification" data-flash-dismiss>&times;</button>
+                        </div>
                     @endif
                     @if (session('warning'))
-                        <div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 shadow-lg">{{ session('warning') }}</div>
+                        <div class="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 shadow-lg" data-flash-toast>
+                            <div class="min-w-0 flex-1">{{ session('warning') }}</div>
+                            <button type="button" class="-mr-1 grid h-6 w-6 shrink-0 place-items-center rounded-full text-amber-800 transition hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500" aria-label="Close notification" data-flash-dismiss>&times;</button>
+                        </div>
                     @endif
                     @if ($errors->any())
-                        <div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 shadow-lg">{{ $errors->first() }}</div>
+                        <div class="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 shadow-lg" data-flash-toast>
+                            <div class="min-w-0 flex-1">{{ $errors->first() }}</div>
+                            <button type="button" class="-mr-1 grid h-6 w-6 shrink-0 place-items-center rounded-full text-red-700 transition hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500" aria-label="Close notification" data-flash-dismiss>&times;</button>
+                        </div>
                     @endif
                 </div>
                 {{ $slot ?? '' }}
