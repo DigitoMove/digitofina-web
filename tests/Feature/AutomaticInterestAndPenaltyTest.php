@@ -152,20 +152,20 @@ it('applies organization penalty settings before platform defaults once per over
         'status' => 'active',
     ]);
 
-    $schedule = LoanSchedule::create(['loan_id' => $loan->id, 'installment_number' => 1, 'due_date' => '2026-05-11', 'principal_due' => 100_000, 'total_due' => 100_000, 'outstanding_amount' => 100_000, 'balance_due' => 100_000, 'status' => 'pending']);
+    $schedule = LoanSchedule::create(['loan_id' => $loan->id, 'installment_number' => 1, 'due_date' => '2026-05-11', 'principal_due' => 102_500, 'total_due' => 102_500, 'outstanding_amount' => 102_500, 'balance_due' => 102_500, 'status' => 'pending']);
 
     $loanService = app(LoanService::class);
     $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-13'), branchId: $branch->id);
     $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-13'), branchId: $branch->id);
 
     expect(LoanPenalty::where('loan_id', $loan->id)->count())->toBe(1)
-        ->and((float) $loan->fresh()->penalty_balance)->toBe(1000.0)
-        ->and((float) $schedule->fresh()->penalty_due)->toBe(1000.0)
+        ->and((float) $loan->fresh()->penalty_balance)->toBe(1050.0)
+        ->and((float) $schedule->fresh()->penalty_due)->toBe(1050.0)
         ->and((int) $schedule->fresh()->days_overdue)->toBe(1);
 
     $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-14'), branchId: $branch->id);
 
     expect(LoanPenalty::where('loan_id', $loan->id)->count())->toBe(2)
-        ->and((float) $loan->fresh()->penalty_balance)->toBe(2000.0)
-        ->and((float) $schedule->fresh()->penalty_due)->toBe(2000.0);
+        ->and((float) $loan->fresh()->penalty_balance)->toBe(2100.0)
+        ->and((float) $schedule->fresh()->penalty_due)->toBe(2100.0);
 });

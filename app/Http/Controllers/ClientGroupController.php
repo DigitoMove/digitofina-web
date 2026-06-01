@@ -21,7 +21,11 @@ class ClientGroupController extends Controller
         Gate::authorize('viewAny', Client::class);
 
         $groups = ClientGroup::query()
-            ->with(['branch', 'chairperson', 'members'])
+            ->with([
+                'branch' => fn ($query) => $query->withTrashed(),
+                'chairperson',
+            ])
+            ->withCount('members')
             ->when($request->search, fn ($query, string $search) => $query->whereAny(['group_number', 'name', 'phone', 'registration_number'], 'like', "%{$search}%"))
             ->when($request->branch_id, fn ($query, string $branchId) => $query->where('branch_id', $branchId))
             ->when($request->status, fn ($query, string $status) => $query->where('status', $status))

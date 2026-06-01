@@ -19,7 +19,23 @@
         <thead class="bg-slate-50 text-slate-600"><tr><th class="p-3">Group</th><th>Branch</th><th>Chairperson</th><th>Members</th><th>Status</th><th></th></tr></thead>
         <tbody>
             @forelse ($groups as $group)
-                <tr class="border-t"><td class="p-3 font-medium">{{ $group->group_number }}<div class="text-slate-500">{{ $group->name }}</div></td><td>{{ $group->branch->name }}</td><td>{{ $group->chairperson?->full_name ?? '-' }}</td><td>{{ $group->members->count() }}</td><td>{{ str($group->status)->headline() }}</td><td><a class="font-medium text-blue-700" href="{{ route('client-groups.show', $group) }}">View</a></td></tr>
+                <tr class="border-t">
+                    <td class="p-3 font-medium">{{ $group->group_number }}<div class="text-slate-500">{{ $group->name }}</div></td>
+                    <td>
+                        @if ($group->branch)
+                            {{ $group->branch->name }}
+                            @if ($group->branch->trashed())
+                                <div class="text-xs text-amber-700">Deleted branch</div>
+                            @endif
+                        @else
+                            <span class="text-slate-500">Branch unavailable</span>
+                        @endif
+                    </td>
+                    <td>{{ $group->chairperson?->full_name ?? '-' }}</td>
+                    <td>{{ number_format($group->members_count) }}</td>
+                    <td>{{ str($group->status)->headline() }}</td>
+                    <td><a class="font-medium text-blue-700" href="{{ route('client-groups.show', $group) }}">View</a></td>
+                </tr>
             @empty
                 <tr><td colspan="6" class="p-4 text-slate-500">No groups found.</td></tr>
             @endforelse
