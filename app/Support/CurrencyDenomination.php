@@ -6,7 +6,7 @@ use InvalidArgumentException;
 
 class CurrencyDenomination
 {
-    public const MINIMUM_UNIT = 100;
+    public const MINIMUM_UNIT = 50;
 
     public static function assertValid(float|int|string $amount, string $field = 'Amount'): void
     {
