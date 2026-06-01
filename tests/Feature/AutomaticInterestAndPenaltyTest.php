@@ -113,12 +113,16 @@ it('queues and posts due savings interest from the scheduled job', function () {
         ->and($account->transactions()->where('type', 'interest_posting')->count())->toBe(1);
 });
 
-it('applies organization setting penalties once per overdue grace-adjusted day', function () {
+it('applies organization penalty settings before platform defaults once per overdue grace-adjusted day', function () {
     $branch = automaticPostingBranch();
     $client = automaticPostingClient($branch);
     SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
         ['organization_id' => null, 'key' => 'loan_arrears_penalty_rate'],
         ['label' => 'Loan arrears penalty rate', 'value' => '3', 'type' => 'number', 'group' => 'loans']
+    );
+    SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
+        ['organization_id' => $branch->organization_id, 'key' => 'loan_arrears_penalty_rate'],
+        ['label' => 'Loan arrears penalty rate', 'value' => '1', 'type' => 'number', 'group' => 'loans']
     );
     $product = LoanProduct::create([
         'name' => 'Settings Penalty Loan',
@@ -155,13 +159,13 @@ it('applies organization setting penalties once per overdue grace-adjusted day',
     $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-13'), branchId: $branch->id);
 
     expect(LoanPenalty::where('loan_id', $loan->id)->count())->toBe(1)
-        ->and((float) $loan->fresh()->penalty_balance)->toBe(3000.0)
-        ->and((float) $schedule->fresh()->penalty_due)->toBe(3000.0)
+        ->and((float) $loan->fresh()->penalty_balance)->toBe(1000.0)
+        ->and((float) $schedule->fresh()->penalty_due)->toBe(1000.0)
         ->and((int) $schedule->fresh()->days_overdue)->toBe(1);
 
     $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-14'), branchId: $branch->id);
 
     expect(LoanPenalty::where('loan_id', $loan->id)->count())->toBe(2)
-        ->and((float) $loan->fresh()->penalty_balance)->toBe(6000.0)
-        ->and((float) $schedule->fresh()->penalty_due)->toBe(6000.0);
+        ->and((float) $loan->fresh()->penalty_balance)->toBe(2000.0)
+        ->and((float) $schedule->fresh()->penalty_due)->toBe(2000.0);
 });

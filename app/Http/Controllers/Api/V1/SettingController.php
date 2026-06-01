@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateApiSystemSettingsRequest;
 use App\Http\Resources\MakerCheckerRequestResource;
 use App\Http\Resources\SystemSettingResource;
+use App\Models\Organization;
 use App\Models\SystemSetting;
 use App\Services\AuditLogger;
 use App\Services\BusinessCalendarService;
@@ -23,6 +24,7 @@ class SettingController extends Controller
     {
         ApiSecurity::assertPermission(request()->user(), 'manage-settings');
         $organizationId = SystemSetting::resolvedOrganizationId();
+        $this->ensureSettingsForScope($organizationId);
 
         return ApiResponse::collection(
             SystemSettingResource::collection(SystemSetting::forOrganization($organizationId)->orderBy('group')->orderBy('key')->get()),
@@ -36,6 +38,7 @@ class SettingController extends Controller
 
         if ($controls->requiresMakerChecker($request->user(), 'settings_update')) {
             $organizationId = SystemSetting::resolvedOrganizationId();
+            $this->ensureSettingsForScope($organizationId);
             $oldValues = SystemSetting::forOrganization($organizationId)
                 ->whereIn('key', array_keys($request->validated('settings', [])))
                 ->pluck('value', 'key')
@@ -57,6 +60,7 @@ class SettingController extends Controller
 
         $updated = collect();
         $organizationId = SystemSetting::resolvedOrganizationId();
+        $this->ensureSettingsForScope($organizationId);
 
         foreach ($request->validated('settings', []) as $key => $value) {
             $setting = SystemSetting::forOrganization($organizationId)->where('key', $key)->firstOrFail();
@@ -81,8 +85,11 @@ class SettingController extends Controller
 
     private function validateMoneySettings(UpdateApiSystemSettingsRequest $request, LoanApplicationFeeService $applicationFees, BusinessCalendarService $calendar): void
     {
+        $organizationId = SystemSetting::resolvedOrganizationId();
+        $this->ensureSettingsForScope($organizationId);
+
         foreach ($request->validated('settings', []) as $key => $value) {
-            $setting = SystemSetting::forOrganization(SystemSetting::resolvedOrganizationId())->where('key', $key)->firstOrFail();
+            $setting = SystemSetting::forOrganization($organizationId)->where('key', $key)->firstOrFail();
 
             try {
                 if ($setting->type === 'money' && (float) $value > 0) {
@@ -104,5 +111,12 @@ class SettingController extends Controller
                 abort(422, $exception->getMessage());
             }
         }
+    }
+
+    private function ensureSettingsForScope(?int $organizationId): void
+    {
+        $organizationId === null
+            ? SystemSetting::ensurePlatformDefaults()
+            : SystemSetting::ensureForOrganization(Organization::query()->findOrFail($organizationId));
     }
 }

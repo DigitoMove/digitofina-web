@@ -3,23 +3,25 @@
 @section('content')
 <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
     <div>
-        <h1 class="text-2xl font-semibold text-slate-950">Company Settings</h1>
+        <h1 class="text-2xl font-semibold text-slate-950">Settings</h1>
         <p class="text-sm text-slate-500">Core operating defaults for currency, numbering, approvals, repayments, SMS, and mobile money.</p>
         @if($selectedOrganization)
             <p class="mt-2 text-sm font-medium text-slate-700">Editing {{ $selectedOrganization->name }} settings.</p>
+        @else
+            <p class="mt-2 text-sm font-medium text-slate-700">Editing platform default settings.</p>
         @endif
     </div>
     @if(auth()->user()->hasRole('super-admin'))
         <div class="max-w-xl rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <div class="font-semibold">Super Admin scope</div>
-            <div>{{ $isSuperAdminGlobal ? 'Global view uses the first organization as the default settings scope. Switch into a company to edit that company directly.' : 'You are switched into this company.' }}</div>
+            <div>{{ $isSuperAdminGlobal ? 'Global view edits platform defaults used only when a company has not set its own value. Switch into a company to edit that company directly.' : 'You are switched into this company.' }}</div>
             <a href="{{ route('organizations.index') }}" class="mt-2 inline-flex font-semibold text-amber-950 underline">Manage company scope</a>
         </div>
     @endif
 </div>
 
 @if($settings->isEmpty())
-    <div class="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">No company settings are available yet. Create an organization first.</div>
+    <div class="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">No settings are available yet.</div>
 @else
 <form method="POST" action="{{ route('settings.update') }}" class="grid gap-5" data-df-tabs>
     @csrf

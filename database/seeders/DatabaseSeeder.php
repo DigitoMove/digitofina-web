@@ -266,6 +266,11 @@ class DatabaseSeeder extends Seeder
 
         foreach ($settings as $setting) {
             SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
+                ['organization_id' => null, 'key' => $setting['key']],
+                $setting,
+            );
+
+            SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
                 ['organization_id' => $organization->id, 'key' => $setting['key']],
                 $setting,
             );

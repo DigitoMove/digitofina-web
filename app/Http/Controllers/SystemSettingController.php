@@ -24,24 +24,26 @@ class SystemSettingController extends Controller
 
         $user = auth()->user();
         $selectedOrganization = $tenant->organization()
-            ?: ($user?->organization_id ? $user->organization : Organization::query()->oldest('id')->first());
+            ?: ($user?->organization_id ? $user->organization : null);
 
         if ($selectedOrganization) {
             SystemSetting::ensureForOrganization($selectedOrganization);
+        } else {
+            SystemSetting::ensurePlatformDefaults();
         }
 
         $enabledModules = $user?->hasRole('super-admin') || ! $selectedOrganization
             ? null
             : $modules->enabledSlugs($selectedOrganization);
 
-        $settings = $selectedOrganization
+        $settings = ($selectedOrganization
             ? SystemSetting::forOrganization($selectedOrganization->id)
-                ->orderBy('group')
-                ->orderBy('key')
-                ->get()
-                ->filter(fn (SystemSetting $setting): bool => $this->settingIsVisible($setting, $enabledModules))
-                ->groupBy('group')
-            : collect();
+            : SystemSetting::forPlatform())
+            ->orderBy('group')
+            ->orderBy('key')
+            ->get()
+            ->filter(fn (SystemSetting $setting): bool => $this->settingIsVisible($setting, $enabledModules))
+            ->groupBy('group');
 
         return view('settings.index', [
             'settings' => $settings,
@@ -72,6 +74,9 @@ class SystemSettingController extends Controller
     {
         Gate::authorize('update', SystemSetting::class);
         $organizationId = SystemSetting::resolvedOrganizationId();
+        $organizationId === null
+            ? SystemSetting::ensurePlatformDefaults()
+            : SystemSetting::ensureForOrganization(Organization::query()->findOrFail($organizationId));
 
         foreach ($request->validated('settings', []) as $key => $value) {
             $setting = SystemSetting::forOrganization($organizationId)->where('key', $key)->firstOrFail();

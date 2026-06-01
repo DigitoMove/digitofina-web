@@ -12,6 +12,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Services\LoanApplicationFeeService;
 use App\Services\ModuleService;
 use App\Services\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -158,6 +159,54 @@ it('keeps system settings scoped to each organization', function () {
 
     expect(SystemSetting::value('loan_application_fee', 0, $originalOrganization->id))->toBe('15000')
         ->and(SystemSetting::value('loan_application_fee', 0, $secondOrganization->id))->toBe('30000');
+});
+
+it('falls back to platform settings only when an organization has no override', function () {
+    [$originalOrganization] = tenantShell('Original SACCO');
+    [$secondOrganization] = tenantShell('Second SACCO');
+
+    SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
+        ['organization_id' => null, 'key' => 'loan_application_fee'],
+        ['label' => 'Loan application fee', 'value' => '10000', 'type' => 'money', 'group' => 'loans']
+    );
+
+    SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
+        ['organization_id' => $originalOrganization->id, 'key' => 'loan_application_fee'],
+        ['label' => 'Loan application fee', 'value' => '25000', 'type' => 'money', 'group' => 'loans']
+    );
+
+    expect(SystemSetting::value('loan_application_fee', 0, $originalOrganization->id))->toBe('25000')
+        ->and(SystemSetting::value('loan_application_fee', 0, $secondOrganization->id))->toBe('10000');
+});
+
+it('uses organization application fee ranges before platform ranges', function () {
+    [$organization] = tenantShell('Original SACCO');
+    [$secondOrganization] = tenantShell('Second SACCO');
+
+    SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
+        ['organization_id' => null, 'key' => 'loan_application_fee_ranges'],
+        [
+            'label' => 'Loan application fee ranges',
+            'value' => json_encode([['min' => 0, 'max' => null, 'fee' => 20000]]),
+            'type' => 'json',
+            'group' => 'loans',
+        ]
+    );
+
+    SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
+        ['organization_id' => $organization->id, 'key' => 'loan_application_fee_ranges'],
+        [
+            'label' => 'Loan application fee ranges',
+            'value' => json_encode([['min' => 0, 'max' => null, 'fee' => 5000]]),
+            'type' => 'json',
+            'group' => 'loans',
+        ]
+    );
+
+    $applicationFees = app(LoanApplicationFeeService::class);
+
+    expect($applicationFees->feeFor(100000, $organization->id))->toBe(5000.0)
+        ->and($applicationFees->feeFor(100000, $secondOrganization->id))->toBe(20000.0);
 });
 
 it('lets organization users view their organization profile without edit permission', function () {

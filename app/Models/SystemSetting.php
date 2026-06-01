@@ -28,7 +28,20 @@ class SystemSetting extends Model
 
     public static function value(string $key, mixed $default = null, ?int $organizationId = null): mixed
     {
-        return static::forOrganization($organizationId)
+        $resolvedOrganizationId = $organizationId ?? static::resolvedOrganizationId();
+
+        if ($resolvedOrganizationId !== null) {
+            $organizationSetting = static::withoutGlobalScope('tenant')
+                ->where('organization_id', $resolvedOrganizationId)
+                ->where('key', $key)
+                ->first();
+
+            if ($organizationSetting !== null) {
+                return $organizationSetting->value;
+            }
+        }
+
+        return static::forPlatform()
             ->where('key', $key)
             ->value('value') ?? $default;
     }
@@ -42,23 +55,25 @@ class SystemSetting extends Model
             ->where('organization_id', $organizationId ?? static::resolvedOrganizationId());
     }
 
+    /**
+     * @return Builder<SystemSetting>
+     */
+    public static function forPlatform(): Builder
+    {
+        return static::withoutGlobalScope('tenant')->whereNull('organization_id');
+    }
+
     public static function resolvedOrganizationId(): ?int
     {
         return app(TenantContext::class)->id()
-            ?: Auth::user()?->organization_id
-            ?: Organization::query()->oldest('id')->value('id');
+            ?: Auth::user()?->organization_id;
     }
 
     public static function ensureForOrganization(Organization $organization): void
     {
-        $templateOrganizationId = static::templateOrganizationId($organization);
+        static::ensurePlatformDefaults();
 
-        static::withoutGlobalScope('tenant')
-            ->when(
-                $templateOrganizationId,
-                fn (Builder $query): Builder => $query->where('organization_id', $templateOrganizationId),
-                fn (Builder $query): Builder => $query->whereNull('organization_id'),
-            )
+        static::forPlatform()
             ->orderBy('group')
             ->orderBy('key')
             ->get()
@@ -73,17 +88,31 @@ class SystemSetting extends Model
             });
     }
 
-    private static function templateOrganizationId(Organization $organization): ?int
+    public static function ensurePlatformDefaults(): void
     {
-        $originalOrganizationId = Organization::query()
-            ->whereKeyNot($organization->id)
-            ->oldest('id')
-            ->value('id');
-
-        if ($originalOrganizationId && static::withoutGlobalScope('tenant')->where('organization_id', $originalOrganizationId)->exists()) {
-            return (int) $originalOrganizationId;
+        if (static::forPlatform()->exists()) {
+            return;
         }
 
-        return null;
+        $templateOrganizationId = Organization::query()->oldest('id')->value('id');
+
+        if ($templateOrganizationId === null) {
+            return;
+        }
+
+        static::withoutGlobalScope('tenant')
+            ->where('organization_id', $templateOrganizationId)
+            ->orderBy('group')
+            ->orderBy('key')
+            ->get()
+            ->each(function (SystemSetting $template): void {
+                static::withoutGlobalScope('tenant')->firstOrCreate(
+                    [
+                        'organization_id' => null,
+                        'key' => $template->key,
+                    ],
+                    $template->only(['label', 'value', 'type', 'group', 'description']),
+                );
+            });
     }
 }
