@@ -215,12 +215,12 @@
             <div class="mb-4 flex items-start justify-between gap-4">
                 <div>
                     <h2 class="text-lg font-semibold text-slate-950">Repair loan terms</h2>
-                    <p class="mt-1 text-sm text-slate-600">Update the corrected loan settings, then regenerate the repayment schedule.</p>
+                    <p class="mt-1 text-sm text-slate-600">Update corrected terms, or repair due dates only while preserving already posted repayments.</p>
                 </div>
                 <button type="button" data-loan-repair-close class="rounded-lg px-3 py-1 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900" aria-label="Close repair loan dialog">&times;</button>
             </div>
 
-            <form method="POST" action="{{ route('loans.repair-terms', $loan) }}" class="grid gap-4 md:grid-cols-2" data-confirm-title="Repair loan terms" data-confirm-message="Repair this loan and regenerate its repayment schedule?" data-confirm-label="Repair loan" data-confirm-tone="warning">
+            <form method="POST" action="{{ route('loans.repair-terms', $loan) }}" class="grid gap-4 md:grid-cols-2" data-confirm-title="Repair loan terms" data-confirm-message="Repair this loan. If repayments already exist, only due dates will be realigned and payments will be preserved." data-confirm-label="Repair loan" data-confirm-tone="warning">
                 @csrf
                 <label class="text-sm font-medium text-slate-700">Loan product
                     <select name="loan_product_id" class="mt-1 w-full rounded border-slate-300" required>
@@ -243,8 +243,13 @@
                     </select>
                 </label>
                 <label class="text-sm font-medium text-slate-700">Schedule start
-                    <input name="schedule_start_date" value="{{ old('schedule_start_date', ($loan->disbursed_at ?? $loan->approved_at ?? today())->toDateString()) }}" type="date" class="mt-1 w-full rounded border-slate-300" required>
+                    <input name="schedule_start_date" value="{{ old('schedule_start_date', ($loan->application_date ?? $loan->disbursed_at ?? $loan->approved_at ?? today())->toDateString()) }}" type="date" class="mt-1 w-full rounded border-slate-300" required>
                 </label>
+                @if($loan->repayments->where('status', 'successful')->isNotEmpty())
+                    <div class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 md:col-span-2">
+                        This loan already has repayments. The repair will preserve posted payments and only realign schedule dates unless repayments are reversed first.
+                    </div>
+                @endif
                 <label class="text-sm font-medium text-slate-700 md:col-span-2">Reason <x-required-badge />
                     <textarea name="reason" rows="3" required class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100" placeholder="Explain why the loan terms are being repaired.">{{ old('reason') }}</textarea>
                 </label>
@@ -624,15 +629,15 @@
                     <h2 class="font-semibold text-slate-950">Guarantors</h2>
                     <form method="POST" action="{{ route('loans.guarantors.store', $loan) }}" class="mt-4 grid gap-3 md:grid-cols-2">
                         @csrf
-                        <label class="text-sm font-semibold text-slate-700">Guarantor type <x-required-badge /><select name="type" required><option value="existing_client">Existing client</option><option value="external">External</option></select></label>
-                        <label class="text-sm font-semibold text-slate-700">Existing client <x-required-badge label="Required for existing" class="bg-amber-50 text-amber-700" /><select name="guarantor_client_id"><option value="">Select member</option>@foreach($guarantorClients as $guarantorClient)<option value="{{ $guarantorClient->id }}">{{ $guarantorClient->client_number }} - {{ $guarantorClient->full_name }}</option>@endforeach</select></label>
+                        <label class="text-sm font-semibold text-slate-700">Guarantor type <x-required-badge /><select name="type" required><option value="external" @selected(old('type', 'external') === 'external')>External person</option><option value="existing_client" @selected(old('type') === 'existing_client')>Link existing client</option></select></label>
+                        <label class="text-sm font-semibold text-slate-700">Optional existing client link <select name="guarantor_client_id"><option value="">No client link</option>@foreach($guarantorClients as $guarantorClient)<option value="{{ $guarantorClient->id }}" @selected((int) old('guarantor_client_id') === (int) $guarantorClient->id)>{{ $guarantorClient->client_number }} - {{ $guarantorClient->full_name }}</option>@endforeach</select></label>
                         <label class="text-sm font-semibold text-slate-700">Name <x-required-badge /><input name="name" placeholder="Name" required></label>
-                        <input name="phone" placeholder="Phone">
+                        <label class="text-sm font-semibold text-slate-700">Phone <x-required-badge /><input name="phone" placeholder="Phone" required></label>
                         <input name="national_id" placeholder="National ID">
                         <input name="relationship" placeholder="Relationship">
                         <label class="text-sm font-semibold text-slate-700">Guaranteed amount <x-required-badge /><input name="guaranteed_amount" type="number" step="0.01" placeholder="Guaranteed amount" required></label>
                         <select name="status"><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option></select>
-                        <textarea name="address" class="md:col-span-2" placeholder="Address"></textarea>
+                        <label class="text-sm font-semibold text-slate-700 md:col-span-2">Address <x-required-badge /><textarea name="address" class="mt-1" placeholder="Address" required></textarea></label>
                         <button class="df-action-secondary md:col-span-2">Add guarantor</button>
                     </form>
                     <div class="mt-4 divide-y divide-slate-200 text-sm">

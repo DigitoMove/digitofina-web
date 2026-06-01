@@ -76,7 +76,7 @@ function loanWorkflowClient(User $user, string $phone = '+256700000001'): Client
         'national_id' => fake()->unique()->bothify('CM##########??'),
         'phone' => $phone,
         'kyc_status' => 'verified',
-        'status' => 'fully_paid',
+        'status' => 'active',
     ]);
 }
 
@@ -221,6 +221,8 @@ it('approves and disburses a loan with guarantor checks and a repayment schedule
         'type' => 'existing_client',
         'guarantor_client_id' => $guarantorClient->id,
         'name' => $guarantorClient->full_name,
+        'phone' => '+256700000002',
+        'address' => 'Kampala Road',
         'guaranteed_amount' => 1_000_000,
         'status' => 'accepted',
     ])->assertRedirect();
@@ -241,10 +243,12 @@ it('approves and disburses a loan with guarantor checks and a repayment schedule
     ])->assertRedirect();
 
     $loan->refresh();
+    $expectedFirstDueDate = app(BusinessCalendarService::class)->nextBusinessDay(today()->addMonthsNoOverflow())->toDateString();
 
     expect($loan->status)->toBe('active')
         ->and($loan->schedules)->toHaveCount(6)
-        ->and($loan->schedules->first()->due_date?->toDateString())->toBe(app(BusinessCalendarService::class)->dueDate(today(), 1, 'monthly')->toDateString())
+        ->and($loan->schedules->first()->due_date?->toDateString())->toBe($expectedFirstDueDate)
+        ->and($loan->schedules->first()->due_date?->toDateString())->not->toBe(today()->toDateString())
         ->and($loan->disbursements)->toHaveCount(1)
         ->and((float) $loan->interest_balance)->toBeGreaterThan(0.0);
 });
@@ -277,6 +281,7 @@ it('copies guarantors from the client most recent loan with guarantors', functio
         'type' => 'existing_client',
         'name' => $oldGuarantorClient->full_name,
         'phone' => '+256700000010',
+        'address' => 'Old market lane',
         'guaranteed_amount' => 400_000,
         'status' => 'accepted',
     ]);
@@ -301,6 +306,7 @@ it('copies guarantors from the client most recent loan with guarantors', functio
         'type' => 'existing_client',
         'name' => $recentGuarantorClient->full_name,
         'phone' => '+256700000011',
+        'address' => 'Recent guarantor village',
         'relationship' => 'Business partner',
         'guaranteed_amount' => 600_000,
         'status' => 'accepted',
@@ -321,16 +327,17 @@ it('copies guarantors from the client most recent loan with guarantors', functio
     expect($loan->loanGuarantors()->count())->toBe(1)
         ->and($guarantor->guarantor_client_id)->toBe($recentGuarantorClient->id)
         ->and($guarantor->name)->toBe($recentGuarantorClient->full_name)
+        ->and($guarantor->phone)->toBe('+256700000011')
+        ->and($guarantor->address)->toBe('Recent guarantor village')
         ->and($guarantor->relationship)->toBe('Business partner')
         ->and((float) $guarantor->guaranteed_amount)->toBe(800_000.0)
         ->and($guarantor->status)->toBe('accepted');
 });
 
-it('uses the loan amount for manually attached guarantors and approved guarantor coverage', function () {
+it('uses the loan amount for manually attached external guarantors and approved guarantor coverage', function () {
     $user = loanWorkflowUser();
     $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
     $client = loanWorkflowClient($user);
-    $guarantorClient = loanWorkflowClient($user, '+256700000012');
     $product = loanWorkflowProduct();
     loanWorkflowSavingsAccount($user, $client);
 
@@ -350,16 +357,21 @@ it('uses the loan amount for manually attached guarantors and approved guarantor
     ]);
 
     $this->actingAs($user)->post(route('loans.guarantors.store', $loan), [
-        'type' => 'existing_client',
-        'guarantor_client_id' => $guarantorClient->id,
-        'name' => $guarantorClient->full_name,
+        'type' => 'external',
+        'name' => 'Sarah External',
+        'phone' => '+256700000012',
+        'address' => 'Kasangati trading centre',
         'guaranteed_amount' => 50_000,
         'status' => 'accepted',
     ])->assertRedirect()->assertSessionHasNoErrors();
 
     $guarantor = $loan->loanGuarantors()->firstOrFail();
 
-    expect((float) $guarantor->guaranteed_amount)->toBe(1_000_000.0);
+    expect($guarantor->guarantor_client_id)->toBeNull()
+        ->and($guarantor->name)->toBe('Sarah External')
+        ->and($guarantor->phone)->toBe('+256700000012')
+        ->and($guarantor->address)->toBe('Kasangati trading centre')
+        ->and((float) $guarantor->guaranteed_amount)->toBe(1_000_000.0);
 
     app(LoanService::class)->approve($loan, $user, 850_000, 'Approved lower than requested.');
 
@@ -398,6 +410,31 @@ it('leaves a new loan without guarantors when the client has no prior loan guara
     ], $user);
 
     expect($loan->loanGuarantors()->exists())->toBeFalse();
+});
+
+it('creates monthly loan schedules one calendar month after the application date', function () {
+    $user = loanWorkflowUser();
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    loanWorkflowSavingsAccount($user, $client);
+    $applicationDate = today();
+
+    $loan = app(LoanApplicationService::class)->submit([
+        'client_id' => $client->id,
+        'loan_product_id' => $product->id,
+        'requested_amount' => 500_000,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'application_date' => $applicationDate->toDateString(),
+        'purpose' => 'Monthly schedule check',
+    ], $user);
+
+    $expectedDueDate = app(BusinessCalendarService::class)
+        ->nextBusinessDay($applicationDate->copy()->addMonthsNoOverflow())
+        ->toDateString();
+
+    expect($loan->schedules()->firstOrFail()->due_date?->toDateString())->toBe($expectedDueDate)
+        ->and($loan->schedules()->firstOrFail()->due_date?->toDateString())->not->toBe($applicationDate->toDateString());
 });
 
 it('lets an admin appraise approve and disburse a loan in one shortcut', function () {
@@ -1145,6 +1182,92 @@ it('repairs unpaid monthly schedules to start one business month after applicati
         ->and((float) $loan->fresh()->penalty_balance)->toBe(0.0)
         ->and($loan->fresh()->status)->toBe('active')
         ->and(LoanPenalty::where('loan_schedule_id', $schedule->id)->exists())->toBeFalse();
+});
+
+it('repairs monthly schedule dates with partial repayments without reversing payments', function () {
+    $user = loanWorkflowUser();
+    $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $applicationDate = today();
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'loan_number' => '1001-LN-PARTIAL-REPAIR',
+        'requested_amount' => 500000,
+        'approved_amount' => 500000,
+        'principal_balance' => 400000,
+        'interest_balance' => 0,
+        'penalty_balance' => 10000,
+        'interest_rate' => 24,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'application_date' => $applicationDate,
+        'status' => 'in_arrears',
+    ]);
+    $schedule = LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => $applicationDate,
+        'principal_due' => 500000,
+        'principal_paid' => 100000,
+        'penalty_due' => 10000,
+        'total_due' => 510000,
+        'total_paid' => 100000,
+        'amount_paid' => 100000,
+        'outstanding_amount' => 410000,
+        'balance_due' => 410000,
+        'status' => 'overdue',
+        'days_overdue' => 1,
+    ]);
+    $repayment = LoanRepayment::create([
+        'loan_id' => $loan->id,
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'amount' => 100000,
+        'principal_paid' => 100000,
+        'paid_at' => today(),
+        'status' => 'successful',
+    ]);
+    LoanPenalty::create([
+        'loan_id' => $loan->id,
+        'loan_schedule_id' => $schedule->id,
+        'amount' => 10000,
+        'days_overdue' => 1,
+        'calculated_for_date' => $applicationDate,
+        'status' => 'pending',
+    ]);
+
+    $response = $this->actingAs($user)
+        ->post(route('loans.repair-terms', $loan), [
+            'loan_product_id' => $product->id,
+            'approved_amount' => 500000,
+            'term_periods' => 1,
+            'repayment_frequency' => 'monthly',
+            'schedule_start_date' => $applicationDate->toDateString(),
+            'reason' => 'Correct monthly due date that was generated on the issue date.',
+        ]);
+
+    $expectedDueDate = app(BusinessCalendarService::class)
+        ->dueDate($applicationDate, 1, 'monthly')
+        ->toDateString();
+
+    $response
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('status', 'Loan terms repaired and repayment schedule recalculated.');
+
+    expect($schedule->fresh()->due_date?->toDateString())->toBe($expectedDueDate)
+        ->and($schedule->fresh()->status)->toBe('partially_paid')
+        ->and((float) $schedule->fresh()->principal_paid)->toBe(100000.0)
+        ->and((float) $schedule->fresh()->total_paid)->toBe(100000.0)
+        ->and((float) $schedule->fresh()->penalty_due)->toBe(0.0)
+        ->and((float) $schedule->fresh()->outstanding_amount)->toBe(400000.0)
+        ->and((float) $loan->fresh()->penalty_balance)->toBe(0.0)
+        ->and($loan->fresh()->status)->toBe('active')
+        ->and($repayment->fresh()->status)->toBe('successful');
 });
 
 it('excludes cancelled loans from arrears listings and penalty calculations', function () {

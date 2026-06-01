@@ -449,10 +449,6 @@ class LoanService
                 throw new InvalidArgumentException('Only approved, disbursed, active, or in-arrears loans can have terms repaired.');
             }
 
-            if ($loan->repayments()->where('status', 'successful')->exists()) {
-                throw new InvalidArgumentException('Reverse successful repayments before repairing loan terms.');
-            }
-
             $product = LoanProduct::query()->whereKey($data['loan_product_id'])->firstOrFail();
             $approvedAmount = (float) $data['approved_amount'];
             $termPeriods = (int) $data['term_periods'];
@@ -467,6 +463,14 @@ class LoanService
 
             if ($termPeriods < (int) $product->min_term || $termPeriods > (int) $product->max_term) {
                 throw new InvalidArgumentException('Installments are outside the selected product term limits.');
+            }
+
+            if ($loan->repayments()->where('status', 'successful')->exists()) {
+                if (! $this->isDateOnlyScheduleRepair($loan, $product, $approvedAmount, $termPeriods, $repaymentFrequency)) {
+                    throw new InvalidArgumentException('Reverse successful repayments before changing loan amount, product, frequency, or installment count. You can still repair schedule dates without reversing repayments.');
+                }
+
+                return $this->repairScheduleDatesOnly($loan, $user, $scheduleStartDate, (string) $data['reason']);
             }
 
             $loan->update([
@@ -511,6 +515,48 @@ class LoanService
 
             return $freshLoan;
         });
+    }
+
+    private function isDateOnlyScheduleRepair(Loan $loan, LoanProduct $product, float $approvedAmount, int $termPeriods, string $repaymentFrequency): bool
+    {
+        $currentAmount = round((float) ($loan->approved_amount ?: $loan->requested_amount), 2);
+
+        return (int) $loan->loan_product_id === (int) $product->id
+            && abs($currentAmount - round($approvedAmount, 2)) < 0.01
+            && (int) $loan->term_periods === $termPeriods
+            && (string) $loan->repayment_frequency === $repaymentFrequency;
+    }
+
+    private function repairScheduleDatesOnly(Loan $loan, User $user, CarbonInterface $scheduleStartDate, string $reason): Loan
+    {
+        $loan->loadMissing('schedules', 'loanAccount');
+        $anchorDate = $this->scheduleAnchorDate($loan, $scheduleStartDate);
+        $totals = $this->realignLoanScheduleDates($loan, $anchorDate, today());
+
+        $freshLoan = $loan->refresh();
+        $loanBalance = (float) $freshLoan->principal_balance + (float) $freshLoan->interest_balance + (float) $freshLoan->fees_balance + (float) $freshLoan->penalty_balance;
+
+        if ($freshLoan->loan_account_id) {
+            Account::query()
+                ->whereKey($freshLoan->loan_account_id)
+                ->lockForUpdate()
+                ->update([
+                    'balance' => $loanBalance,
+                    'status' => 'active',
+                ]);
+        }
+
+        $this->auditLogger->record('loan.schedule_dates_repaired', $freshLoan, [
+            'reason' => $reason,
+            'schedule_start_date' => $scheduleStartDate->toDateString(),
+            'anchor_date' => $anchorDate->toDateString(),
+            'updated_schedules' => $totals['schedules'],
+            'penalties_cleared' => $totals['penalties_cleared'],
+            'repaired_by' => $user->id,
+            'preserved_repayments' => true,
+        ], actor: $user);
+
+        return $freshLoan;
     }
 
     public function generateSavingsAccount(Loan $loan, User $user): Account
@@ -962,73 +1008,91 @@ class LoanService
                             ->firstOrFail();
 
                         $changed = false;
-                        $penaltiesCleared = 0.0;
                         $anchorDate = $this->scheduleAnchorDate($loan, $loan->disbursed_at ?: today());
-
-                        foreach ($loan->schedules as $schedule) {
-                            if ((float) $schedule->total_paid > 0 || $schedule->status === 'paid') {
-                                continue;
-                            }
-
-                            $expectedDueDate = $this->calendar->dueDate(
-                                $anchorDate,
-                                (int) $schedule->installment_number,
-                                'monthly',
-                                $loan->organization_id ? (int) $loan->organization_id : null,
-                            );
-
-                            if ($schedule->due_date?->toDateString() === $expectedDueDate->toDateString()) {
-                                continue;
-                            }
-
-                            $isOverdue = $expectedDueDate->lt($asOf->copy()->subDay());
-                            $penaltyDue = (float) $schedule->penalty_due;
-                            $canClearPenalty = ! $isOverdue && $penaltyDue > 0 && (float) $schedule->penalty_paid <= 0;
-                            $updates = [
-                                'due_date' => $expectedDueDate->toDateString(),
-                                'status' => $isOverdue ? 'overdue' : 'pending',
-                                'days_overdue' => $isOverdue ? $this->calendar->businessDaysBetween($expectedDueDate, $asOf, $loan->organization_id ? (int) $loan->organization_id : null) : 0,
-                            ];
-
-                            if ($canClearPenalty) {
-                                LoanPenalty::query()
-                                    ->where('loan_schedule_id', $schedule->id)
-                                    ->where('status', 'pending')
-                                    ->delete();
-
-                                $updates['penalty_due'] = 0;
-                                $updates['total_due'] = max(0, (float) $schedule->total_due - $penaltyDue);
-                                $updates['outstanding_amount'] = max(0, (float) $schedule->outstanding_amount - $penaltyDue);
-                                $updates['balance_due'] = max(0, (float) $schedule->balance_due - $penaltyDue);
-                                $penaltiesCleared += $penaltyDue;
-                            }
-
-                            $schedule->update($updates);
-                            $changed = true;
-                            $totals['schedules']++;
-                        }
+                        $repairTotals = $this->realignLoanScheduleDates($loan, $anchorDate, $asOf);
+                        $changed = $repairTotals['schedules'] > 0;
 
                         if (! $changed) {
                             return;
                         }
 
-                        if ($penaltiesCleared > 0) {
-                            $loan->update(['penalty_balance' => max(0, (float) $loan->penalty_balance - $penaltiesCleared)]);
-                            $totals['penalties_cleared'] += $penaltiesCleared;
-                        }
-
-                        if (in_array($loan->status, ['active', 'in_arrears'], true)) {
-                            $hasArrears = $loan->schedules()
-                                ->eligibleForArrears($asOf)
-                                ->exists();
-
-                            $loan->update(['status' => $hasArrears ? 'in_arrears' : 'active']);
-                        }
-
+                        $totals['schedules'] += $repairTotals['schedules'];
+                        $totals['penalties_cleared'] += $repairTotals['penalties_cleared'];
                         $totals['loans']++;
                     });
                 }
             });
+
+        return $totals;
+    }
+
+    /**
+     * @return array{schedules:int, penalties_cleared:float}
+     */
+    private function realignLoanScheduleDates(Loan $loan, CarbonInterface $anchorDate, CarbonInterface $asOf): array
+    {
+        $totals = ['schedules' => 0, 'penalties_cleared' => 0.0];
+
+        foreach ($loan->schedules()->orderBy('installment_number')->lockForUpdate()->get() as $schedule) {
+            $expectedDueDate = $this->calendar->dueDate(
+                $anchorDate,
+                (int) $schedule->installment_number,
+                $loan->repayment_frequency,
+                $loan->organization_id ? (int) $loan->organization_id : null,
+            );
+            $isOverdue = $expectedDueDate->lt($asOf->copy()->subDay());
+            $status = match (true) {
+                (float) $schedule->outstanding_amount <= 0 => 'paid',
+                $isOverdue => 'overdue',
+                (float) $schedule->total_paid > 0 => 'partially_paid',
+                default => 'pending',
+            };
+            $updates = [
+                'due_date' => $expectedDueDate->toDateString(),
+                'status' => $status,
+                'days_overdue' => $isOverdue ? $this->calendar->businessDaysBetween($expectedDueDate, $asOf, $loan->organization_id ? (int) $loan->organization_id : null) : 0,
+            ];
+
+            $penaltyDue = (float) $schedule->penalty_due;
+            $canClearPenalty = ! $isOverdue && $penaltyDue > 0 && (float) $schedule->penalty_paid <= 0;
+
+            if ($canClearPenalty) {
+                LoanPenalty::query()
+                    ->where('loan_schedule_id', $schedule->id)
+                    ->where('status', 'pending')
+                    ->delete();
+
+                $updates['penalty_due'] = 0;
+                $updates['total_due'] = max(0, (float) $schedule->total_due - $penaltyDue);
+                $updates['outstanding_amount'] = max(0, (float) $schedule->outstanding_amount - $penaltyDue);
+                $updates['balance_due'] = max(0, (float) $schedule->balance_due - $penaltyDue);
+                $totals['penalties_cleared'] += $penaltyDue;
+            }
+
+            $dirty = $schedule->due_date?->toDateString() !== $updates['due_date']
+                || (string) $schedule->status !== (string) $updates['status']
+                || (int) $schedule->days_overdue !== (int) $updates['days_overdue']
+                || (array_key_exists('penalty_due', $updates) && abs((float) $schedule->penalty_due - (float) $updates['penalty_due']) > 0.01);
+
+            if (! $dirty) {
+                continue;
+            }
+
+            $schedule->update($updates);
+            $totals['schedules']++;
+        }
+
+        if ($totals['penalties_cleared'] > 0) {
+            $loan->update(['penalty_balance' => max(0, (float) $loan->penalty_balance - $totals['penalties_cleared'])]);
+        }
+
+        if (in_array($loan->status, ['active', 'in_arrears'], true)) {
+            $hasArrears = $loan->schedules()
+                ->eligibleForArrears($asOf)
+                ->exists();
+
+            $loan->update(['status' => $hasArrears ? 'in_arrears' : 'active']);
+        }
 
         return $totals;
     }

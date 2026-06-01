@@ -24,6 +24,7 @@ class StoreLoanGuarantorRequest extends FormRequest
         $this->merge([
             'status' => $this->input('status', 'pending'),
             'guaranteed_amount' => $guaranteedAmount,
+            'type' => $this->input('type', $this->filled('guarantor_client_id') ? 'existing_client' : 'external'),
         ]);
     }
 
@@ -36,11 +37,11 @@ class StoreLoanGuarantorRequest extends FormRequest
     {
         return [
             'type' => ['required', Rule::in(['existing_client', 'external'])],
-            'guarantor_client_id' => ['nullable', 'required_if:type,existing_client', Rule::exists('clients', 'id')],
+            'guarantor_client_id' => ['nullable', Rule::exists('clients', 'id')],
             'name' => ['required', 'string', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:40'],
+            'phone' => ['required', 'string', 'max:40'],
             'national_id' => ['nullable', 'string', 'max:80'],
-            'address' => ['nullable', 'string'],
+            'address' => ['required', 'string'],
             'relationship' => ['nullable', 'string', 'max:255'],
             'guaranteed_amount' => ['required', 'numeric', 'min:1'],
             'status' => ['nullable', Rule::in(['pending', 'accepted', 'rejected'])],

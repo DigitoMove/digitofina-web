@@ -9,7 +9,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
 #[Signature('loans:repair-monthly-schedules {--as-of= : Date used to decide whether repaired schedules are overdue}')]
-#[Description('Realign unpaid monthly loan schedules to 26 business days from application date')]
+#[Description('Realign monthly loan schedules to one calendar month from application date while preserving repayments')]
 class RepairMonthlyLoanSchedules extends Command
 {
     public function handle(LoanService $loans): int

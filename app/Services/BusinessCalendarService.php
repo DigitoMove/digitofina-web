@@ -16,7 +16,7 @@ class BusinessCalendarService
             'weekly' => $this->nextBusinessDay($startDate->copy()->addWeeks($installment), $organizationId),
             'bi-weekly' => $this->nextBusinessDay($startDate->copy()->addWeeks($installment * 2), $organizationId),
             'quarterly' => $this->nextBusinessDay($startDate->copy()->addMonths($installment * 3), $organizationId),
-            default => $this->addBusinessDays($startDate, $installment * 26, $organizationId),
+            default => $this->nextBusinessDay($startDate->copy()->addMonthsNoOverflow($installment), $organizationId),
         };
     }
 
