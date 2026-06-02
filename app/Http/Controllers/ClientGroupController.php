@@ -50,8 +50,9 @@ class ClientGroupController extends Controller
     {
         Gate::authorize('create', Client::class);
 
+        $branch = Branch::query()->findOrFail($request->integer('branch_id'));
         $group = ClientGroup::create($request->safe()->except('member_ids') + [
-            'organization_id' => $request->user()->organization_id,
+            'organization_id' => $branch->organization_id ?: $request->user()->organization_id,
         ]);
 
         $this->syncMembers($group, $request->validated('member_ids', []));
@@ -79,7 +80,10 @@ class ClientGroupController extends Controller
         Gate::authorize('create', Client::class);
 
         $old = $clientGroup->load('members')->toArray();
-        $clientGroup->update($request->safe()->except('member_ids'));
+        $branch = Branch::query()->findOrFail($request->integer('branch_id'));
+        $clientGroup->update($request->safe()->except('member_ids') + [
+            'organization_id' => $branch->organization_id ?: $request->user()->organization_id,
+        ]);
         $this->syncMembers($clientGroup, $request->validated('member_ids', []));
         $auditLogger->record('client_group.updated', $clientGroup, $clientGroup->fresh()->load('members')->toArray(), $old);
 
@@ -106,6 +110,7 @@ class ClientGroupController extends Controller
         $payload = collect($memberIds)
             ->unique()
             ->mapWithKeys(fn (int|string $clientId): array => [(int) $clientId => [
+                'organization_id' => $group->organization_id,
                 'role' => 'member',
                 'joined_at' => now()->toDateString(),
                 'status' => 'active',

@@ -73,7 +73,7 @@ class Client extends Model
     public function groups(): BelongsToMany
     {
         return $this->belongsToMany(ClientGroup::class, 'client_group_members')
-            ->withPivot(['role', 'joined_at', 'left_at', 'status'])
+            ->withPivot(['organization_id', 'role', 'joined_at', 'left_at', 'status'])
             ->withTimestamps();
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -10,9 +11,14 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ClientGroup extends Model
 {
-    use SoftDeletes;
+    use BelongsToTenant, SoftDeletes;
 
     protected $guarded = [];
+
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class);
+    }
 
     public function branch(): BelongsTo
     {
@@ -37,7 +43,7 @@ class ClientGroup extends Model
     public function members(): BelongsToMany
     {
         return $this->belongsToMany(Client::class, 'client_group_members')
-            ->withPivot(['role', 'joined_at', 'left_at', 'status'])
+            ->withPivot(['organization_id', 'role', 'joined_at', 'left_at', 'status'])
             ->withTimestamps();
     }
 
