@@ -1580,6 +1580,73 @@ it('lets an admin clear penalties for one loan and updates balances', function (
         ->and($penalty->fresh()->status)->toBe('waived');
 });
 
+it('recalculates penalties after cleared penalties are waived', function () {
+    $user = loanWorkflowUser();
+    $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $organization = loanWorkflowOrganizationWithModules($user, ['loans']);
+    SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
+        ['organization_id' => null, 'key' => 'loan_arrears_penalty_rate'],
+        ['label' => 'Loan arrears penalty rate', 'value' => '5', 'type' => 'number', 'group' => 'loans']
+    );
+    SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
+        ['organization_id' => $organization->id, 'key' => 'loan_arrears_penalty_rate'],
+        ['label' => 'Loan arrears penalty rate', 'value' => '1', 'type' => 'number', 'group' => 'loans']
+    );
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
+    $client = loanWorkflowClient($user, '+256700220005');
+    $client->update(['organization_id' => $organization->id]);
+    $loan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-REAPPLY-PENALTIES', 'in_arrears');
+    $loan->update(['penalty_balance' => 10000]);
+    $schedule = LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subDays(10),
+        'principal_due' => 300000,
+        'penalty_due' => 10000,
+        'total_due' => 310000,
+        'outstanding_amount' => 310000,
+        'balance_due' => 310000,
+        'status' => 'overdue',
+        'days_overdue' => 9,
+    ]);
+    LoanPenalty::create([
+        'loan_id' => $loan->id,
+        'loan_schedule_id' => $schedule->id,
+        'amount' => 10000,
+        'days_overdue' => 9,
+        'calculated_for_date' => today(),
+        'status' => 'pending',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('arrears.clear-penalties'), ['loan_id' => $loan->id])
+        ->assertRedirect()
+        ->assertSessionHas('status', 'Cleared UGX 10,000.00 in penalties from 1 schedule(s).');
+
+    $response = $this->actingAs($user)
+        ->post(route('arrears.apply-penalties'));
+
+    $newPenalty = LoanPenalty::query()
+        ->where('loan_schedule_id', $schedule->id)
+        ->where('status', 'pending')
+        ->latest('id')
+        ->firstOrFail();
+    $chargeableDays = max(0, app(BusinessCalendarService::class)->businessDaysBetween($schedule->due_date, today(), $organization->id) - 1);
+    $expectedPenalty = (float) (round(((300000 * 0.01 * $chargeableDays) / 50)) * 50);
+
+    $response
+        ->assertRedirect()
+        ->assertSessionHas('status', sprintf(
+            'Checked 1 overdue installment(s). Applied UGX %s in penalties to 1 schedule(s).',
+            number_format((float) $newPenalty->amount, 2),
+        ));
+
+    expect((float) $newPenalty->amount)->toBe($expectedPenalty)
+        ->and((float) $schedule->fresh()->penalty_due)->toBe((float) $newPenalty->amount)
+        ->and((float) $loan->fresh()->penalty_balance)->toBe((float) $newPenalty->amount);
+});
+
 it('lets an admin clear penalties for one schedule only', function () {
     $user = loanWorkflowUser();
     $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);

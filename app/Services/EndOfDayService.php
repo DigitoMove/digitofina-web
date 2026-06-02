@@ -166,6 +166,7 @@ class EndOfDayService
                 ->whereHas('loan', fn ($query) => $query
                     ->where('branch_id', $branch->id)
                     ->where('status', '!=', 'cancelled'))
+                ->where('status', 'pending')
                 ->whereDate('calculated_for_date', $date->toDateString())
                 ->sum('amount');
 

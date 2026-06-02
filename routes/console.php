@@ -10,6 +10,7 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+Schedule::command('loans:apply-penalties')->dailyAt('06:00')->withoutOverlapping();
 Schedule::command('loans:apply-penalties')->dailyAt('18:00')->withoutOverlapping();
 Schedule::command('investments:mark-matured')->dailyAt('18:30')->withoutOverlapping();
 Schedule::command('savings:mark-fixed-matured')->dailyAt('18:40')->withoutOverlapping();

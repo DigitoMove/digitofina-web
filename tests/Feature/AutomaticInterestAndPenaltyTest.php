@@ -8,6 +8,7 @@ use App\Models\Loan;
 use App\Models\LoanPenalty;
 use App\Models\LoanProduct;
 use App\Models\LoanSchedule;
+use App\Models\Organization;
 use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
 use App\Models\SystemSetting;
@@ -115,16 +116,24 @@ it('queues and posts due savings interest from the scheduled job', function () {
 
 it('applies organization penalty settings before platform defaults once per overdue grace-adjusted day', function () {
     $branch = automaticPostingBranch();
+    $organization = Organization::create([
+        'name' => 'Penalty Settings Organization',
+        'slug' => 'penalty-settings-organization',
+        'status' => 'active',
+    ]);
+    $branch->update(['organization_id' => $organization->id]);
     $client = automaticPostingClient($branch);
+    $client->update(['organization_id' => $organization->id]);
     SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
         ['organization_id' => null, 'key' => 'loan_arrears_penalty_rate'],
         ['label' => 'Loan arrears penalty rate', 'value' => '3', 'type' => 'number', 'group' => 'loans']
     );
     SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
-        ['organization_id' => $branch->organization_id, 'key' => 'loan_arrears_penalty_rate'],
+        ['organization_id' => $organization->id, 'key' => 'loan_arrears_penalty_rate'],
         ['label' => 'Loan arrears penalty rate', 'value' => '1', 'type' => 'number', 'group' => 'loans']
     );
     $product = LoanProduct::create([
+        'organization_id' => $organization->id,
         'name' => 'Settings Penalty Loan',
         'code' => 'SPL',
         'annual_interest_rate' => 24,
@@ -138,6 +147,7 @@ it('applies organization penalty settings before platform defaults once per over
     ]);
 
     $loan = Loan::create([
+        'organization_id' => $organization->id,
         'client_id' => $client->id,
         'branch_id' => $branch->id,
         'loan_product_id' => $product->id,

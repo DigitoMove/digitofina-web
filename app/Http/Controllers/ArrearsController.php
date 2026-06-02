@@ -115,9 +115,14 @@ class ArrearsController extends Controller
         $loan = $request->integer('loan_id') ? Loan::findOrFail($request->integer('loan_id')) : null;
 
         $branchId = $canFilterBranch ? $request->integer('branch_id') : (int) $request->user()->branch_id;
-        $count = $service->applyOverduePenalties($loan, branchId: $branchId ?: null);
+        $summary = $service->applyOverduePenaltiesWithSummary($loan, branchId: $branchId ?: null);
 
-        return back()->with('status', "{$count} overdue installment(s) checked.");
+        return back()->with('status', sprintf(
+            'Checked %d overdue installment(s). Applied UGX %s in penalties to %d schedule(s).',
+            $summary['checked'],
+            number_format($summary['amount'], 2),
+            $summary['applied_schedules'],
+        ));
     }
 
     public function clearPenalties(Request $request, LoanService $service): RedirectResponse

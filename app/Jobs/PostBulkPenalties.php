@@ -27,12 +27,14 @@ class PostBulkPenalties implements ShouldQueue
     {
         $loan = $this->loanId ? Loan::query()->findOrFail($this->loanId) : null;
         $asOf = $this->asOf ? CarbonImmutable::parse($this->asOf) : null;
-        $count = $loanService->applyOverduePenalties($loan, $asOf);
+        $summary = $loanService->applyOverduePenaltiesWithSummary($loan, $asOf);
 
         Log::info('Queued overdue penalty posting completed.', [
             'loan_id' => $this->loanId,
             'as_of' => $this->asOf,
-            'installments_checked' => $count,
+            'installments_checked' => $summary['checked'],
+            'installments_penalized' => $summary['applied_schedules'],
+            'penalty_amount' => $summary['amount'],
         ]);
     }
 

@@ -1493,8 +1493,16 @@ class LoanService
 
     public function applyOverduePenalties(?Loan $loan = null, ?CarbonInterface $asOf = null, ?int $branchId = null, ?int $officerId = null): int
     {
+        return $this->applyOverduePenaltiesWithSummary($loan, $asOf, $branchId, $officerId)['checked'];
+    }
+
+    /**
+     * @return array{checked:int, applied_schedules:int, amount:float}
+     */
+    public function applyOverduePenaltiesWithSummary(?Loan $loan = null, ?CarbonInterface $asOf = null, ?int $branchId = null, ?int $officerId = null): array
+    {
         $asOf = $asOf ?: now();
-        $count = 0;
+        $summary = ['checked' => 0, 'applied_schedules' => 0, 'amount' => 0.0];
 
         $query = LoanSchedule::query()
             ->with('loan.product')
@@ -1514,9 +1522,9 @@ class LoanService
         }
 
         foreach ($query->cursor() as $schedule) {
-            DB::transaction(function () use ($schedule, $asOf, &$count) {
+            DB::transaction(function () use ($schedule, $asOf, &$summary): void {
                 $schedule = LoanSchedule::query()->whereKey($schedule->id)->lockForUpdate()->firstOrFail();
-                $loan = Loan::query()->with('product')->whereKey($schedule->loan_id)->lockForUpdate()->firstOrFail();
+                $loan = Loan::query()->with(['loanAccount', 'product'])->whereKey($schedule->loan_id)->lockForUpdate()->firstOrFail();
 
                 if (! in_array($loan->status, ['active', 'in_arrears'], true)) {
                     return;
@@ -1528,10 +1536,12 @@ class LoanService
                 $repaymentFrequency = $loan->repayment_frequency ?: $loan->product?->repayment_frequency;
                 $alreadyChargedDays = (int) LoanPenalty::query()
                     ->where('loan_schedule_id', $schedule->id)
+                    ->where('status', 'pending')
                     ->max('days_overdue');
                 $daysToCharge = max(0, $chargeableDays - $alreadyChargedDays);
                 $alreadyAppliedToday = LoanPenalty::query()
                     ->where('loan_schedule_id', $schedule->id)
+                    ->where('status', 'pending')
                     ->whereDate('calculated_for_date', $asOf->toDateString())
                     ->exists();
 
@@ -1558,15 +1568,24 @@ class LoanService
                     $schedule->increment('outstanding_amount', $penaltyAmount);
                     $schedule->increment('balance_due', $penaltyAmount);
                     $loan->increment('penalty_balance', $penaltyAmount);
+
+                    if ($loan->loan_account_id) {
+                        $loan->loanAccount()->update([
+                            'balance' => max(0, (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance + $penaltyAmount),
+                        ]);
+                    }
+
+                    $summary['applied_schedules']++;
+                    $summary['amount'] += $penaltyAmount;
                 }
 
                 $schedule->update(['status' => 'overdue', 'days_overdue' => $chargeableDays]);
                 $loan->update(['status' => 'in_arrears']);
-                $count++;
+                $summary['checked']++;
             });
         }
 
-        return $count;
+        return $summary;
     }
 
     /**
