@@ -1519,9 +1519,9 @@ it('shows missed amount penalty and total to pay on arrears listing', function (
     $this->actingAs($user)
         ->get(route('arrears.index'))
         ->assertSuccessful()
-        ->assertSee('Missed amount')
+        ->assertSee('Missed')
         ->assertSee('Penalty')
-        ->assertSee('Total to pay')
+        ->assertSee('Total')
         ->assertSee('UGX 300,000.00')
         ->assertSee('UGX 10,000.00')
         ->assertSee('UGX 310,000.00');
