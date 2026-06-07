@@ -1526,7 +1526,7 @@ class LoanService
                 $schedule = LoanSchedule::query()->whereKey($schedule->id)->lockForUpdate()->firstOrFail();
                 $loan = Loan::query()->with(['loanAccount', 'product'])->whereKey($schedule->loan_id)->lockForUpdate()->firstOrFail();
 
-                if (! in_array($loan->status, ['active', 'in_arrears'], true)) {
+                if (! in_array($loan->status, Loan::ARREARS_STATUSES, true)) {
                     return;
                 }
 

@@ -12,7 +12,7 @@ class Loan extends Model
 {
     use BelongsToTenant;
 
-    public const ARREARS_STATUSES = ['active', 'in_arrears'];
+    public const ARREARS_STATUSES = ['disbursed', 'active', 'in_arrears', 'restructured'];
 
     public const LISTING_STATUSES = ['approved', 'disbursed', 'active', 'in_arrears', 'restructured', 'fully_paid', 'closed'];
 

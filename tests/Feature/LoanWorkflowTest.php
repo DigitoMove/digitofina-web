@@ -1431,6 +1431,25 @@ it('excludes cancelled loans from arrears listings and penalty calculations', fu
         ->and($draftSchedule->fresh()->outstanding_amount)->toBe('200000.00');
 });
 
+it('applies scheduled penalties to overdue disbursed and restructured loans', function () {
+    $user = loanWorkflowUser();
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $client = loanWorkflowClient($user, '+256700220006');
+    $disbursedLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-DISBURSED-ARREARS', 'disbursed');
+    $restructuredLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-RESTRUCTURED-ARREARS', 'restructured');
+    $disbursedSchedule = loanWorkflowSchedule($disbursedLoan, today()->subDays(10), 'overdue');
+    $restructuredSchedule = loanWorkflowSchedule($restructuredLoan, today()->subDays(10), 'overdue');
+
+    $this->artisan('loans:apply-penalties')
+        ->expectsOutputToContain('applied UGX')
+        ->assertSuccessful();
+
+    expect((float) $disbursedSchedule->fresh()->penalty_due)->toBeGreaterThan(0.0)
+        ->and((float) $restructuredSchedule->fresh()->penalty_due)->toBeGreaterThan(0.0)
+        ->and($disbursedLoan->fresh()->status)->toBe('in_arrears')
+        ->and($restructuredLoan->fresh()->status)->toBe('in_arrears');
+});
+
 it('combines multiple overdue schedules into one arrears listing row per loan', function () {
     $user = loanWorkflowUser();
     $organization = loanWorkflowOrganizationWithModules($user, ['loans']);
