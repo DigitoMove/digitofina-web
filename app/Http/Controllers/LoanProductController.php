@@ -14,6 +14,8 @@ class LoanProductController extends Controller
 {
     public function index(Request $request): View
     {
+        abort_unless($request->user()->canPerform('manage-loans'), 403);
+
         $products = LoanProduct::query()
             ->when($request->string('search')->toString(), function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
@@ -31,11 +33,15 @@ class LoanProductController extends Controller
 
     public function create(): View
     {
+        abort_unless(auth()->user()->canPerform('manage-loans'), 403);
+
         return view('loan-products.create');
     }
 
     public function store(StoreLoanProductRequest $request, AuditLogger $auditLogger): RedirectResponse
     {
+        abort_unless($request->user()->canPerform('manage-loans'), 403);
+
         $product = LoanProduct::create($this->payload($request->validated()));
 
         $auditLogger->record('loan_product.created', $product, $product->toArray());
@@ -45,11 +51,15 @@ class LoanProductController extends Controller
 
     public function edit(LoanProduct $loanProduct): View
     {
+        abort_unless(auth()->user()->canPerform('manage-loans'), 403);
+
         return view('loan-products.edit', ['product' => $loanProduct]);
     }
 
     public function update(UpdateLoanProductRequest $request, LoanProduct $loanProduct, AuditLogger $auditLogger): RedirectResponse
     {
+        abort_unless($request->user()->canPerform('manage-loans'), 403);
+
         $old = $loanProduct->toArray();
         $loanProduct->update($this->payload($request->validated()));
         $auditLogger->record('loan_product.updated', $loanProduct, $loanProduct->fresh()->toArray(), $old);

@@ -30,6 +30,15 @@ class ReceiptController extends Controller
         $user = $request->user();
         $transaction->loadMissing('account.client');
 
+        if ($user->isLoanOfficer() || $user->isLoanRecoveryOfficer()) {
+            return false;
+        }
+
+        if ($user->isTellerCashier()) {
+            return (int) $transaction->user_id === (int) $user->id
+                && ($transaction->posted_at ?? $transaction->created_at)->isToday();
+        }
+
         if ((int) $transaction->user_id === (int) $user->id) {
             return true;
         }

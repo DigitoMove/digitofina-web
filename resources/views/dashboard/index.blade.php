@@ -6,7 +6,7 @@
         <h1 class="text-2xl font-semibold text-slate-950">Dashboard</h1>
         <p class="text-sm text-slate-500">Branch operations, cash position, approvals, and portfolio pulse.</p>
     </div>
-    @if(in_array('teller', $enabledModules ?? [], true) && (auth()->user()->canPerform('manage-drawers') || auth()->user()->canPerform('post-transactions')))
+    @if(in_array('teller', $enabledModules ?? [], true) && ! auth()->user()->isTellerCashier() && (auth()->user()->canPerform('manage-drawers') || auth()->user()->canPerform('post-transactions')))
         <a href="{{ route('teller.index') }}" class="df-action-primary">Open Teller Drawer</a>
     @endif
 </div>
@@ -15,8 +15,10 @@
     $moduleEnabled = fn (string $slug): bool => in_array($slug, $enabledModules ?? [], true);
     $dashboardUser = auth()->user();
     $isCashierDashboard = $dashboardUser?->isTellerCashier();
-    $isLoanOfficerDashboard = $dashboardUser?->hasRole('loan-officer');
-    $isCompactDashboard = $isCashierDashboard || $isLoanOfficerDashboard;
+    $isLoanOfficerDashboard = $dashboardUser?->isLoanOfficer();
+    $isLoanRecoveryDashboard = $dashboardUser?->isLoanRecoveryOfficer();
+    $isCompactDashboard = $isCashierDashboard || $isLoanOfficerDashboard || $isLoanRecoveryDashboard;
+    $cashMovementRoute = $isCashierDashboard ? route('teller.index') : route('reports.index');
     $cards = [
         ['Total clients', $totalClients, 'bg-brand-50 text-brand-800', 'from-brand-500 to-brand-600', [38, 58, 44, 68, 74], route('clients.index')],
         ['Active accounts', $activeAccounts, 'bg-emerald-50 text-emerald-700', 'from-emerald-500 to-emerald-600', [46, 52, 63, 57, 78], route('accounts.index')],
@@ -26,8 +28,8 @@
         ['Due today', $dueTodayCount, 'bg-violet-50 text-violet-700', 'from-violet-500 to-indigo-600', [24, 38, 50, 70, 64], route('due-repayments.index')],
         ['Savings balance', number_format($savingsLedgerBalance, 2).' UGX', 'bg-teal-50 text-teal-700', 'from-teal-500 to-cyan-500', [40, 50, 58, 70, 86], route('savings-accounts.index')],
         ['Investment balance', number_format($totalInvestmentBalance, 2).' UGX', 'bg-indigo-50 text-indigo-700', 'from-indigo-500 to-sky-500', [40, 46, 66, 72, 88], route('reports.show', 'investment-plan-performance')],
-        ["Today's deposits", number_format($todayDeposits, 2).' UGX', 'bg-green-50 text-green-700', 'from-green-500 to-emerald-500', [28, 44, 50, 72, 88], route('reports.index')],
-        ["Today's withdrawals", number_format($todayWithdrawals, 2).' UGX', 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [24, 40, 38, 52, 46], route('reports.index')],
+        ["Today's deposits", number_format($todayDeposits, 2).' UGX', 'bg-green-50 text-green-700', 'from-green-500 to-emerald-500', [28, 44, 50, 72, 88], $cashMovementRoute],
+        ["Today's withdrawals", number_format($todayWithdrawals, 2).' UGX', 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [24, 40, 38, 52, 46], $cashMovementRoute],
     ];
     $cardModules = [
         'Total clients' => 'clients',
@@ -49,8 +51,9 @@
     };
     $cards = array_values(array_filter($cards, $cardIsVisible));
     $essentialCardLabels = match (true) {
-        $isCashierDashboard => ['Due today', "Today's deposits", "Today's withdrawals"],
-        $isLoanOfficerDashboard => ['Loan applications', 'Loan portfolio', 'Loans in arrears', 'Due today'],
+        $isCashierDashboard => ["Today's deposits", "Today's withdrawals"],
+        $isLoanRecoveryDashboard => ['Total clients', 'Loans in arrears'],
+        $isLoanOfficerDashboard => ['Total clients', 'Loan applications', 'Loan portfolio', 'Loans in arrears', 'Due today'],
         default => null,
     };
     $cards = $essentialCardLabels
@@ -101,10 +104,9 @@
 <section class="df-panel mt-6 overflow-visible">
     <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div>
-            <h2 class="text-lg font-semibold text-slate-950">Recent Posted Transactions</h2>
-            <p class="text-sm text-slate-500">Latest cashier postings. Reversal actions are restricted to admins and above.</p>
+            <h2 class="text-lg font-semibold text-slate-950">Today's Posted Transactions</h2>
+            <p class="text-sm text-slate-500">Transactions posted by you today.</p>
         </div>
-        <a href="{{ route('reports.show', 'user-posted-transactions') }}" class="df-action-secondary">View all</a>
     </div>
     <div class="overflow-x-auto">
         <table class="w-full text-left text-sm">
@@ -297,46 +299,6 @@
         <a href="{{ route('due-repayments.index', array_filter(['branch_id' => $selectedCalendarBranchId])) }}" class="mt-4 inline-flex text-sm font-semibold text-brand-700">View due today</a>
     </section>
 </div>
-@endif
-
-@if($isLoanOfficerDashboard && $moduleEnabled('loans'))
-<section class="df-panel mt-6 overflow-hidden">
-    <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
-        <div>
-            <h2 class="text-lg font-semibold text-slate-950">Recent Loan Payments</h2>
-            <p class="text-sm text-slate-500">Latest repayments posted on loans assigned to you.</p>
-        </div>
-        <a href="{{ route('reports.show', 'loan-recovery') }}" class="df-action-secondary">View report</a>
-    </div>
-    <div class="overflow-x-auto">
-        <table class="w-full text-left text-sm">
-            <thead class="bg-slate-50 text-slate-600">
-                <tr>
-                    <th class="p-3">Date</th>
-                    <th>Client</th>
-                    <th>Loan</th>
-                    <th>Received by</th>
-                    <th class="text-right">Amount</th>
-                    <th class="text-right">Receipt</th>
-                </tr>
-            </thead>
-            <tbody>
-                @forelse($officerRecentRepayments as $repayment)
-                    <tr class="border-t border-slate-200">
-                        <td class="p-3 whitespace-nowrap">{{ $repayment->paid_at?->format('d M Y') }}</td>
-                        <td class="font-medium text-slate-950">{{ $repayment->loan?->client?->full_name ?? $repayment->client?->full_name ?? 'Client' }}</td>
-                        <td><a href="{{ route('loans.show', $repayment->loan) }}" class="font-semibold text-blue-700">{{ $repayment->loan?->loan_number }}</a></td>
-                        <td>{{ $repayment->receivedBy?->name ?? 'System' }}</td>
-                        <td class="text-right font-semibold whitespace-nowrap">UGX {{ number_format((float) $repayment->amount, 2) }}</td>
-                        <td class="text-right"><a href="{{ route('loan-repayments.receipt', $repayment) }}" class="text-sm font-semibold text-blue-700">Open</a></td>
-                    </tr>
-                @empty
-                    <tr><td colspan="6" class="p-8 text-center text-slate-500">No repayments have been posted for your loans yet.</td></tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
-</section>
 @endif
 
 @if(($moduleEnabled('teller') && (! $isCompactDashboard || $isCashierDashboard)) || (count($portfolioRows) > 0 && ! $isCompactDashboard))

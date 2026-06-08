@@ -68,7 +68,7 @@
                             'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5',
                             'items' => [
                                 ['label' => 'Loans', 'route' => 'loans.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'view-reports'], 'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5'],
-                                ['label' => 'Arrears', 'route' => 'arrears.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'view-reports'], 'hide_for_cashier' => true, 'icon' => 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
+                                ['label' => 'Arrears', 'route' => 'arrears.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'view-reports', 'view-arrears'], 'hide_for_cashier' => true, 'icon' => 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
                                 ['label' => 'Loan Products', 'route' => 'loan-products.index', 'module' => 'loans', 'permissions' => ['manage-loans'], 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
                             ],
                         ],
@@ -97,8 +97,28 @@
                         ],
                     ];
                     $itemVisible = fn (array $item): bool => ! (($item['hide_for_cashier'] ?? false) && $user->isTellerCashier()) && $modulesEnabled($item['modules'] ?? [$item['module'] ?? null]) && $canAny($item['permissions'] ?? []);
-                    $navGroups = array_values(array_filter(array_map(function (array $group) use ($itemVisible): array {
+                    $navGroups = array_values(array_filter(array_map(function (array $group) use ($itemVisible, $user): array {
                         $group['items'] = array_values(array_filter($group['items'], $itemVisible));
+
+                        if (($user->isLoanOfficer() || $user->isLoanRecoveryOfficer()) && in_array($group['label'], ['Operations', 'Accounts'], true)) {
+                            $group['items'] = [];
+                        }
+
+                        if ($user->isTellerCashier()) {
+                            $group['items'] = match ($group['label']) {
+                                'Operations' => array_values(array_filter($group['items'], fn (array $item): bool => $item['label'] === 'Teller Drawer')),
+                                'Clients', 'Loans', 'Accounts' => [],
+                                default => $group['items'],
+                            };
+                        }
+
+                        if ($user->isLoanRecoveryOfficer()) {
+                            $group['items'] = match ($group['label']) {
+                                'Clients' => array_values(array_filter($group['items'], fn (array $item): bool => $item['label'] === 'Clients')),
+                                'Loans' => array_values(array_filter($group['items'], fn (array $item): bool => $item['label'] === 'Arrears')),
+                                default => $group['items'],
+                            };
+                        }
 
                         return $group;
                     }, $navGroups), fn (array $group): bool => $group['items'] !== []));
@@ -154,7 +174,7 @@
                         </details>
                     @endforeach
 
-                    @if(! $isGlobalSuperAdmin && $moduleEnabled('reports'))
+                    @if(! $isGlobalSuperAdmin && $moduleEnabled('reports') && $user->canPerform('view-reports') && ! $user->hasRestrictedReportsAccess())
                     <a href="{{ route('reports.index') }}" class="group flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition {{ $isRouteActive('reports.index') ? 'bg-brand-50 text-brand-900 ring-1 ring-brand-200 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-brand-900' }}">
                         <span class="grid h-8 w-8 place-items-center rounded-lg transition group-hover:scale-105 {{ $isRouteActive('reports.index') ? 'bg-brand-700 text-white' : 'bg-slate-100 text-brand-700' }}">
                             <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h4"/></svg>
@@ -203,7 +223,7 @@
                             <path d="M4 7h16M4 12h16M4 17h16" />
                         </svg>
                     </button>
-                    @if(! auth()->user()->isMember() && auth()->user()->canAccessModule('clients'))
+                    @if(! auth()->user()->isMember() && ! auth()->user()->isTellerCashier() && auth()->user()->canAccessModule('clients'))
                         <form action="{{ route('clients.index') }}" class="hidden flex-1 sm:block">
                             <input name="search" class="h-11 w-full max-w-xl rounded-xl border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-4 focus:ring-brand-100" placeholder="Search client, phone, account or national ID">
                         </form>
@@ -227,7 +247,7 @@
                         <form method="POST" action="{{ route('logout') }}" class="hidden sm:block">@csrf<button class="rounded-lg bg-slate-900 px-3 py-1.5 font-semibold text-white hover:bg-brand-800">Logout</button></form>
                     </div>
                 </div>
-                @if(! auth()->user()->isMember() && auth()->user()->canAccessModule('clients'))
+                @if(! auth()->user()->isMember() && ! auth()->user()->isTellerCashier() && auth()->user()->canAccessModule('clients'))
                     <form action="{{ route('clients.index') }}" class="border-t border-slate-100 px-4 py-2 sm:hidden">
                         <input name="search" class="h-11 rounded-xl border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-4 focus:ring-brand-100" placeholder="Search clients, phone, ID">
                     </form>

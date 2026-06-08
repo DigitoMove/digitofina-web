@@ -139,13 +139,21 @@ class TransactionReversalController extends Controller
     {
         $user = $request->user();
 
+        if ($user->isLoanOfficer() || $user->isLoanRecoveryOfficer()) {
+            return false;
+        }
+
         if ((int) $transaction->branch_id !== (int) $user->branch_id && ! ApiSecurity::hasGlobalBranchAccess($user)) {
             return false;
         }
 
+        if ($user->isTellerCashier()) {
+            return (int) $transaction->user_id === (int) $user->id
+                && ($transaction->posted_at ?? $transaction->created_at)->isToday();
+        }
+
         return $user->hasRole('super-admin')
             || $user->hasRole('organization-admin')
-            || $user->hasRole('teller-cashier')
             || $user->canPerform('request-reversals')
             || $user->canPerform('approve-reversals')
             || $user->canPerform('override-maker-checker');

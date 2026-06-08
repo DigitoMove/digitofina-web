@@ -12,7 +12,8 @@ class ReportController extends Controller
 {
     public function index(Request $request, ReportCatalogService $reports): View
     {
-        abort_if($request->user()->isMember(), 403);
+        abort_if($request->user()->isMember() || $request->user()->hasRestrictedReportsAccess(), 403);
+        abort_unless($request->user()->canPerform('view-reports'), 403);
 
         return view('reports.index', [
             'groups' => $reports->grouped($request->user()),
@@ -26,7 +27,8 @@ class ReportController extends Controller
 
     public function show(Request $request, string $report, ReportCatalogService $reports): View
     {
-        abort_if($request->user()->isMember(), 403);
+        abort_if($request->user()->isMember() || $request->user()->hasRestrictedReportsAccess(), 403);
+        abort_unless($request->user()->canPerform('view-reports'), 403);
 
         $data = $request->validate([
             'from' => ['nullable', 'date'],

@@ -8,7 +8,6 @@ use App\Models\Client;
 use App\Models\InvestmentPlan;
 use App\Models\InvestorAccount;
 use App\Models\Loan;
-use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
 use App\Models\Organization;
 use App\Models\Package;
@@ -57,7 +56,8 @@ class DashboardController extends Controller
         $tellerEnabled = $moduleIsEnabled('teller');
         $usersEnabled = $moduleIsEnabled('users');
         $isCashierDashboard = $user->isTellerCashier();
-        $isLoanOfficerDashboard = $user->hasRole('loan-officer');
+        $isLoanOfficerDashboard = $user->isLoanOfficer();
+        $isLoanRecoveryDashboard = $user->isLoanRecoveryOfficer();
         $drawer = $user->drawerSessions()->with('drawer')->where('status', 'open')->latest()->first()?->drawer;
         $today = CarbonImmutable::today();
         $monthStart = $today->startOfMonth();
@@ -68,13 +68,12 @@ class DashboardController extends Controller
             ->scopeRepaymentCalendar($query, $user)
             ->when($selectedCalendarBranchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
         $canViewRepaymentCalendarAmounts = ! ($isCashierDashboard || $isLoanOfficerDashboard);
-        $showRepaymentScheduleWidgets = true;
+        $showRepaymentScheduleWidgets = ! ($isCashierDashboard || $isLoanRecoveryDashboard);
         $arrearsCutoffDate = $today->copy()->subDay()->toDateString();
         $dueToday = collect();
         $dueTodayTotals = null;
         $nextRepayments = collect();
         $calendarCounts = collect();
-        $officerRecentRepayments = collect();
 
         if ($loansEnabled) {
             $dueToday = LoanSchedule::query()
@@ -133,16 +132,6 @@ class DashboardController extends Controller
                 $nextRepayments = $dueToday;
             }
 
-            if ($isLoanOfficerDashboard) {
-                $officerRecentRepayments = LoanRepayment::query()
-                    ->with(['loan.client', 'receivedBy'])
-                    ->whereHas('loan', fn (Builder $query): Builder => $query->where('officer_id', $user->id))
-                    ->whereNull('reversed_at')
-                    ->latest('paid_at')
-                    ->latest()
-                    ->limit(8)
-                    ->get();
-            }
         }
         $calendarDays = collect(CarbonPeriod::create($monthStart->startOfWeek(CarbonInterface::SUNDAY), $monthEnd->endOfWeek(CarbonInterface::SATURDAY)))
             ->map(function ($date) use ($calendarCounts, $monthStart, $today): array {
@@ -187,6 +176,7 @@ class DashboardController extends Controller
                     'reversalRequests' => fn ($query) => $query->where('status', 'pending')->latest(),
                 ])
                 ->where('user_id', $user->id)
+                ->whereDate('posted_at', $today->toDateString())
                 ->latest('posted_at')
                 ->limit(8)
                 ->get();
@@ -202,8 +192,16 @@ class DashboardController extends Controller
                 ->whereIn('status', ['approved', 'disbursed', 'active', 'in_arrears', 'restructured'])
                 ->tap(fn (Builder $query): Builder => $visibility->scope($query, $user))
                 ->sum('principal_balance') : 0,
-            'todayDeposits' => ($tellerEnabled && $depositType) ? Transaction::whereDate('posted_at', today())->where('transaction_type_id', $depositType->id)->sum('amount') : 0,
-            'todayWithdrawals' => ($tellerEnabled && $withdrawalType) ? Transaction::whereDate('posted_at', today())->where('transaction_type_id', $withdrawalType->id)->sum('amount') : 0,
+            'todayDeposits' => ($tellerEnabled && $depositType) ? Transaction::query()
+                ->whereDate('posted_at', today())
+                ->where('transaction_type_id', $depositType->id)
+                ->when($isCashierDashboard, fn (Builder $query): Builder => $query->where('user_id', $user->id))
+                ->sum('amount') : 0,
+            'todayWithdrawals' => ($tellerEnabled && $withdrawalType) ? Transaction::query()
+                ->whereDate('posted_at', today())
+                ->where('transaction_type_id', $withdrawalType->id)
+                ->when($isCashierDashboard, fn (Builder $query): Builder => $query->where('user_id', $user->id))
+                ->sum('amount') : 0,
             'drawerBalance' => $tellerEnabled ? ($drawer?->current_balance ?? 0) : 0,
             'branchCount' => $usersEnabled ? Branch::count() : 0,
             'staffCount' => $usersEnabled ? User::where('status', 'active')->count() : 0,
@@ -218,11 +216,11 @@ class DashboardController extends Controller
             'dueTodayAmount' => (float) ($dueTodayTotals?->amount ?? 0),
             'nextRepayments' => $nextRepayments,
             'cashierRecentTransactions' => $cashierRecentTransactions,
-            'officerRecentRepayments' => $officerRecentRepayments,
             'calendarDays' => $calendarDays,
             'calendarMonth' => $today,
             'canViewRepaymentCalendarAmounts' => $canViewRepaymentCalendarAmounts,
             'showRepaymentScheduleWidgets' => $showRepaymentScheduleWidgets,
+            'isLoanRecoveryDashboard' => $isLoanRecoveryDashboard,
             'arrearsCount' => $arrearsCount,
             'arrearsAmount' => $arrearsAmount,
             'loanApplications' => $loanApplications,

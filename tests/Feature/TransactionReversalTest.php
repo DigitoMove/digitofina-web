@@ -115,9 +115,9 @@ it('allows teller cashiers to request transaction reversals', function () {
         'status' => 'active',
         'is_active' => true,
     ]);
-    $transaction = transactionDeletionPosting($branch, $admin, $type, [
-        'reference' => 'TX-CASHIER-REVERSAL-BLOCKED',
-        'description' => 'Cashier cannot reverse this',
+    $transaction = transactionDeletionPosting($branch, $cashier, $type, [
+        'reference' => 'TX-CASHIER-SAME-DAY-REVERSAL',
+        'description' => 'Cashier same-day posting mistake',
     ]);
 
     $this->actingAs($cashier)
@@ -130,6 +130,19 @@ it('allows teller cashiers to request transaction reversals', function () {
 
     expect(MakerCheckerRequest::query()->count())->toBe(1)
         ->and(MakerCheckerRequest::first()->reason)->toBe('Cashier spotted a posting mistake');
+
+    $oldTransaction = transactionDeletionPosting($branch, $cashier, $type, [
+        'reference' => 'TX-CASHIER-OLD-REVERSAL',
+        'posted_at' => now()->subDays(2),
+    ]);
+
+    $this->actingAs($cashier)
+        ->post(route('transactions.reversal-requests.store', $oldTransaction), [
+            'reason' => 'Trying to reverse an old posting',
+        ])
+        ->assertSessionHas('warning', 'You are not allowed to request a reversal for this transaction.');
+
+    expect(MakerCheckerRequest::query()->count())->toBe(1);
 });
 
 it('shows transaction reversal requests on a dedicated admin page', function () {

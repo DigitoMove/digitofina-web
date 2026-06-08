@@ -91,6 +91,10 @@ class User extends Authenticatable
 
     public function canAdministerLoanRepairs(): bool
     {
+        if ($this->isLoanOfficer() || $this->isLoanRecoveryOfficer() || $this->isTellerCashier()) {
+            return false;
+        }
+
         return $this->hasAnyRole(['super-admin', 'organization-admin', 'supervisor'])
             || $this->canPerform('approve-reversals')
             || $this->canPerform('override-maker-checker');
@@ -110,6 +114,21 @@ class User extends Authenticatable
     public function isTellerCashier(): bool
     {
         return in_array($this->role?->slug, ['teller-cashier', 'cashier', 'teller'], true);
+    }
+
+    public function isLoanOfficer(): bool
+    {
+        return $this->hasRole('loan-officer');
+    }
+
+    public function isLoanRecoveryOfficer(): bool
+    {
+        return $this->hasRole('loan-recovery-officer');
+    }
+
+    public function hasRestrictedReportsAccess(): bool
+    {
+        return $this->isTellerCashier() || $this->isLoanOfficer() || $this->isLoanRecoveryOfficer();
     }
 
     public function hasGlobalOrganizationAccess(): bool
@@ -150,6 +169,10 @@ class User extends Authenticatable
             return true;
         }
 
+        if (! $this->roleAllowsPermission($permission)) {
+            return false;
+        }
+
         $module = ModuleCatalog::moduleForPermission($permission);
 
         if ($module && ! $this->canAccessModule($module)) {
@@ -164,6 +187,34 @@ class User extends Authenticatable
 
         if (request()?->is('api/*') && $this->currentAccessToken()) {
             return $this->tokenCan($permission) || $this->tokenCan('*');
+        }
+
+        return true;
+    }
+
+    private function roleAllowsPermission(string $permission): bool
+    {
+        if ($this->isLoanRecoveryOfficer()) {
+            return in_array($permission, ['manage-clients', 'view-arrears'], true);
+        }
+
+        if ($this->isLoanOfficer()) {
+            return ! in_array($permission, [
+                'view-reports',
+                'export-reports',
+                'post-transactions',
+                'post-repayments',
+                'request-reversals',
+                'approve-reversals',
+                'manage-drawers',
+                'manage-end-of-day',
+                'manage-accounting',
+                'post-journal-entries',
+            ], true);
+        }
+
+        if ($this->isTellerCashier()) {
+            return in_array($permission, ['post-transactions', 'post-repayments', 'request-reversals'], true);
         }
 
         return true;

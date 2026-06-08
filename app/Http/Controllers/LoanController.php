@@ -26,6 +26,8 @@ class LoanController extends Controller
 {
     public function index(Request $request, LoanVisibilityService $visibility): View
     {
+        Gate::authorize('viewAny', Loan::class);
+
         $loans = Loan::query()
             ->with(['client', 'product', 'officer'])
             ->forOperationalListing()
@@ -118,6 +120,8 @@ class LoanController extends Controller
 
     public function show(Loan $loan, LoanVisibilityService $visibility, LoanService $service): View
     {
+        Gate::authorize('viewAny', Loan::class);
+
         if (! $loan->schedules()->exists() && (float) $loan->requested_amount > 0) {
             $service->generateSchedule($loan->load('product'), CarbonImmutable::parse(($loan->disbursed_at ?? $loan->application_date ?? today())->toDateString()));
         }

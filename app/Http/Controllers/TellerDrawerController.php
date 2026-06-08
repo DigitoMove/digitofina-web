@@ -34,8 +34,16 @@ class TellerDrawerController extends Controller
 {
     public function index(Request $request): View
     {
+        abort_unless(
+            $request->user()->canPerform('post-transactions')
+                || $request->user()->canPerform('post-repayments')
+                || $this->canOpenForTellers($request),
+            403
+        );
+
         $organizationId = $this->activeOrganizationId($request);
         $canOpenForTellers = $this->canOpenForTellers($request);
+        $isCashier = $request->user()->isTellerCashier();
         $canApproveReversals = $request->user()->canPerform('approve-reversals') || $request->user()->canPerform('override-maker-checker');
         $session = DrawerSession::with('drawer')->where('user_id', auth()->id())->where('status', 'open')->latest()->first();
         $branchId = $session?->drawer?->branch_id ?? $request->user()->branch_id;
@@ -173,11 +181,15 @@ class TellerDrawerController extends Controller
                 ])
                 ->when($session, fn (Builder $query, DrawerSession $session): Builder => $query->where('drawer_session_id', $session->id))
                 ->when(! $session, fn (Builder $query): Builder => $query->where('user_id', $request->user()->id))
+                ->when($isCashier, fn (Builder $query): Builder => $query
+                    ->where('user_id', $request->user()->id)
+                    ->whereDate('posted_at', today()))
                 ->when($transactionSearch !== '', fn (Builder $query): Builder => $this->searchPostedTransactions($query, $transactionSearch))
                 ->latest('posted_at')
                 ->limit(50)
                 ->get(),
             'transactionSearch' => $transactionSearch,
+            'isCashier' => $isCashier,
             'pendingReversalRequests' => $canApproveReversals
                 ? MakerCheckerRequest::query()
                     ->with(['requestedBy', 'branch', 'subject'])
@@ -337,6 +349,8 @@ class TellerDrawerController extends Controller
 
     public function open(Request $request, TellerService $tellers, FinancialControlService $financialControls, AuditLogger $auditLogger): RedirectResponse
     {
+        abort_if($request->user()->isTellerCashier(), 403);
+
         $data = $request->validate([
             'teller_drawer_id' => ['required', 'exists:teller_drawers,id'],
             'teller_user_id' => ['nullable', 'exists:users,id'],
@@ -368,6 +382,8 @@ class TellerDrawerController extends Controller
 
     public function post(Request $request, TransactionPostingService $posting): RedirectResponse
     {
+        abort_if($request->user()->isLoanOfficer() || $request->user()->isLoanRecoveryOfficer(), 403);
+
         $data = $request->validate([
             'account_scope' => ['required', 'in:client_account,general_ledger'],
             'account_number' => ['nullable', 'required_if:account_scope,client_account', 'exists:accounts,account_number'],
@@ -463,6 +479,8 @@ class TellerDrawerController extends Controller
 
     public function close(Request $request, FinancialControlService $financialControls): RedirectResponse
     {
+        abort_if($request->user()->isTellerCashier(), 403);
+
         $data = $request->validate(['closing_balance' => ['required', 'numeric', 'min:0', CurrencyDenomination::validationRule()]]);
 
         try {

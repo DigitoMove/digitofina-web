@@ -1362,6 +1362,45 @@ it('allows an organization admin to open an organization drawer for a teller', f
         ->assigned_user_id->toBe($teller->id);
 });
 
+it('requires an admin to open and close cashier drawers', function () {
+    [$organization, $branch] = drawerAdminOrganization();
+    enableTellerModule($organization);
+    $admin = drawerAdminUser($organization, $branch->id, 'organization-admin', ['manage-organization', 'manage-users', 'manage-drawers']);
+    $cashier = drawerAdminUser($organization, $branch->id, 'teller-cashier', ['post-transactions', 'post-repayments', 'request-reversals']);
+    $drawer = TellerDrawer::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'assigned_user_id' => $cashier->id,
+        'name' => 'Cashier Drawer',
+        'code' => fake()->unique()->bothify('CASH-TD-??'),
+        'current_balance' => 0,
+        'status' => 'closed',
+    ]);
+
+    $cashierOpenResponse = $this->actingAs($cashier)
+        ->post(route('teller.open'), [
+            'teller_drawer_id' => $drawer->id,
+            'opening_balance' => 1000,
+        ]);
+
+    expect($cashierOpenResponse->isSuccessful())->toBeFalse()
+        ->and($drawer->fresh()->status)->toBe('closed');
+
+    $this->actingAs($admin)
+        ->post(route('teller.open'), [
+            'teller_drawer_id' => $drawer->id,
+            'teller_user_id' => $cashier->id,
+            'opening_balance' => 1000,
+        ])
+        ->assertSessionHasNoErrors();
+
+    $cashierCloseResponse = $this->actingAs($cashier)
+        ->post(route('teller.close'), ['closing_balance' => 1000]);
+
+    expect($cashierCloseResponse->isSuccessful())->toBeFalse()
+        ->and($drawer->fresh()->status)->toBe('open');
+});
+
 it('shows selected organization drawers and tellers to a super admin', function () {
     [$organization, $branch] = drawerAdminOrganization();
     [$otherOrganization, $otherBranch] = drawerAdminOrganization('Other Tenant');

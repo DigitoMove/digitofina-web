@@ -7,7 +7,6 @@
         ['Drawer Balance', number_format($drawer?->current_balance ?? 0, 2).' UGX', 'bg-brand-600', 'M4 7h16v10H4z M8 7V5h8v2 M7 12h10'],
         ['Cash In Today', number_format($cashIn, 2).' UGX', 'bg-emerald-600', 'M12 5v14m0-14 5 5m-5-5-5 5'],
         ['Cash Out Today', number_format($cashOut, 2).' UGX', 'bg-amber-500', 'M12 19V5m0 14 5-5m-5 5-5-5'],
-        ['Due Collections', number_format($dueToday->count()), 'bg-red-600', 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
     ];
     $isLedgerPosting = filled($selectedChartAccount);
     $selectedLedgerEntryType = $isLedgerPosting && in_array($selectedChartAccount->drawer_direction, ['cash_in', 'cash_out'], true)
@@ -31,7 +30,7 @@
     </div>
     <div class="rounded border px-4 py-3 text-sm {{ $statusClass }}">
         <span class="font-semibold">{{ $session ? 'Open drawer' : 'No open drawer' }}</span>
-        <span class="ml-2">{{ $drawer?->name ?? 'Open a drawer to start' }}</span>
+        <span class="ml-2">{{ $drawer?->name ?? ($isCashier ? 'Awaiting admin drawer opening' : 'Open a drawer to start') }}</span>
     </div>
 </div>
 
@@ -49,7 +48,7 @@
 </div>
 
 <div class="mt-6 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-    @if(! $canOpenForTellers || $session)
+    @if(! $isCashier && (! $canOpenForTellers || $session))
     <section class="df-panel p-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -384,11 +383,14 @@
             </label>
             <div class="flex flex-wrap gap-2 md:col-span-2">
                 <button @disabled(!$session) class="df-action-primary disabled:pointer-events-none disabled:bg-slate-400">Post Transaction</button>
-                <a href="{{ route('reports.show', 'cash-balances') }}" class="df-action-secondary">Cash Balance Report</a>
+                @unless($isCashier)
+                    <a href="{{ route('reports.show', 'cash-balances') }}" class="df-action-secondary">Cash Balance Report</a>
+                @endunless
             </div>
         </form>
     </section>
 
+    @unless($isCashier)
     <section class="df-panel overflow-hidden">
         <div class="border-b border-slate-200 px-5 py-4">
             <h2 class="font-semibold text-slate-950">{{ today()->format('d-m-Y') }} Installments Due</h2>
@@ -414,6 +416,7 @@
             </table>
         </div>
     </section>
+    @endunless
 </div>
 
 {{-- <div class="mt-6 grid gap-5 xl:grid-cols-[1fr_320px]">
@@ -514,8 +517,8 @@
 <section class="df-panel mt-6 overflow-visible">
     <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div>
-            <h2 class="font-semibold text-slate-950">Drawer Posted Transactions</h2>
-            <p class="df-muted">Search posted transactions by description, reference, client, account, status, or transaction type.</p>
+            <h2 class="font-semibold text-slate-950">{{ $isCashier ? "Today's Posted Transactions" : 'Drawer Posted Transactions' }}</h2>
+            <p class="df-muted">{{ $isCashier ? 'Search transactions posted by you today.' : 'Search posted transactions by description, reference, client, account, status, or transaction type.' }}</p>
         </div>
         <div class="flex flex-wrap items-center justify-end gap-2">
             <form method="GET" action="{{ route('teller.index') }}" class="flex flex-wrap items-center gap-2">
@@ -525,7 +528,9 @@
                     <a href="{{ route('teller.index') }}" class="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Clear</a>
                 @endif
             </form>
-            <a href="{{ route('reports.show', ['report' => 'user-posted-transactions', 'search' => $transactionSearch]) }}" class="df-action-secondary">Full Report</a>
+            @unless($isCashier)
+                <a href="{{ route('reports.show', ['report' => 'user-posted-transactions', 'search' => $transactionSearch]) }}" class="df-action-secondary">Full Report</a>
+            @endunless
         </div>
     </div>
     <div class="overflow-x-auto">

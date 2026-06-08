@@ -20,7 +20,12 @@ class ArrearsController extends Controller
 {
     public function index(Request $request, LoanVisibilityService $visibility, BusinessCalendarService $calendar): View
     {
-        abort_unless(auth()->user()->canPerform('manage-loans') || auth()->user()->canPerform('view-reports'), 403);
+        abort_unless(
+            auth()->user()->canPerform('manage-loans')
+                || auth()->user()->canPerform('view-reports')
+                || auth()->user()->canPerform('view-arrears'),
+            403
+        );
         abort_if($request->user()->isTellerCashier(), 403);
 
         $data = $request->validate([

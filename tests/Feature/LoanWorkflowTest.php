@@ -1973,11 +1973,7 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->post(route('arrears.apply-penalties'));
     expect($manualPenaltyResponse->isForbidden() || $manualPenaltyResponse->isRedirect())->toBeTrue();
 
-    $this->actingAs($officer)
-        ->get(route('reports.show', 'loan-accounts-in-arrears'))
-        ->assertSuccessful()
-        ->assertSee('1001-LN-OFFICER-ARREARS')
-        ->assertDontSee('1001-LN-OTHER-ARREARS');
+    expect($this->actingAs($officer)->get(route('reports.show', 'loan-accounts-in-arrears'))->isSuccessful())->toBeFalse();
 
     $this->actingAs($officer)
         ->get(route('due-repayments.index'))
@@ -1991,13 +1987,47 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->assertSuccessful()
         ->assertSee('Repayment Calendar')
         ->assertSee('Due Today')
-        ->assertSee('Recent Loan Payments')
         ->assertSee('1001-LN-OFFICER-DUE')
-        ->assertSee('1001-LN-OFFICER-ARREARS')
-        ->assertSee('UGX 125,000.00')
+        ->assertDontSee('Recent Loan Payments')
+        ->assertDontSee('>Operations<', false)
+        ->assertDontSee('Reports')
         ->assertDontSee('1001-LN-OTHER-DUE')
-        ->assertDontSee('UGX 95,000.00')
         ->assertDontSee('1001-LN-OFFICER-FUTURE');
+
+    $recoveryRole = Role::firstOrCreate(['slug' => 'loan-recovery-officer'], ['name' => 'Loan Recovery Officer']);
+    $recoveryRole->permissions()->syncWithoutDetaching([
+        Permission::firstOrCreate(
+            ['slug' => 'view-arrears'],
+            ['organization_id' => $organization->id, 'name' => 'View Arrears'],
+        )->id,
+        Permission::firstOrCreate(
+            ['slug' => 'manage-clients'],
+            ['organization_id' => $organization->id, 'name' => 'Manage Clients'],
+        )->id,
+    ]);
+    $recoveryOfficer = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => $admin->branch_id,
+        'role_id' => $recoveryRole->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($recoveryOfficer)
+        ->get(route('arrears.index'))
+        ->assertSuccessful()
+        ->assertSee('1001-LN-OFFICER-ARREARS')
+        ->assertSee('1001-LN-OTHER-ARREARS');
+
+    expect($this->actingAs($recoveryOfficer)->get(route('loans.index'))->isSuccessful())->toBeFalse();
+
+    $this->actingAs($recoveryOfficer)
+        ->get(route('dashboard'))
+        ->assertSuccessful()
+        ->assertSee('Loans in arrears')
+        ->assertDontSee('Loan portfolio')
+        ->assertDontSee('>Operations<', false)
+        ->assertDontSee('Reports');
 
     $this->actingAs($admin)
         ->get(route('arrears.index'))
@@ -2027,28 +2057,19 @@ it('limits cashier repayment visibility to unpaid installments due today', funct
     loanWorkflowSchedule($paidLoan, today(), 'paid', 0);
     loanWorkflowSchedule($approvedLoan, today(), 'pending');
 
-    $this->actingAs($cashier)
-        ->get(route('due-repayments.index', ['date' => today()->addDay()->toDateString()]))
-        ->assertSuccessful()
-        ->assertSee(today()->format('d M Y'))
-        ->assertSee('1001-LN-CASHIER-TODAY')
-        ->assertDontSee('1001-LN-CASHIER-FUTURE')
-        ->assertDontSee('1001-LN-CASHIER-PAID')
-        ->assertDontSee('1001-LN-CASHIER-APPROVED');
+    expect($this->actingAs($cashier)->get(route('due-repayments.index', ['date' => today()->addDay()->toDateString()]))->isSuccessful())->toBeFalse();
 
     $this->actingAs($cashier)
         ->get(route('dashboard'))
         ->assertSuccessful()
-        ->assertSee('Due today')
-        ->assertSee('Repayment Calendar')
-        ->assertSee('Due Today')
-        ->assertSee('1001-LN-CASHIER-TODAY')
-        ->assertDontSee('UGX 300,000')
+        ->assertSee("Today's Posted Transactions", false)
+        ->assertDontSee('Due today')
+        ->assertDontSee('Repayment Calendar')
+        ->assertDontSee('Reports')
+        ->assertDontSee('1001-LN-CASHIER-TODAY')
         ->assertDontSee('1001-LN-CASHIER-FUTURE');
 
     expect($this->actingAs($cashier)->get(route('arrears.index'))->isSuccessful())->toBeFalse();
 
-    $this->actingAs($cashier)
-        ->get(route('reports.show', 'loan-accounts-in-arrears'))
-        ->assertNotFound();
+    expect($this->actingAs($cashier)->get(route('reports.show', 'loan-accounts-in-arrears'))->isSuccessful())->toBeFalse();
 });

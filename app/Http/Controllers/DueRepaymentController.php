@@ -15,15 +15,14 @@ class DueRepaymentController extends Controller
 {
     public function index(Request $request, LoanVisibilityService $visibility): View
     {
+        abort_if($request->user()->isTellerCashier() || $request->user()->isLoanRecoveryOfficer(), 403);
         abort_unless($request->user()->canPerform('manage-loans') || $request->user()->canPerform('post-repayments') || $request->user()->canPerform('view-reports'), 403);
 
         $data = $request->validate([
             'date' => ['nullable', 'date'],
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
         ]);
-        $date = $request->user()->isTellerCashier()
-            ? CarbonImmutable::today()
-            : CarbonImmutable::parse($data['date'] ?? today()->toDateString());
+        $date = CarbonImmutable::parse($data['date'] ?? today()->toDateString());
         $canFilterBranch = ApiSecurity::hasGlobalBranchAccess($request->user());
         $branchId = $canFilterBranch ? (int) ($data['branch_id'] ?? 0) : (int) $request->user()->branch_id;
         $scheduleQuery = LoanSchedule::query()
