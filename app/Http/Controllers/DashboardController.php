@@ -62,13 +62,13 @@ class DashboardController extends Controller
         $today = CarbonImmutable::today();
         $monthStart = $today->startOfMonth();
         $monthEnd = $today->endOfMonth();
-        $canFilterCalendarBranch = ApiSecurity::hasGlobalBranchAccess($user);
+        $canFilterCalendarBranch = ! $isCashierDashboard && ApiSecurity::hasGlobalBranchAccess($user);
         $selectedCalendarBranchId = $canFilterCalendarBranch ? $request->integer('calendar_branch_id') : (int) $user->branch_id;
         $calendarScope = fn (Builder $query): Builder => $visibility
             ->scopeRepaymentCalendar($query, $user)
             ->when($selectedCalendarBranchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
         $canViewRepaymentCalendarAmounts = ! ($isCashierDashboard || $isLoanOfficerDashboard);
-        $showRepaymentScheduleWidgets = ! ($isCashierDashboard || $isLoanRecoveryDashboard);
+        $showRepaymentScheduleWidgets = ! $isLoanRecoveryDashboard;
         $arrearsCutoffDate = $today->copy()->subDay()->toDateString();
         $dueToday = collect();
         $dueTodayTotals = null;
@@ -76,8 +76,17 @@ class DashboardController extends Controller
         $calendarCounts = collect();
 
         if ($loansEnabled) {
+            $dueTodayScheduleScope = fn (Builder $query): Builder => $query
+                ->where('outstanding_amount', '>', 0)
+                ->where('status', '!=', 'paid')
+                ->whereDate('due_date', $today->toDateString());
             $dueToday = LoanSchedule::query()
-                ->with(['loan.client', 'loan.product'])
+                ->with([
+                    'loan' => fn ($query) => $query
+                        ->with(['client', 'product'])
+                        ->withCount(['schedules as due_installments_count' => $dueTodayScheduleScope])
+                        ->withSum(['schedules as due_installments_amount' => $dueTodayScheduleScope], 'outstanding_amount'),
+                ])
                 ->excludingCancelledLoans()
                 ->forActiveArrearsLoans()
                 ->whereHas('loan', $calendarScope)

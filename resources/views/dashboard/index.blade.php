@@ -51,7 +51,7 @@
     };
     $cards = array_values(array_filter($cards, $cardIsVisible));
     $essentialCardLabels = match (true) {
-        $isCashierDashboard => ["Today's deposits", "Today's withdrawals"],
+        $isCashierDashboard => ['Due today', "Today's deposits", "Today's withdrawals"],
         $isLoanRecoveryDashboard => ['Total clients', 'Loans in arrears'],
         $isLoanOfficerDashboard => ['Total clients', 'Loan applications', 'Loan portfolio', 'Loans in arrears', 'Due today'],
         default => null,
@@ -203,7 +203,7 @@
                 <p class="text-sm text-slate-500">
                     {{ $calendarMonth->format('F Y') }}
                     @if($isCashierDashboard)
-                        branch loans due by scheduled date.
+                        your branch loan installments by scheduled date.
                     @elseif($isLoanOfficerDashboard)
                         loans assigned to you by scheduled date.
                     @else
@@ -280,16 +280,13 @@
                             <div class="mt-1 text-xs text-slate-500">{{ $schedule->loan->client->phone }}{{ $schedule->loan->client->alternative_phone ? ' / '.$schedule->loan->client->alternative_phone : '' }}</div>
                         </div>
                         <div class="text-right text-sm font-semibold text-slate-950">
-                            @if($canViewRepaymentCalendarAmounts)
-                                UGX {{ number_format($schedule->outstanding_amount, 0) }}
-                            @else
-                                Not collected
-                            @endif
+                            UGX {{ number_format((float) ($schedule->loan->due_installments_amount ?? $schedule->outstanding_amount), 0) }}
+                            <div class="mt-1 text-xs font-medium text-slate-500">{{ (int) ($schedule->loan->due_installments_count ?? 1) }} installment{{ (int) ($schedule->loan->due_installments_count ?? 1) === 1 ? '' : 's' }} due</div>
                         </div>
                     </div>
                     <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                         <span>{{ $schedule->due_date?->format('d M Y') }}</span>
-                        <span>{{ $schedule->loan->loan_number }} · Installment #{{ $schedule->installment_number }}</span>
+                        <span>{{ $schedule->loan->loan_number }} · Current schedule #{{ $schedule->installment_number }}</span>
                     </div>
                 </div>
             @empty

@@ -15,18 +15,30 @@ class DueRepaymentController extends Controller
 {
     public function index(Request $request, LoanVisibilityService $visibility): View
     {
-        abort_if($request->user()->isTellerCashier() || $request->user()->isLoanRecoveryOfficer(), 403);
+        abort_if($request->user()->isLoanRecoveryOfficer(), 403);
         abort_unless($request->user()->canPerform('manage-loans') || $request->user()->canPerform('post-repayments') || $request->user()->canPerform('view-reports'), 403);
 
         $data = $request->validate([
             'date' => ['nullable', 'date'],
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
         ]);
-        $date = CarbonImmutable::parse($data['date'] ?? today()->toDateString());
-        $canFilterBranch = ApiSecurity::hasGlobalBranchAccess($request->user());
+        $isCashier = $request->user()->isTellerCashier();
+        $date = $isCashier
+            ? CarbonImmutable::today()
+            : CarbonImmutable::parse($data['date'] ?? today()->toDateString());
+        $canFilterBranch = ! $isCashier && ApiSecurity::hasGlobalBranchAccess($request->user());
         $branchId = $canFilterBranch ? (int) ($data['branch_id'] ?? 0) : (int) $request->user()->branch_id;
+        $dueScheduleScope = fn (Builder $query): Builder => $query
+            ->where('outstanding_amount', '>', 0)
+            ->where('status', '!=', 'paid')
+            ->whereDate('due_date', $date->toDateString());
         $scheduleQuery = LoanSchedule::query()
-            ->with(['loan.client', 'loan.product'])
+            ->with([
+                'loan' => fn ($query) => $query
+                    ->with(['client', 'product'])
+                    ->withCount(['schedules as due_installments_count' => $dueScheduleScope])
+                    ->withSum(['schedules as due_installments_amount' => $dueScheduleScope], 'outstanding_amount'),
+            ])
             ->excludingCancelledLoans()
             ->forActiveArrearsLoans()
             ->whereHas('loan', fn (Builder $query): Builder => $visibility
@@ -54,6 +66,7 @@ class DueRepaymentController extends Controller
                 ->get(),
             'canFilterBranch' => $canFilterBranch,
             'selectedBranchId' => $branchId,
+            'isCashier' => $isCashier,
         ]);
     }
 }

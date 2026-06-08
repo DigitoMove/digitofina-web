@@ -2064,7 +2064,7 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->assertSee($otherClient->client_number);
 });
 
-it('limits cashier repayment visibility to unpaid installments due today', function () {
+it('limits cashier repayment visibility to unpaid installments due today at their branch', function () {
     $admin = loanWorkflowUser();
     $organization = loanWorkflowOrganizationWithModules($admin, ['loans', 'reports', 'teller']);
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
@@ -2084,17 +2084,43 @@ it('limits cashier repayment visibility to unpaid installments due today', funct
     loanWorkflowSchedule($paidLoan, today(), 'paid', 0);
     loanWorkflowSchedule($approvedLoan, today(), 'pending');
 
-    expect($this->actingAs($cashier)->get(route('due-repayments.index', ['date' => today()->addDay()->toDateString()]))->isSuccessful())->toBeFalse();
+    $otherBranch = Branch::create([
+        'organization_id' => $organization->id,
+        'code' => '1002',
+        'name' => 'Other Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $otherClient = loanWorkflowClient($admin, '+256700120002');
+    $otherClient->update(['organization_id' => $organization->id, 'branch_id' => $otherBranch->id]);
+    $otherBranchLoan = loanWorkflowTrackedLoan($admin, $otherClient, $product, '1002-LN-CASHIER-OTHER', 'active');
+    loanWorkflowSchedule($otherBranchLoan, today(), 'pending');
 
     $this->actingAs($cashier)
         ->get(route('dashboard'))
         ->assertSuccessful()
         ->assertSee("Today's Posted Transactions", false)
-        ->assertDontSee('Due today')
-        ->assertDontSee('Repayment Calendar')
+        ->assertSee('Due today')
+        ->assertSee('Repayment Calendar')
+        ->assertSee('1001-LN-CASHIER-TODAY')
         ->assertDontSee('Reports')
-        ->assertDontSee('1001-LN-CASHIER-TODAY')
-        ->assertDontSee('1001-LN-CASHIER-FUTURE');
+        ->assertDontSee('1001-LN-CASHIER-FUTURE')
+        ->assertDontSee('1002-LN-CASHIER-OTHER');
+
+    $this->actingAs($cashier)
+        ->get(route('due-repayments.index', [
+            'date' => today()->addDay()->toDateString(),
+            'branch_id' => $otherBranch->id,
+        ]))
+        ->assertSuccessful()
+        ->assertSee("Today's Collection Calls")
+        ->assertSee('1001-LN-CASHIER-TODAY')
+        ->assertDontSee('1001-LN-CASHIER-FUTURE')
+        ->assertDontSee('1002-LN-CASHIER-OTHER')
+        ->assertDontSee('Open total')
+        ->assertSee('Amount to pay')
+        ->assertSee('1 installment')
+        ->assertSee('UGX 300,000.00');
 
     expect($this->actingAs($cashier)->get(route('arrears.index'))->isSuccessful())->toBeFalse();
 
