@@ -124,7 +124,7 @@
                 </select>
             </label>
             <label class="text-sm font-medium text-slate-700">Requested amount
-                <input name="requested_amount" value="{{ old('requested_amount', $loan->requested_amount) }}" type="number" step="100" min="100" class="mt-1 w-full rounded border-slate-300" required>
+                <input name="requested_amount" value="{{ old('requested_amount', $loan->requested_amount) }}" type="number" step="50" min="50" class="mt-1 w-full rounded border-slate-300" required>
             </label>
             <label class="text-sm font-medium text-slate-700">Installments
                 <input name="term_periods" value="{{ old('term_periods', $loan->term_periods) }}" type="number" min="1" class="mt-1 w-full rounded border-slate-300" required>
@@ -230,7 +230,7 @@
                     </select>
                 </label>
                 <label class="text-sm font-medium text-slate-700">Approved amount
-                    <input name="approved_amount" value="{{ old('approved_amount', $loan->approved_amount ?: $loan->requested_amount) }}" type="number" step="100" min="100" class="mt-1 w-full rounded border-slate-300" required>
+                    <input name="approved_amount" value="{{ old('approved_amount', $loan->approved_amount ?: $loan->requested_amount) }}" type="number" step="50" min="50" class="mt-1 w-full rounded border-slate-300" required>
                 </label>
                 <label class="text-sm font-medium text-slate-700">Installments
                     <input name="term_periods" value="{{ old('term_periods', $loan->term_periods) }}" type="number" min="1" class="mt-1 w-full rounded border-slate-300" required>

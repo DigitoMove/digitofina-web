@@ -145,7 +145,7 @@
             </label>
             <label class="grid gap-1 text-sm lg:col-span-2">
                 <span class="font-medium text-slate-700">Amount</span>
-                <input type="number" name="amount" value="{{ old('amount') }}" min="100" step="100" required class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100" placeholder="100" data-confirm-summary-label="Amount">
+                <input type="number" name="amount" value="{{ old('amount') }}" min="50" step="50" required class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100" placeholder="50" data-confirm-summary-label="Amount">
             </label>
             <label class="grid gap-1 text-sm lg:col-span-2">
                 <span class="font-medium text-slate-700">Reason / narration</span>

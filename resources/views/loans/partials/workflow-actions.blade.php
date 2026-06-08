@@ -69,7 +69,7 @@
         <form method="POST" action="{{ route('loans.fast-track-disbursement', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-forest-500/20 bg-forest-50 p-4 lg:grid-cols-[220px_220px_1fr_auto]">
             @csrf
             <label class="text-sm font-semibold text-slate-700">Approved amount <x-required-badge />
-                <input name="approved_amount" type="number" min="100" step="100" value="{{ old('approved_amount', $loan->approved_amount ?: $loan->requested_amount) }}" class="mt-1" required>
+                <input name="approved_amount" type="number" min="50" step="50" value="{{ old('approved_amount', $loan->approved_amount ?: $loan->requested_amount) }}" class="mt-1" required>
             </label>
             <label class="text-sm font-semibold text-slate-700">Payment method <x-required-badge />
                 <select name="payment_method" class="mt-1" required>
@@ -129,7 +129,7 @@
         <div class="mt-4 grid gap-4 lg:grid-cols-2">
             <form method="POST" action="{{ route('loans.approve', $loan) }}" class="grid gap-3 rounded-lg border border-forest-500/20 bg-forest-50 p-4">
                 @csrf
-                <label class="text-sm font-semibold text-slate-700">Approved amount <x-required-badge /><input name="approved_amount" type="number" min="100" step="100" value="{{ old('approved_amount', $loan->requested_amount) }}" required></label>
+                <label class="text-sm font-semibold text-slate-700">Approved amount <x-required-badge /><input name="approved_amount" type="number" min="50" step="50" value="{{ old('approved_amount', $loan->requested_amount) }}" required></label>
                 <textarea name="comments" placeholder="Approval comments">{{ old('comments') }}</textarea>
                 <button class="df-action-primary">Approve Loan</button>
             </form>

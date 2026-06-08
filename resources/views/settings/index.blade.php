@@ -42,7 +42,7 @@
                         @if($setting->type === 'json')
                             <textarea name="settings[{{ $setting->key }}]" rows="8" class="mt-1 w-full rounded border-slate-300 font-mono text-xs">{{ old('settings.'.$setting->key, $setting->value) }}</textarea>
                         @else
-                            <input name="settings[{{ $setting->key }}]" value="{{ old('settings.'.$setting->key, $setting->value) }}" @if($setting->type === 'money') type="number" min="0" step="100" @elseif($setting->type === 'number') type="number" min="0" step="0.0001" @endif class="mt-1 w-full rounded border-slate-300">
+                            <input name="settings[{{ $setting->key }}]" value="{{ old('settings.'.$setting->key, $setting->value) }}" @if($setting->type === 'money') type="number" min="0" step="50" @elseif($setting->type === 'number') type="number" min="0" step="0.0001" @endif class="mt-1 w-full rounded border-slate-300">
                         @endif
                         @if ($setting->description)
                             <span class="mt-1 block text-xs font-normal text-slate-500">{{ $setting->description }}</span>
