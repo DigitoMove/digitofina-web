@@ -23,6 +23,62 @@ use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
 
+it('prevents organization admins from assigning or editing super admins', function () {
+    [$organization, $branch, $organizationAdmin] = tenantUser(['manage-users']);
+    $organizationAdmin->role->update(['name' => 'Organization Admin', 'slug' => 'organization-admin']);
+    $superRole = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $staffRole = Role::create([
+        'organization_id' => $organization->id,
+        'name' => 'Operations Staff',
+        'slug' => 'operations-staff',
+    ]);
+    $staff = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'role_id' => $staffRole->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $superAdmin = User::factory()->create([
+        'organization_id' => null,
+        'branch_id' => null,
+        'role_id' => $superRole->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($organizationAdmin)
+        ->get(route('users.create'))
+        ->assertSuccessful()
+        ->assertDontSee('<option value="'.$superRole->id.'"', false);
+
+    $this->actingAs($organizationAdmin)
+        ->post(route('users.store'), [
+            'role_id' => $superRole->id,
+            'name' => 'Unauthorized Super Admin',
+            'email' => 'unauthorized-super@example.test',
+            'phone' => '+256700000901',
+            'status' => 'active',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])
+        ->assertSessionHasErrors('role_id');
+
+    $this->actingAs($organizationAdmin)
+        ->put(route('users.update', $staff), [
+            'role_id' => $superRole->id,
+            'branch_id' => $branch->id,
+            'name' => $staff->name,
+            'email' => $staff->email,
+            'phone' => $staff->phone,
+            'status' => 'active',
+        ])
+        ->assertSessionHasErrors('role_id');
+
+    expect($this->actingAs($organizationAdmin)->get(route('users.edit', $superAdmin))->isSuccessful())->toBeFalse()
+        ->and($staff->fresh()->role_id)->toBe($staffRole->id);
+});
+
 it('keeps organization clients separated in api responses', function () {
     [$organizationA, $branchA, $userA] = tenantUser(['manage-clients']);
     [$organizationB, $branchB] = tenantShell('Tenant B');

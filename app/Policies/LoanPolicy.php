@@ -12,6 +12,17 @@ class LoanPolicy
         return $user->canPerform('manage-loans') || $user->canPerform('view-reports');
     }
 
+    public function view(User $user, Loan $loan): bool
+    {
+        if ($user->isLoanOfficer()) {
+            return (int) $loan->officer_id === (int) $user->id
+                && (int) $loan->branch_id === (int) $user->branch_id;
+        }
+
+        return $user->canPerform('manage-loans')
+            || $user->canPerform('view-reports');
+    }
+
     public function create(User $user): bool
     {
         return ! $user->isTellerCashier()

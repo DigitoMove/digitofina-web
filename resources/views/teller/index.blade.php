@@ -30,11 +30,11 @@
     </div>
     <div class="rounded border px-4 py-3 text-sm {{ $statusClass }}">
         <span class="font-semibold">{{ $session ? 'Open drawer' : 'No open drawer' }}</span>
-        <span class="ml-2">{{ $drawer?->name ?? ($isCashier ? 'Awaiting admin drawer opening' : 'Open a drawer to start') }}</span>
+        <span class="ml-2">{{ $drawer?->name ?? ($isCashier ? 'Open your assigned drawer to start' : 'Open a drawer to start') }}</span>
     </div>
 </div>
 
-<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+<div class="grid gap-4 sm:grid-cols-3">
     @foreach($tiles as [$label, $value, $color, $icon])
         <div class="overflow-hidden rounded border border-slate-200 bg-white shadow-sm">
             <div class="{{ $color }} relative p-5 text-white">
@@ -47,13 +47,13 @@
     @endforeach
 </div>
 
-<div class="mt-6 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-    @if(! $isCashier && (! $canOpenForTellers || $session))
-    <section class="df-panel p-5">
+<div class="mt-6 grid items-start gap-5 xl:grid-cols-3">
+    @if($isCashier || ! $canOpenForTellers || $session)
+    <section class="df-panel p-5 xl:col-span-1">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
                 <h2 class="font-semibold text-slate-950">Drawer Opening</h2>
-                <p class="df-muted">Open a till, or continue with the active drawer.</p>
+                <p class="df-muted">{{ $isCashier ? 'Open the drawer assigned to you.' : 'Open a till, or continue with the active drawer.' }}</p>
             </div>
             <span class="df-badge {{ $session ? 'border-emerald-500/20 bg-emerald-50 text-emerald-700' : 'border-amber-400/20 bg-amber-50 text-amber-700' }}">{{ $session ? 'Ready' : 'Required' }}</span>
         </div>
@@ -84,9 +84,13 @@
                         </select>
                     </label>
                 @endif
-                <label class="text-sm font-semibold text-slate-700">Opening Balance <x-required-badge />
-                    <input name="opening_balance" type="number" min="0" step="100" value="{{ old('opening_balance') }}" class="mt-1" placeholder="Opening balance" required>
-                </label>
+                @if($isCashier)
+                    <input type="hidden" name="opening_balance" value="{{ old('opening_balance', $drawers->where('status', 'closed')->first()?->current_balance ?? 0) }}">
+                @else
+                    <label class="text-sm font-semibold text-slate-700">Opening Balance <x-required-badge />
+                        <input name="opening_balance" type="number" min="0" step="100" value="{{ old('opening_balance') }}" class="mt-1" placeholder="Opening balance" required>
+                    </label>
+                @endif
                 <button class="df-action-primary">Open Drawer</button>
             </form>
         @else
@@ -109,7 +113,7 @@
     @endif
 
     @if($canOpenForTellers)
-        <section class="df-panel p-5">
+        <section class="df-panel p-5 xl:col-span-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
                     <h2 class="font-semibold text-slate-950">Drawer Management</h2>
@@ -246,13 +250,15 @@
         </section>
     @endif
 
-    <section class="df-panel p-5">
+    <section class="df-panel p-5 {{ $canOpenForTellers ? 'xl:col-span-3' : 'xl:col-span-2' }}">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h2 class="font-semibold text-slate-950">Account Lookup</h2>
                 <p class="df-muted">Find savings, loan, or GL posting targets.</p>
             </div>
-            <a href="{{ route('due-repayments.index') }}" class="df-action-secondary">Due Repayments</a>
+            @unless($isCashier)
+                <a href="{{ route('due-repayments.index') }}" class="df-action-secondary">Due Repayments</a>
+            @endunless
         </div>
         <div class="mt-4 grid gap-3 md:grid-cols-[260px_1fr_auto]">
             <select name="lookup_scope" data-teller-lookup-scope required>
@@ -317,7 +323,7 @@
     </section>
 </div>
 
-<div class="mt-6 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+<div class="mt-6 grid gap-5 {{ $isCashier ? 'xl:grid-cols-1' : 'xl:grid-cols-[1.15fr_0.85fr]' }}">
     <section class="df-panel p-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>

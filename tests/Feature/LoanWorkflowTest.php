@@ -1919,7 +1919,13 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
     $product->update(['organization_id' => $organization->id]);
     $officerRole = Role::firstOrCreate(['slug' => 'loan-officer'], ['name' => 'Loan Officer']);
-    Permission::whereIn('slug', ['manage-loans', 'view-reports'])->pluck('id')->each(fn (int $permissionId) => $officerRole->permissions()->syncWithoutDetaching([$permissionId]));
+    Permission::whereIn('slug', ['manage-clients', 'manage-loans', 'view-reports'])->pluck('id')->each(fn (int $permissionId) => $officerRole->permissions()->syncWithoutDetaching([$permissionId]));
+    $officerRole->permissions()->syncWithoutDetaching([
+        Permission::firstOrCreate(
+            ['slug' => 'manage-clients'],
+            ['organization_id' => $organization->id, 'name' => 'Manage Clients'],
+        )->id,
+    ]);
     $adminRole = Role::firstOrCreate(['slug' => 'organization-admin'], ['name' => 'Organization Admin']);
     Permission::whereIn('slug', ['manage-loans', 'view-reports'])->pluck('id')->each(fn (int $permissionId) => $adminRole->permissions()->syncWithoutDetaching([$permissionId]));
     $admin->update(['role_id' => $adminRole->id]);
@@ -1968,6 +1974,21 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->assertSee('1001-LN-OFFICER-ARREARS')
         ->assertDontSee('1001-LN-OTHER-ARREARS')
         ->assertDontSee('Run Penalties');
+
+    $this->actingAs($officer)
+        ->get(route('loans.index', ['search' => '1001-LN']))
+        ->assertSuccessful()
+        ->assertSee('1001-LN-OFFICER-ARREARS')
+        ->assertDontSee('1001-LN-OTHER-ARREARS');
+
+    $this->actingAs($officer)
+        ->get(route('clients.index', ['search' => '256700110']))
+        ->assertSuccessful()
+        ->assertSee($officerClient->client_number)
+        ->assertDontSee($otherClient->client_number);
+
+    expect($this->actingAs($officer)->get(route('loans.show', $otherArrears))->isSuccessful())->toBeFalse()
+        ->and($this->actingAs($officer)->get(route('clients.show', $otherClient))->isSuccessful())->toBeFalse();
 
     $manualPenaltyResponse = $this->actingAs($officer)
         ->post(route('arrears.apply-penalties'));
@@ -2035,6 +2056,12 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->assertSee('Run Penalties')
         ->assertSee('1001-LN-OFFICER-ARREARS')
         ->assertSee('1001-LN-OTHER-ARREARS');
+
+    $this->actingAs($admin)
+        ->get(route('clients.index'))
+        ->assertSuccessful()
+        ->assertSee($officerClient->client_number)
+        ->assertSee($otherClient->client_number);
 });
 
 it('limits cashier repayment visibility to unpaid installments due today', function () {

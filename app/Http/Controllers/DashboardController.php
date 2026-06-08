@@ -203,6 +203,7 @@ class DashboardController extends Controller
                 ->when($isCashierDashboard, fn (Builder $query): Builder => $query->where('user_id', $user->id))
                 ->sum('amount') : 0,
             'drawerBalance' => $tellerEnabled ? ($drawer?->current_balance ?? 0) : 0,
+            'hasOpenDrawer' => $drawer !== null,
             'branchCount' => $usersEnabled ? Branch::count() : 0,
             'staffCount' => $usersEnabled ? User::where('status', 'active')->count() : 0,
             'totalInvestmentBalance' => $investmentsEnabled ? InvestorAccount::sum('current_investment_balance') : 0,

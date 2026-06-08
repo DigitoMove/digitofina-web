@@ -50,6 +50,12 @@ class StoreUserRequest extends FormRequest
                 $validator->errors()->add('organization_id', 'You cannot create users for this organization.');
             }
 
+            if ($roleSlug === 'super-admin' && ! $user?->hasRole('super-admin')) {
+                $validator->errors()->add('role_id', 'Only a super admin can assign the Super Admin role.');
+
+                return;
+            }
+
             if ($roleSlug === 'super-admin') {
                 return;
             }

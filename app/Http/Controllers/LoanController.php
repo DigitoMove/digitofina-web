@@ -15,6 +15,7 @@ use App\Services\LoanService;
 use App\Services\LoanVisibilityService;
 use App\Support\CurrencyDenomination;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -63,7 +64,7 @@ class LoanController extends Controller
         Gate::authorize('create', Loan::class);
 
         return view('loans.create', [
-            'clients' => Client::where('status', 'active')->orderBy('first_name')->get(),
+            'clients' => $this->visibleClients($request)->where('status', 'active')->orderBy('first_name')->get(),
             'products' => LoanProduct::where('is_active', true)->where('status', 'active')->orderBy('name')->get(),
             'assignableOfficers' => $visibility->assignableOfficers($request->user())->get(),
             'canAssignOfficer' => $visibility->canAssignOfficer($request->user()),
@@ -120,7 +121,7 @@ class LoanController extends Controller
 
     public function show(Loan $loan, LoanVisibilityService $visibility, LoanService $service): View
     {
-        Gate::authorize('viewAny', Loan::class);
+        Gate::authorize('view', $loan);
 
         if (! $loan->schedules()->exists() && (float) $loan->requested_amount > 0) {
             $service->generateSchedule($loan->load('product'), CarbonImmutable::parse(($loan->disbursed_at ?? $loan->application_date ?? today())->toDateString()));
@@ -144,11 +145,22 @@ class LoanController extends Controller
                 'disbursements.disbursedBy',
                 'repayments.receivedBy',
             ]),
-            'guarantorClients' => Client::where('status', 'active')->where('id', '!=', $loan->client_id)->orderBy('first_name')->get(),
+            'guarantorClients' => $this->visibleClients(request())->where('status', 'active')->where('id', '!=', $loan->client_id)->orderBy('first_name')->get(),
             'assignableOfficers' => $visibility->assignableOfficers(request()->user())->get(),
             'canAssignOfficer' => $visibility->canAssignOfficer(request()->user()),
             'products' => LoanProduct::where('is_active', true)->where('status', 'active')->orderBy('name')->get(),
         ]);
+    }
+
+    /**
+     * @return Builder<Client>
+     */
+    private function visibleClients(Request $request): Builder
+    {
+        return Client::query()
+            ->when($request->user()->isLoanOfficer(), fn ($query) => $query
+                ->where('officer_id', $request->user()->id)
+                ->where('branch_id', $request->user()->branch_id));
     }
 
     public function updateDraftTerms(Request $request, Loan $loan, LoanService $service): RedirectResponse

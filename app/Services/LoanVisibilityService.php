@@ -15,16 +15,18 @@ class LoanVisibilityService
      */
     public function scope(Builder $query, User $user): Builder
     {
+        if ($user->isLoanOfficer()) {
+            return $query
+                ->where('officer_id', $user->id)
+                ->when($user->branch_id, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
+        }
+
         if (ApiSecurity::hasGlobalBranchAccess($user)) {
             return $query;
         }
 
         if ($user->canPerform('manage-users') || $user->canPerform('disburse-loans') || $user->canPerform('manage-branches')) {
             return $user->branch_id ? $query->where('branch_id', $user->branch_id) : $query;
-        }
-
-        if ($user->canPerform('manage-loans')) {
-            return $query->where('officer_id', $user->id);
         }
 
         return $user->branch_id ? $query->where('branch_id', $user->branch_id) : $query;
@@ -39,12 +41,14 @@ class LoanVisibilityService
 
     public function scopeRepaymentCalendar(Builder $query, User $user): Builder
     {
-        if (ApiSecurity::hasGlobalBranchAccess($user)) {
-            return $query;
+        if ($user->isLoanOfficer()) {
+            return $query
+                ->where('officer_id', $user->id)
+                ->when($user->branch_id, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
         }
 
-        if ($user->hasRole('loan-officer')) {
-            return $query->where('officer_id', $user->id);
+        if (ApiSecurity::hasGlobalBranchAccess($user)) {
+            return $query;
         }
 
         return $user->branch_id ? $query->where('branch_id', $user->branch_id) : $query;

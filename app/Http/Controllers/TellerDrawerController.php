@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
+use App\Models\Loan;
 use App\Models\LoanSchedule;
 use App\Models\MakerCheckerRequest;
 use App\Models\TellerDrawer;
@@ -61,12 +62,14 @@ class TellerDrawerController extends Controller
                 ->where('account_number', $request->account_number)
                 ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
                 ->when($selectedAccountTypeId, fn ($query, int $typeId) => $query->where('account_type_id', $typeId))
+                ->where(fn (Builder $query): Builder => $this->availableClientAccount($query))
                 ->first()
             : null;
         $accountResults = Account::query()
             ->with(['client', 'accountType', 'loan'])
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when($selectedAccountTypeId, fn (Builder $query, int $typeId): Builder => $query->where('account_type_id', $typeId))
+            ->where(fn (Builder $query): Builder => $this->availableClientAccount($query))
             ->when($accountSearch, function (Builder $query, string $search): void {
                 $query->where(function (Builder $query) use ($search): void {
                     $query->whereAny(['account_number', 'account_name', 'status'], 'like', "%{$search}%")
@@ -111,7 +114,8 @@ class TellerDrawerController extends Controller
             ->with(['branch', 'assignedUser'])
             ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $this->scopeDrawersToOrganization($query, $organizationId))
             ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()) && $request->user()->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
-            ->when(! $canOpenForTellers, function (Builder $query): void {
+            ->when($isCashier, fn (Builder $query): Builder => $query->where('assigned_user_id', $request->user()->id))
+            ->when(! $canOpenForTellers && ! $isCashier, function (Builder $query): void {
                 $query->where(function (Builder $query): void {
                     $query->where('assigned_user_id', auth()->id())
                         ->orWhereNull('assigned_user_id');
@@ -349,8 +353,6 @@ class TellerDrawerController extends Controller
 
     public function open(Request $request, TellerService $tellers, FinancialControlService $financialControls, AuditLogger $auditLogger): RedirectResponse
     {
-        abort_if($request->user()->isTellerCashier(), 403);
-
         $data = $request->validate([
             'teller_drawer_id' => ['required', 'exists:teller_drawers,id'],
             'teller_user_id' => ['nullable', 'exists:users,id'],
@@ -367,11 +369,16 @@ class TellerDrawerController extends Controller
                 throw new InvalidArgumentException('The selected drawer was not found. Refresh the page and choose an available branch drawer.');
             }
 
+            if ($request->user()->isTellerCashier() && (int) $drawer->assigned_user_id !== (int) $request->user()->id) {
+                throw new InvalidArgumentException('You can only open the teller drawer assigned to you.');
+            }
+
             $this->authorizeDrawerBranch($request, $drawer->branch);
             $financialControls->ensureFinancialDayOpen($request->user(), (int) $drawer->branch_id, today());
             $teller = $this->resolveOpeningTeller($request, $data['teller_user_id'] ?? null);
             $this->assertAssignedTellerBelongsToBranch($teller->id, $drawer->branch);
-            $session = $tellers->openDrawer($drawer, $teller, (float) $data['opening_balance'], $request->user());
+            $openingBalance = $request->user()->isTellerCashier() ? (float) $drawer->current_balance : (float) $data['opening_balance'];
+            $session = $tellers->openDrawer($drawer, $teller, $openingBalance, $request->user());
             $auditLogger->record('drawer.opened', $session, $session->toArray() + ['opened_by' => $request->user()->id]);
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['opening_balance' => $exception->getMessage()])->withInput();
@@ -609,6 +616,17 @@ class TellerDrawerController extends Controller
     {
         return $request->user()->canPerform('manage-accounting')
             || ($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'));
+    }
+
+    private function availableClientAccount(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query->whereHas('accountType', fn (Builder $query): Builder => $query->where('category', '!=', 'loan'))
+                ->orWhereHas('loan', function (Builder $query): void {
+                    $query->whereIn('status', Loan::ARREARS_STATUSES)
+                        ->orWhereRaw('(principal_balance + interest_balance + fees_balance + penalty_balance) > 0');
+                });
+        });
     }
 
     private function receiptTransaction(Request $request): ?Transaction

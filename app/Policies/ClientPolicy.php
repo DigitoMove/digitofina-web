@@ -48,6 +48,11 @@ class ClientPolicy
 
     private function canAccessBranch(User $user, Client $client): bool
     {
+        if ($user->isLoanOfficer()) {
+            return (int) $client->officer_id === (int) $user->id
+                && (int) $client->branch_id === (int) $user->branch_id;
+        }
+
         return $user->canAccessBranch($client->branch_id, $client->organization_id)
             || $user->canPerform('audit-system');
     }

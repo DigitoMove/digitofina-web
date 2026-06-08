@@ -27,6 +27,7 @@ class UserManagementController extends Controller
 
         $users = User::query()
             ->with(['branch', 'role'])
+            ->when(! $request->user()->hasRole('super-admin'), fn ($query) => $query->whereDoesntHave('role', fn ($query) => $query->where('slug', 'super-admin')))
             ->when(! $request->user()->hasGlobalOrganizationAccess() && $request->user()->organization_id, fn ($query) => $query->where('organization_id', $request->user()->organization_id))
             ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()) && $request->user()->branch_id, fn ($query) => $query->where('branch_id', $request->user()->branch_id))
             ->when($request->search, fn ($query, string $search) => $query->whereAny(['name', 'email', 'phone', 'position'], 'like', "%{$search}%"))
@@ -38,7 +39,10 @@ class UserManagementController extends Controller
 
         return view('users.index', [
             'users' => $users,
-            'roles' => Role::orderBy('name')->get(),
+            'roles' => Role::query()
+                ->when(! $request->user()->hasRole('super-admin'), fn ($query) => $query->where('slug', '!=', 'super-admin'))
+                ->orderBy('name')
+                ->get(),
             'branches' => Branch::orderBy('name')->get(),
         ]);
     }
@@ -111,6 +115,7 @@ class UserManagementController extends Controller
         return [
             'user' => $user,
             'roles' => Role::query()
+                ->when(! $currentUser->hasRole('super-admin'), fn ($query) => $query->where('slug', '!=', 'super-admin'))
                 ->when(! $currentUser->hasGlobalOrganizationAccess() && $currentUser->organization_id, fn ($query) => $query->where(function ($query) use ($currentUser): void {
                     $query->where('organization_id', $currentUser->organization_id)->orWhereNull('organization_id');
                 }))

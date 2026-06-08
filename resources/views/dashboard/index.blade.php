@@ -6,8 +6,8 @@
         <h1 class="text-2xl font-semibold text-slate-950">Dashboard</h1>
         <p class="text-sm text-slate-500">Branch operations, cash position, approvals, and portfolio pulse.</p>
     </div>
-    @if(in_array('teller', $enabledModules ?? [], true) && ! auth()->user()->isTellerCashier() && (auth()->user()->canPerform('manage-drawers') || auth()->user()->canPerform('post-transactions')))
-        <a href="{{ route('teller.index') }}" class="df-action-primary">Open Teller Drawer</a>
+    @if(in_array('teller', $enabledModules ?? [], true) && (auth()->user()->canPerform('manage-drawers') || auth()->user()->canPerform('post-transactions')))
+        <a href="{{ route('teller.index') }}" class="df-action-primary">{{ auth()->user()->isTellerCashier() ? ($hasOpenDrawer ? 'Go to My Teller Drawer' : 'Open My Teller Drawer') : 'Open Teller Drawer' }}</a>
     @endif
 </div>
 

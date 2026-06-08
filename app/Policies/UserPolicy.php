@@ -18,6 +18,8 @@ class UserPolicy
 
     public function update(User $user, User $staff): bool
     {
-        return $user->canPerform('manage-users') && $user->canAccessOrganization($staff->organization_id);
+        return $user->canPerform('manage-users')
+            && ($user->hasRole('super-admin') || ! $staff->hasRole('super-admin'))
+            && $user->canAccessOrganization($staff->organization_id);
     }
 }

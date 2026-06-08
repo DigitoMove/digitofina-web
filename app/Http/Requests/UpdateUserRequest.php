@@ -53,6 +53,12 @@ class UpdateUserRequest extends FormRequest
                 $validator->errors()->add('organization_id', 'You cannot move users to this organization.');
             }
 
+            if (($roleSlug === 'super-admin' || $this->route('user')?->hasRole('super-admin')) && ! $user?->hasRole('super-admin')) {
+                $validator->errors()->add('role_id', 'Only a super admin can assign or edit the Super Admin role.');
+
+                return;
+            }
+
             if ($roleSlug === 'super-admin') {
                 return;
             }

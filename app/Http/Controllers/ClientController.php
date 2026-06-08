@@ -27,7 +27,7 @@ class ClientController extends Controller
         Gate::authorize('viewAny', Client::class);
         $user = $request->user();
         $canViewAllBranches = ApiSecurity::hasGlobalBranchAccess($user);
-        $canBrowseClientList = $canViewAllBranches || $user->hasRole('supervisor') || $user->canPerform('manage-users') || $user->canPerform('disburse-loans');
+        $canBrowseClientList = $user->isLoanOfficer() || $canViewAllBranches || $user->hasRole('supervisor') || $user->canPerform('manage-users') || $user->canPerform('disburse-loans');
 
         $hasClientSearch = $request->filled('search')
             || $request->filled('branch_id')
@@ -41,11 +41,14 @@ class ClientController extends Controller
 
         $clients = Client::query()
             ->with(['branch', 'officer'])
+            ->when($user->isLoanOfficer(), fn (Builder $query): Builder => $query
+                ->where('officer_id', $user->id)
+                ->where('branch_id', $user->branch_id))
             ->when(! $canBrowseClientList && ! $hasClientSearch, fn ($query) => $query->whereRaw('1 = 0'))
             ->when($request->search, fn ($query, $search) => $query->whereAny(['client_number', 'first_name', 'last_name', 'phone', 'national_id'], 'like', "%{$search}%"))
             ->when($selectedBranchId, fn ($query, int $branchId) => $query->where('branch_id', $branchId))
             ->when($request->status, fn ($query, $status) => $query->where('status', $status))
-            ->when($request->officer_id, fn ($query, $officerId) => $query->where('officer_id', $officerId))
+            ->when(! $user->isLoanOfficer() && $request->officer_id, fn ($query, $officerId) => $query->where('officer_id', $officerId))
             ->when($request->client_type, fn ($query, $type) => $query->where('client_type', $type))
             ->latest()
             ->paginate(15)

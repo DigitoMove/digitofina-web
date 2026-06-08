@@ -302,7 +302,6 @@ it('renders a loan-only client dashboard without disabled financial modules', fu
         'repayment_frequency' => 'monthly',
         'status' => 'active',
     ]);
-
     $this->actingAs($user)
         ->get(route('clients.show', $client))
         ->assertSuccessful()
@@ -685,7 +684,7 @@ it('keeps the selected account after closing a posted drawer receipt', function 
         'assigned_user_id' => $user->id,
         'name' => 'Main Drawer',
         'code' => fake()->unique()->bothify('TDR-??'),
-        'current_balance' => 0,
+        'current_balance' => 1000,
         'status' => 'open',
     ]);
     DrawerSession::create([
@@ -841,6 +840,35 @@ it('shows the full loan repayment amount when looking up a loan account', functi
         'repayment_frequency' => 'monthly',
         'status' => 'active',
     ]);
+    $settledLoanAccount = Account::create([
+        'organization_id' => $user->organization_id,
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'account_type_id' => $accountType->id,
+        'account_number' => fake()->unique()->numerify('1001-LN-####'),
+        'account_name' => 'Settled Loan Account',
+        'status' => 'closed',
+        'balance' => 0,
+        'opened_at' => today(),
+    ]);
+    Loan::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'client_id' => $client->id,
+        'loan_product_id' => $product->id,
+        'loan_account_id' => $settledLoanAccount->id,
+        'loan_number' => fake()->unique()->numerify('1001-LOAN-####'),
+        'requested_amount' => 100000,
+        'approved_amount' => 100000,
+        'principal_balance' => 0,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 24,
+        'term_periods' => 6,
+        'repayment_frequency' => 'monthly',
+        'status' => 'closed',
+    ]);
 
     $this->actingAs($user)
         ->get(route('teller.index', [
@@ -851,7 +879,8 @@ it('shows the full loan repayment amount when looking up a loan account', functi
         ->assertSuccessful()
         ->assertSee('Total to repay UGX 132,000.00')
         ->assertSee('Interest UGX 25,000.00')
-        ->assertSee('Principal UGX 100,000.00');
+        ->assertSee('Principal UGX 100,000.00')
+        ->assertDontSee('Settled Loan Account');
 });
 
 it('shows general ledger drawer expenses in cashier entries without cashier reversal requests', function () {
@@ -1362,7 +1391,7 @@ it('allows an organization admin to open an organization drawer for a teller', f
         ->assigned_user_id->toBe($teller->id);
 });
 
-it('requires an admin to open and close cashier drawers', function () {
+it('allows a cashier to open only their assigned drawer while an admin closes it', function () {
     [$organization, $branch] = drawerAdminOrganization();
     enableTellerModule($organization);
     $admin = drawerAdminUser($organization, $branch->id, 'organization-admin', ['manage-organization', 'manage-users', 'manage-drawers']);
@@ -1373,32 +1402,44 @@ it('requires an admin to open and close cashier drawers', function () {
         'assigned_user_id' => $cashier->id,
         'name' => 'Cashier Drawer',
         'code' => fake()->unique()->bothify('CASH-TD-??'),
+        'current_balance' => 1000,
+        'status' => 'closed',
+    ]);
+    $otherDrawer = TellerDrawer::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'assigned_user_id' => null,
+        'name' => 'Other Drawer',
+        'code' => fake()->unique()->bothify('OTHER-TD-??'),
         'current_balance' => 0,
         'status' => 'closed',
     ]);
 
-    $cashierOpenResponse = $this->actingAs($cashier)
+    $this->actingAs($cashier)
+        ->post(route('teller.open'), [
+            'teller_drawer_id' => $otherDrawer->id,
+            'opening_balance' => 0,
+        ])
+        ->assertSessionHasErrors('opening_balance');
+
+    $this->actingAs($cashier)
         ->post(route('teller.open'), [
             'teller_drawer_id' => $drawer->id,
-            'opening_balance' => 1000,
-        ]);
-
-    expect($cashierOpenResponse->isSuccessful())->toBeFalse()
-        ->and($drawer->fresh()->status)->toBe('closed');
-
-    $this->actingAs($admin)
-        ->post(route('teller.open'), [
-            'teller_drawer_id' => $drawer->id,
-            'teller_user_id' => $cashier->id,
             'opening_balance' => 1000,
         ])
         ->assertSessionHasNoErrors();
+
+    expect($drawer->fresh()->status)->toBe('open');
 
     $cashierCloseResponse = $this->actingAs($cashier)
         ->post(route('teller.close'), ['closing_balance' => 1000]);
 
     expect($cashierCloseResponse->isSuccessful())->toBeFalse()
         ->and($drawer->fresh()->status)->toBe('open');
+
+    $this->actingAs($admin)
+        ->post(route('teller.drawers.close', $drawer), ['closing_balance' => 1000])
+        ->assertSessionHasNoErrors();
 });
 
 it('shows selected organization drawers and tellers to a super admin', function () {
