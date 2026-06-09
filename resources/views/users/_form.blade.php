@@ -36,7 +36,7 @@
                 <option value="{{ $branch->id }}" @selected((string) old('branch_id', $user->branch_id) === (string) $branch->id)>{{ $branch->organization?->name ? $branch->organization->name.' · ' : '' }}{{ $branch->name }}</option>
             @endforeach
         </select>
-        <span class="mt-1 block text-xs text-slate-500">Leave blank for Super Admin or Organization Admin. Other roles require a branch.</span>
+        <span class="mt-1 block text-xs text-slate-500">Leave blank to give this user access to all branches within their organization.</span>
     </label>
     <label class="block text-sm font-medium text-slate-700">Status
         <select name="status" class="mt-1 w-full rounded border-slate-300">

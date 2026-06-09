@@ -60,16 +60,8 @@ class StoreUserRequest extends FormRequest
                 return;
             }
 
-            if ($roleSlug === 'organization-admin') {
-                if (! $organizationId) {
-                    $validator->errors()->add('organization_id', 'Organization admins must belong to an organization.');
-                }
-
-                return;
-            }
-
-            if (! $this->filled('branch_id')) {
-                $validator->errors()->add('branch_id', 'Branch is required for this role.');
+            if ($roleSlug === 'organization-admin' && ! $organizationId) {
+                $validator->errors()->add('organization_id', 'Organization admins must belong to an organization.');
             }
         });
     }

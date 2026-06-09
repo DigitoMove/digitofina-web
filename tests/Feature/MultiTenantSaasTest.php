@@ -79,6 +79,60 @@ it('prevents organization admins from assigning or editing super admins', functi
         ->and($staff->fresh()->role_id)->toBe($staffRole->id);
 });
 
+it('allows organization admins to create and update users with all branch access', function () {
+    [$organization, $branch, $organizationAdmin] = tenantUser(['manage-users']);
+    $organizationAdmin->role->update(['name' => 'Organization Admin', 'slug' => 'organization-admin']);
+    $otherBranch = Branch::create([
+        'organization_id' => $organization->id,
+        'code' => 'SECONDARY',
+        'name' => 'Secondary Branch',
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $recoveryRole = Role::create([
+        'organization_id' => $organization->id,
+        'name' => 'Loan Recovery Officer',
+        'slug' => 'loan-recovery-officer',
+    ]);
+
+    $this->actingAs($organizationAdmin)
+        ->post(route('users.store'), [
+            'role_id' => $recoveryRole->id,
+            'branch_id' => null,
+            'name' => 'All Branch Recovery',
+            'email' => 'all-branch-recovery@example.test',
+            'phone' => '+256700000902',
+            'status' => 'active',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])
+        ->assertRedirect(route('users.index'))
+        ->assertSessionHasNoErrors();
+
+    $recoveryOfficer = User::where('email', 'all-branch-recovery@example.test')->firstOrFail();
+
+    expect($recoveryOfficer->organization_id)->toBe($organization->id)
+        ->and($recoveryOfficer->branch_id)->toBeNull()
+        ->and($recoveryOfficer->canAccessBranch($branch->id, $organization->id))->toBeTrue()
+        ->and($recoveryOfficer->canAccessBranch($otherBranch->id, $organization->id))->toBeTrue();
+
+    $recoveryOfficer->update(['branch_id' => $branch->id]);
+
+    $this->actingAs($organizationAdmin)
+        ->put(route('users.update', $recoveryOfficer), [
+            'role_id' => $recoveryRole->id,
+            'branch_id' => null,
+            'name' => $recoveryOfficer->name,
+            'email' => $recoveryOfficer->email,
+            'phone' => $recoveryOfficer->phone,
+            'status' => 'active',
+        ])
+        ->assertRedirect(route('users.index'))
+        ->assertSessionHasNoErrors();
+
+    expect($recoveryOfficer->fresh()->branch_id)->toBeNull();
+});
+
 it('keeps organization clients separated in api responses', function () {
     [$organizationA, $branchA, $userA] = tenantUser(['manage-clients']);
     [$organizationB, $branchB] = tenantShell('Tenant B');
