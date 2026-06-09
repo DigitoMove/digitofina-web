@@ -122,6 +122,7 @@ class LoanController extends Controller
     public function show(Loan $loan, LoanVisibilityService $visibility, LoanService $service): View
     {
         Gate::authorize('view', $loan);
+        $isLoanRecoveryOfficer = request()->user()->isLoanRecoveryOfficer();
 
         if (! $loan->schedules()->exists() && (float) $loan->requested_amount > 0) {
             $service->generateSchedule($loan->load('product'), CarbonImmutable::parse(($loan->disbursed_at ?? $loan->application_date ?? today())->toDateString()));
@@ -145,10 +146,10 @@ class LoanController extends Controller
                 'disbursements.disbursedBy',
                 'repayments.receivedBy',
             ]),
-            'guarantorClients' => $this->visibleClients(request())->where('status', 'active')->where('id', '!=', $loan->client_id)->orderBy('first_name')->get(),
-            'assignableOfficers' => $visibility->assignableOfficers(request()->user())->get(),
-            'canAssignOfficer' => $visibility->canAssignOfficer(request()->user()),
-            'products' => LoanProduct::where('is_active', true)->where('status', 'active')->orderBy('name')->get(),
+            'guarantorClients' => $isLoanRecoveryOfficer ? collect() : $this->visibleClients(request())->where('status', 'active')->where('id', '!=', $loan->client_id)->orderBy('first_name')->get(),
+            'assignableOfficers' => $isLoanRecoveryOfficer ? collect() : $visibility->assignableOfficers(request()->user())->get(),
+            'canAssignOfficer' => ! $isLoanRecoveryOfficer && $visibility->canAssignOfficer(request()->user()),
+            'products' => $isLoanRecoveryOfficer ? collect() : LoanProduct::where('is_active', true)->where('status', 'active')->orderBy('name')->get(),
         ]);
     }
 

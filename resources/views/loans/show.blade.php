@@ -16,6 +16,8 @@
     $lateInstallments = $loan->schedules->filter(fn ($schedule) => $schedule->due_date?->isPast() && $schedule->status !== 'paid')->count();
     $unpaidInstallments = max(0, $totalInstallments - $paidInstallments);
     $arrearsDays = (int) $loan->schedules->max('days_overdue');
+    $isLoanRecoveryView = auth()->user()->isLoanRecoveryOfficer();
+    $canManageLoanProperties = ! $isLoanRecoveryView && auth()->user()->canPerform('manage-loans');
     $isNonPerforming = in_array($loan->status, ['in_arrears', 'written_off'], true);
     $hasSavingsAccount = $client->accounts->contains(fn ($account) => $account->accountType?->category === 'savings');
     $canCreateLoan = auth()->user()->can('create', \App\Models\Loan::class);
@@ -81,7 +83,10 @@
             'balance' => (float) $loan->penalty_balance,
         ],
     ];
-    $actionItems = [
+    $actionItems = $isLoanRecoveryView ? [
+        ['Client Account Dashboard', route('clients.show', $client), 'CD', 0],
+        ['Loan Account Details', route('loans.show', $loan), 'LA', null],
+    ] : [
         ['Client Account Dashboard', route('clients.show', $client), 'CD', 0],
         ['Loan Account Details', route('loans.show', $loan), 'LA', null],
         ['Transaction Authorisation Details', route('audit-logs.index', ['search' => $loanAccountNumber]), 'TA', 0],
@@ -91,7 +96,7 @@
         ['Account Notes', route('loans.show', $loan), 'AN', 0],
         ['Account Notifications', route('loans.show', $loan), 'NO', 0],
     ];
-    $accountMenus = [
+    $accountMenus = $isLoanRecoveryView ? [] : [
         ['Savings Accounts', array_filter([! $hasSavingsAccount ? ['Generate savings account', route('clients.savings-accounts.generate', $client), 'post'] : null, ['View accounts', route('clients.savings-accounts', $client), 'get']])],
         ['Loan Accounts', array_filter([$canCreateLoan ? ['New application', route('loans.create', ['client_id' => $client->id])] : null, ['View loans', route('clients.loans', $client)]])],
         ['Current Accounts', [['Open current account', route('accounts.create', ['client_id' => $client->id])], ['View accounts', route('clients.accounts', $client)]]],
@@ -364,7 +369,7 @@
         </section>
 
         <section class="df-panel p-5">
-            <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Manage Account</h2>
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">{{ $isLoanRecoveryView ? 'Loan Navigation' : 'Manage Account' }}</h2>
             <div class="mt-3 divide-y divide-slate-100">
                 @foreach($actionItems as [$label, $href, $icon, $count])
                     <a href="{{ $href }}" class="flex items-center gap-3 py-2.5 text-sm font-medium text-brand-700 hover:text-brand-900">
@@ -392,6 +397,7 @@
     </aside>
 
     <main class="grid gap-5">
+        @if($accountMenus !== [])
         <div class="flex flex-wrap justify-end gap-2">
             @foreach ($accountMenus as [$label, $links])
                 <details class="group relative">
@@ -416,6 +422,7 @@
                 </details>
             @endforeach
         </div>
+        @endif
 
         <section class="df-panel p-5">
             <div class="grid gap-3 md:grid-cols-6">
@@ -428,7 +435,9 @@
             </div>
         </section>
 
-        @include('loans.partials.workflow-actions')
+        @unless($isLoanRecoveryView)
+            @include('loans.partials.workflow-actions')
+        @endunless
 
         <div data-df-tabs class="grid gap-5">
             <div class="df-tablist" role="tablist">
@@ -627,6 +636,7 @@
             <section data-df-tab-panel="properties" class="grid gap-5 xl:grid-cols-2">
                 <div class="df-panel p-5">
                     <h2 class="font-semibold text-slate-950">Guarantors</h2>
+                    @if($canManageLoanProperties)
                     <form method="POST" action="{{ route('loans.guarantors.store', $loan) }}" class="mt-4 grid gap-3 md:grid-cols-2">
                         @csrf
                         <label class="text-sm font-semibold text-slate-700">Guarantor type <x-required-badge /><select name="type" required><option value="external" @selected(old('type', 'external') === 'external')>External person</option><option value="existing_client" @selected(old('type') === 'existing_client')>Link existing client</option></select></label>
@@ -640,11 +650,14 @@
                         <label class="text-sm font-semibold text-slate-700 md:col-span-2">Address <x-required-badge /><textarea name="address" class="mt-1" placeholder="Address" required></textarea></label>
                         <button class="df-action-secondary md:col-span-2">Add guarantor</button>
                     </form>
+                    @endif
                     <div class="mt-4 divide-y divide-slate-200 text-sm">
                         @forelse($loan->loanGuarantors as $guarantor)
                             <div class="flex flex-wrap items-center justify-between gap-3 py-3">
                                 <div><div class="font-semibold">{{ $guarantor->name }}</div><div class="text-slate-500">UGX {{ number_format((float) $guarantor->guaranteed_amount, 2) }} · {{ str($guarantor->status)->headline() }}</div></div>
-                                <form method="POST" action="{{ route('loans.guarantors.status', [$loan, $guarantor]) }}" class="flex gap-2">@csrf @method('PUT')<select name="status" class="text-sm"><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="released">Released</option></select><button class="df-action-secondary px-3 py-1 text-xs">Update</button></form>
+                                @if($canManageLoanProperties)
+                                    <form method="POST" action="{{ route('loans.guarantors.status', [$loan, $guarantor]) }}" class="flex gap-2">@csrf @method('PUT')<select name="status" class="text-sm"><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="released">Released</option></select><button class="df-action-secondary px-3 py-1 text-xs">Update</button></form>
+                                @endif
                             </div>
                         @empty
                             <div class="py-3 text-sm text-slate-500">No guarantors recorded.</div>
@@ -654,6 +667,7 @@
 
                 <div class="df-panel p-5">
                     <h2 class="font-semibold text-slate-950">Collateral</h2>
+                    @if($canManageLoanProperties)
                     <form method="POST" action="{{ route('loans.collaterals.store', $loan) }}" class="mt-4 grid gap-3 md:grid-cols-2">
                         @csrf
                         <label class="text-sm font-semibold text-slate-700">Collateral type <x-required-badge /><select name="type" required>@foreach(['land','vehicle','electronics','household_item','business_asset','livestock','salary','other'] as $type)<option value="{{ $type }}">{{ str($type)->headline() }}</option>@endforeach</select></label>
@@ -665,11 +679,14 @@
                         <textarea name="description" class="md:col-span-2" placeholder="Description"></textarea>
                         <button class="df-action-secondary md:col-span-2">Add collateral</button>
                     </form>
+                    @endif
                     <div class="mt-4 divide-y divide-slate-200 text-sm">
                         @forelse($loan->collaterals as $collateral)
                             <div class="flex flex-wrap items-center justify-between gap-3 py-3">
                                 <div><div class="font-semibold">{{ str($collateral->type)->headline() }}</div><div class="text-slate-500">UGX {{ number_format((float) $collateral->estimated_value, 2) }} · {{ str($collateral->status)->headline() }}</div></div>
-                                <form method="POST" action="{{ route('loans.collaterals.status', [$loan, $collateral]) }}" class="flex gap-2">@csrf @method('PUT')<select name="status" class="text-sm"><option value="verified">Verified</option><option value="rejected">Rejected</option><option value="released">Released</option><option value="seized">Seized</option></select><button class="df-action-secondary px-3 py-1 text-xs">Update</button></form>
+                                @if($canManageLoanProperties)
+                                    <form method="POST" action="{{ route('loans.collaterals.status', [$loan, $collateral]) }}" class="flex gap-2">@csrf @method('PUT')<select name="status" class="text-sm"><option value="verified">Verified</option><option value="rejected">Rejected</option><option value="released">Released</option><option value="seized">Seized</option></select><button class="df-action-secondary px-3 py-1 text-xs">Update</button></form>
+                                @endif
                             </div>
                         @empty
                             <div class="py-3 text-sm text-slate-500">No collateral recorded.</div>

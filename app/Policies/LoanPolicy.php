@@ -19,6 +19,12 @@ class LoanPolicy
                 && (int) $loan->branch_id === (int) $user->branch_id;
         }
 
+        if ($user->isLoanRecoveryOfficer()) {
+            return $user->canPerform('view-arrears')
+                && $user->canAccessBranch($loan->branch_id, $loan->organization_id)
+                && $loan->schedules()->eligibleForArrears(today())->exists();
+        }
+
         return $user->canPerform('manage-loans')
             || $user->canPerform('view-reports');
     }

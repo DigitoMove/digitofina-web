@@ -2043,6 +2043,23 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
     expect($this->actingAs($recoveryOfficer)->get(route('loans.index'))->isSuccessful())->toBeFalse();
 
     $this->actingAs($recoveryOfficer)
+        ->get(route('loans.show', $ownArrears))
+        ->assertSuccessful()
+        ->assertSee('1001-LN-OFFICER-ARREARS')
+        ->assertSee('Loan Schedule')
+        ->assertSee('Repayments')
+        ->assertSee('Guarantors')
+        ->assertSee('Collateral')
+        ->assertDontSee('Workflow Actions')
+        ->assertDontSee('Administrative Actions')
+        ->assertDontSee('Add guarantor')
+        ->assertDontSee('Add collateral')
+        ->assertDontSee('Loan Account Reports')
+        ->assertDontSee('Transaction Authorisation Details');
+
+    expect($this->actingAs($recoveryOfficer)->get(route('loans.show', $ownDueToday))->isSuccessful())->toBeFalse();
+
+    $this->actingAs($recoveryOfficer)
         ->get(route('dashboard'))
         ->assertSuccessful()
         ->assertSee('Loans in arrears')
