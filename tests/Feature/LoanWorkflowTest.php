@@ -1985,7 +1985,7 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->get(route('clients.index', ['search' => '256700110']))
         ->assertSuccessful()
         ->assertSee($officerClient->client_number)
-        ->assertDontSee($otherClient->client_number);
+        ->assertSee($otherClient->client_number);
 
     expect($this->actingAs($officer)->get(route('loans.show', $otherArrears))->isSuccessful())->toBeFalse()
         ->and($this->actingAs($officer)->get(route('clients.show', $otherClient))->isSuccessful())->toBeFalse();

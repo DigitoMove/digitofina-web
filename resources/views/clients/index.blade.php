@@ -39,7 +39,11 @@
                     <td><span class="rounded px-2 py-1 text-xs font-semibold {{ $client->kyc_status === 'verified' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700' }}">{{ str($client->kyc_status)->headline() }}</span></td>
                     <td>{{ $client->risk_rating ? str($client->risk_rating)->headline() : 'Unrated' }}</td>
                     <td><span class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold">{{ str($client->status)->headline() }}</span></td>
-                    <td><a class="font-medium text-blue-700" href="{{ route('clients.show', $client) }}">View</a></td>
+                    <td>
+                        @can('view', $client)
+                            <a class="font-medium text-blue-700" href="{{ route('clients.show', $client) }}">View</a>
+                        @endcan
+                    </td>
                 </tr>
             @empty
                 <tr>

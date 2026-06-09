@@ -59,7 +59,7 @@
                         <td>
                             @if($transaction)
                                 <a class="font-semibold text-blue-700" href="{{ route('receipts.show', $transaction) }}">{{ $transaction->reference }}</a>
-                                <div class="text-xs text-slate-500">{{ $transaction->type?->name ?? 'Transaction' }} · {{ $transaction->posted_at?->format('d M Y') ?? $transaction->created_at->format('d M Y') }}</div>
+                                <div class="text-xs text-slate-500">{{ $transaction->type?->name ?? 'Transaction' }} · {{ $transaction->posted_at?->format('d M Y H:i:s') ?? $transaction->created_at->format('d M Y H:i:s') }}</div>
                             @else
                                 <span class="text-slate-500">Transaction removed</span>
                             @endif

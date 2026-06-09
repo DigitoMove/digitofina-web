@@ -30,6 +30,7 @@ class ClientController extends Controller
 
         $clientsQuery = ApiSecurity::scopeTenant(Client::query(), $request->user())
             ->with(['branch', 'officer'])
+            ->when($request->user()->branch_id !== null, fn ($query) => $query->where('branch_id', $request->user()->branch_id))
             ->when($request->integer('branch_id'), function ($query, int $branchId) use ($request): void {
                 ApiSecurity::assertClientBranchAccess($request->user(), $branchId);
             });
@@ -124,7 +125,9 @@ class ClientController extends Controller
             ['type', 'status', 'payment_method'],
             ['id', 'reference', 'type', 'amount', 'transaction_date', 'created_at', 'updated_at'],
             'transaction_date',
-        )->paginate(ApiQuery::perPage(request(), 30));
+        )->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate(ApiQuery::perPage(request(), 30));
 
         return ApiResponse::collection(SavingsTransactionResource::collection($transactions), 'Client statements retrieved.', meta: ApiQuery::meta(request()));
     }

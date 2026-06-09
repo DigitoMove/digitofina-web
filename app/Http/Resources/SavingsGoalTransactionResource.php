@@ -21,6 +21,7 @@ class SavingsGoalTransactionResource extends JsonResource
             'balance_after' => (float) $this->balance_after,
             'payment_method' => $this->payment_method,
             'transaction_date' => $this->transaction_date?->toDateString(),
+            'recorded_at' => $this->created_at?->toIso8601String(),
             'status' => $this->status,
         ];
     }

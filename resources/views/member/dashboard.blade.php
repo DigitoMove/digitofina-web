@@ -135,11 +135,12 @@
                 @php
                     $transactionType = is_string($transaction->type ?? null) ? $transaction->type : ($transaction->type?->name ?? 'transaction');
                     $transactionDate = $transaction->transaction_date ?? $transaction->posted_at ?? $transaction->created_at;
+                    $recordedAt = $transaction->created_at ?? $transactionDate;
                 @endphp
                 <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3 text-sm">
                     <div>
                         <div class="font-semibold text-slate-900">{{ str($transactionType)->headline() }}</div>
-                        <div class="text-slate-500">{{ $transaction->reference }} · {{ $transactionDate->format('d M Y') }}</div>
+                        <div class="text-slate-500">{{ $transaction->reference }} · {{ $transactionDate->format('d M Y') }} {{ $recordedAt->format('H:i:s') }}</div>
                     </div>
                     <div class="font-semibold {{ $transactionType === 'interest_posting' ? 'text-emerald-700' : 'text-slate-800' }}">{{ number_format($transaction->amount, 2) }} UGX</div>
                 </div>

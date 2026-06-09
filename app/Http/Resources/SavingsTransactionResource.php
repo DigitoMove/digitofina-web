@@ -26,6 +26,7 @@ class SavingsTransactionResource extends JsonResource
             'narration' => $this->narration,
             'status' => $this->status,
             'transaction_date' => $this->transaction_date?->toDateString(),
+            'recorded_at' => $this->created_at?->toIso8601String(),
             'account' => $this->whenLoaded('account', fn () => [
                 'id' => $this->account->id,
                 'account_number' => $this->account->account_number,

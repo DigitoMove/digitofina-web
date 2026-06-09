@@ -35,7 +35,7 @@
                     <div class="flex justify-between gap-4"><dt class="text-slate-500">Amount</dt><dd class="font-semibold text-slate-950">{{ number_format((float) $transaction->amount, 2) }} {{ $transaction->currency }}</dd></div>
                     <div class="flex justify-between gap-4"><dt class="text-slate-500">Balance after</dt><dd>{{ number_format((float) $transaction->balance_after, 2) }} {{ $transaction->currency }}</dd></div>
                     <div class="flex justify-between gap-4"><dt class="text-slate-500">Posted by</dt><dd>{{ $transaction->user?->name }}</dd></div>
-                    <div class="flex justify-between gap-4"><dt class="text-slate-500">Posted at</dt><dd>{{ $transaction->posted_at?->format('d M Y H:i') }}</dd></div>
+                    <div class="flex justify-between gap-4"><dt class="text-slate-500">Posted at</dt><dd>{{ ($transaction->posted_at ?? $transaction->created_at)->format('d M Y H:i:s') }}</dd></div>
                 </dl>
             </div>
 

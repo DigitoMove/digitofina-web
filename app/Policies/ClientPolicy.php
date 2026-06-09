@@ -9,7 +9,7 @@ class ClientPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->canPerform('manage-clients') || $user->canPerform('view-reports');
+        return true;
     }
 
     public function create(User $user): bool
@@ -48,12 +48,16 @@ class ClientPolicy
 
     private function canAccessBranch(User $user, Client $client): bool
     {
+        if (! $user->canAccessOrganization($client->organization_id)) {
+            return false;
+        }
+
         if ($user->isLoanOfficer()) {
             return (int) $client->officer_id === (int) $user->id
                 && (int) $client->branch_id === (int) $user->branch_id;
         }
 
-        return $user->canAccessBranch($client->branch_id, $client->organization_id)
-            || $user->canPerform('audit-system');
+        return $user->branch_id === null
+            || (int) $client->branch_id === (int) $user->branch_id;
     }
 }

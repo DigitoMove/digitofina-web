@@ -13,6 +13,7 @@ use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Support\CurrencyDenomination;
+use App\Support\TransactionTimestamp;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -27,7 +28,7 @@ class TransactionPostingService
 
     public function postCash(Account $account, DrawerSession $session, TransactionType $type, float $amount, User $user, ?string $description = null, ?string $chequeNumber = null, ?CarbonInterface $postedAt = null): Transaction
     {
-        $postedAt ??= now();
+        $postedAt = TransactionTimestamp::forBusinessDate($postedAt);
 
         return DB::transaction(function () use ($account, $session, $type, $amount, $user, $description, $chequeNumber, $postedAt) {
             $account = Account::query()->with(['accountType', 'client.loans'])->whereKey($account->id)->lockForUpdate()->firstOrFail();
@@ -99,8 +100,6 @@ class TransactionPostingService
                 'balance_after' => $account->balance,
                 'description' => $description,
                 'posted_at' => $postedAt,
-                'created_at' => $postedAt,
-                'updated_at' => now(),
             ]);
 
             DrawerMovement::create([
@@ -111,8 +110,6 @@ class TransactionPostingService
                 'balance_after' => $drawer->current_balance,
                 'reference' => $transaction->reference,
                 'description' => $description,
-                'created_at' => $postedAt,
-                'updated_at' => now(),
             ]);
 
             $this->auditLogger->record('transaction.posted', $transaction, [
@@ -160,8 +157,6 @@ class TransactionPostingService
             'balance_after' => max(0, (float) $account->balance - $amount),
             'description' => $description,
             'posted_at' => $postedAt,
-            'created_at' => $postedAt,
-            'updated_at' => now(),
         ]);
 
         app(LoanService::class)->repay($loan, $amount, $user, $transaction->id, 'cash', $transaction->reference, $postedAt);
@@ -178,8 +173,6 @@ class TransactionPostingService
             'balance_after' => $drawer->current_balance,
             'reference' => $transaction->reference,
             'description' => $description ?: 'Loan repayment',
-            'created_at' => $postedAt,
-            'updated_at' => now(),
         ]);
 
         $this->auditLogger->record('transaction.loan_repayment_posted', $transaction, [
@@ -193,8 +186,9 @@ class TransactionPostingService
 
     public function postNonCashCredit(Account $account, TransactionType $type, float $amount, User $user, string $description, array $journals = [], ?CarbonInterface $postedAt = null): Transaction
     {
+        $postedAt = TransactionTimestamp::forBusinessDate($postedAt);
+
         return DB::transaction(function () use ($account, $type, $amount, $user, $description, $journals, $postedAt) {
-            $postedAt ??= now();
             $account = Account::query()->whereKey($account->id)->lockForUpdate()->firstOrFail();
             $account->increment('balance', $amount);
             $account->refresh();
@@ -256,7 +250,7 @@ class TransactionPostingService
 
     public function postNonCash(Account $account, TransactionType $type, ChartAccount $offsetAccount, float $amount, User $user, string $description, ?CarbonInterface $postedAt = null): Transaction
     {
-        $postedAt ??= now();
+        $postedAt = TransactionTimestamp::forBusinessDate($postedAt);
         CurrencyDenomination::assertValid($amount);
 
         return DB::transaction(function () use ($account, $type, $offsetAccount, $amount, $user, $description, $postedAt): Transaction {
@@ -311,8 +305,6 @@ class TransactionPostingService
                 'balance_after' => $account->balance,
                 'description' => $description,
                 'posted_at' => $postedAt,
-                'created_at' => $postedAt,
-                'updated_at' => now(),
             ]);
 
             JournalEntry::create([
@@ -332,8 +324,6 @@ class TransactionPostingService
                 'entry_type' => $offsetEntryType,
                 'amount' => $amount,
                 'memo' => $description,
-                'created_at' => $postedAt,
-                'updated_at' => now(),
             ]);
 
             $this->auditLogger->record('transaction.non_cash_posted', $transaction, [
@@ -377,8 +367,6 @@ class TransactionPostingService
             'balance_after' => max(0, (float) $account->balance - $amount),
             'description' => $description,
             'posted_at' => $postedAt,
-            'created_at' => $postedAt,
-            'updated_at' => now(),
         ]);
 
         app(LoanService::class)->repay($loan, $amount, $user, $transaction->id, 'non_cash', $transaction->reference, $postedAt, $offsetAccount->code, $description);
@@ -399,7 +387,7 @@ class TransactionPostingService
 
     public function postGeneralLedgerCash(ChartAccount $chartAccount, DrawerSession $session, string $entryType, float $amount, User $user, ?string $description = null, ?CarbonInterface $postedAt = null): JournalEntry
     {
-        $postedAt ??= now();
+        $postedAt = TransactionTimestamp::forBusinessDate($postedAt);
 
         if (! in_array($entryType, ['debit', 'credit'], true)) {
             throw new InvalidArgumentException('General ledger posting must be debit or credit.');
@@ -471,8 +459,6 @@ class TransactionPostingService
                 'description' => $description ?: 'Teller general ledger cash posting for '.$chartAccount->name,
                 'status' => 'posted',
                 'posted_at' => $postedAt,
-                'created_at' => $postedAt,
-                'updated_at' => now(),
             ]);
 
             $journal = JournalEntry::create([
@@ -492,8 +478,6 @@ class TransactionPostingService
                 'entry_type' => $entryType,
                 'amount' => $amount,
                 'memo' => $description,
-                'created_at' => $postedAt,
-                'updated_at' => now(),
             ]);
 
             $cashAccount = ChartAccount::query()->where('code', '1010')->first();
@@ -527,8 +511,6 @@ class TransactionPostingService
                 'balance_after' => $drawer->current_balance,
                 'reference' => $transaction->reference,
                 'description' => $description ?: $chartAccount->name,
-                'created_at' => $postedAt,
-                'updated_at' => now(),
             ]);
 
             $this->auditLogger->record('transaction.general_ledger_cash_posted', $journal, [

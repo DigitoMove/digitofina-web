@@ -63,7 +63,18 @@ class LoanController extends Controller
         ApiSecurity::assertTenantAccess(request()->user(), $loan);
         abort_unless(request()->user()->canPerform('manage-loans') || $loan->client_id === request()->user()->client?->id, 403);
 
-        return ApiResponse::resource(new LoanResource($loan->load(['client', 'product', 'officer', 'creator', 'schedules', 'repayments.receivedBy'])), 'Loan retrieved.');
+        return ApiResponse::resource(new LoanResource($loan->load([
+            'client',
+            'product',
+            'officer',
+            'creator',
+            'schedules',
+            'repayments' => fn ($query) => $query
+                ->with('receivedBy')
+                ->orderByDesc('paid_at')
+                ->orderByDesc('created_at')
+                ->orderByDesc('id'),
+        ])), 'Loan retrieved.');
     }
 
     public function schedule(Loan $loan): JsonResponse

@@ -85,7 +85,7 @@
                 <tbody>
                     @forelse($recentTransactions as $transaction)
                         <tr class="border-t border-slate-200">
-                            <td class="p-3">{{ $transaction->transaction_date->format('d M Y') }}</td>
+                            <td class="p-3">{{ $transaction->transaction_date->format('d M Y') }} {{ $transaction->created_at->format('H:i:s') }}</td>
                             <td class="font-medium">{{ $transaction->reference }}</td>
                             <td>{{ str($transaction->type)->headline() }}</td>
                             <td>{{ number_format($transaction->amount, 2) }}</td>

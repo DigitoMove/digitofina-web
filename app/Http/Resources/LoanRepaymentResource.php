@@ -25,6 +25,7 @@ class LoanRepaymentResource extends JsonResource
             'payment_method' => $this->payment_method,
             'status' => $this->status,
             'paid_at' => $this->paid_at?->toDateString(),
+            'recorded_at' => $this->created_at?->toIso8601String(),
             'received_by' => $this->whenLoaded('receivedBy', fn () => [
                 'id' => $this->receivedBy?->id,
                 'name' => $this->receivedBy?->name,

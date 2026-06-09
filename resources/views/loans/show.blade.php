@@ -608,7 +608,7 @@
                         <thead class="bg-slate-700 text-xs uppercase text-white">
                             <tr>
                                 <th class="px-4 py-3">Receipt</th>
-                                <th class="px-4 py-3">Paid Date</th>
+                                <th class="px-4 py-3">Paid Date/time</th>
                                 <th class="px-4 py-3">Received By</th>
                                 <th class="px-4 py-3">Method</th>
                                 <th class="px-4 py-3 text-right">Amount</th>
@@ -618,7 +618,7 @@
                             @forelse($loan->repayments as $repayment)
                                 <tr class="odd:bg-white even:bg-slate-50">
                                     <td class="px-4 py-3"><a class="font-semibold text-brand-700" href="{{ route('loan-repayments.receipt', $repayment) }}">{{ $repayment->receipt_number ?? 'Receipt' }}</a></td>
-                                    <td class="px-4 py-3">{{ $repayment->paid_at?->format('d-m-Y') }}</td>
+                                    <td class="px-4 py-3">{{ $repayment->paid_at?->format('d-m-Y') }} {{ $repayment->created_at?->format('H:i:s') }}</td>
                                     <td class="px-4 py-3">{{ $repayment->receivedBy?->name ?? 'System' }}</td>
                                     <td class="px-4 py-3">{{ str($repayment->payment_method)->headline() }}</td>
                                     <td class="px-4 py-3 text-right">UGX {{ number_format((float) $repayment->amount, 2) }}</td>

@@ -436,7 +436,7 @@
             <tbody>
                 @forelse($recentMovements as $movement)
                     <tr class="border-t border-slate-200">
-                        <td class="p-3">{{ $movement->created_at->format('H:i') }}</td>
+                        <td class="p-3">{{ $movement->created_at->format('H:i:s') }}</td>
                         <td><span class="rounded px-2 py-1 text-xs font-semibold {{ $movement->type === 'cash_in' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700' }}">{{ str($movement->type)->headline() }}</span></td>
                         <td>{{ $movement->reference }}</td>
                         <td>UGX {{ number_format($movement->amount, 2) }}</td>
@@ -554,7 +554,7 @@
                             : null;
                     @endphp
                     <tr class="border-t border-slate-200 align-top">
-                        <td class="p-3 whitespace-nowrap">{{ $transaction->posted_at?->format('d M H:i') ?? $transaction->created_at->format('d M H:i') }}</td>
+                        <td class="p-3 whitespace-nowrap">{{ $transaction->posted_at?->format('d M H:i:s') ?? $transaction->created_at->format('d M H:i:s') }}</td>
                         <td>
                             <a class="font-semibold text-blue-700" href="{{ route('receipts.show', $transaction) }}">{{ $transaction->reference }}</a>
                             @if(filled($transaction->description))

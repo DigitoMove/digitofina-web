@@ -144,7 +144,11 @@ class LoanController extends Controller
                 'collaterals',
                 'approvals.approver',
                 'disbursements.disbursedBy',
-                'repayments.receivedBy',
+                'repayments' => fn ($query) => $query
+                    ->with('receivedBy')
+                    ->orderByDesc('paid_at')
+                    ->orderByDesc('created_at')
+                    ->orderByDesc('id'),
             ]),
             'guarantorClients' => $isLoanRecoveryOfficer ? collect() : $this->visibleClients(request())->where('status', 'active')->where('id', '!=', $loan->client_id)->orderBy('first_name')->get(),
             'assignableOfficers' => $isLoanRecoveryOfficer ? collect() : $visibility->assignableOfficers(request()->user())->get(),

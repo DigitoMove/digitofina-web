@@ -38,7 +38,7 @@ class MemberPortalController extends Controller
             ->sum('amount'));
         $investmentTransactions = $savingsAccounts
             ->flatMap->transactions
-            ->sortByDesc('transaction_date')
+            ->sortByDesc(fn ($transaction): string => $transaction->transaction_date->toDateString().' '.$transaction->created_at->format('H:i:s.u'))
             ->take(12);
 
         return view('member.dashboard', [

@@ -129,7 +129,7 @@
                         $journalAccount = $transaction->journalEntries->first()?->chartAccount;
                     @endphp
                     <tr class="border-t border-slate-200 align-top">
-                        <td class="p-3 whitespace-nowrap">{{ $transaction->posted_at?->format('d M H:i') ?? $transaction->created_at->format('d M H:i') }}</td>
+                        <td class="p-3 whitespace-nowrap">{{ $transaction->posted_at?->format('d M H:i:s') ?? $transaction->created_at->format('d M H:i:s') }}</td>
                         <td><a class="font-semibold text-blue-700" href="{{ route('receipts.show', $transaction) }}">{{ $transaction->reference }}</a></td>
                         <td class="font-medium text-slate-950">{{ $transaction->account?->account_number ?? ($journalAccount?->code ?? 'Ledger') }}</td>
                         <td class="max-w-56">{{ $transaction->account?->client?->full_name ?? $transaction->account?->client?->business_name ?? ($journalAccount?->name ?? 'General ledger posting') }}</td>

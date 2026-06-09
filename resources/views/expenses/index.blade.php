@@ -75,7 +75,7 @@
                     <tr class="border-t border-slate-200 align-top">
                         <td class="p-3 whitespace-nowrap">
                             <div class="font-medium text-slate-950">{{ $expense->posted_at?->format('d M Y') }}</div>
-                            <div class="text-xs text-slate-500">{{ $expense->posted_at?->format('H:i') }}</div>
+                            <div class="text-xs text-slate-500">{{ $expense->posted_at?->format('H:i:s') }}</div>
                         </td>
                         <td>{{ $expense->drawerSession?->drawer?->branch?->name ?? 'Unknown branch' }}</td>
                         <td>

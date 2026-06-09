@@ -26,6 +26,7 @@
             <div class="flex justify-between gap-4"><dt>Amount</dt><dd class="font-semibold">{{ number_format($transaction->amount, 2) }} {{ $transaction->currency }}</dd></div>
             <div class="flex justify-between gap-4"><dt>Balance after</dt><dd>{{ number_format((float) $transaction->balance_after, 2) }} {{ $transaction->currency }}</dd></div>
             <div class="flex justify-between gap-4"><dt>Posted by</dt><dd>{{ $transaction->user->name }}</dd></div>
+            <div class="flex justify-between gap-4"><dt>Posted at</dt><dd>{{ ($transaction->posted_at ?? $transaction->created_at)->format('d M Y H:i:s') }}</dd></div>
             @if($transaction->reversal)
                 <div class="flex justify-between gap-4"><dt>Reversed by transaction</dt><dd class="font-semibold">{{ $transaction->reversal->reference }}</dd></div>
             @endif

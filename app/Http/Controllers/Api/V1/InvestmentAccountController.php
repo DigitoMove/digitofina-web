@@ -59,7 +59,9 @@ class InvestmentAccountController extends Controller
 
         $transactions = InvestmentTransaction::query()
             ->where('investment_account_id', $investmentAccount->id)
-            ->latest('transaction_date')
+            ->orderByDesc('transaction_date')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->paginate($request->integer('per_page', 50));
 
         return ApiResponse::data([

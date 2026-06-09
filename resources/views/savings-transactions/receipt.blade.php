@@ -18,7 +18,7 @@
         <div class="flex justify-between gap-4"><dt class="text-slate-500">Payment method</dt><dd>{{ str($transaction->payment_method)->headline() }}</dd></div>
         <div class="flex justify-between gap-4"><dt class="text-slate-500">Balance after</dt><dd>{{ number_format($transaction->balance_after, 2) }} UGX</dd></div>
         <div class="flex justify-between gap-4"><dt class="text-slate-500">Teller/staff</dt><dd>{{ $transaction->teller?->name ?? 'System' }}</dd></div>
-        <div class="flex justify-between gap-4"><dt class="text-slate-500">Date/time</dt><dd>{{ $transaction->created_at->format('d M Y H:i') }}</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-slate-500">Date/time</dt><dd>{{ $transaction->transaction_date->format('d M Y') }} {{ $transaction->created_at->format('H:i:s') }}</dd></div>
     </dl>
     <div class="mt-8 border-t border-slate-200 pt-6 text-sm text-slate-500">Signature: ______________________________</div>
     <p class="mt-4 text-center text-xs text-slate-500">System-generated receipt. Keep for your records.</p>

@@ -86,7 +86,9 @@ class SavingsAccountController extends Controller
             ['type', 'status', 'payment_method'],
             ['id', 'reference', 'type', 'amount', 'transaction_date', 'created_at', 'updated_at'],
             'transaction_date',
-        )->paginate(ApiQuery::perPage($request, 30));
+        )->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate(ApiQuery::perPage($request, 30));
 
         return ApiResponse::collection(SavingsTransactionResource::collection($transactions), 'Savings statement retrieved.', meta: ApiQuery::meta($request));
     }

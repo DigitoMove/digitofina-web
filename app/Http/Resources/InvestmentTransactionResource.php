@@ -22,6 +22,7 @@ class InvestmentTransactionResource extends JsonResource
             'payment_method' => $this->payment_method,
             'narration' => $this->narration,
             'transaction_date' => $this->transaction_date?->toDateString(),
+            'recorded_at' => $this->created_at?->toIso8601String(),
             'status' => $this->status,
             'investor_account' => $this->whenLoaded('investorAccount', fn () => [
                 'id' => $this->investorAccount->id,

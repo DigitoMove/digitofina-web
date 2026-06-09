@@ -112,7 +112,7 @@
                         <tbody>
                             @forelse($tellerMovements as $movement)
                                 <tr class="border-t border-slate-200">
-                                    <td>{{ $movement->created_at?->format('H:i') }}</td>
+                                    <td>{{ $movement->created_at?->format('H:i:s') }}</td>
                                     <td>{{ $movement->session?->user?->name ?? $movement->user?->name ?? 'N/A' }}</td>
                                     <td>{{ $movement->type === 'cash_out' ? 'Cash Out' : 'Cash In' }}</td>
                                     <td>UGX {{ number_format((float) $movement->amount, 2) }}</td>

@@ -15,7 +15,7 @@
         <div><dt class="text-slate-500">Fees</dt><dd>UGX {{ number_format($repayment->fees_paid, 2) }}</dd></div>
         <div><dt class="text-slate-500">Penalty</dt><dd>UGX {{ number_format($repayment->penalty_paid, 2) }}</dd></div>
         <div><dt class="text-slate-500">Received by</dt><dd>{{ optional($repayment->receivedBy)->name }}</dd></div>
-        <div><dt class="text-slate-500">Date</dt><dd>{{ $repayment->paid_at->format('d M Y') }}</dd></div>
+        <div><dt class="text-slate-500">Date/time</dt><dd>{{ $repayment->paid_at->format('d M Y') }} {{ $repayment->created_at->format('H:i:s') }}</dd></div>
     </dl>
     <div class="mt-8 border-t pt-6 text-sm text-slate-500">System generated receipt. Signature: ______________________________</div>
 </div>

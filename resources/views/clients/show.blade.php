@@ -521,7 +521,7 @@
                                     $account = $row['account'];
                                 @endphp
                                 <tr class="odd:bg-white even:bg-slate-50 hover:bg-brand-50/70">
-                                    <td class="px-4 py-3 text-slate-600">{{ ($transaction->posted_at ?? $transaction->created_at)?->format('d-m-Y H:i') ?? 'N/A' }}</td>
+                                    <td class="px-4 py-3 text-slate-600">{{ ($transaction->posted_at ?? $transaction->created_at)?->format('d-m-Y H:i:s') ?? 'N/A' }}</td>
                                     <td class="px-4 py-3">
                                         <a class="font-semibold text-brand-700 hover:text-brand-900" href="{{ route('receipts.show', $transaction) }}">{{ $transaction->reference }}</a>
                                         @if(filled($transaction->description))

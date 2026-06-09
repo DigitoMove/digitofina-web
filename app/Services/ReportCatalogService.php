@@ -772,19 +772,24 @@ class ReportCatalogService
 
         $canDelete = $this->canAdminReverseTransactions($user);
 
-        $rows = $query->latest()->limit($limit)->get()->map(fn (JournalEntry $entry): array => [
-            'Date' => ($entry->posted_at ?? $entry->created_at)?->format('d M Y'),
-            'Reference' => $entry->reference,
-            'Account' => $entry->chartAccount?->name ?? $entry->account_name,
-            'Entry' => Str::headline($entry->entry_type),
-            'Amount' => $this->money((float) $entry->amount),
-            'Memo' => $entry->memo ?? $entry->description,
-            'Action' => $entry->transaction && $canDelete && $this->canDeleteTransactionRow($entry->transaction) ? 'Delete' : 'N/A',
-            '_delete_reference' => $entry->transaction && $canDelete && $this->canDeleteTransactionRow($entry->transaction) ? $entry->transaction->reference : null,
-            '_links' => $entry->transaction ? [
-                'Reference' => route('receipts.show', $entry->transaction),
-            ] : [],
-        ]);
+        $rows = $query
+            ->orderByDesc(DB::raw('coalesce(posted_at, created_at)'))
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->get()
+            ->map(fn (JournalEntry $entry): array => [
+                'Date' => ($entry->posted_at ?? $entry->created_at)?->format('d M Y H:i:s'),
+                'Reference' => $entry->reference,
+                'Account' => $entry->chartAccount?->name ?? $entry->account_name,
+                'Entry' => Str::headline($entry->entry_type),
+                'Amount' => $this->money((float) $entry->amount),
+                'Memo' => $entry->memo ?? $entry->description,
+                'Action' => $entry->transaction && $canDelete && $this->canDeleteTransactionRow($entry->transaction) ? 'Delete' : 'N/A',
+                '_delete_reference' => $entry->transaction && $canDelete && $this->canDeleteTransactionRow($entry->transaction) ? $entry->transaction->reference : null,
+                '_links' => $entry->transaction ? [
+                    'Reference' => route('receipts.show', $entry->transaction),
+                ] : [],
+            ]);
 
         return [['Date', 'Reference', 'Account', 'Entry', 'Amount', 'Memo', 'Action'], $rows, ['Entries' => number_format($query->count())]];
     }
@@ -1661,15 +1666,20 @@ class ReportCatalogService
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
 
-        $rows = $query->latest()->limit($limit)->get()->map(fn (LoanRepayment $repayment): array => [
-            'Date' => $repayment->paid_at?->format('d M Y'),
-            'Loan' => $repayment->loan?->loan_number ?? 'N/A',
-            'Client' => $repayment->loan?->client?->full_name ?? 'N/A',
-            'Amount' => $this->money((float) $repayment->amount),
-            'Principal' => $this->money((float) $repayment->principal_paid),
-            'Interest' => $this->money((float) $repayment->interest_paid),
-            'Officer' => $repayment->receivedBy?->name ?? 'N/A',
-        ]);
+        $rows = $query
+            ->orderByDesc('paid_at')
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->get()
+            ->map(fn (LoanRepayment $repayment): array => [
+                'Date' => $repayment->paid_at?->format('d M Y').' '.$repayment->created_at?->format('H:i:s'),
+                'Loan' => $repayment->loan?->loan_number ?? 'N/A',
+                'Client' => $repayment->loan?->client?->full_name ?? 'N/A',
+                'Amount' => $this->money((float) $repayment->amount),
+                'Principal' => $this->money((float) $repayment->principal_paid),
+                'Interest' => $this->money((float) $repayment->interest_paid),
+                'Officer' => $repayment->receivedBy?->name ?? 'N/A',
+            ]);
 
         return [['Date', 'Loan', 'Client', 'Amount', 'Principal', 'Interest', 'Officer'], $rows, ['Recovered' => $this->money((float) $query->sum('amount'))]];
     }
@@ -1718,17 +1728,22 @@ class ReportCatalogService
             ->when($types !== [], fn (Builder $query): Builder => $query->whereIn('type', $types))
             ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
 
-        $rows = (clone $query)->latest('transaction_date')->limit($limit)->get()->map(fn (InvestmentTransaction $transaction): array => [
-            'Date' => $transaction->transaction_date?->format('d M Y'),
-            'Reference' => $transaction->reference,
-            'Client' => $transaction->client?->full_name ?? $transaction->investmentAccount?->client?->full_name ?? 'N/A',
-            'Investment' => $transaction->investmentAccount?->investment_number ?? 'N/A',
-            'Plan' => $transaction->investmentAccount?->plan?->name ?? 'N/A',
-            'Type' => Str::headline($transaction->type),
-            'Amount' => $this->money((float) $transaction->amount),
-            'Balance After' => $this->money((float) $transaction->balance_after),
-            'Status' => Str::headline($transaction->status),
-        ]);
+        $rows = (clone $query)
+            ->orderByDesc('transaction_date')
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->get()
+            ->map(fn (InvestmentTransaction $transaction): array => [
+                'Date' => $transaction->transaction_date?->format('d M Y').' '.$transaction->created_at?->format('H:i:s'),
+                'Reference' => $transaction->reference,
+                'Client' => $transaction->client?->full_name ?? $transaction->investmentAccount?->client?->full_name ?? 'N/A',
+                'Investment' => $transaction->investmentAccount?->investment_number ?? 'N/A',
+                'Plan' => $transaction->investmentAccount?->plan?->name ?? 'N/A',
+                'Type' => Str::headline($transaction->type),
+                'Amount' => $this->money((float) $transaction->amount),
+                'Balance After' => $this->money((float) $transaction->balance_after),
+                'Status' => Str::headline($transaction->status),
+            ]);
 
         return [
             ['Date', 'Reference', 'Client', 'Investment', 'Plan', 'Type', 'Amount', 'Balance After', 'Status'],

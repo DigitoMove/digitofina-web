@@ -87,7 +87,11 @@ class SavingsAccountController extends Controller
     {
         return view('savings-accounts.show', [
             'account' => $savingsAccount->load(['client', 'branch', 'product', 'transactions.teller']),
-            'recentTransactions' => $savingsAccount->transactions()->latest()->paginate(15),
+            'recentTransactions' => $savingsAccount->transactions()
+                ->orderByDesc('transaction_date')
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->paginate(15),
         ]);
     }
 
@@ -107,7 +111,9 @@ class SavingsAccountController extends Controller
         $transactions = $savingsAccount->transactions()
             ->when($request->date_from, fn ($query, string $date) => $query->whereDate('transaction_date', '>=', $date))
             ->when($request->date_to, fn ($query, string $date) => $query->whereDate('transaction_date', '<=', $date))
-            ->latest('transaction_date')
+            ->orderByDesc('transaction_date')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->paginate(30)
             ->withQueryString();
 
