@@ -255,7 +255,7 @@
                         </svg>
                     </button>
                     @if(! auth()->user()->isMember())
-                        <form action="{{ route('client-directory.index') }}" class="hidden flex-1 sm:block">
+                        <form action="{{ route('clients.index') }}" class="hidden flex-1 sm:block">
                             <input name="search" class="h-11 w-full max-w-xl rounded-xl border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-4 focus:ring-brand-100" placeholder="Search clients by name, phone, account, or national ID">
                         </form>
                     @else
