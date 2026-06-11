@@ -58,6 +58,10 @@ class OrganizationController extends Controller
         abort_unless($request->user()->hasRole('super-admin'), 403);
 
         $data = $request->validate($this->organizationRules());
+        if ($request->hasFile('logo_file')) {
+            $data['logo'] = $request->file('logo_file')->store('organization-logos', 'public');
+        }
+        unset($data['logo_file']);
 
         $organization = Organization::create($data);
         $modules->syncCatalog();
@@ -163,7 +167,12 @@ class OrganizationController extends Controller
         Gate::authorize('update', $organization);
 
         $old = $organization->toArray();
-        $organization->update($request->validated());
+        $data = $request->validated();
+        if ($request->hasFile('logo_file')) {
+            $data['logo'] = $request->file('logo_file')->store('organization-logos', 'public');
+        }
+        unset($data['logo_file']);
+        $organization->update($data);
         $auditLogger->record('organization.updated', $organization, $organization->fresh()->toArray(), $old);
 
         return redirect()->route('organization.edit', $organization)->with('status', 'Organization profile updated.');
@@ -178,7 +187,14 @@ class OrganizationController extends Controller
             'name' => ['required', 'string', 'max:191'],
             'slug' => ['required', 'string', 'max:191', Rule::unique('organizations', 'slug')->ignore($organization)],
             'logo' => ['nullable', 'string', 'max:191'],
+            'logo_file' => ['nullable', 'image', 'max:2048'],
             'email' => ['nullable', 'email', 'max:191'],
+            'website' => ['nullable', 'url', 'max:191'],
+            'social_links' => ['nullable', 'array'],
+            'social_links.facebook' => ['nullable', 'url', 'max:191'],
+            'social_links.x' => ['nullable', 'url', 'max:191'],
+            'social_links.linkedin' => ['nullable', 'url', 'max:191'],
+            'social_links.whatsapp' => ['nullable', 'string', 'max:80'],
             'phone' => ['nullable', 'string', 'max:40'],
             'address' => ['nullable', 'string'],
             'currency' => ['required', 'string', 'max:10'],

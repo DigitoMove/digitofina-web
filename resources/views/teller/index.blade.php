@@ -88,7 +88,7 @@
                     <input type="hidden" name="opening_balance" value="{{ old('opening_balance', $drawers->where('status', 'closed')->first()?->current_balance ?? 0) }}">
                 @else
                     <label class="text-sm font-semibold text-slate-700">Opening Balance <x-required-badge />
-                        <input name="opening_balance" type="number" min="0" step="50" value="{{ old('opening_balance') }}" class="mt-1" placeholder="Opening balance" required>
+                        <input name="opening_balance" type="number" min="0" step="100" value="{{ old('opening_balance') }}" class="mt-1" placeholder="Opening balance" required>
                     </label>
                 @endif
                 <button class="df-action-primary">Open Drawer</button>
@@ -174,7 +174,7 @@
                                             @if($managedDrawer->status === 'open')
                                                 <form method="POST" action="{{ route('teller.drawers.close', $managedDrawer) }}" class="flex gap-2">
                                                     @csrf
-                                                    <input name="closing_balance" type="number" min="0" step="50" value="{{ $managedDrawer->current_balance }}" class="w-28 rounded border-slate-300 text-sm" required>
+                                                    <input name="closing_balance" type="number" min="0" step="100" value="{{ $managedDrawer->current_balance }}" class="w-28 rounded border-slate-300 text-sm" required>
                                                     <button class="rounded bg-red-600 px-3 py-1 text-xs font-semibold text-white">Close</button>
                                                 </form>
                                             @else
@@ -187,7 +187,7 @@
                                                             <option value="{{ $teller->id }}" @selected($managedDrawer->assigned_user_id === $teller->id)>{{ $teller->name }}</option>
                                                         @endforeach
                                                     </select>
-                                                    <input name="opening_balance" type="number" min="0" step="50" value="{{ $managedDrawer->current_balance }}" class="w-28 rounded border-slate-300 text-sm" required>
+                                                    <input name="opening_balance" type="number" min="0" step="100" value="{{ $managedDrawer->current_balance }}" class="w-28 rounded border-slate-300 text-sm" required>
                                                     <button class="rounded bg-brand-700 px-3 py-1 text-xs font-semibold text-white">Open</button>
                                                 </form>
                                                 <form method="POST" action="{{ route('teller.drawers.destroy', $managedDrawer) }}" data-confirm-title="Delete drawer" data-confirm-message="Delete this drawer? Only unused closed drawers can be deleted." data-confirm-label="Delete drawer" data-confirm-tone="danger">
@@ -330,7 +330,7 @@
                 <h2 class="font-semibold text-slate-950">Post Transaction</h2>
                 <p class="df-muted">Post cash to a client account or a branch general ledger account.</p>
             </div>
-            <span class="df-badge">UGX 50 minimum denomination</span>
+            <span class="df-badge">UGX 100 minimum denomination</span>
         </div>
         <form method="POST" action="{{ route('teller.post') }}" class="mt-4 grid gap-4 md:grid-cols-2" data-confirm-title="Review transaction" data-confirm-message="Please confirm these details before posting. This helps avoid reversal requests." data-confirm-label="Post transaction" data-confirm-tone="neutral">
             @csrf
@@ -379,7 +379,7 @@
                 <input name="cheque_number" class="mt-1" data-confirm-summary-label="Cheque no.">
             </label>
             <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge />
-                <input name="amount" type="number" min="50" step="50" class="mt-1" required data-confirm-summary-label="Amount">
+                <input name="amount" type="number" min="100" step="100" class="mt-1" required data-confirm-summary-label="Amount">
             </label>
             <label class="text-sm font-semibold text-slate-700">Transaction Date <x-required-badge />
                 <input name="transaction_date" type="date" max="{{ today()->toDateString() }}" value="{{ old('transaction_date', today()->toDateString()) }}" class="mt-1" required data-confirm-summary-label="Date">
@@ -455,7 +455,7 @@
         <form method="POST" action="{{ route('teller.close') }}" class="mt-5 grid gap-3">
             @csrf
             <label class="text-sm font-semibold text-slate-700">Closing Balance <x-required-badge />
-                <input name="closing_balance" type="number" min="0" step="50" value="{{ $drawer?->current_balance }}" class="mt-1" placeholder="Closing balance" required>
+                <input name="closing_balance" type="number" min="0" step="100" value="{{ $drawer?->current_balance }}" class="mt-1" placeholder="Closing balance" required>
             </label>
             <button @disabled(!$session) class="df-action-danger disabled:pointer-events-none disabled:bg-slate-400">Close Drawer</button>
         </form>

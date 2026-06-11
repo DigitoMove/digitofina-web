@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\CurrencyDenomination;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -32,8 +33,8 @@ class StoreLoanProductRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'code' => ['required', 'string', 'max:30', Rule::unique('loan_products', 'code')],
             'description' => ['nullable', 'string'],
-            'min_amount' => ['required', 'numeric', 'min:0'],
-            'max_amount' => ['required', 'numeric', 'gt:min_amount'],
+            'min_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+            'max_amount' => ['required', 'numeric', 'gt:min_amount', CurrencyDenomination::validationRule()],
             'min_term' => ['required', 'integer', 'min:1'],
             'max_term' => ['required', 'integer', 'gte:min_term'],
             'term_unit' => ['required', Rule::in(['days', 'weeks', 'months', 'years'])],
@@ -46,9 +47,9 @@ class StoreLoanProductRequest extends FormRequest
             'grace_period_days' => ['nullable', 'integer', 'min:0'],
             'penalty_type' => ['required', Rule::in(['fixed', 'percentage', 'daily', 'weekly', 'monthly'])],
             'penalty_rate' => ['required', 'numeric', 'min:0'],
-            'processing_fee' => ['nullable', 'numeric', 'min:0'],
-            'insurance_fee' => ['nullable', 'numeric', 'min:0'],
-            'application_fee' => ['nullable', 'numeric', 'min:0'],
+            'processing_fee' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
+            'insurance_fee' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
+            'application_fee' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
             'required_savings_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'require_guarantors' => ['nullable', 'boolean'],
             'minimum_guarantors' => ['nullable', 'integer', 'min:0'],

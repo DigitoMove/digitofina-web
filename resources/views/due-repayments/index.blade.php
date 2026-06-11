@@ -39,6 +39,7 @@
                 <th>Contact</th>
                 <th>Loan</th>
                 <th>Product</th>
+                <th>Officer</th>
                 <th>Installments due</th>
                 <th>Amount to pay</th>
                 <th>Status</th>
@@ -63,6 +64,17 @@
                     </td>
                     <td>{{ $schedule->loan->product->name }}</td>
                     <td>
+                        @if($schedule->loan->officer)
+                            <a href="{{ route('staff-directory.show', $schedule->loan->officer) }}" class="font-semibold text-brand-700">{{ $schedule->loan->officer->name }}</a>
+                            <div class="mt-1 text-xs text-slate-500">{{ $schedule->loan->officer->phone ?? $schedule->loan->officer->email }}</div>
+                            @if((int) $schedule->loan->officer_id !== (int) auth()->id())
+                                <a href="{{ route('chat.index', ['recipient_id' => $schedule->loan->officer_id, 'loan_id' => $schedule->loan_id]) }}" class="mt-1 inline-flex text-xs font-semibold text-brand-700">Chat reminder</a>
+                            @endif
+                        @else
+                            <span class="text-slate-500">Unassigned</span>
+                        @endif
+                    </td>
+                    <td>
                         <div class="font-semibold text-slate-950">{{ (int) ($schedule->loan->due_installments_count ?? 1) }} installment{{ (int) ($schedule->loan->due_installments_count ?? 1) === 1 ? '' : 's' }}</div>
                         <div class="text-xs text-slate-500">Current schedule #{{ $schedule->installment_number }}</div>
                     </td>
@@ -70,7 +82,7 @@
                     <td><span class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{{ str($schedule->status)->headline() }}</span></td>
                 </tr>
             @empty
-                <tr><td colspan="7" class="p-6 text-center text-slate-500">No repayments scheduled for this date.</td></tr>
+                <tr><td colspan="8" class="p-6 text-center text-slate-500">No repayments scheduled for this date.</td></tr>
             @endforelse
         </tbody>
     </table>

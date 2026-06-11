@@ -8,6 +8,7 @@ use App\Models\Loan;
 use App\Models\User;
 use App\Notifications\AccountActivityNotification;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Arr;
 
 class InAppNotificationService
 {
@@ -16,7 +17,7 @@ class InAppNotificationService
      */
     public function notifyUser(?User $user, string $title, string $message, ?string $actionUrl = null, string $category = 'account', string $level = 'info', array $meta = []): void
     {
-        if (! $user || $user->status !== 'active') {
+        if (! $user || $user->status !== 'active' || $this->shouldSkipUser($user, $meta)) {
             return;
         }
 
@@ -78,6 +79,7 @@ class InAppNotificationService
                     ->orWhereHas('role.permissions', fn (Builder $permissionQuery): Builder => $permissionQuery->whereIn('slug', $permissions));
             })
             ->get()
+            ->filter(fn (User $user): bool => $user->hasRole('super-admin') || collect($permissions)->contains(fn (string $permission): bool => $user->canPerform($permission)))
             ->each(fn (User $user) => $this->notifyUser($user, $title, $message, $actionUrl, $category, $level, $meta));
     }
 
@@ -86,7 +88,11 @@ class InAppNotificationService
      */
     public function notifyCashiers(?int $branchId, ?int $organizationId, string $title, string $message, ?string $actionUrl = null, string $category = 'drawer', string $level = 'info', array $meta = []): void
     {
-        $this->staffQuery($branchId, $organizationId)
+        User::query()
+            ->with('role')
+            ->where('status', 'active')
+            ->when($organizationId, fn (Builder $query): Builder => $query->where('organization_id', $organizationId))
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->whereHas('role', fn (Builder $query): Builder => $query->where('slug', 'teller-cashier'))
             ->get()
             ->each(fn (User $user) => $this->notifyUser($user, $title, $message, $actionUrl, $category, $level, $meta));
@@ -119,5 +125,19 @@ class InAppNotificationService
             'client_id' => $loan->client_id,
             'branch_id' => $loan->branch_id,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function shouldSkipUser(User $user, array $meta): bool
+    {
+        $excludedUserIds = array_map('intval', Arr::wrap($meta['exclude_user_ids'] ?? []));
+
+        if (isset($meta['actor_id'])) {
+            $excludedUserIds[] = (int) $meta['actor_id'];
+        }
+
+        return in_array((int) $user->id, $excludedUserIds, true);
     }
 }

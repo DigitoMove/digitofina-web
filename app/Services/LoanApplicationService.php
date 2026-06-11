@@ -74,6 +74,7 @@ class LoanApplicationService
             $loanUrl,
             'loan',
             'info',
+            ['actor_id' => $officer->id],
         );
         $this->notifications->notifyLoanClient(
             $freshLoan,

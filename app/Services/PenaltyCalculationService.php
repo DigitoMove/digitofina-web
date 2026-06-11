@@ -3,12 +3,11 @@
 namespace App\Services;
 
 use App\Models\LoanSchedule;
+use App\Support\CurrencyDenomination;
 use Carbon\CarbonInterface;
 
 class PenaltyCalculationService
 {
-    private const PENALTY_ROUNDING_UNIT = 50;
-
     public function calculate(LoanSchedule $schedule, float $rate, string $type = 'percentage', int $daysOverdue = 0, ?string $repaymentFrequency = null): float
     {
         $balance = max(0, (float) $schedule->outstanding_amount - (float) $schedule->penalty_due);
@@ -64,6 +63,6 @@ class PenaltyCalculationService
             return 0.0;
         }
 
-        return (float) (round($amount / self::PENALTY_ROUNDING_UNIT) * self::PENALTY_ROUNDING_UNIT);
+        return (float) (ceil($amount / CurrencyDenomination::MINIMUM_UNIT) * CurrencyDenomination::MINIMUM_UNIT);
     }
 }

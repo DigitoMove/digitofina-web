@@ -102,6 +102,245 @@ const initFlashToasts = () => {
     });
 };
 
+let chatAudioContext = null;
+
+const csrfToken = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+const unlockChatAudio = () => {
+    if (!window.AudioContext && !window.webkitAudioContext) {
+        return;
+    }
+
+    chatAudioContext = chatAudioContext || new (window.AudioContext || window.webkitAudioContext)();
+    chatAudioContext.resume?.();
+};
+
+const playChatSound = () => {
+    if (!chatAudioContext) {
+        return;
+    }
+
+    const oscillator = chatAudioContext.createOscillator();
+    const gain = chatAudioContext.createGain();
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(880, chatAudioContext.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(660, chatAudioContext.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.001, chatAudioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12, chatAudioContext.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, chatAudioContext.currentTime + 0.22);
+    oscillator.connect(gain);
+    gain.connect(chatAudioContext.destination);
+    oscillator.start();
+    oscillator.stop(chatAudioContext.currentTime + 0.24);
+};
+
+const setChatUnreadCount = (count) => {
+    document.querySelectorAll('[data-chat-unread-count]').forEach((badge) => {
+        badge.textContent = count > 99 ? '99+' : String(count || '');
+        badge.classList.toggle('hidden', count <= 0);
+        badge.classList.toggle('grid', count > 0);
+    });
+};
+
+const showChatToast = (message) => {
+    const region = document.querySelector('[data-chat-toast-region]');
+
+    if (!region) {
+        return;
+    }
+
+    const toast = document.createElement('a');
+    toast.href = message.conversation_url;
+    toast.className = 'block rounded-xl border border-brand-200 bg-white p-4 text-sm shadow-2xl ring-1 ring-slate-950/5 hover:bg-brand-50';
+
+    const sender = document.createElement('div');
+    sender.className = 'font-semibold text-slate-950';
+    sender.textContent = message.sender;
+
+    const context = document.createElement('div');
+    context.className = 'mt-1 text-xs font-medium text-brand-700';
+    context.textContent = message.context;
+
+    const body = document.createElement('div');
+    body.className = 'mt-2 line-clamp-2 text-slate-600';
+    body.textContent = message.body;
+
+    toast.append(sender, context, body);
+    region.prepend(toast);
+    window.setTimeout(() => toast.remove(), 9000);
+};
+
+const initChatNotifications = () => {
+    const pollUrl = document.body.dataset.chatPollUrl;
+
+    if (!pollUrl) {
+        return;
+    }
+
+    ['click', 'keydown', 'touchstart'].forEach((eventName) => {
+        document.addEventListener(eventName, unlockChatAudio, { once: true, passive: true });
+    });
+
+    let latestMessageId = Number(document.body.dataset.chatLatestId || 0);
+    const poll = async () => {
+        try {
+            const response = await fetch(`${pollUrl}?after_id=${latestMessageId}`, {
+                headers: { Accept: 'application/json' },
+            });
+
+            if (!response.ok) {
+                return;
+            }
+
+            const payload = await response.json();
+            setChatUnreadCount(Number(payload.unread_count || 0));
+
+            const toastMessages = (payload.messages || []).filter((message) => {
+                const url = new URL(message.conversation_url, window.location.origin);
+
+                return url.pathname !== window.location.pathname;
+            });
+
+            if (toastMessages.length > 0) {
+                toastMessages.forEach(showChatToast);
+                playChatSound();
+            }
+
+            latestMessageId = Math.max(latestMessageId, Number(payload.latest_message_id || 0), ...((payload.messages || []).map((message) => Number(message.id || 0))));
+            document.body.dataset.chatLatestId = String(latestMessageId);
+        } catch {
+            // Keep polling resilient if the network drops briefly.
+        }
+    };
+
+    window.setInterval(poll, 5000);
+};
+
+const createChatMessageElement = (message) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = `mb-3 flex ${message.is_mine ? 'justify-end' : 'justify-start'}`;
+    wrapper.dataset.chatMessageId = message.id;
+
+    const bubble = document.createElement('div');
+    bubble.className = `max-w-[min(34rem,85%)] rounded-xl px-4 py-3 shadow-sm ${message.is_mine ? 'bg-brand-700 text-white' : 'border border-slate-200 bg-white text-slate-900'}`;
+
+    const sender = document.createElement('div');
+    sender.className = `text-xs font-semibold ${message.is_mine ? 'text-brand-50' : 'text-slate-500'}`;
+    sender.textContent = message.sender;
+
+    const body = document.createElement('div');
+    body.className = 'mt-1 whitespace-pre-wrap text-sm leading-6';
+    body.textContent = message.body;
+
+    const time = document.createElement('div');
+    time.className = `mt-2 text-[0.7rem] ${message.is_mine ? 'text-brand-50/80' : 'text-slate-400'}`;
+    time.textContent = message.time || '';
+
+    bubble.append(sender, body, time);
+    wrapper.append(bubble);
+
+    return wrapper;
+};
+
+const initChatConversation = () => {
+    const scope = document.querySelector('[data-chat-conversation]');
+
+    if (!scope) {
+        return;
+    }
+
+    const messagesUrl = scope.dataset.messagesUrl;
+    const sendUrl = scope.dataset.sendUrl;
+    const messageList = scope.querySelector('[data-chat-messages]');
+    const form = scope.querySelector('[data-chat-form]');
+    const input = scope.querySelector('[data-chat-input]');
+    let lastMessageId = Math.max(0, ...[...scope.querySelectorAll('[data-chat-message-id]')].map((element) => Number(element.dataset.chatMessageId || 0)));
+
+    const scrollToBottom = () => {
+        if (messageList) {
+            messageList.scrollTop = messageList.scrollHeight;
+        }
+    };
+
+    const appendMessages = (messages) => {
+        let hasIncoming = false;
+
+        messages.forEach((message) => {
+            if (Number(message.id) <= lastMessageId) {
+                return;
+            }
+
+            messageList?.append(createChatMessageElement(message));
+            lastMessageId = Math.max(lastMessageId, Number(message.id));
+            hasIncoming = hasIncoming || !message.is_mine;
+        });
+
+        if (messages.length > 0) {
+            scrollToBottom();
+        }
+
+        if (hasIncoming) {
+            playChatSound();
+        }
+    };
+
+    const fetchMessages = async () => {
+        try {
+            const response = await fetch(`${messagesUrl}?after_id=${lastMessageId}`, {
+                headers: { Accept: 'application/json' },
+            });
+
+            if (!response.ok) {
+                return;
+            }
+
+            const payload = await response.json();
+            appendMessages(payload.messages || []);
+            setChatUnreadCount(Number(payload.unread_count || 0));
+        } catch {
+            // Keep the conversation usable if one poll fails.
+        }
+    };
+
+    form?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        if (!input?.value.trim()) {
+            return;
+        }
+
+        const body = input.value;
+        const formData = new FormData(form);
+        input.value = '';
+
+        try {
+            const response = await fetch(sendUrl, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': csrfToken(),
+                },
+                body: formData,
+            });
+            const payload = await response.json();
+
+            if (!response.ok) {
+                throw new Error(payload.message || 'Message could not be sent.');
+            }
+
+            appendMessages([payload.message]);
+            setChatUnreadCount(Number(payload.unread_count || 0));
+        } catch (error) {
+            input.value = body;
+            window.alert(error.message);
+        }
+    });
+
+    scrollToBottom();
+    window.setInterval(fetchMessages, 3000);
+};
+
 const initSidebar = () => {
     const sidebar = document.querySelector('[data-sidebar]');
     const openButtons = document.querySelectorAll('[data-sidebar-open]');
@@ -942,6 +1181,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initRipples();
     initKeyboardFocus();
     initFlashToasts();
+    initChatNotifications();
+    initChatConversation();
     initSidebar();
     initConfirmDialog();
     initLoanSchedulePreview();

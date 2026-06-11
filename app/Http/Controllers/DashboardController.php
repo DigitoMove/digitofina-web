@@ -68,7 +68,7 @@ class DashboardController extends Controller
             ->scopeRepaymentCalendar($query, $user)
             ->when($selectedCalendarBranchId, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
         $canViewRepaymentCalendarAmounts = ! ($isCashierDashboard || $isLoanOfficerDashboard);
-        $showRepaymentScheduleWidgets = ! $isLoanRecoveryDashboard;
+        $showRepaymentScheduleWidgets = true;
         $arrearsCutoffDate = $today->copy()->subDay()->toDateString();
         $dueToday = collect();
         $dueTodayTotals = null;

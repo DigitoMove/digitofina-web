@@ -527,7 +527,7 @@ class TransactionPostingService
                 route('teller.index'),
                 'drawer',
                 'info',
-                ['journal_entry_id' => $journal->id, 'reference' => $journal->reference],
+                ['journal_entry_id' => $journal->id, 'reference' => $journal->reference, 'actor_id' => $user->id],
             );
 
             return $journal->refresh();

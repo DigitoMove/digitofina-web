@@ -17,7 +17,7 @@
         </span>
     </summary>
 
-    <div class="absolute right-0 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/5">
+    <div class="fixed left-4 right-4 top-16 z-[80] mt-2 max-h-[calc(100vh-5rem)] w-auto overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/5 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-3 sm:max-h-none sm:w-[min(22rem,calc(100vw-2rem))]">
         <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <div>
                 <div class="font-semibold text-slate-950">Notifications</div>

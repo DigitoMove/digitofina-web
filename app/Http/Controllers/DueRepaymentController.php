@@ -15,8 +15,7 @@ class DueRepaymentController extends Controller
 {
     public function index(Request $request, LoanVisibilityService $visibility): View
     {
-        abort_if($request->user()->isLoanRecoveryOfficer(), 403);
-        abort_unless($request->user()->canPerform('manage-loans') || $request->user()->canPerform('post-repayments') || $request->user()->canPerform('view-reports'), 403);
+        abort_unless($request->user()->canPerform('manage-loans') || $request->user()->canPerform('post-repayments') || $request->user()->canPerform('view-reports') || $request->user()->canPerform('view-arrears'), 403);
 
         $data = $request->validate([
             'date' => ['nullable', 'date'],
@@ -35,7 +34,7 @@ class DueRepaymentController extends Controller
         $scheduleQuery = LoanSchedule::query()
             ->with([
                 'loan' => fn ($query) => $query
-                    ->with(['client', 'product'])
+                    ->with(['client', 'officer', 'product'])
                     ->withCount(['schedules as due_installments_count' => $dueScheduleScope])
                     ->withSum(['schedules as due_installments_amount' => $dueScheduleScope], 'outstanding_amount'),
             ])

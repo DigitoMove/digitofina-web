@@ -76,6 +76,16 @@ class User extends Authenticatable
         return $this->hasOne(Client::class);
     }
 
+    public function chatMessages(): HasMany
+    {
+        return $this->hasMany(ChatMessage::class, 'sender_id');
+    }
+
+    public function initiatedChatConversations(): HasMany
+    {
+        return $this->hasMany(ChatConversation::class, 'initiated_by');
+    }
+
     public function hasRole(string $slug): bool
     {
         return $this->role?->slug === $slug;

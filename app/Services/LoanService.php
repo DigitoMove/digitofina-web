@@ -121,6 +121,7 @@ class LoanService
                 $loanUrl,
                 'loan',
                 'success',
+                ['actor_id' => $approver->id],
             );
             $this->notifications->notifyLoanClient(
                 $freshLoan,
@@ -139,7 +140,7 @@ class LoanService
                 $loanUrl,
                 'loan',
                 'warning',
-                ['loan_id' => $freshLoan->id, 'loan_number' => $freshLoan->loan_number],
+                ['loan_id' => $freshLoan->id, 'loan_number' => $freshLoan->loan_number, 'actor_id' => $approver->id],
             );
 
             return $freshLoan;
@@ -186,6 +187,7 @@ class LoanService
                 route('loans.show', $freshLoan),
                 'loan',
                 'danger',
+                ['actor_id' => $user->id],
             );
             $this->notifications->notifyLoanClient(
                 $freshLoan,
@@ -322,6 +324,7 @@ class LoanService
                 route('loans.show', $freshLoan),
                 'loan',
                 'warning',
+                ['actor_id' => $user->id],
             );
             $this->notifications->notifyLoanClient(
                 $freshLoan,
@@ -376,7 +379,7 @@ class LoanService
                 route('loans.show', $freshLoan),
                 'loan',
                 'info',
-                ['loan_id' => $freshLoan->id, 'loan_number' => $freshLoan->loan_number],
+                ['loan_id' => $freshLoan->id, 'loan_number' => $freshLoan->loan_number, 'actor_id' => $user->id],
             );
 
             return $freshLoan;
@@ -681,6 +684,7 @@ class LoanService
                 route('loans.show', $freshLoan),
                 'loan',
                 'info',
+                ['actor_id' => $user->id],
             );
 
             return $freshLoan;
@@ -691,7 +695,7 @@ class LoanService
     {
         abort_unless($user->canPerform('manage-loans'), 403);
 
-        return DB::transaction(function () use ($loan): Loan {
+        return DB::transaction(function () use ($loan, $user): Loan {
             $loan = Loan::query()->with(['client', 'product', 'loanGuarantors'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
 
             if ($loan->status !== 'under_review') {
@@ -725,7 +729,7 @@ class LoanService
                 route('loans.show', $freshLoan),
                 'loan',
                 'warning',
-                ['loan_id' => $freshLoan->id, 'loan_number' => $freshLoan->loan_number],
+                ['loan_id' => $freshLoan->id, 'loan_number' => $freshLoan->loan_number, 'actor_id' => $user->id],
             );
 
             return $freshLoan;
@@ -856,6 +860,7 @@ class LoanService
                 $loanUrl,
                 'loan',
                 'success',
+                ['actor_id' => $user->id],
             );
             $this->notifications->notifyLoanClient(
                 $freshLoan,
@@ -873,7 +878,7 @@ class LoanService
                 $loanUrl,
                 'drawer',
                 'warning',
-                ['loan_id' => $freshLoan->id, 'loan_number' => $freshLoan->loan_number],
+                ['loan_id' => $freshLoan->id, 'loan_number' => $freshLoan->loan_number, 'actor_id' => $user->id],
             );
 
             return $freshLoan;
@@ -1218,6 +1223,7 @@ class LoanService
                 $loanUrl,
                 'loan',
                 $isSettled ? 'success' : 'info',
+                ['actor_id' => $user->id, 'repayment_id' => $repayment->id, 'amount' => $amount],
             );
             $this->notifications->notifyLoanClient(
                 $freshLoan,

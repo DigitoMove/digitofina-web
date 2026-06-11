@@ -518,14 +518,23 @@ class InvestmentService
         $postedReturn = max(0, (float) $investment->actual_return_amount);
 
         if ($postedReturn <= 0) {
-            return $planPenalty;
+            return $this->roundPenaltyAmount($planPenalty);
         }
 
         $withdrawalShare = min(1, $amount / max(1, (float) $investment->principal_amount));
         $allowedPostedReturn = (float) $quote['earned_return_amount'] * $withdrawalShare;
         $unearnedPostedReturn = max(0, ($postedReturn * $withdrawalShare) - $allowedPostedReturn);
 
-        return round($planPenalty + $unearnedPostedReturn, 2);
+        return $this->roundPenaltyAmount($planPenalty + $unearnedPostedReturn);
+    }
+
+    private function roundPenaltyAmount(float $amount): float
+    {
+        if ($amount <= 0) {
+            return 0.0;
+        }
+
+        return (float) (ceil($amount / CurrencyDenomination::MINIMUM_UNIT) * CurrencyDenomination::MINIMUM_UNIT);
     }
 
     private function assertInvestorCanTransact(InvestorAccount $investor): void

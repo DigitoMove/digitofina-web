@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Loan;
+use App\Support\CurrencyDenomination;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -43,7 +44,7 @@ class StoreLoanGuarantorRequest extends FormRequest
             'national_id' => ['nullable', 'string', 'max:80'],
             'address' => ['required', 'string'],
             'relationship' => ['nullable', 'string', 'max:255'],
-            'guaranteed_amount' => ['required', 'numeric', 'min:1'],
+            'guaranteed_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'status' => ['nullable', Rule::in(['pending', 'accepted', 'rejected'])],
         ];
     }

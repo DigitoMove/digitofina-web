@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\CurrencyDenomination;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -30,14 +31,14 @@ class StoreSavingsProductRequest extends FormRequest
             'code' => ['required', 'string', 'max:40', Rule::unique('savings_products', 'code')],
             'savings_type' => ['required', 'in:ordinary,target,fixed,group,emergency,child_student,business'],
             'is_mandatory' => ['sometimes', 'boolean'],
-            'minimum_opening_balance' => ['required', 'numeric', 'min:0'],
-            'minimum_balance' => ['required', 'numeric', 'min:0'],
-            'mandatory_amount' => ['nullable', 'numeric', 'min:0'],
+            'minimum_opening_balance' => ['required', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
+            'minimum_balance' => ['required', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
+            'mandatory_amount' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
             'interest_rate' => ['required', 'numeric', 'min:0'],
             'interest_posting_frequency' => ['required', 'in:daily,weekly,monthly,quarterly,annually'],
-            'withdrawal_charge' => ['required', 'numeric', 'min:0'],
-            'deposit_charge' => ['required', 'numeric', 'min:0'],
-            'monthly_maintenance_fee' => ['required', 'numeric', 'min:0'],
+            'withdrawal_charge' => ['required', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
+            'deposit_charge' => ['required', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
+            'monthly_maintenance_fee' => ['required', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
             'account_number_prefix' => ['required', 'string', 'max:20'],
             'allows_overdraft' => ['boolean'],
             'supports_goals' => ['boolean'],

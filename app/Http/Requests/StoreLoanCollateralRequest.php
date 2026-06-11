@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\CurrencyDenomination;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -30,8 +31,8 @@ class StoreLoanCollateralRequest extends FormRequest
         return [
             'type' => ['required', Rule::in(['land', 'vehicle', 'electronics', 'household_item', 'business_asset', 'livestock', 'salary', 'other'])],
             'description' => ['nullable', 'string'],
-            'estimated_value' => ['required', 'numeric', 'min:0'],
-            'forced_sale_value' => ['nullable', 'numeric', 'min:0'],
+            'estimated_value' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+            'forced_sale_value' => ['nullable', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'ownership_proof' => ['nullable', 'string', 'max:255'],
             'valuation_date' => ['nullable', 'date'],
             'status' => ['nullable', Rule::in(['pending_verification', 'verified', 'rejected'])],

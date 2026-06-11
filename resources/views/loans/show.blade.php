@@ -129,7 +129,7 @@
                 </select>
             </label>
             <label class="text-sm font-medium text-slate-700">Requested amount
-                <input name="requested_amount" value="{{ old('requested_amount', $loan->requested_amount) }}" type="number" step="50" min="50" class="mt-1 w-full rounded border-slate-300" required>
+                <input name="requested_amount" value="{{ old('requested_amount', $loan->requested_amount) }}" type="number" step="100" min="100" class="mt-1 w-full rounded border-slate-300" required>
             </label>
             <label class="text-sm font-medium text-slate-700">Installments
                 <input name="term_periods" value="{{ old('term_periods', $loan->term_periods) }}" type="number" min="1" class="mt-1 w-full rounded border-slate-300" required>
@@ -235,7 +235,7 @@
                     </select>
                 </label>
                 <label class="text-sm font-medium text-slate-700">Approved amount
-                    <input name="approved_amount" value="{{ old('approved_amount', $loan->approved_amount ?: $loan->requested_amount) }}" type="number" step="50" min="50" class="mt-1 w-full rounded border-slate-300" required>
+                    <input name="approved_amount" value="{{ old('approved_amount', $loan->approved_amount ?: $loan->requested_amount) }}" type="number" step="100" min="100" class="mt-1 w-full rounded border-slate-300" required>
                 </label>
                 <label class="text-sm font-medium text-slate-700">Installments
                     <input name="term_periods" value="{{ old('term_periods', $loan->term_periods) }}" type="number" min="1" class="mt-1 w-full rounded border-slate-300" required>
@@ -645,7 +645,7 @@
                         <label class="text-sm font-semibold text-slate-700">Phone <x-required-badge /><input name="phone" placeholder="Phone" required></label>
                         <input name="national_id" placeholder="National ID">
                         <input name="relationship" placeholder="Relationship">
-                        <label class="text-sm font-semibold text-slate-700">Guaranteed amount <x-required-badge /><input name="guaranteed_amount" type="number" step="0.01" placeholder="Guaranteed amount" required></label>
+                        <label class="text-sm font-semibold text-slate-700">Guaranteed amount <x-required-badge /><input name="guaranteed_amount" type="number" min="100" step="100" placeholder="Guaranteed amount" required></label>
                         <select name="status"><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option></select>
                         <label class="text-sm font-semibold text-slate-700 md:col-span-2">Address <x-required-badge /><textarea name="address" class="mt-1" placeholder="Address" required></textarea></label>
                         <button class="df-action-secondary md:col-span-2">Add guarantor</button>
@@ -671,8 +671,8 @@
                     <form method="POST" action="{{ route('loans.collaterals.store', $loan) }}" class="mt-4 grid gap-3 md:grid-cols-2">
                         @csrf
                         <label class="text-sm font-semibold text-slate-700">Collateral type <x-required-badge /><select name="type" required>@foreach(['land','vehicle','electronics','household_item','business_asset','livestock','salary','other'] as $type)<option value="{{ $type }}">{{ str($type)->headline() }}</option>@endforeach</select></label>
-                        <label class="text-sm font-semibold text-slate-700">Estimated value <x-required-badge /><input name="estimated_value" type="number" step="0.01" placeholder="Estimated value" required></label>
-                        <input name="forced_sale_value" type="number" step="0.01" placeholder="Forced sale value">
+                        <label class="text-sm font-semibold text-slate-700">Estimated value <x-required-badge /><input name="estimated_value" type="number" min="100" step="100" placeholder="Estimated value" required></label>
+                        <input name="forced_sale_value" type="number" min="100" step="100" placeholder="Forced sale value">
                         <input name="ownership_proof" placeholder="Ownership proof">
                         <input name="valuation_date" type="date">
                         <select name="status"><option value="pending_verification">Pending verification</option><option value="verified">Verified</option><option value="rejected">Rejected</option></select>

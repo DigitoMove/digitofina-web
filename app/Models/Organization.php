@@ -21,6 +21,7 @@ class Organization extends Model
             'interest_settings' => 'array',
             'sms_settings' => 'array',
             'mobile_money_settings' => 'array',
+            'social_links' => 'array',
         ];
     }
 

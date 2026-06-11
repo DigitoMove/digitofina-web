@@ -6,7 +6,7 @@
     <p class="text-sm text-slate-500">Create a new tenant and optionally assign an initial package.</p>
 </div>
 
-<form method="POST" action="{{ route('organizations.store') }}" class="grid gap-6 xl:grid-cols-[1fr_22rem]">
+<form method="POST" action="{{ route('organizations.store') }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[1fr_22rem]">
     @csrf
     <section class="df-panel p-5">
         <div class="grid gap-4 md:grid-cols-2">
@@ -18,6 +18,9 @@
             </label>
             <label class="block text-sm font-medium text-slate-700">Email
                 <input name="email" value="{{ old('email') }}" class="mt-1 w-full rounded border-slate-300">
+            </label>
+            <label class="block text-sm font-medium text-slate-700">Website
+                <input name="website" type="url" value="{{ old('website') }}" class="mt-1 w-full rounded border-slate-300" placeholder="https://example.com">
             </label>
             <label class="block text-sm font-medium text-slate-700">Phone
                 <input name="phone" value="{{ old('phone') }}" class="mt-1 w-full rounded border-slate-300">
@@ -34,7 +37,10 @@
         </div>
     </section>
     <aside class="df-panel p-5">
-        <label class="block text-sm font-medium text-slate-700">Package
+        <label class="block text-sm font-medium text-slate-700">Logo
+            <input name="logo_file" type="file" accept="image/*" class="mt-1 w-full rounded border-slate-300">
+        </label>
+        <label class="mt-4 block text-sm font-medium text-slate-700">Package
             <select name="package_id" class="mt-1 w-full rounded border-slate-300">
                 <option value="">No package yet</option>
                 @foreach($packages as $package)

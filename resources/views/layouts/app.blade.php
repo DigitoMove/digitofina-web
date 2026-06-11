@@ -13,16 +13,47 @@
     <x-seo-meta :seo="$seo" />
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="bg-slate-100 text-slate-900 antialiased">
+@php
+    $layoutUser = auth()->user();
+    $layoutCanUseChat = $layoutUser && ! $layoutUser->isMember();
+    $layoutChatUnreadCount = 0;
+    $layoutChatLatestMessageId = 0;
+    $layoutTenantContext = app(\App\Services\TenantContext::class);
+    $layoutOrganization = $layoutTenantContext->organization()
+        ?: $layoutUser?->organization
+        ?: $layoutUser?->branch?->organization;
+    $layoutOrganizationLogo = $layoutOrganization?->logo;
+    $layoutLogoUrl = filled($layoutOrganizationLogo)
+        ? (\Illuminate\Support\Str::startsWith($layoutOrganizationLogo, ['http://', 'https://', '/'])
+            ? $layoutOrganizationLogo
+            : \Illuminate\Support\Facades\Storage::disk('public')->url($layoutOrganizationLogo))
+        : asset('brand/digitofina-mark.svg');
+
+    if ($layoutCanUseChat) {
+        $layoutChatConversationScope = function ($query) use ($layoutUser): void {
+            $query->where('participant_one_id', $layoutUser->id)
+                ->orWhere('participant_two_id', $layoutUser->id);
+        };
+        $layoutChatUnreadCount = \App\Models\ChatMessage::query()
+            ->where('sender_id', '!=', $layoutUser->id)
+            ->whereNull('read_at')
+            ->whereHas('conversation', $layoutChatConversationScope)
+            ->count();
+        $layoutChatLatestMessageId = (int) (\App\Models\ChatMessage::query()
+            ->whereHas('conversation', $layoutChatConversationScope)
+            ->max('id') ?? 0);
+    }
+@endphp
+<body class="bg-slate-100 text-slate-900 antialiased" @if($layoutCanUseChat) data-chat-poll-url="{{ route('chat.poll') }}" data-chat-inbox-url="{{ route('chat.index') }}" data-chat-latest-id="{{ $layoutChatLatestMessageId }}" @endif>
     <div class="min-h-screen bg-slate-100 lg:flex">
         <div class="fixed inset-0 z-40 hidden bg-slate-950/50 backdrop-blur-sm lg:hidden" data-sidebar-backdrop></div>
 
         <aside id="app-sidebar" class="fixed inset-y-0 left-0 z-50 flex w-80 max-w-[86vw] -translate-x-full flex-col border-r border-slate-200 bg-white shadow-2xl transition-transform duration-300 ease-out lg:fixed lg:inset-y-0 lg:w-72 lg:max-w-none lg:translate-x-0 lg:shadow-sm" data-sidebar>
             <div class="flex h-16 items-center justify-between border-b border-slate-200 px-5">
                 <div class="flex min-w-0 items-center">
-                    <img src="{{ asset('brand/digitofina-mark.svg') }}" alt="DigitoFina" class="h-10 w-10 rounded-lg shadow-sm ring-1 ring-slate-200">
+                    <img src="{{ $layoutLogoUrl }}" alt="{{ $layoutOrganization?->name ?? 'DigitoFina' }}" class="h-10 w-10 rounded-lg object-cover shadow-sm ring-1 ring-slate-200">
                     <div class="ml-3 min-w-0">
-                        <div class="truncate font-semibold tracking-tight text-slate-950">DigitoFina</div>
+                        <div class="truncate font-semibold tracking-tight text-slate-950">{{ $layoutOrganization?->name ?? 'DigitoFina' }}</div>
                         <div class="truncate text-xs text-slate-500">Microfinance operating core</div>
                     </div>
                 </div>
@@ -223,14 +254,30 @@
                             <path d="M4 7h16M4 12h16M4 17h16" />
                         </svg>
                     </button>
-                    @if(! auth()->user()->isMember() && ! auth()->user()->isTellerCashier() && auth()->user()->canAccessModule('clients'))
-                        <form action="{{ route('clients.index') }}" class="hidden flex-1 sm:block">
-                            <input name="search" class="h-11 w-full max-w-xl rounded-xl border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-4 focus:ring-brand-100" placeholder="Search client, phone, account or national ID">
+                    @if(! auth()->user()->isMember())
+                        <form action="{{ route('staff-directory.index') }}" class="hidden flex-1 sm:block">
+                            <input name="search" class="h-11 w-full max-w-xl rounded-xl border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-4 focus:ring-brand-100" placeholder="Search users by name, role, branch or phone">
                         </form>
                     @else
                         <div class="hidden flex-1 text-sm font-medium text-slate-500 sm:block">Member self-service portal</div>
                     @endif
                     <div class="flex items-center gap-3 text-sm">
+                        @if($layoutCanUseChat)
+                            <a href="{{ route('chat.index') }}" class="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 shadow-sm transition hover:bg-brand-50 hover:text-brand-900" aria-label="Team chat">
+                                <span class="relative">
+                                    <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewBox="0 0 24 24">
+                                        <path d="M4 5h16v10H7l-3 3V5z" />
+                                    </svg>
+                                    @if($layoutChatUnreadCount > 0)
+                                        <span class="absolute -right-2 -top-2 grid min-h-5 min-w-5 place-items-center rounded-full bg-red-600 px-1 text-[0.65rem] font-bold leading-none text-white" data-chat-unread-count>
+                                            {{ $layoutChatUnreadCount > 99 ? '99+' : $layoutChatUnreadCount }}
+                                        </span>
+                                    @else
+                                        <span class="hidden absolute -right-2 -top-2 min-h-5 min-w-5 place-items-center rounded-full bg-red-600 px-1 text-[0.65rem] font-bold leading-none text-white" data-chat-unread-count></span>
+                                    @endif
+                                </span>
+                            </a>
+                        @endif
                         @include('notifications.dropdown')
                         <span class="hidden text-slate-500 md:inline">{{ auth()->user()->branch?->name }}</span>
                         <a href="{{ route('profile.edit') }}" class="max-w-32 truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 hover:bg-brand-50 sm:max-w-none">{{ auth()->user()->name }}</a>
@@ -247,9 +294,9 @@
                         <form method="POST" action="{{ route('logout') }}" class="hidden sm:block">@csrf<button class="rounded-lg bg-slate-900 px-3 py-1.5 font-semibold text-white hover:bg-brand-800">Logout</button></form>
                     </div>
                 </div>
-                @if(! auth()->user()->isMember() && ! auth()->user()->isTellerCashier() && auth()->user()->canAccessModule('clients'))
-                    <form action="{{ route('clients.index') }}" class="border-t border-slate-100 px-4 py-2 sm:hidden">
-                        <input name="search" class="h-11 rounded-xl border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-4 focus:ring-brand-100" placeholder="Search clients, phone, ID">
+                @if(! auth()->user()->isMember())
+                    <form action="{{ route('staff-directory.index') }}" class="border-t border-slate-100 px-4 py-2 sm:hidden">
+                        <input name="search" class="h-11 rounded-xl border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-4 focus:ring-brand-100" placeholder="Search users, role, branch">
                     </form>
                 @endif
             </header>
@@ -286,6 +333,10 @@
                 <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 4h16v6H4z M4 14h7v6H4z M15 14h5v6h-5z"/></svg>
                 <span>Home</span>
             </a>
+            <a href="{{ route('chat.index') }}" class="{{ request()->routeIs('chat.*') ? 'is-active' : '' }}">
+                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 5h16v10H7l-3 3V5z"/></svg>
+                <span>Chat</span>
+            </a>
             @if(auth()->user()->canAccessModule('clients') && auth()->user()->canPerform('manage-clients'))
                 <a href="{{ route('clients.index') }}" class="{{ request()->routeIs('clients.*') ? 'is-active' : '' }}">
                     <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0"/></svg>
@@ -309,6 +360,9 @@
                 <span>Menu</span>
             </button>
         </nav>
+    @endif
+    @if($layoutCanUseChat)
+        <div class="fixed bottom-24 right-4 z-[70] grid w-[min(24rem,calc(100vw-2rem))] gap-3 sm:bottom-4" data-chat-toast-region></div>
     @endif
     <div class="fixed inset-0 z-[120] hidden items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" data-confirm-dialog aria-hidden="true">
         <div class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl ring-1 ring-slate-950/10" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">

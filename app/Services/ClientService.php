@@ -49,7 +49,7 @@ class ClientService
                 route('clients.show', $client),
                 'client',
                 'success',
-                ['client_id' => $client->id, 'client_number' => $client->client_number],
+                ['client_id' => $client->id, 'client_number' => $client->client_number, 'actor_id' => $officer->id],
             );
             $this->notifications->notifyClient(
                 $client->loadMissing('user'),
@@ -181,7 +181,7 @@ class ClientService
                 route('clients.show', $client),
                 'client',
                 'info',
-                ['client_id' => $client->id, 'client_number' => $client->client_number],
+                ['client_id' => $client->id, 'client_number' => $client->client_number, 'actor_id' => $user->id],
             );
 
             return $client->refresh();
