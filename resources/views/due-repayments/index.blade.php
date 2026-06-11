@@ -65,10 +65,10 @@
                     <td>{{ $schedule->loan->product->name }}</td>
                     <td>
                         @if($schedule->loan->officer)
-                            <a href="{{ route('staff-directory.show', $schedule->loan->officer) }}" class="font-semibold text-brand-700">{{ $schedule->loan->officer->name }}</a>
+                            <span class="font-semibold text-slate-950">{{ $schedule->loan->officer->name }}</span>
                             <div class="mt-1 text-xs text-slate-500">{{ $schedule->loan->officer->phone ?? $schedule->loan->officer->email }}</div>
                             @if((int) $schedule->loan->officer_id !== (int) auth()->id())
-                                <a href="{{ route('chat.index', ['recipient_id' => $schedule->loan->officer_id, 'loan_id' => $schedule->loan_id]) }}" class="mt-1 inline-flex text-xs font-semibold text-brand-700">Chat reminder</a>
+                                <a href="{{ route('chat.index', ['recipient_id' => $schedule->loan->officer_id, 'client_id' => $schedule->loan->client_id, 'loan_id' => $schedule->loan_id]) }}" class="mt-1 inline-flex text-xs font-semibold text-brand-700">Chat reminder</a>
                             @endif
                         @else
                             <span class="text-slate-500">Unassigned</span>

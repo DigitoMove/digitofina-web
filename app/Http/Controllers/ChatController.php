@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ChatConversation;
 use App\Models\ChatMessage;
+use App\Models\Client;
 use App\Models\Loan;
 use App\Models\User;
 use App\Services\LoanVisibilityService;
@@ -11,7 +12,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -23,7 +26,7 @@ class ChatController extends Controller
 
         $user = $request->user();
         $conversations = $this->conversationQuery($user)
-            ->with(['participantOne.role', 'participantTwo.role', 'loan.client', 'latestMessage'])
+            ->with(['participantOne.role', 'participantTwo.role', 'loan.client', 'client', 'latestMessage'])
             ->withCount(['messages as unread_messages_count' => fn (Builder $query): Builder => $query
                 ->where('sender_id', '!=', $user->id)
                 ->whereNull('read_at')])
@@ -39,10 +42,22 @@ class ChatController extends Controller
             ->limit(150)
             ->get();
 
+        $clients = $this->visibleClientQuery($user)
+            ->with(['branch', 'officer'])
+            ->latest('registered_at')
+            ->limit(250)
+            ->get();
+        $selectedClient = $this->visibleClient($user, $request->integer('client_id'), false);
+
+        if ($selectedClient && ! $clients->contains(fn (Client $client): bool => (int) $client->id === (int) $selectedClient->id)) {
+            $clients->prepend($selectedClient);
+        }
+
         return view('chat.index', [
             'conversations' => $conversations,
             'recipients' => $this->eligibleRecipientQuery($user)->with(['role', 'branch'])->orderBy('name')->limit(200)->get(),
             'loans' => $loans,
+            'clients' => $clients,
         ]);
     }
 
@@ -50,16 +65,13 @@ class ChatController extends Controller
     {
         abort_if($request->user()->isMember(), 403);
 
-        $data = $request->validate([
-            'recipient_id' => ['required', 'integer', 'exists:users,id'],
-            'loan_id' => ['nullable', 'integer', 'exists:loans,id'],
-            'body' => ['required', 'string', 'max:2000'],
-        ]);
+        $data = $request->validate($this->conversationValidationRules());
 
         $recipient = $this->eligibleRecipientQuery($request->user())->whereKey($data['recipient_id'])->firstOrFail();
         $loan = $this->visibleLoan($request->user(), $data['loan_id'] ?? null);
-        $conversation = $this->conversationFor($request->user(), $recipient, $loan);
-        $this->createMessage($conversation, $request->user(), $data['body']);
+        $client = $loan?->client ?: $this->visibleClient($request->user(), $data['client_id'] ?? null);
+        $conversation = $this->conversationFor($request->user(), $recipient, $loan, $client);
+        $this->createMessage($conversation, $request->user(), $data['body'] ?? null, $request->file('attachment'));
 
         return redirect()->route('chat.show', $conversation)->with('status', 'Message sent.');
     }
@@ -67,7 +79,7 @@ class ChatController extends Controller
     public function show(Request $request, ChatConversation $conversation): View
     {
         $this->authorizeParticipant($request->user(), $conversation);
-        $conversation->load(['participantOne.role', 'participantTwo.role', 'loan.client']);
+        $conversation->load(['participantOne.role', 'participantTwo.role', 'loan.client', 'client']);
         $this->markRead($conversation, $request->user());
 
         return view('chat.show', [
@@ -81,10 +93,8 @@ class ChatController extends Controller
     {
         $this->authorizeParticipant($request->user(), $conversation);
 
-        $data = $request->validate([
-            'body' => ['required', 'string', 'max:2000'],
-        ]);
-        $message = $this->createMessage($conversation, $request->user(), $data['body'])->load('sender');
+        $data = $request->validate($this->messageValidationRules());
+        $message = $this->createMessage($conversation, $request->user(), $data['body'] ?? null, $request->file('attachment'))->load('sender');
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -128,7 +138,7 @@ class ChatController extends Controller
         ]);
         $user = $request->user();
         $messages = ChatMessage::query()
-            ->with(['sender', 'conversation.participantOne', 'conversation.participantTwo', 'conversation.loan.client'])
+            ->with(['sender', 'conversation.participantOne', 'conversation.participantTwo', 'conversation.loan.client', 'conversation.client'])
             ->whereHas('conversation', fn (Builder $query): Builder => $this->conversationQuery($user, $query))
             ->where('sender_id', '!=', $user->id)
             ->when($data['after_id'] ?? null, fn (Builder $query, int $messageId): Builder => $query->where('id', '>', $messageId))
@@ -146,11 +156,9 @@ class ChatController extends Controller
             'messages' => $messages->map(fn (ChatMessage $message): array => [
                 'id' => $message->id,
                 'sender' => $message->sender?->name ?? 'Unknown user',
-                'body' => $message->body,
+                'body' => $this->messagePreview($message),
                 'conversation_url' => route('chat.show', $message->conversation),
-                'context' => $message->conversation->loan
-                    ? $message->conversation->loan->loan_number.' · '.$message->conversation->loan->client?->full_name
-                    : 'Direct message',
+                'context' => $this->conversationContext($message->conversation),
                 'time' => $message->created_at?->diffForHumans(),
             ])->values(),
         ]);
@@ -184,6 +192,32 @@ class ChatController extends Controller
             ->when(! $user->hasRole('super-admin') && ! $organizationId && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
     }
 
+    /**
+     * @return Builder<Client>
+     */
+    private function visibleClientQuery(User $user): Builder
+    {
+        $organizationId = $user->organization_id ?: $user->branch?->organization_id;
+
+        return Client::withoutGlobalScope('tenant')
+            ->when(! $user->hasRole('super-admin') && $organizationId, fn (Builder $query): Builder => $query->where('organization_id', $organizationId))
+            ->when(! $user->hasRole('super-admin') && ! $organizationId && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->when(! $user->hasRole('super-admin') && ! $organizationId && ! $user->branch_id, fn (Builder $query): Builder => $query->whereRaw('1 = 0'));
+    }
+
+    private function visibleClient(User $user, int|string|null $clientId, bool $fail = true): ?Client
+    {
+        if (! $clientId) {
+            return null;
+        }
+
+        $query = $this->visibleClientQuery($user)
+            ->with(['branch', 'officer'])
+            ->whereKey($clientId);
+
+        return $fail ? $query->firstOrFail() : $query->first();
+    }
+
     private function visibleLoan(User $user, int|string|null $loanId): ?Loan
     {
         if (! $loanId) {
@@ -197,46 +231,87 @@ class ChatController extends Controller
             ->firstOrFail();
     }
 
-    private function conversationFor(User $sender, User $recipient, ?Loan $loan): ChatConversation
+    private function conversationFor(User $sender, User $recipient, ?Loan $loan, ?Client $client): ChatConversation
     {
+        $client = $loan?->client ?: $client;
         [$participantOneId, $participantTwoId] = collect([$sender->id, $recipient->id])->sort()->values()->all();
 
         $conversation = ChatConversation::query()
             ->where('participant_one_id', $participantOneId)
             ->where('participant_two_id', $participantTwoId)
             ->where('loan_id', $loan?->id)
+            ->where('client_id', $client?->id)
             ->first();
 
         if ($conversation) {
             return $conversation;
         }
 
+        if ($loan) {
+            $conversation = ChatConversation::query()
+                ->where('participant_one_id', $participantOneId)
+                ->where('participant_two_id', $participantTwoId)
+                ->where('loan_id', $loan->id)
+                ->whereNull('client_id')
+                ->first();
+
+            if ($conversation) {
+                $conversation->update(['client_id' => $client?->id]);
+
+                return $conversation;
+            }
+        }
+
         return ChatConversation::create([
-            'organization_id' => $loan?->organization_id ?? $sender->organization_id ?? $recipient->organization_id,
-            'branch_id' => $loan?->branch_id ?? $sender->branch_id ?? $recipient->branch_id,
+            'organization_id' => $loan?->organization_id ?? $client?->organization_id ?? $sender->organization_id ?? $recipient->organization_id,
+            'branch_id' => $loan?->branch_id ?? $client?->branch_id ?? $sender->branch_id ?? $recipient->branch_id,
             'participant_one_id' => $participantOneId,
             'participant_two_id' => $participantTwoId,
             'initiated_by' => $sender->id,
             'loan_id' => $loan?->id,
+            'client_id' => $client?->id,
             'last_message_at' => now(),
         ]);
     }
 
-    private function createMessage(ChatConversation $conversation, User $sender, string $body): ChatMessage
+    private function createMessage(ChatConversation $conversation, User $sender, ?string $body, ?UploadedFile $attachment = null): ChatMessage
     {
-        $body = trim($body);
+        $body = trim((string) $body);
 
-        if ($body === '') {
+        if ($body === '' && ! $attachment) {
             throw ValidationException::withMessages(['body' => 'Message cannot be empty.']);
         }
 
         $message = $conversation->messages()->create([
             'sender_id' => $sender->id,
             'body' => $body,
+            ...$this->attachmentData($conversation, $attachment),
         ]);
         $conversation->update(['last_message_at' => Carbon::now()]);
 
         return $message;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function attachmentData(ChatConversation $conversation, ?UploadedFile $attachment): array
+    {
+        if (! $attachment) {
+            return [];
+        }
+
+        $mime = $attachment->getMimeType() ?: $attachment->getClientMimeType();
+        $path = $attachment->store("chat/{$conversation->id}", 'public');
+
+        return [
+            'attachment_disk' => 'public',
+            'attachment_path' => $path,
+            'attachment_name' => $attachment->getClientOriginalName(),
+            'attachment_mime' => $mime,
+            'attachment_size' => $attachment->getSize(),
+            'attachment_type' => str_starts_with((string) $mime, 'image/') ? 'photo' : 'voice',
+        ];
     }
 
     private function authorizeParticipant(User $user, ChatConversation $conversation): void
@@ -274,6 +349,84 @@ class ChatController extends Controller
             'is_mine' => (int) $message->sender_id === (int) $user->id,
             'time' => $message->created_at?->format('d M Y H:i'),
             'created_at' => $message->created_at?->toIso8601String(),
+            'attachment' => $this->attachmentPayload($message),
+        ];
+    }
+
+    /**
+     * @return array<string, string|int|null>|null
+     */
+    private function attachmentPayload(ChatMessage $message): ?array
+    {
+        if (! $message->attachment_path) {
+            return null;
+        }
+
+        $disk = $message->attachment_disk ?: 'public';
+
+        return [
+            'url' => Storage::disk($disk)->url($message->attachment_path),
+            'name' => $message->attachment_name,
+            'mime' => $message->attachment_mime,
+            'size' => $message->attachment_size,
+            'type' => $message->attachment_type,
+        ];
+    }
+
+    private function messagePreview(ChatMessage $message): string
+    {
+        $body = trim($message->body);
+
+        if ($body !== '') {
+            return $body;
+        }
+
+        return match ($message->attachment_type) {
+            'photo' => 'Photo attachment',
+            'voice' => 'Voice note',
+            default => 'Attachment',
+        };
+    }
+
+    private function conversationContext(ChatConversation $conversation): string
+    {
+        if ($conversation->loan) {
+            return $conversation->loan->loan_number.' - '.$this->clientName($conversation->loan->client);
+        }
+
+        if ($conversation->client) {
+            return $conversation->client->client_number.' - '.$this->clientName($conversation->client);
+        }
+
+        return 'Direct message';
+    }
+
+    private function clientName(?Client $client): string
+    {
+        return $client?->full_name ?: $client?->business_name ?: $client?->client_number ?: 'Client';
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    private function conversationValidationRules(): array
+    {
+        return [
+            'recipient_id' => ['required', 'integer', 'exists:users,id'],
+            'client_id' => ['nullable', 'integer', 'exists:clients,id'],
+            'loan_id' => ['nullable', 'integer', 'exists:loans,id'],
+            ...$this->messageValidationRules(),
+        ];
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    private function messageValidationRules(): array
+    {
+        return [
+            'body' => ['nullable', 'required_without:attachment', 'string', 'max:2000'],
+            'attachment' => ['nullable', 'file', 'max:12288', 'mimetypes:image/jpeg,image/png,image/webp,audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/webm,video/webm'],
         ];
     }
 }

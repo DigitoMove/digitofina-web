@@ -9,6 +9,7 @@ use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\ClientController;
+use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientDocumentController;
 use App\Http\Controllers\ClientGroupController;
 use App\Http\Controllers\ClientKycController;
@@ -38,7 +39,6 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SavingsAccountController;
 use App\Http\Controllers\SavingsProductController;
 use App\Http\Controllers\SavingsTransactionController;
-use App\Http\Controllers\StaffDirectoryController;
 use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\TellerDrawerController;
 use App\Http\Controllers\TransactionDeletionController;
@@ -70,8 +70,8 @@ Route::middleware(['tenant', 'guest'])->group(function () {
 Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
-    Route::get('/staff-directory', [StaffDirectoryController::class, 'index'])->name('staff-directory.index');
-    Route::get('/staff-directory/{staff}', [StaffDirectoryController::class, 'show'])->name('staff-directory.show');
+    Route::get('/client-directory', [ClientDirectoryController::class, 'index'])->name('client-directory.index');
+    Route::get('/client-directory/{client}', [ClientDirectoryController::class, 'show'])->name('client-directory.show');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
     Route::post('/chat', [ChatController::class, 'store'])->name('chat.store');
     Route::get('/chat/poll', [ChatController::class, 'poll'])->name('chat.poll');

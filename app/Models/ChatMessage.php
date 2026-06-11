@@ -13,6 +13,7 @@ class ChatMessage extends Model
     {
         return [
             'read_at' => 'datetime',
+            'attachment_size' => 'integer',
         ];
     }
 

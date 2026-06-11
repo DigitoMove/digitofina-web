@@ -48,6 +48,11 @@ class ChatConversation extends Model
         return $this->belongsTo(Loan::class);
     }
 
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(Client::class);
+    }
+
     public function messages(): HasMany
     {
         return $this->hasMany(ChatMessage::class, 'conversation_id');

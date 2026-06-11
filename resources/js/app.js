@@ -219,28 +219,127 @@ const initChatNotifications = () => {
 
 const createChatMessageElement = (message) => {
     const wrapper = document.createElement('div');
-    wrapper.className = `mb-3 flex ${message.is_mine ? 'justify-end' : 'justify-start'}`;
+    wrapper.className = `mb-4 flex ${message.is_mine ? 'justify-end' : 'justify-start'}`;
     wrapper.dataset.chatMessageId = message.id;
 
     const bubble = document.createElement('div');
-    bubble.className = `max-w-[min(34rem,85%)] rounded-xl px-4 py-3 shadow-sm ${message.is_mine ? 'bg-brand-700 text-white' : 'border border-slate-200 bg-white text-slate-900'}`;
+    bubble.className = `max-w-[min(44rem,92%)] rounded-xl px-4 py-3 shadow-sm ${message.is_mine ? 'bg-brand-700 text-white' : 'border border-slate-200 bg-white text-slate-900'}`;
 
     const sender = document.createElement('div');
     sender.className = `text-xs font-semibold ${message.is_mine ? 'text-brand-50' : 'text-slate-500'}`;
     sender.textContent = message.sender;
 
-    const body = document.createElement('div');
-    body.className = 'mt-1 whitespace-pre-wrap text-sm leading-6';
-    body.textContent = message.body;
+    bubble.append(sender);
+
+    if ((message.body || '').trim() !== '') {
+        const body = document.createElement('div');
+        body.className = 'mt-1 whitespace-pre-wrap text-sm leading-6';
+        body.textContent = message.body;
+        bubble.append(body);
+    }
+
+    if (message.attachment?.url) {
+        const mime = message.attachment.mime || '';
+
+        if (mime.startsWith('image/') || message.attachment.type === 'photo') {
+            const link = document.createElement('a');
+            link.href = message.attachment.url;
+            link.target = '_blank';
+            link.rel = 'noopener';
+            link.className = 'mt-3 block';
+
+            const image = document.createElement('img');
+            image.src = message.attachment.url;
+            image.alt = message.attachment.name || 'Chat photo';
+            image.className = 'max-h-80 rounded-lg object-contain';
+
+            link.append(image);
+            bubble.append(link);
+        } else {
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.src = message.attachment.url;
+            audio.className = 'mt-3 w-full max-w-full';
+            bubble.append(audio);
+        }
+    }
 
     const time = document.createElement('div');
     time.className = `mt-2 text-[0.7rem] ${message.is_mine ? 'text-brand-50/80' : 'text-slate-400'}`;
     time.textContent = message.time || '';
 
-    bubble.append(sender, body, time);
+    bubble.append(time);
     wrapper.append(bubble);
 
     return wrapper;
+};
+
+const initChatVoiceRecording = (scope) => {
+    const recordButton = scope.querySelector('[data-chat-record]');
+    const attachmentInput = scope.querySelector('[data-chat-attachment]');
+    const status = scope.querySelector('[data-chat-record-status]');
+
+    if (!recordButton || !attachmentInput) {
+        return;
+    }
+
+    const setStatus = (message) => {
+        if (status) {
+            status.textContent = message;
+        }
+    };
+
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder || !window.DataTransfer) {
+        recordButton.disabled = true;
+        setStatus('Voice recording unavailable');
+
+        return;
+    }
+
+    let recorder = null;
+    let chunks = [];
+
+    attachmentInput.addEventListener('change', () => {
+        setStatus(attachmentInput.files?.[0]?.name || '');
+    });
+
+    recordButton.addEventListener('click', async () => {
+        if (recorder?.state === 'recording') {
+            recorder.stop();
+
+            return;
+        }
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            chunks = [];
+            recorder = new MediaRecorder(stream);
+
+            recorder.addEventListener('dataavailable', (event) => {
+                if (event.data.size > 0) {
+                    chunks.push(event.data);
+                }
+            });
+
+            recorder.addEventListener('stop', () => {
+                stream.getTracks().forEach((track) => track.stop());
+
+                const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+                const file = new File([blob], `voice-note-${Date.now()}.webm`, { type: blob.type || 'audio/webm' });
+                const transfer = new DataTransfer();
+                transfer.items.add(file);
+                attachmentInput.files = transfer.files;
+                recordButton.textContent = 'Record Voice';
+                setStatus('Voice note ready');
+            });
+
+            recorder.start();
+            recordButton.textContent = 'Stop Recording';
+            setStatus('Recording...');
+        } catch {
+            setStatus('Microphone unavailable');
+        }
+    });
 };
 
 const initChatConversation = () => {
@@ -255,6 +354,8 @@ const initChatConversation = () => {
     const messageList = scope.querySelector('[data-chat-messages]');
     const form = scope.querySelector('[data-chat-form]');
     const input = scope.querySelector('[data-chat-input]');
+    const attachmentInput = scope.querySelector('[data-chat-attachment]');
+    const recordStatus = scope.querySelector('[data-chat-record-status]');
     let lastMessageId = Math.max(0, ...[...scope.querySelectorAll('[data-chat-message-id]')].map((element) => Number(element.dataset.chatMessageId || 0)));
 
     const scrollToBottom = () => {
@@ -306,13 +407,11 @@ const initChatConversation = () => {
     form?.addEventListener('submit', async (event) => {
         event.preventDefault();
 
-        if (!input?.value.trim()) {
+        if (!input?.value.trim() && !attachmentInput?.files?.length) {
             return;
         }
 
-        const body = input.value;
         const formData = new FormData(form);
-        input.value = '';
 
         try {
             const response = await fetch(sendUrl, {
@@ -331,12 +430,16 @@ const initChatConversation = () => {
 
             appendMessages([payload.message]);
             setChatUnreadCount(Number(payload.unread_count || 0));
+            form.reset();
+            if (recordStatus) {
+                recordStatus.textContent = '';
+            }
         } catch (error) {
-            input.value = body;
             window.alert(error.message);
         }
     });
 
+    initChatVoiceRecording(scope);
     scrollToBottom();
     window.setInterval(fetchMessages, 3000);
 };
