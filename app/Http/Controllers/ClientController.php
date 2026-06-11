@@ -167,7 +167,7 @@ class ClientController extends Controller
 
     public function loans(Client $client): View
     {
-        Gate::authorize('view', $client);
+        Gate::authorize('viewAny', $client);
 
         $client->load([
             'branch',
