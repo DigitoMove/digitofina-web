@@ -60,7 +60,7 @@
         </div>
         <div class="divide-y divide-slate-200">
             @forelse($conversations as $conversation)
-                @php
+                <?php
                     $other = $conversation->otherParticipant(auth()->user());
                     $latestMessage = $conversation->latestMessage;
                     $context = $conversation->loan
@@ -73,7 +73,7 @@
                             'voice' => 'Voice note',
                             default => 'No messages yet.',
                         };
-                @endphp
+                ?>
                 <a href="{{ route('chat.show', $conversation) }}" class="block px-6 py-5 hover:bg-brand-50">
                     <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
