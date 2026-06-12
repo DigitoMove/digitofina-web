@@ -79,9 +79,9 @@
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
                 </button>
 
-                <div class="mt-6 rounded-2xl border border-brand-100 bg-brand-50 p-3 text-center text-xs text-brand-800">
+                {{-- <div class="mt-6 rounded-2xl border border-brand-100 bg-brand-50 p-3 text-center text-xs text-brand-800">
                     Demo access: admin@digitofina.test / password
-                </div>
+                </div> --}}
             </form>
         </section>
     </main>
