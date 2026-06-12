@@ -205,7 +205,7 @@ class User extends Authenticatable
     private function roleAllowsPermission(string $permission): bool
     {
         if ($this->isLoanRecoveryOfficer()) {
-            return in_array($permission, ['manage-clients', 'view-arrears'], true);
+            return in_array($permission, ['manage-clients', 'view-arrears', 'manage-loans'], true);
         }
 
         if ($this->isLoanOfficer()) {
@@ -224,7 +224,7 @@ class User extends Authenticatable
         }
 
         if ($this->isTellerCashier()) {
-            return in_array($permission, ['post-transactions', 'post-repayments', 'request-reversals'], true);
+            return in_array($permission, ['post-transactions', 'post-repayments', 'request-reversals', 'manage-loans'], true);
         }
 
         return true;

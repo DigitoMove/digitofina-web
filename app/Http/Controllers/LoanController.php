@@ -121,7 +121,7 @@ class LoanController extends Controller
 
     public function show(Loan $loan, LoanVisibilityService $visibility, LoanService $service): View
     {
-        Gate::authorize('viewAny', $loan);
+        Gate::authorize('view', $loan);
         $isLoanRecoveryOfficer = request()->user()->isLoanRecoveryOfficer();
 
         if (! $loan->schedules()->exists() && (float) $loan->requested_amount > 0) {

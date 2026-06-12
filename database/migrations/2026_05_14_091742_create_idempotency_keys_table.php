@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('idempotency_keys', function (Blueprint $table) {
             $table->id();
             $table->string('key', 120);
-            $table->string('endpoint', 255);
+            $table->string('endpoint', 64);
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('organization_id')->nullable()->constrained()->nullOnDelete();
             $table->string('request_hash', 64);
@@ -24,7 +24,7 @@ return new class extends Migration
             $table->timestamp('created_at')->useCurrent();
             $table->timestamp('updated_at')->nullable();
 
-            $table->unique(['key', 'endpoint', 'user_id']);
+            $table->unique(['key', 'endpoint', 'user_id'], 'idempotency_key_unique');
             $table->index(['organization_id', 'status']);
         });
     }
