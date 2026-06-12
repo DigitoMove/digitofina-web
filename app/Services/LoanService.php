@@ -1188,6 +1188,7 @@ class LoanService
             }
 
             $journalNumber = 'LR'.now()->format('ymdHis').Str::upper(Str::random(4));
+            $journalSequence = 0;
 
             foreach ([
                 [$counterAccountCode, 'debit', $penaltyPaid + $feesPaid + $interestPaid + $principalPaid],
@@ -1203,7 +1204,7 @@ class LoanService
                         'branch_id' => $loan->branch_id,
                         'created_by' => $user->id,
                         'posted_by' => $user->id,
-                        'journal_number' => $journalNumber,
+                        'journal_number' => $journalNumber.'-'.str_pad((string) ++$journalSequence, 2, '0', STR_PAD_LEFT),
                         'journal_date' => $paymentDate->toDateString(),
                         'description' => $journalMemo,
                         'status' => 'posted',
