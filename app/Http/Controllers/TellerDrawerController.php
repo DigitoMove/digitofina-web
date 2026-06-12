@@ -155,6 +155,7 @@ class TellerDrawerController extends Controller
                 ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
                 ->where('is_active', true)
                 ->where('is_cash_account', false)
+                ->where(fn (Builder $query): Builder => $query->whereNull('drawer_direction')->orWhere('drawer_direction', '!=', 'none'))
                 ->whereIn('type', ['expense', 'income', 'asset', 'liability'])
                 ->when($accountSearch, function (Builder $query, string $search): void {
                     $query->whereAny(['code', 'name', 'type'], 'like', "%{$search}%");

@@ -3,90 +3,61 @@
 @section('content')
 @php
     $reportCount = $groups->flatten(1)->count();
-    $groupDescriptions = [
-        'Executive Financial Pack' => 'Board, management, and accountant review statements.',
-        'General Ledger & Controls' => 'Posting audit, account analysis, and accounting controls.',
-        'Treasury, Cash & Reconciliation' => 'Cash position, teller accountability, and branch reconciliation.',
-        'Credit Portfolio & Risk' => 'Loan book, disbursement, arrears, PAR, recovery, and profitability.',
-        'Deposits & Member Funds' => 'Savings, current accounts, shares, and term deposit liability reports.',
-        'Investments & Managed Funds' => 'Investment balances, returns, maturities, and officer performance.',
-        'Client & Relationship Management' => 'Client, officer, and relationship activity registers.',
-        'Operational Registers' => 'Supporting operational registers and exception lists.',
+    $prioritySlugs = $priorityReports->pluck('slug');
+    $categoryDescriptions = [
+        'Posted Transactions' => 'Cash, system, user, teller, and non-cash transaction histories.',
+        'Treasury' => 'Cash position, teller accountability, and branch reconciliation.',
+        'Clients' => 'Client and relationship activity registers.',
+        'Accounting' => 'General ledger, account analysis, and financial statements.',
+        'Profitability' => 'Income, fees, interest, and branch performance.',
+        'Savings' => 'Savings account activity, balances, holds, and standing orders.',
+        'Shares' => 'Member share accounts, balances, and transactions.',
+        'Loan Application' => 'Application, appraisal, approval, and rejection registers.',
+        'Loan Accounts' => 'Loan book, repayment, arrears, recovery, and risk reports.',
+        'Term Deposits' => 'Funding, maturity, liquidation, and term-deposit registers.',
+        'Current Accounts' => 'Current account registers and balances.',
+        'Investments' => 'Investment balances, movements, returns, and performance.',
     ];
-    $groupAccents = [
-        'Executive Financial Pack' => 'border-slate-300 bg-slate-50 text-slate-800',
-        'General Ledger & Controls' => 'border-sky-200 bg-sky-50 text-sky-800',
-        'Treasury, Cash & Reconciliation' => 'border-emerald-200 bg-emerald-50 text-emerald-800',
-        'Credit Portfolio & Risk' => 'border-blue-200 bg-blue-50 text-blue-800',
-        'Deposits & Member Funds' => 'border-teal-200 bg-teal-50 text-teal-800',
-        'Investments & Managed Funds' => 'border-indigo-200 bg-indigo-50 text-indigo-800',
-        'Client & Relationship Management' => 'border-amber-200 bg-amber-50 text-amber-800',
-        'Operational Registers' => 'border-zinc-200 bg-zinc-50 text-zinc-800',
+    $categoryAccents = [
+        'Posted Transactions' => 'border-amber-200 bg-amber-50 text-amber-900',
+        'Treasury' => 'border-emerald-200 bg-emerald-50 text-emerald-900',
+        'Clients' => 'border-orange-200 bg-orange-50 text-orange-900',
+        'Accounting' => 'border-sky-200 bg-sky-50 text-sky-900',
+        'Profitability' => 'border-violet-200 bg-violet-50 text-violet-900',
+        'Savings' => 'border-slate-200 bg-slate-50 text-slate-900',
+        'Shares' => 'border-yellow-200 bg-yellow-50 text-yellow-900',
+        'Loan Application' => 'border-cyan-200 bg-cyan-50 text-cyan-900',
+        'Loan Accounts' => 'border-blue-200 bg-blue-50 text-blue-900',
+        'Term Deposits' => 'border-green-200 bg-green-50 text-green-900',
+        'Current Accounts' => 'border-zinc-200 bg-zinc-50 text-zinc-900',
+        'Investments' => 'border-indigo-200 bg-indigo-50 text-indigo-900',
     ];
 @endphp
 
 <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
     <div>
-        <h1 class="df-title">Financial Reports</h1>
-        <p class="df-muted">Professional report packs for accounting, treasury, credit risk, deposits, investments, and branch performance.</p>
+        <p class="text-sm font-medium text-slate-500">Finance & Operations</p>
+        <h1 class="df-title">Reports</h1>
+        <p class="df-muted">Choose a report, set its filters, and generate it.</p>
     </div>
-    <div class="grid gap-2 text-right text-sm">
+    <div class="rounded border border-slate-200 bg-white px-4 py-3 text-right shadow-sm">
         <div class="font-semibold text-slate-950">{{ number_format($reportCount) }} reports available</div>
-        <div class="text-slate-500">Default period: {{ \Carbon\Carbon::parse($defaultFrom)->format('d M Y') }} to {{ \Carbon\Carbon::parse($defaultTo)->format('d M Y') }}</div>
+        <div class="text-xs text-slate-500">Default period: {{ \Carbon\Carbon::parse($defaultFrom)->format('d M Y') }} to {{ \Carbon\Carbon::parse($defaultTo)->format('d M Y') }}</div>
     </div>
 </div>
 
-@if($priorityReports->isNotEmpty())
-    <section class="mb-6">
-        <div class="mb-3 flex items-center justify-between gap-3">
-            <div>
-                <h2 class="text-lg font-semibold text-slate-950">Management Pack</h2>
-                <p class="text-sm text-slate-500">Start here for the reports most finance teams review daily, weekly, or monthly.</p>
-            </div>
-        </div>
-        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            @foreach($priorityReports as $report)
-                <button
-                    type="button"
-                    class="rounded border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-brand-300 hover:bg-brand-50/40 hover:shadow"
-                    data-report-open
-                    data-report-title="{{ $report['title'] }}"
-                    data-report-description="{{ $report['description'] }}"
-                    data-report-url="{{ route('reports.show', $report['slug']) }}"
-                    data-report-dates="{{ $report['usesDates'] ? '1' : '0' }}"
-                    data-report-detail="{{ $report['hasDetail'] ? '1' : '0' }}"
-                    data-report-profitability="{{ $report['category'] === 'Profitability' ? '1' : '0' }}"
-                    data-report-interest-basis="{{ $report['payload']['interest_basis'] ?? 'collected' }}"
-                >
-                    <span class="block text-xs font-semibold uppercase text-slate-500">{{ $report['category'] }}</span>
-                    <span class="mt-1 block font-semibold text-slate-950">{{ $report['title'] }}</span>
-                    <span class="mt-2 block text-sm leading-5 text-slate-600">{{ $report['description'] }}</span>
-                    <span class="mt-3 inline-flex text-sm font-semibold text-brand-700">Generate report</span>
-                </button>
-            @endforeach
-        </div>
-    </section>
-@endif
-
-<div class="grid gap-5 xl:grid-cols-2">
-    @foreach($groups as $group => $reports)
-        <section class="overflow-hidden rounded border border-slate-200 bg-white shadow-sm">
-            <div class="border-b border-slate-200 px-5 py-4">
-                <div class="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <div class="inline-flex rounded border px-2.5 py-1 text-xs font-semibold {{ $groupAccents[$group] ?? 'border-slate-200 bg-slate-50 text-slate-700' }}">
-                            {{ $group }}
-                        </div>
-                        <p class="mt-2 text-sm text-slate-500">{{ $groupDescriptions[$group] ?? 'Reports and registers for review.' }}</p>
-                    </div>
-                    <div class="rounded bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{{ $reports->count() }} reports</div>
-                </div>
+<div class="columns-1 gap-5 md:columns-2 xl:columns-3 2xl:columns-4">
+    @foreach($groups as $category => $reports)
+        <section class="mb-5 break-inside-avoid overflow-hidden rounded border border-slate-200 bg-white shadow-sm">
+            <div class="border-b px-4 py-3 text-center {{ $categoryAccents[$category] ?? 'border-slate-200 bg-slate-50 text-slate-900' }}">
+                <div class="font-semibold">{{ $category }}</div>
+                <p class="mt-1 text-xs opacity-75">{{ $categoryDescriptions[$category] ?? 'Operational reports and registers.' }}</p>
             </div>
             <div class="divide-y divide-slate-100">
                 @foreach($reports as $report)
                     <button
                         type="button"
-                        class="grid w-full gap-2 px-5 py-4 text-left transition hover:bg-slate-50"
+                        class="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-900"
                         data-report-open
                         data-report-title="{{ $report['title'] }}"
                         data-report-description="{{ $report['description'] }}"
@@ -95,17 +66,14 @@
                         data-report-detail="{{ $report['hasDetail'] ? '1' : '0' }}"
                         data-report-profitability="{{ $report['category'] === 'Profitability' ? '1' : '0' }}"
                         data-report-interest-basis="{{ $report['payload']['interest_basis'] ?? 'collected' }}"
+                        data-report-ledger="{{ in_array($report['kind'], ['journal_entries', 'non_cash_transactions'], true) ? '1' : '0' }}"
                     >
-                        <span class="flex flex-wrap items-center justify-between gap-2">
-                            <span class="font-semibold text-slate-950">{{ $report['title'] }}</span>
-                            <span class="text-sm font-semibold text-brand-700">Generate</span>
-                        </span>
-                        <span class="text-sm leading-5 text-slate-600">{{ $report['description'] }}</span>
-                        <span class="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
-                            <span class="rounded bg-slate-100 px-2 py-1">{{ $report['category'] }}</span>
-                            <span class="rounded bg-slate-100 px-2 py-1">{{ $report['usesDates'] ? 'Period report' : 'Point-in-time' }}</span>
-                            <span class="rounded bg-slate-100 px-2 py-1">{{ $report['hasDetail'] ? 'Brief or detailed' : 'Register' }}</span>
-                        </span>
+                        <span>{{ $report['title'] }}</span>
+                        @if($prioritySlugs->contains($report['slug']))
+                            <span class="shrink-0 rounded bg-brand-50 px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase text-brand-700">Key</span>
+                        @else
+                            <span class="shrink-0 text-brand-500">›</span>
+                        @endif
                     </button>
                 @endforeach
             </div>
@@ -114,7 +82,7 @@
 </div>
 
 <div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/50 p-4" data-report-modal>
-    <form method="GET" class="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl" data-report-form>
+    <form method="GET" class="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl" data-report-form>
         <div class="flex items-start justify-between gap-4">
             <div>
                 <h2 class="text-lg font-semibold text-slate-950" data-report-modal-title>Generate Report</h2>
@@ -149,6 +117,18 @@
                     </select>
                 </label>
             @endif
+        </div>
+
+        <div class="mt-4" data-report-ledger-field hidden>
+            <label class="text-sm font-medium text-slate-700">Ledger account
+                <select name="chart_account_id" class="mt-1 w-full rounded border-slate-300" disabled>
+                    <option value="">All ledger accounts</option>
+                    @foreach($chartAccounts as $chartAccount)
+                        <option value="{{ $chartAccount->id }}">{{ $chartAccount->code }} · {{ $chartAccount->name }}{{ $chartAccount->branch ? ' · '.$chartAccount->branch->name : '' }}</option>
+                    @endforeach
+                </select>
+                <span class="mt-1 block text-xs text-slate-500">Use this to report on a particular merchant-code, mobile-money, or general ledger account.</span>
+            </label>
         </div>
 
         <div class="mt-4" data-report-interest-field hidden>

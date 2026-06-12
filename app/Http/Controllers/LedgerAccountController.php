@@ -74,7 +74,7 @@ class LedgerAccountController extends Controller
             'name' => ['required', 'string', 'max:191'],
             'type' => ['required', Rule::in(['asset', 'liability', 'equity', 'income', 'expense'])],
             'normal_balance' => ['required', Rule::in(['debit', 'credit'])],
-            'drawer_direction' => ['required', Rule::in(['cash_in', 'cash_out', 'both'])],
+            'drawer_direction' => ['required', Rule::in(['cash_in', 'cash_out', 'both', 'none'])],
         ]);
 
         $branch = Branch::query()->findOrFail($data['branch_id']);
@@ -117,7 +117,7 @@ class LedgerAccountController extends Controller
             'name' => ['required', 'string', 'max:191'],
             'type' => ['required', Rule::in(['asset', 'liability', 'equity', 'income', 'expense'])],
             'normal_balance' => ['required', Rule::in(['debit', 'credit'])],
-            'drawer_direction' => ['nullable', Rule::in(['cash_in', 'cash_out', 'both'])],
+            'drawer_direction' => ['nullable', Rule::in(['cash_in', 'cash_out', 'both', 'none'])],
             'is_cash_account' => ['nullable', 'boolean'],
             'is_system' => ['nullable', 'boolean'],
             'is_active' => ['nullable', 'boolean'],

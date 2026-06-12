@@ -50,4 +50,9 @@ class LoanRepayment extends Model
     {
         return $this->hasMany(LoanRepaymentAllocation::class);
     }
+
+    public function transaction(): BelongsTo
+    {
+        return $this->belongsTo(Transaction::class);
+    }
 }

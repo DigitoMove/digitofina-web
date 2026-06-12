@@ -753,6 +753,7 @@ const initReportLauncher = () => {
     const dateFields = document.querySelector('[data-report-date-fields]');
     const detailField = document.querySelector('[data-report-detail-field]');
     const interestField = document.querySelector('[data-report-interest-field]');
+    const ledgerField = document.querySelector('[data-report-ledger-field]');
 
     if (!modal || !form) {
         return;
@@ -794,6 +795,13 @@ const initReportLauncher = () => {
                 interestField.querySelectorAll('select').forEach((select) => {
                     select.disabled = interestField.hidden;
                     select.value = button.dataset.reportInterestBasis || 'collected';
+                });
+            }
+
+            if (ledgerField) {
+                ledgerField.hidden = button.dataset.reportLedger !== '1';
+                ledgerField.querySelectorAll('select').forEach((select) => {
+                    select.disabled = ledgerField.hidden;
                 });
             }
 
@@ -871,6 +879,55 @@ const initTellerLookup = () => {
     if (modal.dataset.open === '1') {
         open();
     }
+};
+
+const initNonCashLookups = () => {
+    const modals = document.querySelectorAll('[data-non-cash-lookup-modal]');
+    const openButtons = document.querySelectorAll('[data-non-cash-lookup-open]');
+
+    if (!modals.length || !openButtons.length) {
+        return;
+    }
+
+    const close = (modal) => {
+        modal.classList.add('hidden');
+        modal.classList.remove('grid');
+    };
+
+    const open = (modal) => {
+        modal.classList.remove('hidden');
+        modal.classList.add('grid');
+        modal.querySelector('input:not([type="hidden"])')?.focus();
+    };
+
+    openButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const modal = [...modals].find((candidate) => candidate.dataset.nonCashLookupModal === button.dataset.nonCashLookupOpen);
+
+            if (modal) {
+                open(modal);
+            }
+        });
+    });
+
+    modals.forEach((modal) => {
+        modal.querySelectorAll('[data-non-cash-lookup-close]').forEach((button) => button.addEventListener('click', () => close(modal)));
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                close(modal);
+            }
+        });
+
+        if (modal.dataset.open === '1') {
+            open(modal);
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            modals.forEach(close);
+        }
+    });
 };
 
 const initLoanRepairModal = () => {
@@ -1291,6 +1348,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initLoanSchedulePreview();
     initReportLauncher();
     initTellerLookup();
+    initNonCashLookups();
     initLoanRepairModal();
     initLoanReopenModal();
     initLoanCoverageModal();

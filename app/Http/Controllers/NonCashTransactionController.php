@@ -24,9 +24,16 @@ class NonCashTransactionController extends Controller
     {
         abort_unless(! $request->user()->isMember(), 403);
 
+        $historyDates = $request->validate([
+            'history_from' => ['nullable', 'date'],
+            'history_to' => ['nullable', 'date'],
+        ]);
         $branchId = $this->branchId($request);
         $accountSearch = $request->string('account_search')->trim()->toString();
         $ledgerSearch = $request->string('ledger_search')->trim()->toString();
+        $historySearch = $request->string('history_search')->trim()->toString();
+        $historyFrom = (string) ($historyDates['history_from'] ?? '');
+        $historyTo = (string) ($historyDates['history_to'] ?? '');
         $selectedAccountTypeId = $request->integer('account_type_id') ?: null;
 
         $selectedAccount = $request->integer('account_id')
@@ -84,6 +91,19 @@ class NonCashTransactionController extends Controller
                 ->orderBy('name')
                 ->limit(12)
                 ->get(),
+            'recentTransactions' => Transaction::query()
+                ->nonCash()
+                ->with(['account.client', 'account.branch', 'type', 'user', 'journalEntries.chartAccount', 'loanRepayment.loan'])
+                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->when($historyFrom !== '', fn (Builder $query): Builder => $query->whereDate('posted_at', '>=', $historyFrom))
+                ->when($historyTo !== '', fn (Builder $query): Builder => $query->whereDate('posted_at', '<=', $historyTo))
+                ->when($historySearch !== '', fn (Builder $query): Builder => $this->searchTransactions($query, $historySearch))
+                ->latest('posted_at')
+                ->limit(50)
+                ->get(),
+            'historySearch' => $historySearch,
+            'historyFrom' => $historyFrom,
+            'historyTo' => $historyTo,
             'receiptTransaction' => $this->receiptTransaction($request),
         ]);
     }
@@ -148,5 +168,23 @@ class NonCashTransactionController extends Controller
             ->whereKey($transactionId)
             ->when(! $this->canSeeAllBranches($request), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
             ->first();
+    }
+
+    private function searchTransactions(Builder $query, string $search): Builder
+    {
+        $likeSearch = "%{$search}%";
+
+        return $query->where(function (Builder $query) use ($likeSearch): void {
+            $query->whereAny(['description', 'reference', 'status'], 'like', $likeSearch)
+                ->orWhereHas('account', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['account_number', 'account_name'], 'like', $likeSearch);
+                })
+                ->orWhereHas('account.client', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['client_number', 'first_name', 'middle_name', 'last_name', 'business_name', 'phone'], 'like', $likeSearch);
+                })
+                ->orWhereHas('journalEntries.chartAccount', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['code', 'name', 'type'], 'like', $likeSearch);
+                });
+        });
     }
 }

@@ -44,7 +44,7 @@
             <h2 class="font-semibold text-slate-950">Generated Results</h2>
             <p class="text-sm text-slate-500">{{ $rows->count() }} row{{ $rows->count() === 1 ? '' : 's' }} shown.</p>
         </div>
-        @if(in_array($definition['kind'], ['transactions', 'teller_transactions', 'journal_entries'], true))
+        @if(in_array($definition['kind'], ['transactions', 'teller_transactions', 'journal_entries', 'non_cash_transactions'], true))
             <div class="grid gap-2">
                 <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="flex flex-wrap items-center justify-end gap-2">
                     <input type="hidden" name="from" value="{{ request('from') }}">

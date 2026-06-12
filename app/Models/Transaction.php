@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToTenant;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Transaction extends Model
 {
@@ -68,5 +70,21 @@ class Transaction extends Model
     public function journalEntries(): HasMany
     {
         return $this->hasMany(JournalEntry::class);
+    }
+
+    public function loanRepayment(): HasOne
+    {
+        return $this->hasOne(LoanRepayment::class);
+    }
+
+    public function scopeNonCash(Builder $query): Builder
+    {
+        return $query
+            ->whereNull('drawer_session_id')
+            ->where(function (Builder $query): void {
+                $query
+                    ->whereHas('journalEntries', fn (Builder $query): Builder => $query->where('journal_number', 'like', 'NC%'))
+                    ->orWhereHas('loanRepayment', fn (Builder $query): Builder => $query->where('payment_method', 'non_cash'));
+            });
     }
 }

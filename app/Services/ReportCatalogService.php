@@ -43,11 +43,11 @@ class ReportCatalogService
     {
         return collect($this->definitions($user))
             ->sortBy([
-                ['group_order', 'asc'],
+                ['category_order', 'asc'],
                 ['sort_order', 'asc'],
                 ['title', 'asc'],
             ])
-            ->groupBy('group');
+            ->groupBy('category');
     }
 
     /**
@@ -75,6 +75,7 @@ class ReportCatalogService
             $this->report('user-posted-transactions', 'Posted Transactions', 'User Posted Transactions', 'transactions', ['posted_by' => 'user']),
             $this->report('system-posted-transactions', 'Posted Transactions', 'System Posted Transactions', 'transactions', ['posted_by' => 'system']),
             $this->report('daily-teller-transactions', 'Posted Transactions', 'Daily Teller Transactions', 'teller_transactions'),
+            $this->report('non-cash-transactions', 'Posted Transactions', 'Non-Cash Transactions', 'non_cash_transactions'),
             $this->report('exchange-rates', 'Treasury', 'Exchange Rates', 'settings', ['setting' => 'currency'], false, false),
             $this->report('cash-balances', 'Treasury', 'Cash Balances', 'cash_balances', [], false),
             $this->report('drawer-balances-by-teller', 'Treasury', 'Drawer Balances By Teller', 'drawer_balances', [], true, false),
@@ -215,6 +216,7 @@ class ReportCatalogService
         [$columns, $rows, $summary] = match ($definition['kind']) {
             'transactions' => $this->transactions($payload, $from, $to, $branchId, $limit, $user, $search),
             'teller_transactions' => $this->tellerTransactions($from, $to, $branchId, $limit, $user, $search),
+            'non_cash_transactions' => $this->nonCashTransactions($from, $to, $branchId, $limit, $user, $chartAccountId, $search),
             'cash_balances' => $this->cashBalances($branchId, $user),
             'drawer_balances' => $this->drawerBalances($from, $to, $branchId, $user),
             'branch_period_summary' => $this->branchPeriodSummary($from, $to, $branchId, $user),
@@ -304,7 +306,7 @@ class ReportCatalogService
 
     /**
      * @param  array<string, mixed>  $definition
-     * @return array{group: string, group_order: int, sort_order: int, description: string, is_priority: bool}
+     * @return array{group: string, group_order: int, category_order: int, sort_order: int, description: string, is_priority: bool}
      */
     private function reportMetadata(array $definition): array
     {
@@ -349,6 +351,7 @@ class ReportCatalogService
             'drawer-balances-by-teller' => 220,
             'branch-period-summary' => 230,
             'daily-teller-transactions' => 240,
+            'non-cash-transactions' => 250,
             'portfolio-summary' => 310,
             'loan-book' => 320,
             'portfolio-at-risk' => 330,
@@ -369,9 +372,25 @@ class ReportCatalogService
             'officer-entries' => 620,
         ][$slug] ?? 900;
 
+        $categoryOrder = [
+            'Posted Transactions' => 10,
+            'Treasury' => 20,
+            'Clients' => 30,
+            'Accounting' => 40,
+            'Profitability' => 50,
+            'Savings' => 60,
+            'Shares' => 70,
+            'Loan Application' => 80,
+            'Loan Accounts' => 90,
+            'Term Deposits' => 100,
+            'Current Accounts' => 110,
+            'Investments' => 120,
+        ][$category] ?? 900;
+
         return [
             'group' => $group,
             'group_order' => $groupOrder,
+            'category_order' => $categoryOrder,
             'sort_order' => $sortOrder,
             'description' => $this->reportDescription($slug, $category, $kind),
             'is_priority' => in_array($slug, [
@@ -411,6 +430,7 @@ class ReportCatalogService
             'drawer-balances-by-teller' => 'Teller drawer accountability and cash position.',
             'branch-period-summary' => 'Branch cash movement, teller activity, and period reconciliation totals.',
             'daily-teller-transactions' => 'Daily teller activity for cash and counter operations.',
+            'non-cash-transactions' => 'Mobile money, merchant-code, bank, and internal postings that did not affect a teller drawer.',
             'portfolio-summary' => 'Loan portfolio totals by status with principal, interest, fees, and penalties.',
             'loan-book' => 'Full loan book for portfolio, product, balance, and maturity review.',
             'portfolio-at-risk' => 'Outstanding overdue exposure for credit-risk monitoring.',
@@ -481,6 +501,52 @@ class ReportCatalogService
         ]);
 
         return [['Date', 'Reference', 'Description', 'Client', 'Type', 'Amount', 'Posted By', 'Action'], $rows, ['Total amount' => $this->money((float) $query->sum('amount'))]];
+    }
+
+    private function nonCashTransactions(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user, ?int $chartAccountId = null, string $search = ''): array
+    {
+        $query = Transaction::query()
+            ->nonCash()
+            ->with(['account.client', 'account.branch', 'type', 'user', 'journalEntries.chartAccount', 'loanRepayment.loan'])
+            ->whereBetween('posted_at', [$from, $to])
+            ->when($chartAccountId, fn (Builder $query, int $chartAccountId): Builder => $query->whereHas('journalEntries', fn (Builder $query): Builder => $query->where('chart_account_id', $chartAccountId)))
+            ->when($search !== '', fn (Builder $query): Builder => $this->searchTransactions($query, $search))
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+
+        $rows = (clone $query)
+            ->latest('posted_at')
+            ->limit($limit)
+            ->get()
+            ->map(function (Transaction $transaction): array {
+                $paymentLedger = $transaction->loanRepayment
+                    ? $transaction->journalEntries->firstWhere('entry_type', 'debit')?->chartAccount
+                    : $transaction->journalEntries->first(fn (JournalEntry $entry): bool => Str::startsWith((string) $entry->journal_number, 'NC'))?->chartAccount;
+
+                return [
+                    'Date & Time' => $transaction->posted_at?->format('d M Y H:i'),
+                    'Reference' => $transaction->reference,
+                    'Client' => $transaction->account?->client?->full_name ?? $transaction->account?->account_name ?? 'N/A',
+                    'Account / Loan' => $transaction->loanRepayment?->loan?->loan_number ?? $transaction->account?->account_number ?? 'N/A',
+                    'Type' => $transaction->type?->name ?? 'N/A',
+                    'Payment Ledger' => $paymentLedger ? $paymentLedger->code.' · '.$paymentLedger->name : 'Unmapped',
+                    'Amount' => $this->money((float) $transaction->amount),
+                    'Posted By' => $transaction->user?->name ?? 'System',
+                    'Description' => $transaction->description ?? '',
+                    '_links' => [
+                        'Reference' => route('receipts.show', $transaction),
+                    ],
+                ];
+            });
+
+        return [
+            ['Date & Time', 'Reference', 'Client', 'Account / Loan', 'Type', 'Payment Ledger', 'Amount', 'Posted By', 'Description'],
+            $rows,
+            [
+                'Transactions' => number_format((clone $query)->count()),
+                'Total received / posted' => $this->money((float) (clone $query)->sum('amount')),
+                'Loan repayments' => $this->money((float) (clone $query)->whereHas('loanRepayment')->sum('amount')),
+            ],
+        ];
     }
 
     private function searchTransactions(Builder $query, string $search): Builder
@@ -1900,16 +1966,27 @@ class ReportCatalogService
     private function scopeBranch(Builder $query, ?int $branchId, User $user): Builder
     {
         $branchColumn = $query->getModel()->qualifyColumn('branch_id');
+        $effectiveBranchId = $branchId;
 
-        if ($branchId) {
-            return $query->where($branchColumn, $branchId);
+        if (! $effectiveBranchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id) {
+            $effectiveBranchId = (int) $user->branch_id;
         }
 
-        if (! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id) {
-            return $query->where($branchColumn, $user->branch_id);
+        if (! $effectiveBranchId) {
+            return $query;
         }
 
-        return $query;
+        if ($query->getModel() instanceof JournalEntry) {
+            return $query->where(function (Builder $query) use ($branchColumn, $effectiveBranchId): void {
+                $query->where($branchColumn, $effectiveBranchId)
+                    ->orWhere(function (Builder $query) use ($branchColumn, $effectiveBranchId): void {
+                        $query->whereNull($branchColumn)
+                            ->whereHas('transaction', fn (Builder $query): Builder => $query->where('branch_id', $effectiveBranchId));
+                    });
+            });
+        }
+
+        return $query->where($branchColumn, $effectiveBranchId);
     }
 
     private function scopeLoanReport(Builder $query, ?int $branchId, User $user): Builder

@@ -276,6 +276,10 @@ class TransactionPostingService
                     throw new InvalidArgumentException('Loan accounts only accept non-cash loan repayments.');
                 }
 
+                if ($offsetAccount->type !== 'asset' || $offsetAccount->normal_balance !== 'debit') {
+                    throw new InvalidArgumentException('Use a debit-normal asset ledger, such as Merchant Code or Mobile Money Clearing, for non-cash loan repayments.');
+                }
+
                 return $this->postNonCashLoanRepayment($account, $type, $offsetAccount, $amount, $user, $description, $postedAt);
             }
 
@@ -410,6 +414,10 @@ class TransactionPostingService
 
             if (! $chartAccount->is_active) {
                 throw new InvalidArgumentException('Selected general ledger account is inactive.');
+            }
+
+            if ($chartAccount->drawer_direction === 'none') {
+                throw new InvalidArgumentException('This ledger account is configured for non-cash use only.');
             }
 
             if ($chartAccount->is_cash_account) {

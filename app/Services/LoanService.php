@@ -1187,6 +1187,8 @@ class LoanService
                 LoanRepaymentAllocation::create($allocation + ['loan_repayment_id' => $repayment->id]);
             }
 
+            $journalNumber = 'LR'.now()->format('ymdHis').Str::upper(Str::random(4));
+
             foreach ([
                 [$counterAccountCode, 'debit', $penaltyPaid + $feesPaid + $interestPaid + $principalPaid],
                 ['4100', 'credit', $interestPaid],
@@ -1197,6 +1199,15 @@ class LoanService
                     $chartAccount = ChartAccount::query()->where('code', $accountCode)->first();
 
                     JournalEntry::create([
+                        'organization_id' => $loan->organization_id,
+                        'branch_id' => $loan->branch_id,
+                        'created_by' => $user->id,
+                        'posted_by' => $user->id,
+                        'journal_number' => $journalNumber,
+                        'journal_date' => $paymentDate->toDateString(),
+                        'description' => $journalMemo,
+                        'status' => 'posted',
+                        'posted_at' => $paymentDate,
                         'transaction_id' => $transactionId,
                         'chart_account_id' => $chartAccount?->id,
                         'reference' => 'LR-'.$repayment->id,

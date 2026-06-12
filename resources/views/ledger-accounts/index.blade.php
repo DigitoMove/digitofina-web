@@ -2,7 +2,7 @@
 
 @php
     $normalBalances = ['debit' => 'Debit', 'credit' => 'Credit'];
-    $drawerDirections = ['cash_in' => 'Adds money to drawer', 'cash_out' => 'Takes money from drawer', 'both' => 'Can add or take drawer money'];
+    $drawerDirections = ['cash_in' => 'Adds money to drawer', 'cash_out' => 'Takes money from drawer', 'both' => 'Can add or take drawer money', 'none' => 'Non-cash only (never use in drawer)'];
     $openCreateModal = old('_ledger_modal') === 'create';
     $selectedTypeLabel = $type ? $accountTypes[$type] : 'All Ledger Accounts';
 @endphp
@@ -71,7 +71,7 @@
                         <td>{{ str($account->type)->headline() }} · {{ str($account->normal_balance)->headline() }}</td>
                         <td>{{ $account->parent ? $account->parent->code.' · '.$account->parent->name : 'No parent' }}</td>
                         <td>
-                            <div>{{ str($account->drawer_direction ?: 'both')->headline() }}</div>
+                            <div>{{ $account->drawer_direction === 'none' ? 'Non-cash only' : str($account->drawer_direction ?: 'both')->headline() }}</div>
                             <div class="text-xs text-slate-500">
                                 @if($account->branch?->drawers?->isNotEmpty())
                                     {{ $account->branch->drawers->pluck('code')->join(', ') }}

@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Branch;
+use App\Models\ChartAccount;
 use App\Services\ReportCatalogService;
 use App\Support\ApiSecurity;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -19,6 +21,16 @@ class ReportController extends Controller
             'groups' => $reports->grouped($request->user()),
             'priorityReports' => $reports->priorityReports($request->user()),
             'branches' => Branch::query()->orderBy('name')->get(),
+            'chartAccounts' => ChartAccount::query()
+                ->with('branch')
+                ->where('is_active', true)
+                ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), function (Builder $query) use ($request): void {
+                    $query->where(function (Builder $query) use ($request): void {
+                        $query->where('branch_id', $request->user()->branch_id)->orWhereNull('branch_id');
+                    });
+                })
+                ->orderBy('code')
+                ->get(),
             'canChooseBranch' => ApiSecurity::hasGlobalBranchAccess($request->user()),
             'defaultFrom' => today()->toDateString(),
             'defaultTo' => now()->toDateString(),
