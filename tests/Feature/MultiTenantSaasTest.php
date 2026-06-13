@@ -133,6 +133,36 @@ it('allows organization admins to create and update users with all branch access
     expect($recoveryOfficer->fresh()->branch_id)->toBeNull();
 });
 
+it('allows organization admins to create organization users without an assigned manage users permission', function () {
+    [$organization, $branch, $organizationAdmin] = tenantUser([]);
+    $organizationAdmin->role->update(['name' => 'Organization Admin', 'slug' => 'organization-admin']);
+    $staffRole = Role::create([
+        'organization_id' => $organization->id,
+        'name' => 'Cashier',
+        'slug' => 'cashier',
+    ]);
+
+    $this->actingAs($organizationAdmin)
+        ->post(route('users.store'), [
+            'role_id' => $staffRole->id,
+            'branch_id' => $branch->id,
+            'name' => 'Organization Cashier',
+            'email' => 'organization-cashier@example.test',
+            'phone' => '+256700000903',
+            'status' => 'active',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])
+        ->assertRedirect(route('users.index'))
+        ->assertSessionHasNoErrors();
+
+    $cashier = User::query()->where('email', 'organization-cashier@example.test')->firstOrFail();
+
+    expect($cashier->organization_id)->toBe($organization->id)
+        ->and($cashier->branch_id)->toBe($branch->id)
+        ->and($cashier->role_id)->toBe($staffRole->id);
+});
+
 it('keeps organization clients separated in api responses', function () {
     [$organizationA, $branchA, $userA] = tenantUser(['manage-clients']);
     [$organizationB, $branchB] = tenantShell('Tenant B');

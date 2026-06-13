@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Loan;
 use App\Support\CurrencyDenomination;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -11,7 +12,11 @@ class StoreLoanRepaymentRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->canPerform('post-repayments') ?? false;
+        $loan = $this->route('loan');
+
+        return $this->user()?->canPerform('post-repayments') === true
+            && $loan instanceof Loan
+            && in_array($loan->status, Loan::OPERATIONAL_STATUSES, true);
     }
 
     /**

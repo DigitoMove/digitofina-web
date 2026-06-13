@@ -10,7 +10,8 @@ class StoreUserRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->canPerform('manage-users') ?? false;
+        return $this->user()?->hasRole('organization-admin')
+            || $this->user()?->canPerform('manage-users') === true;
     }
 
     protected function prepareForValidation(): void
@@ -58,6 +59,10 @@ class StoreUserRequest extends FormRequest
 
             if ($roleSlug === 'super-admin') {
                 return;
+            }
+
+            if ($role?->organization_id !== null && (int) $role->organization_id !== (int) $organizationId) {
+                $validator->errors()->add('role_id', 'Select a role belonging to the selected organization.');
             }
 
             if ($roleSlug === 'organization-admin' && ! $organizationId) {

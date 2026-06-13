@@ -8,7 +8,6 @@ use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
-use App\Models\Loan;
 use App\Models\LoanSchedule;
 use App\Models\MakerCheckerRequest;
 use App\Models\TellerDrawer;
@@ -623,10 +622,7 @@ class TellerDrawerController extends Controller
     {
         return $query->where(function (Builder $query): void {
             $query->whereHas('accountType', fn (Builder $query): Builder => $query->where('category', '!=', 'loan'))
-                ->orWhereHas('loan', function (Builder $query): void {
-                    $query->whereIn('status', Loan::ARREARS_STATUSES)
-                        ->orWhereRaw('(principal_balance + interest_balance + fees_balance + penalty_balance) > 0');
-                });
+                ->orWhereHas('loan', fn (Builder $query): Builder => $query->forOperationalListing());
         });
     }
 

@@ -25,7 +25,10 @@ class LoanController extends Controller
 
         $loansQuery = ApiSecurity::scopeTenant(Loan::query(), $request->user())
             ->with(['client', 'product', 'officer'])
-            ->forOperationalListing()
+            ->when(
+                $request->user()->isTellerCashier() || $request->user()->isLoanOfficer() || $request->user()->isLoanRecoveryOfficer(),
+                fn ($query) => $query->forOperationalListing()
+            )
             ->tap(fn ($query) => $request->user()->isMember() ? $query : $visibility->scope($query, $request->user()))
             ->when($request->user()->isMember(), fn ($query) => $query->where('client_id', $request->user()->client?->id))
             ->when($request->string('search')->toString(), function ($query, string $search): void {
@@ -58,10 +61,18 @@ class LoanController extends Controller
         );
     }
 
-    public function show(Loan $loan): JsonResponse
+    public function show(Loan $loan, LoanVisibilityService $visibility): JsonResponse
     {
         ApiSecurity::assertTenantAccess(request()->user(), $loan);
         abort_unless(request()->user()->canPerform('manage-loans') || $loan->client_id === request()->user()->client?->id, 403);
+
+        if (! request()->user()->isMember()) {
+            abort_unless($visibility->scope(Loan::query()->whereKey($loan->id), request()->user())->exists(), 403);
+        }
+
+        if (request()->user()->isTellerCashier() || request()->user()->isLoanOfficer() || request()->user()->isLoanRecoveryOfficer()) {
+            abort_unless(in_array($loan->status, Loan::OPERATIONAL_STATUSES, true), 404);
+        }
 
         return ApiResponse::resource(new LoanResource($loan->load([
             'client',

@@ -31,7 +31,7 @@ class LoanController extends Controller
 
         $loans = Loan::query()
             ->with(['client', 'product', 'officer'])
-            ->forOperationalListing()
+            ->when($this->hasRestrictedOperationalSearch($request), fn (Builder $query): Builder => $query->forOperationalListing())
             ->tap(fn ($query) => $visibility->scope($query, $request->user()))
             ->when($request->string('search')->toString(), function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
@@ -417,5 +417,12 @@ class LoanController extends Controller
             'weekly' => $annualRate / 52,
             default => $annualRate / 12,
         };
+    }
+
+    private function hasRestrictedOperationalSearch(Request $request): bool
+    {
+        return $request->user()->isTellerCashier()
+            || $request->user()->isLoanOfficer()
+            || $request->user()->isLoanRecoveryOfficer();
     }
 }

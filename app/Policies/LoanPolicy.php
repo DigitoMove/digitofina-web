@@ -15,7 +15,8 @@ class LoanPolicy
     public function view(User $user, Loan $loan): bool
     {
         if ($user->isLoanOfficer()) {
-            return (int) $loan->officer_id === (int) $user->id
+            return in_array($loan->status, Loan::OPERATIONAL_STATUSES, true)
+                && (int) $loan->officer_id === (int) $user->id
                 && (int) $loan->branch_id === (int) $user->branch_id;
         }
 
@@ -23,6 +24,11 @@ class LoanPolicy
             return $user->canPerform('view-arrears')
                 && $user->canAccessBranch($loan->branch_id, $loan->organization_id)
                 && $loan->schedules()->eligibleForArrears(today())->exists();
+        }
+
+        if ($user->isTellerCashier()) {
+            return in_array($loan->status, Loan::OPERATIONAL_STATUSES, true)
+                && $user->canAccessBranch($loan->branch_id, $loan->organization_id);
         }
 
         return $user->canPerform('manage-loans')

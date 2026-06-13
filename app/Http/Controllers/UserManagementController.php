@@ -41,9 +41,15 @@ class UserManagementController extends Controller
             'users' => $users,
             'roles' => Role::query()
                 ->when(! $request->user()->hasRole('super-admin'), fn ($query) => $query->where('slug', '!=', 'super-admin'))
+                ->when(! $request->user()->hasGlobalOrganizationAccess() && $request->user()->organization_id, fn ($query) => $query->where(function ($query) use ($request): void {
+                    $query->where('organization_id', $request->user()->organization_id)->orWhereNull('organization_id');
+                }))
                 ->orderBy('name')
                 ->get(),
-            'branches' => Branch::orderBy('name')->get(),
+            'branches' => Branch::query()
+                ->when(! $request->user()->hasGlobalOrganizationAccess() && $request->user()->organization_id, fn ($query) => $query->where('organization_id', $request->user()->organization_id))
+                ->orderBy('name')
+                ->get(),
         ]);
     }
 

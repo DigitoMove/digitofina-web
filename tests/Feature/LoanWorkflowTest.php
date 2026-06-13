@@ -1431,7 +1431,7 @@ it('excludes cancelled loans from arrears listings and penalty calculations', fu
         ->and($draftSchedule->fresh()->outstanding_amount)->toBe('200000.00');
 });
 
-it('applies scheduled penalties to overdue disbursed and restructured loans', function () {
+it('applies scheduled penalties only after a loan becomes operationally active', function () {
     $user = loanWorkflowUser();
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
     $client = loanWorkflowClient($user, '+256700220006');
@@ -1444,10 +1444,16 @@ it('applies scheduled penalties to overdue disbursed and restructured loans', fu
         ->expectsOutputToContain('applied UGX')
         ->assertSuccessful();
 
-    expect((float) $disbursedSchedule->fresh()->penalty_due)->toBeGreaterThan(0.0)
-        ->and((float) $restructuredSchedule->fresh()->penalty_due)->toBeGreaterThan(0.0)
-        ->and($disbursedLoan->fresh()->status)->toBe('in_arrears')
-        ->and($restructuredLoan->fresh()->status)->toBe('in_arrears');
+    expect((float) $disbursedSchedule->fresh()->penalty_due)->toBe(0.0)
+        ->and((float) $restructuredSchedule->fresh()->penalty_due)->toBe(0.0)
+        ->and($disbursedLoan->fresh()->status)->toBe('disbursed')
+        ->and($restructuredLoan->fresh()->status)->toBe('restructured');
+
+    $disbursedLoan->update(['status' => 'active']);
+
+    expect(app(LoanService::class)->applyOverduePenalties($disbursedLoan, today()))->toBe(1)
+        ->and((float) $disbursedSchedule->fresh()->penalty_due)->toBeGreaterThan(0.0)
+        ->and($disbursedLoan->fresh()->status)->toBe('in_arrears');
 });
 
 it('combines multiple overdue schedules into one arrears listing row per loan', function () {

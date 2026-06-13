@@ -12,7 +12,9 @@ class Loan extends Model
 {
     use BelongsToTenant;
 
-    public const ARREARS_STATUSES = ['disbursed', 'active', 'in_arrears', 'restructured'];
+    public const OPERATIONAL_STATUSES = ['active', 'in_arrears'];
+
+    public const ARREARS_STATUSES = self::OPERATIONAL_STATUSES;
 
     public const LISTING_STATUSES = ['approved', 'disbursed', 'active', 'in_arrears', 'restructured', 'fully_paid', 'closed'];
 
@@ -137,6 +139,6 @@ class Loan extends Model
 
     public function scopeForOperationalListing(Builder $query): Builder
     {
-        return $query->whereIn('status', self::LISTING_STATUSES);
+        return $query->whereIn('status', self::OPERATIONAL_STATUSES);
     }
 }

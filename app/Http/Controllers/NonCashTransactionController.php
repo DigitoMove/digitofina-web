@@ -66,6 +66,7 @@ class NonCashTransactionController extends Controller
             'selectedLedger' => $selectedLedger,
             'accountResults' => Account::query()
                 ->with(['client', 'accountType', 'branch'])
+                ->where(fn (Builder $query): Builder => $this->availableClientAccount($query))
                 ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
                 ->when($selectedAccountTypeId, fn (Builder $query, int $typeId): Builder => $query->where('account_type_id', $typeId))
                 ->when($accountSearch !== '', function (Builder $query) use ($accountSearch): void {
@@ -93,7 +94,15 @@ class NonCashTransactionController extends Controller
                 ->get(),
             'recentTransactions' => Transaction::query()
                 ->nonCash()
-                ->with(['account.client', 'account.branch', 'type', 'user', 'journalEntries.chartAccount', 'loanRepayment.loan'])
+                ->with([
+                    'account.client',
+                    'account.branch',
+                    'type',
+                    'user',
+                    'journalEntries.chartAccount',
+                    'loanRepayment.loan',
+                    'reversalRequests' => fn (Builder $query): Builder => $query->where('status', 'pending')->latest(),
+                ])
                 ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
                 ->when($historyFrom !== '', fn (Builder $query): Builder => $query->whereDate('posted_at', '>=', $historyFrom))
                 ->when($historyTo !== '', fn (Builder $query): Builder => $query->whereDate('posted_at', '<=', $historyTo))
@@ -185,6 +194,14 @@ class NonCashTransactionController extends Controller
                 ->orWhereHas('journalEntries.chartAccount', function (Builder $query) use ($likeSearch): void {
                     $query->whereAny(['code', 'name', 'type'], 'like', $likeSearch);
                 });
+        });
+    }
+
+    private function availableClientAccount(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query->whereHas('accountType', fn (Builder $query): Builder => $query->where('category', '!=', 'loan'))
+                ->orWhereHas('loan', fn (Builder $query): Builder => $query->forOperationalListing());
         });
     }
 }

@@ -115,6 +115,7 @@
                         <th class="px-4 py-3">Amount</th>
                         <th class="px-4 py-3">Posted By</th>
                         <th class="px-4 py-3">Reference</th>
+                        <th class="px-4 py-3 text-right">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -138,9 +139,30 @@
                             <td class="whitespace-nowrap px-4 py-3 font-semibold text-slate-950">UGX {{ number_format((float) $transaction->amount, 2) }}</td>
                             <td class="px-4 py-3">{{ $transaction->user?->name ?? 'System' }}</td>
                             <td class="px-4 py-3"><a href="{{ route('receipts.show', $transaction) }}" class="font-semibold text-brand-700 hover:underline">{{ $transaction->reference }}</a></td>
+                            <td class="px-4 py-3 text-right">
+                                @php($pendingReversal = $transaction->reversalRequests->first())
+                                @if($pendingReversal)
+                                    <span class="whitespace-nowrap rounded bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">Reversal pending</span>
+                                @elseif($transaction->status === 'reversed')
+                                    <span class="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">Reversed</span>
+                                @elseif(auth()->user()->hasRole('super-admin') || auth()->user()->hasRole('organization-admin') || auth()->user()->hasRole('teller-cashier') || auth()->user()->canPerform('request-reversals') || auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker'))
+                                    <details class="relative inline-block text-left">
+                                        <summary class="cursor-pointer list-none whitespace-nowrap rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white">Request reversal</summary>
+                                        <form method="POST" action="{{ route('transactions.reversal-requests.store', $transaction) }}" class="absolute right-0 z-20 mt-2 grid w-72 gap-2 rounded-lg border border-amber-200 bg-white p-3 text-left shadow-xl">
+                                            @csrf
+                                            <label class="text-xs font-semibold text-slate-700">Reason
+                                                <textarea name="reason" rows="3" class="mt-1 w-full rounded border-slate-300 text-sm" required></textarea>
+                                            </label>
+                                            <button class="rounded bg-amber-700 px-3 py-2 text-xs font-semibold text-white">Submit request</button>
+                                        </form>
+                                    </details>
+                                @else
+                                    <a href="{{ route('receipts.show', $transaction) }}" class="text-sm font-semibold text-brand-700">Receipt</a>
+                                @endif
+                            </td>
                         </tr>
                     @empty
-                        <tr><td colspan="7" class="px-4 py-10 text-center text-slate-500">No non-cash transactions matched these filters.</td></tr>
+                        <tr><td colspan="8" class="px-4 py-10 text-center text-slate-500">No non-cash transactions matched these filters.</td></tr>
                     @endforelse
                 </tbody>
             </table>
