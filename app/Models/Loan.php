@@ -16,6 +16,8 @@ class Loan extends Model
 
     public const ARREARS_STATUSES = self::OPERATIONAL_STATUSES;
 
+    public const APPLICATION_EDITABLE_STATUSES = ['draft', 'under_review', 'pending_guarantor_approval', 'pending_collateral_verification'];
+
     public const LISTING_STATUSES = ['approved', 'disbursed', 'active', 'in_arrears', 'restructured', 'fully_paid', 'closed'];
 
     protected $guarded = [];

@@ -12,7 +12,11 @@ class StoreLoanGuarantorRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->canPerform('manage-loans') ?? false;
+        $loan = $this->route('loan');
+
+        return $loan instanceof Loan
+            && ($this->user()?->canPerform('manage-loans')
+                || $this->user()?->canManageCreatedLoanApplication($loan));
     }
 
     protected function prepareForValidation(): void
@@ -23,7 +27,7 @@ class StoreLoanGuarantorRequest extends FormRequest
             : $this->input('guaranteed_amount');
 
         $this->merge([
-            'status' => $this->input('status', 'pending'),
+            'status' => $this->user()?->canPerform('manage-loans') ? $this->input('status', 'pending') : 'pending',
             'guaranteed_amount' => $guaranteedAmount,
             'type' => $this->input('type', $this->filled('guarantor_client_id') ? 'existing_client' : 'external'),
         ]);

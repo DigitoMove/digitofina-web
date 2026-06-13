@@ -136,6 +136,22 @@ class User extends Authenticatable
         return $this->hasRole('loan-recovery-officer');
     }
 
+    public function canCreateLoanApplications(): bool
+    {
+        return ! $this->isTellerCashier()
+            && ! $this->isMember()
+            && ($this->isLoanOfficer()
+                || $this->isLoanRecoveryOfficer()
+                || $this->canPerform('manage-loans'));
+    }
+
+    public function canManageCreatedLoanApplication(Loan $loan): bool
+    {
+        return $this->canCreateLoanApplications()
+            && (int) $loan->created_by === (int) $this->id
+            && in_array($loan->status, Loan::APPLICATION_EDITABLE_STATUSES, true);
+    }
+
     public function hasRestrictedReportsAccess(): bool
     {
         return $this->isTellerCashier() || $this->isLoanOfficer() || $this->isLoanRecoveryOfficer();

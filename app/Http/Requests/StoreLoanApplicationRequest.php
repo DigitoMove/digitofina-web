@@ -16,10 +16,7 @@ class StoreLoanApplicationRequest extends FormRequest
     {
         $user = $this->user();
 
-        return $user !== null
-            && ! $user->isTellerCashier()
-            && ! $user->isMember()
-            && $user->canPerform('manage-loans');
+        return $user?->canCreateLoanApplications() ?? false;
     }
 
     protected function prepareForValidation(): void

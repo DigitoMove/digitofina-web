@@ -9,11 +9,17 @@ class LoanPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->canPerform('manage-loans') || $user->canPerform('view-reports');
+        return $user->canCreateLoanApplications()
+            || $user->canPerform('view-reports');
     }
 
     public function view(User $user, Loan $loan): bool
     {
+        if ((int) $loan->created_by === (int) $user->id
+            && $user->canAccessBranch($loan->branch_id, $loan->organization_id)) {
+            return true;
+        }
+
         if ($user->isLoanOfficer()) {
             return in_array($loan->status, Loan::OPERATIONAL_STATUSES, true)
                 && (int) $loan->officer_id === (int) $user->id
@@ -37,9 +43,7 @@ class LoanPolicy
 
     public function create(User $user): bool
     {
-        return ! $user->isTellerCashier()
-            && ! $user->isMember()
-            && $user->canPerform('manage-loans');
+        return $user->canCreateLoanApplications();
     }
 
     public function approve(User $user, Loan $loan): bool

@@ -564,7 +564,7 @@ class LoanService
 
     public function generateSavingsAccount(Loan $loan, User $user): Account
     {
-        abort_unless($user->canPerform('manage-accounts') || $user->canPerform('manage-loans'), 403);
+        abort_unless($user->canPerform('manage-accounts') || $user->canPerform('manage-loans') || $user->canManageCreatedLoanApplication($loan), 403);
 
         return DB::transaction(function () use ($loan): Account {
             $loan = Loan::query()->with(['client.branch'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
@@ -613,7 +613,7 @@ class LoanService
 
     public function generateLoanAccount(Loan $loan, User $user): Account
     {
-        abort_unless($user->canPerform('manage-accounts') || $user->canPerform('manage-loans'), 403);
+        abort_unless($user->canPerform('manage-accounts') || $user->canPerform('manage-loans') || $user->canManageCreatedLoanApplication($loan), 403);
 
         return DB::transaction(function () use ($loan): Account {
             $loan = Loan::query()->with(['client.branch'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();
@@ -654,7 +654,7 @@ class LoanService
 
     public function submitForAppraisal(Loan $loan, User $user): Loan
     {
-        abort_unless($user->canPerform('manage-loans'), 403);
+        abort_unless($user->canPerform('manage-loans') || $user->canManageCreatedLoanApplication($loan), 403);
 
         return DB::transaction(function () use ($loan, $user): Loan {
             $loan = Loan::query()->whereKey($loan->id)->lockForUpdate()->firstOrFail();
@@ -693,7 +693,7 @@ class LoanService
 
     public function submitForApproval(Loan $loan, User $user): Loan
     {
-        abort_unless($user->canPerform('manage-loans'), 403);
+        abort_unless($user->canPerform('manage-loans') || $user->canManageCreatedLoanApplication($loan), 403);
 
         return DB::transaction(function () use ($loan, $user): Loan {
             $loan = Loan::query()->with(['client', 'product', 'loanGuarantors'])->whereKey($loan->id)->lockForUpdate()->firstOrFail();

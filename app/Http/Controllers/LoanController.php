@@ -31,8 +31,8 @@ class LoanController extends Controller
 
         $loans = Loan::query()
             ->with(['client', 'product', 'officer'])
-            ->when($this->hasRestrictedOperationalSearch($request), fn (Builder $query): Builder => $query->forOperationalListing())
             ->tap(fn ($query) => $visibility->scope($query, $request->user()))
+            ->tap(fn (Builder $query): Builder => $visibility->scopeOperationalOrCreated($query, $request->user()))
             ->when($request->string('search')->toString(), function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
                     $query->where('loan_number', 'like', "%{$search}%")
@@ -122,7 +122,8 @@ class LoanController extends Controller
     public function show(Loan $loan, LoanVisibilityService $visibility, LoanService $service): View
     {
         Gate::authorize('view', $loan);
-        $isLoanRecoveryOfficer = request()->user()->isLoanRecoveryOfficer();
+        $isRestrictedLoanRecoveryOfficer = request()->user()->isLoanRecoveryOfficer()
+            && (int) $loan->created_by !== (int) request()->user()->id;
 
         if (! $loan->schedules()->exists() && (float) $loan->requested_amount > 0) {
             $service->generateSchedule($loan->load('product'), CarbonImmutable::parse(($loan->disbursed_at ?? $loan->application_date ?? today())->toDateString()));
@@ -150,10 +151,10 @@ class LoanController extends Controller
                     ->orderByDesc('created_at')
                     ->orderByDesc('id'),
             ]),
-            'guarantorClients' => $isLoanRecoveryOfficer ? collect() : $this->visibleClients(request())->where('status', 'active')->where('id', '!=', $loan->client_id)->orderBy('first_name')->get(),
-            'assignableOfficers' => $isLoanRecoveryOfficer ? collect() : $visibility->assignableOfficers(request()->user())->get(),
-            'canAssignOfficer' => ! $isLoanRecoveryOfficer && $visibility->canAssignOfficer(request()->user()),
-            'products' => $isLoanRecoveryOfficer ? collect() : LoanProduct::where('is_active', true)->where('status', 'active')->orderBy('name')->get(),
+            'guarantorClients' => $isRestrictedLoanRecoveryOfficer ? collect() : $this->visibleClients(request())->where('status', 'active')->where('id', '!=', $loan->client_id)->orderBy('first_name')->get(),
+            'assignableOfficers' => $isRestrictedLoanRecoveryOfficer ? collect() : $visibility->assignableOfficers(request()->user())->get(),
+            'canAssignOfficer' => ! $isRestrictedLoanRecoveryOfficer && $visibility->canAssignOfficer(request()->user()),
+            'products' => $isRestrictedLoanRecoveryOfficer ? collect() : LoanProduct::where('is_active', true)->where('status', 'active')->orderBy('name')->get(),
         ]);
     }
 
@@ -170,7 +171,13 @@ class LoanController extends Controller
 
     public function updateDraftTerms(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
-        abort_unless($request->user()->hasRole('super-admin') || $request->user()->canPerform('manage-users') || $request->user()->canPerform('disburse-loans'), 403);
+        abort_unless(
+            $request->user()->hasRole('super-admin')
+                || $request->user()->canPerform('manage-users')
+                || $request->user()->canPerform('disburse-loans')
+                || $request->user()->canManageCreatedLoanApplication($loan),
+            403
+        );
 
         $data = $request->validate([
             'loan_product_id' => ['required', 'exists:loan_products,id'],
@@ -417,12 +424,5 @@ class LoanController extends Controller
             'weekly' => $annualRate / 52,
             default => $annualRate / 12,
         };
-    }
-
-    private function hasRestrictedOperationalSearch(Request $request): bool
-    {
-        return $request->user()->isTellerCashier()
-            || $request->user()->isLoanOfficer()
-            || $request->user()->isLoanRecoveryOfficer();
     }
 }

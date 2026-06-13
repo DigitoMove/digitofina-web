@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Loan;
 use App\Support\CurrencyDenomination;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -11,13 +12,17 @@ class StoreLoanCollateralRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->canPerform('manage-loans') ?? false;
+        $loan = $this->route('loan');
+
+        return $loan instanceof Loan
+            && ($this->user()?->canPerform('manage-loans')
+                || $this->user()?->canManageCreatedLoanApplication($loan));
     }
 
     protected function prepareForValidation(): void
     {
         $this->merge([
-            'status' => $this->input('status', 'pending_verification'),
+            'status' => $this->user()?->canPerform('manage-loans') ? $this->input('status', 'pending_verification') : 'pending_verification',
         ]);
     }
 

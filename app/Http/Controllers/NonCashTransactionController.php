@@ -66,16 +66,20 @@ class NonCashTransactionController extends Controller
             'selectedLedger' => $selectedLedger,
             'accountResults' => Account::query()
                 ->with(['client', 'accountType', 'branch'])
-                ->where(fn (Builder $query): Builder => $this->availableClientAccount($query))
                 ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
                 ->when($selectedAccountTypeId, fn (Builder $query, int $typeId): Builder => $query->where('account_type_id', $typeId))
                 ->when($accountSearch !== '', function (Builder $query) use ($accountSearch): void {
-                    $query->where(function (Builder $query) use ($accountSearch): void {
-                        $query->whereAny(['account_number', 'account_name', 'status'], 'like', "%{$accountSearch}%")
-                            ->orWhereHas('client', function (Builder $query) use ($accountSearch): void {
-                                $query->whereAny(['client_number', 'first_name', 'middle_name', 'last_name', 'business_name', 'phone', 'alternative_phone'], 'like', "%{$accountSearch}%");
-                            });
-                    });
+                    $query
+                        ->where(function (Builder $query): void {
+                            $query->whereHas('accountType', fn (Builder $query): Builder => $query->where('category', '!=', 'loan'))
+                                ->orWhereHas('loan', fn (Builder $query): Builder => $query->forOperationalListing());
+                        })
+                        ->where(function (Builder $query) use ($accountSearch): void {
+                            $query->whereAny(['account_number', 'account_name', 'status'], 'like', "%{$accountSearch}%")
+                                ->orWhereHas('client', function (Builder $query) use ($accountSearch): void {
+                                    $query->whereAny(['client_number', 'first_name', 'middle_name', 'last_name', 'business_name', 'phone', 'alternative_phone'], 'like', "%{$accountSearch}%");
+                                });
+                        });
                 })
                 ->when($accountSearch === '', fn (Builder $query): Builder => $query->whereRaw('1 = 0'))
                 ->orderBy('account_number')
@@ -101,7 +105,7 @@ class NonCashTransactionController extends Controller
                     'user',
                     'journalEntries.chartAccount',
                     'loanRepayment.loan',
-                    'reversalRequests' => fn (Builder $query): Builder => $query->where('status', 'pending')->latest(),
+                    'reversalRequests' => fn ($query) => $query->where('status', 'pending')->latest(),
                 ])
                 ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
                 ->when($historyFrom !== '', fn (Builder $query): Builder => $query->whereDate('posted_at', '>=', $historyFrom))
@@ -194,14 +198,6 @@ class NonCashTransactionController extends Controller
                 ->orWhereHas('journalEntries.chartAccount', function (Builder $query) use ($likeSearch): void {
                     $query->whereAny(['code', 'name', 'type'], 'like', $likeSearch);
                 });
-        });
-    }
-
-    private function availableClientAccount(Builder $query): Builder
-    {
-        return $query->where(function (Builder $query): void {
-            $query->whereHas('accountType', fn (Builder $query): Builder => $query->where('category', '!=', 'loan'))
-                ->orWhereHas('loan', fn (Builder $query): Builder => $query->forOperationalListing());
         });
     }
 }

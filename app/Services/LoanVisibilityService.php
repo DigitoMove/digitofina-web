@@ -16,9 +16,12 @@ class LoanVisibilityService
     public function scope(Builder $query, User $user): Builder
     {
         if ($user->isLoanOfficer()) {
-            return $query
-                ->where('officer_id', $user->id)
-                ->when($user->branch_id, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
+            return $query->where(function (Builder $query) use ($user): void {
+                $query->where(function (Builder $query) use ($user): void {
+                    $query->where('officer_id', $user->id)
+                        ->when($user->branch_id, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
+                })->orWhere('created_by', $user->id);
+            });
         }
 
         if (ApiSecurity::hasGlobalBranchAccess($user)) {
@@ -30,6 +33,25 @@ class LoanVisibilityService
         }
 
         return $user->branch_id ? $query->where('branch_id', $user->branch_id) : $query;
+    }
+
+    /**
+     * @param  Builder<Loan>  $query
+     * @return Builder<Loan>
+     */
+    public function scopeOperationalOrCreated(Builder $query, User $user): Builder
+    {
+        if (! ($user->isTellerCashier() || $user->isLoanOfficer() || $user->isLoanRecoveryOfficer())) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $query) use ($user): void {
+            $query->forOperationalListing();
+
+            if (! $user->isTellerCashier()) {
+                $query->orWhere('created_by', $user->id);
+            }
+        });
     }
 
     public function canAssignOfficer(User $user): bool

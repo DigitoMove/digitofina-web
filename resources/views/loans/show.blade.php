@@ -17,12 +17,13 @@
     $unpaidInstallments = max(0, $totalInstallments - $paidInstallments);
     $arrearsDays = (int) $loan->schedules->max('days_overdue');
     $isLoanRecoveryView = auth()->user()->isLoanRecoveryOfficer();
-    $canManageLoanProperties = ! $isLoanRecoveryView && auth()->user()->canPerform('manage-loans');
+    $canManageCreatedApplication = auth()->user()->canManageCreatedLoanApplication($loan);
+    $canManageLoanProperties = auth()->user()->canPerform('manage-loans') || $canManageCreatedApplication;
     $isNonPerforming = in_array($loan->status, ['in_arrears', 'written_off'], true);
     $hasSavingsAccount = $client->accounts->contains(fn ($account) => $account->accountType?->category === 'savings');
     $canCreateLoan = auth()->user()->can('create', \App\Models\Loan::class);
     $canCancel = (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans')) && ! in_array($loan->status, ['cancelled', 'rejected', 'disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true);
-    $canUpdateDraftTerms = $loan->status === 'draft' && (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans'));
+    $canUpdateDraftTerms = $loan->status === 'draft' && (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans') || $canManageCreatedApplication);
     $loanAccountNeedsReopen = $loan->loanAccount && $loan->loanAccount->status !== 'active' && in_array($loan->status, ['disbursed', 'active', 'in_arrears'], true);
     $canReopenClosedLoan = (in_array($loan->status, ['closed', 'fully_paid'], true) || $loanAccountNeedsReopen) && auth()->user()->canAdministerLoanRepairs();
     $canRepairLoanTerms = in_array($loan->status, ['approved', 'disbursed', 'active', 'in_arrears'], true) && auth()->user()->canAdministerLoanRepairs();
@@ -435,7 +436,7 @@
             </div>
         </section>
 
-        @unless($isLoanRecoveryView)
+        @unless($isLoanRecoveryView && ! $canManageCreatedApplication)
             @include('loans.partials.workflow-actions')
         @endunless
 

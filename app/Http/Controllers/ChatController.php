@@ -37,10 +37,7 @@ class ChatController extends Controller
         $loans = Loan::query()
             ->with(['client', 'branch'])
             ->tap(fn (Builder $query): Builder => $visibility->scope($query, $user))
-            ->when(
-                $user->isTellerCashier() || $user->isLoanOfficer() || $user->isLoanRecoveryOfficer(),
-                fn (Builder $query): Builder => $query->forOperationalListing()
-            )
+            ->tap(fn (Builder $query): Builder => $visibility->scopeOperationalOrCreated($query, $user))
             ->latest('application_date')
             ->limit(150)
             ->get();
@@ -230,10 +227,7 @@ class ChatController extends Controller
         return Loan::query()
             ->with(['client', 'branch'])
             ->tap(fn (Builder $query): Builder => app(LoanVisibilityService::class)->scope($query, $user))
-            ->when(
-                $user->isTellerCashier() || $user->isLoanOfficer() || $user->isLoanRecoveryOfficer(),
-                fn (Builder $query): Builder => $query->forOperationalListing()
-            )
+            ->tap(fn (Builder $query): Builder => app(LoanVisibilityService::class)->scopeOperationalOrCreated($query, $user))
             ->whereKey($loanId)
             ->firstOrFail();
     }

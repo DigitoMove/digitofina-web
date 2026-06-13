@@ -21,15 +21,12 @@ class LoanController extends Controller
 {
     public function index(Request $request, LoanVisibilityService $visibility): JsonResponse
     {
-        abort_unless($request->user()->canPerform('manage-loans') || $request->user()->canPerform('view-own-accounts'), 403);
+        abort_unless($request->user()->canCreateLoanApplications() || $request->user()->canPerform('view-own-accounts'), 403);
 
         $loansQuery = ApiSecurity::scopeTenant(Loan::query(), $request->user())
             ->with(['client', 'product', 'officer'])
-            ->when(
-                $request->user()->isTellerCashier() || $request->user()->isLoanOfficer() || $request->user()->isLoanRecoveryOfficer(),
-                fn ($query) => $query->forOperationalListing()
-            )
             ->tap(fn ($query) => $request->user()->isMember() ? $query : $visibility->scope($query, $request->user()))
+            ->tap(fn ($query) => $request->user()->isMember() ? $query : $visibility->scopeOperationalOrCreated($query, $request->user()))
             ->when($request->user()->isMember(), fn ($query) => $query->where('client_id', $request->user()->client?->id))
             ->when($request->string('search')->toString(), function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
@@ -51,7 +48,7 @@ class LoanController extends Controller
 
     public function store(StoreLoanApplicationRequest $request, LoanApplicationService $applications): JsonResponse
     {
-        abort_unless($request->user()->canPerform('manage-loans'), 403);
+        abort_unless($request->user()->canCreateLoanApplications(), 403);
         ApiSecurity::assertTenantAccess($request->user(), Client::findOrFail($request->validated('client_id')));
 
         return ApiResponse::resource(
@@ -64,14 +61,10 @@ class LoanController extends Controller
     public function show(Loan $loan, LoanVisibilityService $visibility): JsonResponse
     {
         ApiSecurity::assertTenantAccess(request()->user(), $loan);
-        abort_unless(request()->user()->canPerform('manage-loans') || $loan->client_id === request()->user()->client?->id, 403);
+        abort_unless(request()->user()->canCreateLoanApplications() || $loan->client_id === request()->user()->client?->id, 403);
 
         if (! request()->user()->isMember()) {
-            abort_unless($visibility->scope(Loan::query()->whereKey($loan->id), request()->user())->exists(), 403);
-        }
-
-        if (request()->user()->isTellerCashier() || request()->user()->isLoanOfficer() || request()->user()->isLoanRecoveryOfficer()) {
-            abort_unless(in_array($loan->status, Loan::OPERATIONAL_STATUSES, true), 404);
+            abort_unless($visibility->scopeOperationalOrCreated($visibility->scope(Loan::query()->whereKey($loan->id), request()->user()), request()->user())->exists(), 403);
         }
 
         return ApiResponse::resource(new LoanResource($loan->load([
@@ -88,10 +81,14 @@ class LoanController extends Controller
         ])), 'Loan retrieved.');
     }
 
-    public function schedule(Loan $loan): JsonResponse
+    public function schedule(Loan $loan, LoanVisibilityService $visibility): JsonResponse
     {
         ApiSecurity::assertTenantAccess(request()->user(), $loan);
-        abort_unless(request()->user()->canPerform('manage-loans') || $loan->client_id === request()->user()->client?->id, 403);
+        abort_unless(request()->user()->canCreateLoanApplications() || $loan->client_id === request()->user()->client?->id, 403);
+
+        if (! request()->user()->isMember()) {
+            abort_unless($visibility->scopeOperationalOrCreated($visibility->scope(Loan::query()->whereKey($loan->id), request()->user()), request()->user())->exists(), 403);
+        }
 
         return ApiResponse::collection(
             LoanScheduleResource::collection(ApiQuery::apply(

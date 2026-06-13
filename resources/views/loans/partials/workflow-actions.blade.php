@@ -1,7 +1,8 @@
 @php
     $currentUser = auth()->user();
-    $canManageLoanWorkflow = $currentUser->canPerform('manage-loans');
-    $canManageLoanAccounts = $currentUser->canPerform('manage-accounts') || $currentUser->canPerform('manage-loans');
+    $canManageCreatedApplication = $currentUser->canManageCreatedLoanApplication($loan);
+    $canManageLoanWorkflow = $currentUser->canPerform('manage-loans') || $canManageCreatedApplication;
+    $canManageLoanAccounts = $currentUser->canPerform('manage-accounts') || $currentUser->canPerform('manage-loans') || $canManageCreatedApplication;
     $canApproveLoan = $currentUser->canPerform('approve-loans');
     $canDisburseLoan = $currentUser->canPerform('disburse-loans');
     $canPostLoanRepayment = $currentUser->canPerform('post-repayments');

@@ -98,7 +98,7 @@
                             'label' => 'Loans',
                             'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5',
                             'items' => [
-                                ['label' => 'Loans', 'route' => 'loans.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'view-reports'], 'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5'],
+                                ['label' => 'Loans', 'route' => 'loans.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'view-reports', 'view-arrears'], 'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5'],
                                 ['label' => 'Arrears', 'route' => 'arrears.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'view-reports', 'view-arrears'], 'hide_for_cashier' => true, 'icon' => 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
                                 ['label' => 'Loan Products', 'route' => 'loan-products.index', 'module' => 'loans', 'permissions' => ['manage-loans'], 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
                             ],
