@@ -71,6 +71,7 @@ class ReportCatalogService
     public function definitions(?User $user = null): array
     {
         $definitions = [
+            $this->report('general-income-statement', 'General Reports', 'Simplified Income Statement', 'general_income_statement', ['default_period' => 'full_month']),
             $this->report('all-posted-transactions', 'Posted Transactions', 'All Posted Transactions', 'transactions'),
             $this->report('user-posted-transactions', 'Posted Transactions', 'User Posted Transactions', 'transactions', ['posted_by' => 'user']),
             $this->report('system-posted-transactions', 'Posted Transactions', 'System Posted Transactions', 'transactions', ['posted_by' => 'system']),
@@ -246,6 +247,7 @@ class ReportCatalogService
             'investment_branch_performance' => $this->investmentBranchPerformance($branchId, $user),
             'investment_officer_performance' => $this->investmentOfficerPerformance($branchId, $user),
             'settings' => $this->settings($payload),
+            'general_income_statement' => $this->generalIncomeStatement($from, $to, $branchId, $user),
             default => $this->placeholderRows($definition),
         };
 
@@ -315,7 +317,7 @@ class ReportCatalogService
         $kind = (string) $definition['kind'];
 
         $group = match (true) {
-            in_array($slug, ['income-statement', 'balance-sheet', 'trial-balance', 'profitability-summary', 'projected-profitability-summary', 'branch-profitability-standing'], true) => 'Executive Financial Pack',
+            in_array($slug, ['general-income-statement', 'income-statement', 'balance-sheet', 'trial-balance', 'profitability-summary', 'projected-profitability-summary', 'branch-profitability-standing'], true) => 'Executive Financial Pack',
             in_array($category, ['Accounting', 'Posted Transactions'], true) => 'General Ledger & Controls',
             in_array($category, ['Treasury'], true) => 'Treasury, Cash & Reconciliation',
             in_array($category, ['Loan Application', 'Loan Accounts', 'Profitability'], true) => 'Credit Portfolio & Risk',
@@ -337,6 +339,7 @@ class ReportCatalogService
         ][$group];
 
         $sortOrder = [
+            'general-income-statement' => 1,
             'income-statement' => 10,
             'balance-sheet' => 20,
             'trial-balance' => 30,
@@ -373,6 +376,7 @@ class ReportCatalogService
         ][$slug] ?? 900;
 
         $categoryOrder = [
+            'General Reports' => 1,
             'Posted Transactions' => 10,
             'Treasury' => 20,
             'Clients' => 30,
@@ -394,6 +398,7 @@ class ReportCatalogService
             'sort_order' => $sortOrder,
             'description' => $this->reportDescription($slug, $category, $kind),
             'is_priority' => in_array($slug, [
+                'general-income-statement',
                 'income-statement',
                 'balance-sheet',
                 'trial-balance',
@@ -414,6 +419,7 @@ class ReportCatalogService
     private function reportDescription(string $slug, string $category, string $kind): string
     {
         $descriptions = [
+            'general-income-statement' => 'A simplified management income statement showing money in, money out, profit, and the main income sources.',
             'income-statement' => 'Revenue, expenses, and surplus for the selected period.',
             'balance-sheet' => 'Assets, liabilities, and equity position at the reporting date.',
             'trial-balance' => 'Debit and credit control totals for ledger review.',
@@ -990,6 +996,86 @@ class ReportCatalogService
             'Net income' => $this->money($netIncome),
             'Expense ratio' => $totalIncome > 0 ? number_format(($totalExpenses / $totalIncome) * 100, 2).'%' : '0.00%',
         ]];
+    }
+
+    private function generalIncomeStatement(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
+    {
+        $repayments = LoanRepayment::query()
+            ->whereBetween('loan_repayments.paid_at', [$from, $to])
+            ->where('loan_repayments.status', 'successful')
+            ->when($branchId, fn (Builder $query): Builder => $query->where('loan_repayments.branch_id', $branchId))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('loan_repayments.branch_id', $user->branch_id));
+
+        $interestByProduct = (clone $repayments)
+            ->join('loans', 'loans.id', '=', 'loan_repayments.loan_id')
+            ->leftJoin('loan_products', 'loan_products.id', '=', 'loans.loan_product_id')
+            ->selectRaw('coalesce(loan_products.name, "Unassigned Loan Product") as product_name, coalesce(sum(loan_repayments.interest_paid), 0) as interest_total')
+            ->groupBy('loan_products.id', 'loan_products.name')
+            ->orderBy('product_name')
+            ->get();
+
+        $incomeAccounts = $this->ledgerBalances(['income'], $from, $to, $branchId, $user, false);
+        $expenseAccounts = $this->ledgerBalances(['expense'], $from, $to, $branchId, $user, false);
+        $applicationFeesFromLedger = (float) $incomeAccounts
+            ->filter(fn (array $account): bool => str_contains(Str::lower((string) $account['account']), 'application fee'))
+            ->sum('balance');
+        $applicationFees = $applicationFeesFromLedger > 0
+            ? $applicationFeesFromLedger
+            : (float) LoanDisbursement::query()
+                ->whereBetween('disbursement_date', [$from, $to])
+                ->where('status', 'successful')
+                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+                ->sum('fees_deducted');
+        $penalties = (float) (clone $repayments)->sum('penalty_paid');
+        $otherBusinessIncome = (float) $incomeAccounts
+            ->filter(fn (array $account): bool => str_contains(Str::lower((string) $account['account']), 'other business income'))
+            ->sum('balance');
+        $interest = (float) $interestByProduct->sum('interest_total');
+        $expenses = (float) $expenseAccounts->sum('balance');
+        $income = $interest + $applicationFees + $penalties + $otherBusinessIncome;
+        $profit = $income - $expenses;
+
+        $rows = $interestByProduct
+            ->map(fn (object $product): array => [
+                'Section' => 'Income',
+                'Source' => 'Interest - '.$product->product_name,
+                'Amount' => $this->money((float) $product->interest_total),
+                'Explanation' => 'Interest collected from this loan product.',
+            ])
+            ->concat([
+                ['Section' => 'Income', 'Source' => 'Application Fees', 'Amount' => $this->money($applicationFees), 'Explanation' => 'Loan application fees received in the period.'],
+                ['Section' => 'Income', 'Source' => 'Penalties', 'Amount' => $this->money($penalties), 'Explanation' => 'Loan penalties collected in the period.'],
+                ['Section' => 'Income', 'Source' => 'Other Business Income', 'Amount' => $this->money($otherBusinessIncome), 'Explanation' => 'Other business income posted to the general ledger.'],
+                ['Section' => 'Income', 'Source' => 'Total Income / Money In', 'Amount' => $this->money($income), 'Explanation' => 'Total of the income sources above.', '_is_total' => true],
+            ])
+            ->concat($expenseAccounts->map(fn (array $account): array => [
+                'Section' => 'Expenses',
+                'Source' => $account['account'],
+                'Amount' => $this->money((float) $account['balance']),
+                'Explanation' => 'Expense posted to the general ledger.',
+                '_links' => [
+                    'Source' => $this->reportUrl('gl-account-transactions', $from, $to, $branchId, ['chart_account_id' => $account['id']]),
+                    'Amount' => $this->reportUrl('gl-account-transactions', $from, $to, $branchId, ['chart_account_id' => $account['id']]),
+                ],
+            ]))
+            ->concat([
+                ['Section' => 'Expenses', 'Source' => 'Total Expenses / Money Out', 'Amount' => $this->money($expenses), 'Explanation' => 'Total expenses for the period.', '_is_total' => true],
+                ['Section' => 'Profit', 'Source' => $profit >= 0 ? 'Profit' : 'Loss', 'Amount' => $this->money($profit), 'Explanation' => 'Income less expenses.', '_is_total' => true],
+            ])
+            ->values();
+
+        return [
+            ['Section', 'Source', 'Amount', 'Explanation'],
+            $rows,
+            [
+                'Income' => $this->money($income),
+                'Expenses' => $this->money($expenses),
+                'Money in' => $this->money($income),
+                'Money out' => $this->money($expenses),
+                $profit >= 0 ? 'Profit' : 'Loss' => $this->money($profit),
+            ],
+        ];
     }
 
     private function balanceSheet(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array

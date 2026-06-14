@@ -780,6 +780,14 @@ const initReportLauncher = () => {
                 dateFields.hidden = button.dataset.reportDates !== '1';
                 dateFields.querySelectorAll('input').forEach((input) => {
                     input.disabled = dateFields.hidden;
+
+                    if (input.name === 'from') {
+                        input.value = button.dataset.reportFrom || input.value;
+                    }
+
+                    if (input.name === 'to') {
+                        input.value = button.dataset.reportTo || input.value;
+                    }
                 });
             }
 

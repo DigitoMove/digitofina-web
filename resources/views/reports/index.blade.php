@@ -5,6 +5,7 @@
     $reportCount = $groups->flatten(1)->count();
     $prioritySlugs = $priorityReports->pluck('slug');
     $categoryDescriptions = [
+        'General Reports' => 'Simplified management reports for income, expenses, money movement, and profit.',
         'Posted Transactions' => 'Cash, system, user, teller, and non-cash transaction histories.',
         'Treasury' => 'Cash position, teller accountability, and branch reconciliation.',
         'Clients' => 'Client and relationship activity registers.',
@@ -19,6 +20,7 @@
         'Investments' => 'Investment balances, movements, returns, and performance.',
     ];
     $categoryAccents = [
+        'General Reports' => 'border-brand-200 bg-brand-50 text-brand-950',
         'Posted Transactions' => 'border-amber-200 bg-amber-50 text-amber-900',
         'Treasury' => 'border-emerald-200 bg-emerald-50 text-emerald-900',
         'Clients' => 'border-orange-200 bg-orange-50 text-orange-900',
@@ -66,6 +68,8 @@
                         data-report-detail="{{ $report['hasDetail'] ? '1' : '0' }}"
                         data-report-profitability="{{ $report['category'] === 'Profitability' ? '1' : '0' }}"
                         data-report-interest-basis="{{ $report['payload']['interest_basis'] ?? 'collected' }}"
+                        data-report-from="{{ ($report['payload']['default_period'] ?? null) === 'full_month' ? now()->startOfMonth()->toDateString() : $defaultFrom }}"
+                        data-report-to="{{ ($report['payload']['default_period'] ?? null) === 'full_month' ? now()->endOfMonth()->toDateString() : $defaultTo }}"
                         data-report-ledger="{{ in_array($report['kind'], ['journal_entries', 'non_cash_transactions'], true) ? '1' : '0' }}"
                     >
                         <span>{{ $report['title'] }}</span>

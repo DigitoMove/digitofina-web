@@ -44,7 +44,21 @@
             <h2 class="font-semibold text-slate-950">Generated Results</h2>
             <p class="text-sm text-slate-500">{{ $rows->count() }} row{{ $rows->count() === 1 ? '' : 's' }} shown.</p>
         </div>
-        @if(in_array($definition['kind'], ['transactions', 'teller_transactions', 'journal_entries', 'non_cash_transactions'], true))
+        @if($definition['kind'] === 'general_income_statement')
+            <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:grid-cols-4">
+                <input name="from" type="date" value="{{ $from->toDateString() }}" class="rounded border-slate-300 text-sm">
+                <input name="to" type="date" value="{{ $to->toDateString() }}" class="rounded border-slate-300 text-sm">
+                @if($canChooseBranch)
+                    <select name="branch_id" class="rounded border-slate-300 text-sm">
+                        <option value="">All branches</option>
+                        @foreach($branches as $branch)
+                            <option value="{{ $branch->id }}" @selected((int) $branchId === (int) $branch->id)>{{ $branch->name }}</option>
+                        @endforeach
+                    </select>
+                @endif
+                <button class="df-action-secondary">Apply Filters</button>
+            </form>
+        @elseif(in_array($definition['kind'], ['transactions', 'teller_transactions', 'journal_entries', 'non_cash_transactions'], true))
             <div class="grid gap-2">
                 <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="flex flex-wrap items-center justify-end gap-2">
                     <input type="hidden" name="from" value="{{ request('from') }}">
