@@ -125,6 +125,51 @@
             @if($errors->has('drawer_management'))
                 <div class="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ $errors->first('drawer_management') }}</div>
             @endif
+            @if($errors->has('drawer_transfer'))
+                <div class="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ $errors->first('drawer_transfer') }}</div>
+            @endif
+
+            <details class="mt-4 rounded-lg border border-brand-200 bg-brand-50 p-4" @if($errors->has('drawer_transfer')) open @endif>
+                <summary class="cursor-pointer font-semibold text-brand-900">Transfer cash between open drawers</summary>
+                <p class="mt-1 text-sm text-brand-800">The source drawer reduces by the transfer plus charges. The destination drawer increases by the transfer amount.</p>
+                <form method="POST" action="{{ route('teller.transfer') }}" class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3" data-confirm-title="Confirm drawer transfer" data-confirm-message="Cash will be removed from the source drawer and added to the destination drawer in one transaction." data-confirm-label="Transfer cash">
+                    @csrf
+                    <label class="text-sm font-semibold text-slate-700">Source drawer <x-required-badge />
+                        <select name="source_drawer_session_id" class="mt-1" required>
+                            <option value="">Select source</option>
+                            @foreach($openDrawerSessions as $openSession)
+                                <option value="{{ $openSession->id }}" @selected((int) old('source_drawer_session_id') === $openSession->id)>{{ $openSession->drawer->branch?->name }} · {{ $openSession->drawer->code }} · UGX {{ number_format((float) $openSession->drawer->current_balance, 2) }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                    <label class="text-sm font-semibold text-slate-700">Destination drawer <x-required-badge />
+                        <select name="destination_drawer_session_id" class="mt-1" required>
+                            <option value="">Select destination</option>
+                            @foreach($openDrawerSessions as $openSession)
+                                <option value="{{ $openSession->id }}" @selected((int) old('destination_drawer_session_id') === $openSession->id)>{{ $openSession->drawer->branch?->name }} · {{ $openSession->drawer->code }} · UGX {{ number_format((float) $openSession->drawer->current_balance, 2) }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                    <label class="text-sm font-semibold text-slate-700">Transfer amount <x-required-badge />
+                        <input name="amount" type="number" min="100" step="100" value="{{ old('amount') }}" class="mt-1" required>
+                    </label>
+                    <label class="text-sm font-semibold text-slate-700">Charges paid by source drawer
+                        <input name="charges" type="number" min="0" step="100" value="{{ old('charges', 0) }}" class="mt-1">
+                    </label>
+                    <label class="text-sm font-semibold text-slate-700">Transfer date <x-required-badge />
+                        <input name="transaction_date" type="date" max="{{ today()->toDateString() }}" value="{{ old('transaction_date', today()->toDateString()) }}" class="mt-1" required>
+                    </label>
+                    <label class="text-sm font-semibold text-slate-700 xl:col-span-2">Narration
+                        <input name="description" value="{{ old('description') }}" class="mt-1" placeholder="Cash reallocation, float transfer...">
+                    </label>
+                    <div class="flex items-end">
+                        <button class="df-action-primary w-full justify-center" @disabled($openDrawerSessions->count() < 2)>Transfer Cash</button>
+                    </div>
+                </form>
+                @if($openDrawerSessions->count() < 2)
+                    <p class="mt-3 text-sm font-medium text-amber-800">Open at least two drawers before transferring cash.</p>
+                @endif
+            </details>
 
             <form method="POST" action="{{ route('teller.drawers.store') }}" class="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
                 @csrf
@@ -380,6 +425,10 @@
             </label>
             <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge />
                 <input name="amount" type="number" min="100" step="100" class="mt-1" required data-confirm-summary-label="Amount">
+            </label>
+            <label class="text-sm font-semibold text-slate-700">Drawer Charges
+                <input name="charges" type="number" min="0" step="100" value="{{ old('charges', 0) }}" class="mt-1" data-confirm-summary-label="Charges">
+                <span class="mt-1 block text-xs font-normal text-slate-500">Optional charges paid from the drawer. Money-in is added net of charges; money-out includes charges.</span>
             </label>
             <label class="text-sm font-semibold text-slate-700">Transaction Date <x-required-badge />
                 <input name="transaction_date" type="date" max="{{ today()->toDateString() }}" value="{{ old('transaction_date', today()->toDateString()) }}" class="mt-1" required data-confirm-summary-label="Date">

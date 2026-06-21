@@ -20,6 +20,9 @@
 @if($errors->has('ledger_account'))
     <div class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ $errors->first('ledger_account') }}</div>
 @endif
+@if($errors->has('opening_balance'))
+    <div class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ $errors->first('opening_balance') }}</div>
+@endif
 
 <section class="df-panel overflow-hidden">
     <div class="flex flex-wrap gap-2 border-b border-slate-200 px-5 py-4">
@@ -55,12 +58,18 @@
                     <th>Type</th>
                     <th>Parent</th>
                     <th>Drawer Impact</th>
+                    <th class="text-right">Current Balance</th>
                     <th>Status</th>
                     <th class="text-right pr-3">Action</th>
                 </tr>
             </thead>
             <tbody>
                 @forelse($accounts as $account)
+                    @php
+                        $debitTotal = (float) ($account->posted_debit_total ?? 0);
+                        $creditTotal = (float) ($account->posted_credit_total ?? 0);
+                        $currentBalance = $account->normal_balance === 'debit' ? $debitTotal - $creditTotal : $creditTotal - $debitTotal;
+                    @endphp
                     <tr class="border-t border-slate-200 align-top">
                         <td class="p-3">{{ $account->branch?->name ?? 'Organization-level' }}</td>
                         <td class="font-semibold text-slate-950">{{ $account->code }}</td>
@@ -82,12 +91,16 @@
                                 @endif
                             </div>
                         </td>
+                        <td class="text-right font-semibold whitespace-nowrap {{ $currentBalance < 0 ? 'text-red-700' : 'text-slate-950' }}">UGX {{ number_format($currentBalance, 2) }}</td>
                         <td>
                             <span class="rounded px-2 py-1 text-xs font-semibold {{ $account->is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700' }}">{{ $account->is_active ? 'Active' : 'Inactive' }}</span>
                         </td>
                         <td class="pr-3 text-right">
                             <div class="flex flex-wrap justify-end gap-2">
                                 <button type="button" class="rounded border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" data-ledger-modal-open="ledger-edit-modal-{{ $account->id }}">Edit</button>
+                                @if($account->branch_id)
+                                    <button type="button" class="rounded border border-brand-200 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50" data-ledger-modal-open="ledger-opening-modal-{{ $account->id }}">Opening balance</button>
+                                @endif
                                 @if($canDeleteLedgerAccounts)
                                     <form method="POST" action="{{ route('ledger-accounts.destroy', $account) }}" data-confirm-title="Delete ledger account" data-confirm-message="Delete this ledger account? Accounts with activity, children, cash status, or system status will be blocked." data-confirm-label="Delete account" data-confirm-tone="danger">
                                         @csrf
@@ -100,7 +113,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="8" class="p-8 text-center text-slate-500">No ledger accounts found.</td>
+                        <td colspan="9" class="p-8 text-center text-slate-500">No ledger accounts found.</td>
                     </tr>
                 @endforelse
             </tbody>
@@ -254,5 +267,44 @@
             </form>
         </div>
     </div>
+
+    @if($account->branch_id)
+        <div id="ledger-opening-modal-{{ $account->id }}" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4" data-ledger-modal data-open="{{ old('_ledger_modal') === 'opening-'.$account->id ? '1' : '0' }}">
+            <div class="w-full max-w-xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+                <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+                    <div>
+                        <h2 class="text-lg font-semibold text-slate-950">Post opening balance</h2>
+                        <p class="text-sm text-slate-500">{{ $account->code }} · {{ $account->name }}</p>
+                    </div>
+                    <button type="button" class="rounded px-3 py-1 text-2xl leading-none text-slate-500 hover:bg-slate-100" data-ledger-modal-close aria-label="Close opening balance dialog">&times;</button>
+                </div>
+                <form method="POST" action="{{ route('ledger-accounts.opening-balance', $account) }}" class="grid gap-4 p-5 sm:grid-cols-2" data-confirm-title="Post ledger opening balance" data-confirm-message="This creates a permanent balanced journal entry. Use another adjustment entry if it needs correction." data-confirm-label="Post balance">
+                    @csrf
+                    <input type="hidden" name="_ledger_modal" value="opening-{{ $account->id }}">
+                    <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge />
+                        <input name="amount" type="number" min="100" step="100" value="{{ old('_ledger_modal') === 'opening-'.$account->id ? old('amount') : '' }}" class="mt-1" required>
+                    </label>
+                    <label class="text-sm font-semibold text-slate-700">Balance side <x-required-badge />
+                        <select name="entry_type" class="mt-1" required>
+                            @foreach($normalBalances as $value => $label)
+                                <option value="{{ $value }}" @selected((old('_ledger_modal') === 'opening-'.$account->id ? old('entry_type', $account->normal_balance) : $account->normal_balance) === $value)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                    <label class="text-sm font-semibold text-slate-700 sm:col-span-2">Opening date <x-required-badge />
+                        <input name="opening_date" type="date" max="{{ today()->toDateString() }}" value="{{ old('_ledger_modal') === 'opening-'.$account->id ? old('opening_date', today()->toDateString()) : today()->toDateString() }}" class="mt-1" required>
+                    </label>
+                    <label class="text-sm font-semibold text-slate-700 sm:col-span-2">Narration
+                        <textarea name="description" rows="3" class="mt-1" placeholder="Imported Merchant Code balance, opening bank position...">{{ old('_ledger_modal') === 'opening-'.$account->id ? old('description') : '' }}</textarea>
+                    </label>
+                    <p class="rounded border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800 sm:col-span-2">The opposite side is posted automatically to the branch Opening Balance Equity ledger, keeping the journal balanced.</p>
+                    <div class="flex justify-end gap-2 sm:col-span-2">
+                        <button type="button" class="df-action-secondary" data-ledger-modal-close>Cancel</button>
+                        <button class="df-action-primary">Post Opening Balance</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 @endforeach
 @endsection

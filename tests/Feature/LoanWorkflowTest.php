@@ -2103,6 +2103,7 @@ it('limits cashier repayment visibility to unpaid installments due today at thei
     $approvedLoan = loanWorkflowTrackedLoan($admin, $client, $product, '1001-LN-CASHIER-APPROVED', 'approved');
 
     loanWorkflowSchedule($todayLoan, today(), 'pending');
+    loanWorkflowSchedule($todayLoan, today()->subDays(3), 'overdue');
     loanWorkflowSchedule($futureLoan, today()->addDay(), 'pending');
     loanWorkflowSchedule($paidLoan, today(), 'paid', 0);
     loanWorkflowSchedule($approvedLoan, today(), 'pending');
@@ -2142,8 +2143,9 @@ it('limits cashier repayment visibility to unpaid installments due today at thei
         ->assertDontSee('1002-LN-CASHIER-OTHER')
         ->assertDontSee('Open total')
         ->assertSee('Amount to pay')
-        ->assertSee('1 installment')
-        ->assertSee('UGX 300,000.00');
+        ->assertSee('Earlier arrears')
+        ->assertSee('2 open installments')
+        ->assertSee('UGX 600,000.00');
 
     expect($this->actingAs($cashier)->get(route('arrears.index'))->isSuccessful())->toBeFalse();
 

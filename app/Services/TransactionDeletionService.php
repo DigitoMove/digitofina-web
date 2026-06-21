@@ -56,6 +56,10 @@ class TransactionDeletionService
                 throw new InvalidArgumentException('Loan repayment transactions must be reversed through the reversal workflow before deletion.');
             }
 
+            if ($transaction->type?->code === 'drawer_transfer') {
+                throw new InvalidArgumentException('Drawer transfers must be reversed through the reversal workflow before deletion.');
+            }
+
             $movement = DrawerMovement::query()
                 ->where('drawer_session_id', $transaction->drawer_session_id)
                 ->where('reference', $transaction->reference)
@@ -122,6 +126,7 @@ class TransactionDeletionService
                 'reference' => $transaction->reference,
                 'transaction_id' => $transaction->id,
                 'amount' => (float) $transaction->amount,
+                'charges' => (float) $transaction->charges,
                 'drawer_direction' => $restoreType,
                 'drawer_id' => $drawer->id,
                 'drawer_balance_after' => (float) $drawer->current_balance,

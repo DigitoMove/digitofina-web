@@ -2,17 +2,21 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreLedgerOpeningBalanceRequest;
 use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Services\AuditLogger;
+use App\Services\LedgerOpeningBalanceService;
 use App\Services\TenantContext;
 use App\Support\ApiSecurity;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use InvalidArgumentException;
 
 class LedgerAccountController extends Controller
 {
@@ -26,6 +30,8 @@ class LedgerAccountController extends Controller
         $accounts = ChartAccount::query()
             ->with(['branch.drawers', 'parent'])
             ->withCount(['children', 'journalEntries', 'journalLines'])
+            ->withSum(['journalLines as posted_debit_total' => fn (Builder $query): Builder => $query->whereHas('journalEntry', fn (Builder $query): Builder => $query->where('status', 'posted'))], 'debit')
+            ->withSum(['journalLines as posted_credit_total' => fn (Builder $query): Builder => $query->whereHas('journalEntry', fn (Builder $query): Builder => $query->where('status', 'posted'))], 'credit')
             ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
             ->when($type, fn (Builder $query, string $type): Builder => $query->where('type', $type))
             ->when($search !== '', function (Builder $query) use ($search): void {
@@ -198,6 +204,27 @@ class LedgerAccountController extends Controller
         $chartAccount->delete();
 
         return back()->with('status', 'Ledger account deleted.');
+    }
+
+    public function postOpeningBalance(StoreLedgerOpeningBalanceRequest $request, ChartAccount $chartAccount, LedgerOpeningBalanceService $openingBalances): RedirectResponse
+    {
+        $this->authorizeLedgerAccountAccess($request, $chartAccount);
+        $data = $request->validated();
+
+        try {
+            $journal = $openingBalances->post(
+                $chartAccount,
+                (float) $data['amount'],
+                $data['entry_type'],
+                CarbonImmutable::parse($data['opening_date']),
+                $request->user(),
+                $data['description'] ?? null,
+            );
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['opening_balance' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Opening balance posted as '.$journal->reference.'.');
     }
 
     private function authorizeLedgerBranch(Request $request, Branch $branch): void

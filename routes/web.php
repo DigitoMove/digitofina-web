@@ -158,6 +158,7 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::get('/loan-repayments/{loanRepayment}/receipt', [LoanRepaymentController::class, 'receipt'])->middleware('module:loans')->name('loan-repayments.receipt');
     Route::get('/ledger-accounts', [LedgerAccountController::class, 'index'])->middleware('module:accounting')->name('ledger-accounts.index');
     Route::post('/ledger-accounts', [LedgerAccountController::class, 'store'])->middleware('module:accounting')->name('ledger-accounts.store');
+    Route::post('/ledger-accounts/{chartAccount}/opening-balance', [LedgerAccountController::class, 'postOpeningBalance'])->middleware('module:accounting')->name('ledger-accounts.opening-balance');
     Route::put('/ledger-accounts/{chartAccount}', [LedgerAccountController::class, 'update'])->middleware('module:accounting')->name('ledger-accounts.update');
     Route::delete('/ledger-accounts/{chartAccount}', [LedgerAccountController::class, 'destroy'])->middleware('module:accounting')->name('ledger-accounts.destroy');
     Route::get('/arrears', [ArrearsController::class, 'index'])->middleware('module:loans')->name('arrears.index');
@@ -169,6 +170,7 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::post('/teller-drawer/drawers', [TellerDrawerController::class, 'storeDrawer'])->name('teller.drawers.store');
     Route::post('/teller-drawer/open', [TellerDrawerController::class, 'open'])->name('teller.open');
     Route::post('/teller-drawer/post', [TellerDrawerController::class, 'post'])->name('teller.post');
+    Route::post('/teller-drawer/transfer', [TellerDrawerController::class, 'transfer'])->name('teller.transfer');
     Route::post('/teller-drawer/close', [TellerDrawerController::class, 'close'])->name('teller.close');
     Route::post('/teller-drawer/{drawer}/close', [TellerDrawerController::class, 'closeDrawer'])->name('teller.drawers.close');
     Route::put('/teller-drawer/{drawer}', [TellerDrawerController::class, 'updateDrawer'])->name('teller.drawers.update');

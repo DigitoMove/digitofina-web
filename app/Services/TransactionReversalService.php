@@ -70,6 +70,7 @@ class TransactionReversalService
                 'reference' => $this->reference(),
                 'cheque_number' => $original->cheque_number,
                 'amount' => $original->amount,
+                'charges' => $original->charges,
                 'balance_after' => $account?->fresh()?->balance,
                 'currency' => $original->currency,
                 'description' => 'Reversal of '.$original->reference.($request->reason ? ': '.$request->reason : ''),
@@ -118,40 +119,59 @@ class TransactionReversalService
 
     private function reverseDrawerMovement(Transaction $transaction, User $checker): void
     {
-        $movement = DrawerMovement::query()
-            ->where('drawer_session_id', $transaction->drawer_session_id)
+        $movements = DrawerMovement::query()
+            ->with('session.drawer')
             ->where('reference', $transaction->reference)
-            ->latest()
+            ->orderBy('drawer_session_id')
             ->lockForUpdate()
-            ->first();
+            ->get();
 
-        if (! $movement || ! $transaction->drawerSession?->drawer) {
+        if ($movements->isEmpty()) {
             return;
         }
 
-        $drawer = TellerDrawer::query()->whereKey($transaction->drawerSession->drawer->id)->lockForUpdate()->firstOrFail();
-        $amount = (float) $movement->amount;
-        $reversalType = $movement->type === 'cash_in' ? 'cash_out' : 'cash_in';
+        $drawerIds = $movements->map(fn (DrawerMovement $movement): ?int => $movement->session?->teller_drawer_id)->filter()->unique()->sort()->values();
+        $drawers = TellerDrawer::query()
+            ->withoutGlobalScope('tenant')
+            ->whereIn('id', $drawerIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
 
-        if ($reversalType === 'cash_out' && (float) $drawer->current_balance < $amount) {
-            throw new InvalidArgumentException('The drawer balance is too low to reverse this transaction.');
+        foreach ($movements->where('type', 'cash_in')->groupBy(fn (DrawerMovement $movement): ?int => $movement->session?->teller_drawer_id) as $drawerId => $cashInMovements) {
+            $drawer = $drawers->get($drawerId);
+            $requiredCash = (float) $cashInMovements->sum('amount');
+
+            if (! $drawer || (float) $drawer->current_balance < $requiredCash) {
+                throw new InvalidArgumentException('A destination drawer does not have enough cash to reverse this transaction.');
+            }
         }
 
-        $reversalType === 'cash_out'
-            ? $drawer->decrement('current_balance', $amount)
-            : $drawer->increment('current_balance', $amount);
+        foreach ($movements as $movement) {
+            $drawer = $drawers->get($movement->session?->teller_drawer_id);
 
-        $drawer->refresh();
+            if (! $drawer) {
+                throw new InvalidArgumentException('A drawer linked to this transaction no longer exists.');
+            }
 
-        DrawerMovement::create([
-            'drawer_session_id' => $movement->drawer_session_id,
-            'user_id' => $checker->id,
-            'type' => $reversalType,
-            'amount' => $amount,
-            'balance_after' => $drawer->current_balance,
-            'reference' => 'RV-'.$transaction->reference,
-            'description' => 'Reversal of '.$transaction->reference,
-        ]);
+            $amount = (float) $movement->amount;
+            $reversalType = $movement->type === 'cash_in' ? 'cash_out' : 'cash_in';
+            $reversalType === 'cash_out'
+                ? $drawer->decrement('current_balance', $amount)
+                : $drawer->increment('current_balance', $amount);
+            $drawer->refresh();
+
+            DrawerMovement::create([
+                'drawer_session_id' => $movement->drawer_session_id,
+                'user_id' => $checker->id,
+                'type' => $reversalType,
+                'amount' => $amount,
+                'balance_after' => $drawer->current_balance,
+                'reference' => 'RV-'.$transaction->reference,
+                'description' => 'Reversal of '.$transaction->reference,
+            ]);
+        }
     }
 
     private function reverseLoanRepayment(LoanRepayment $repayment, User $checker, ?string $reason): void

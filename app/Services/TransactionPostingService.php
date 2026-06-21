@@ -24,16 +24,18 @@ class TransactionPostingService
     public function __construct(
         private AuditLogger $auditLogger,
         private InAppNotificationService $notifications,
+        private BranchGeneralLedgerService $generalLedger,
     ) {}
 
-    public function postCash(Account $account, DrawerSession $session, TransactionType $type, float $amount, User $user, ?string $description = null, ?string $chequeNumber = null, ?CarbonInterface $postedAt = null): Transaction
+    public function postCash(Account $account, DrawerSession $session, TransactionType $type, float $amount, User $user, ?string $description = null, ?string $chequeNumber = null, ?CarbonInterface $postedAt = null, float $charges = 0): Transaction
     {
         $postedAt = TransactionTimestamp::forBusinessDate($postedAt);
+        $this->assertCharges($charges);
 
-        return DB::transaction(function () use ($account, $session, $type, $amount, $user, $description, $chequeNumber, $postedAt) {
+        return DB::transaction(function () use ($account, $session, $type, $amount, $user, $description, $chequeNumber, $postedAt, $charges) {
             $account = Account::query()->with(['accountType', 'client.loans'])->whereKey($account->id)->lockForUpdate()->firstOrFail();
             $session = DrawerSession::query()->with('drawer')->whereKey($session->id)->lockForUpdate()->firstOrFail();
-            $drawer = $session->drawer()->lockForUpdate()->firstOrFail();
+            $drawer = $session->drawer()->with('branch')->lockForUpdate()->firstOrFail();
 
             if ($account->status !== 'active') {
                 throw new InvalidArgumentException('Account is not active.');
@@ -51,12 +53,12 @@ class TransactionPostingService
 
             $financialControls = app(FinancialControlService::class);
             $businessDate = $financialControls->ensureFinancialDayOpen($user, (int) $drawer->branch_id, $postedAt);
-            $financialControls->enforceTransactionLimit($user, $amount, $businessDate);
+            $financialControls->enforceTransactionLimit($user, $amount + $charges, $businessDate);
 
             $direction = $type->direction;
 
             if ($account->accountType?->category === 'loan' && $type->code === 'loan_repayment') {
-                return $this->postLoanRepayment($account, $session, $drawer, $type, $amount, $user, $description, $chequeNumber, $postedAt);
+                return $this->postLoanRepayment($account, $session, $drawer, $type, $amount, $user, $description, $chequeNumber, $postedAt, $charges);
             }
 
             if ($account->accountType?->category === 'loan') {
@@ -72,16 +74,23 @@ class TransactionPostingService
                     throw new InvalidArgumentException('Insufficient account balance.');
                 }
 
-                if ((float) $drawer->current_balance < $amount) {
+                $cashImpact = $amount + $charges;
+
+                if ((float) $drawer->current_balance < $cashImpact) {
                     throw new InvalidArgumentException('Insufficient drawer cash.');
                 }
 
                 $account->decrement('balance', $amount);
-                $drawer->decrement('current_balance', $amount);
+                $drawer->decrement('current_balance', $cashImpact);
                 $movementType = 'cash_out';
             } else {
+                if ($charges > $amount) {
+                    throw new InvalidArgumentException('Charges cannot exceed money received into the drawer.');
+                }
+
+                $cashImpact = $amount - $charges;
                 $account->increment('balance', $amount);
-                $drawer->increment('current_balance', $amount);
+                $drawer->increment('current_balance', $cashImpact);
                 $movementType = 'cash_in';
             }
 
@@ -97,6 +106,7 @@ class TransactionPostingService
                 'reference' => $this->reference(),
                 'cheque_number' => $chequeNumber,
                 'amount' => $amount,
+                'charges' => $charges,
                 'balance_after' => $account->balance,
                 'description' => $description,
                 'posted_at' => $postedAt,
@@ -106,11 +116,15 @@ class TransactionPostingService
                 'drawer_session_id' => $session->id,
                 'user_id' => $user->id,
                 'type' => $movementType,
-                'amount' => $amount,
+                'amount' => $cashImpact,
                 'balance_after' => $drawer->current_balance,
                 'reference' => $transaction->reference,
                 'description' => $description,
             ]);
+
+            if ($charges > 0) {
+                $this->postChargeJournal($transaction, $drawer, $charges, $user, $postedAt, $description);
+            }
 
             $this->auditLogger->record('transaction.posted', $transaction, [
                 'account_number' => $account->account_number,
@@ -131,7 +145,7 @@ class TransactionPostingService
         });
     }
 
-    private function postLoanRepayment(Account $account, DrawerSession $session, TellerDrawer $drawer, TransactionType $type, float $amount, User $user, ?string $description, ?string $chequeNumber, CarbonInterface $postedAt): Transaction
+    private function postLoanRepayment(Account $account, DrawerSession $session, TellerDrawer $drawer, TransactionType $type, float $amount, User $user, ?string $description, ?string $chequeNumber, CarbonInterface $postedAt, float $charges): Transaction
     {
         $loan = $account->client->loans()
             ->where('loan_account_id', $account->id)
@@ -142,7 +156,12 @@ class TransactionPostingService
             throw new InvalidArgumentException('No active loan is linked to this loan account.');
         }
 
-        $drawer->increment('current_balance', $amount);
+        if ($charges > $amount) {
+            throw new InvalidArgumentException('Charges cannot exceed money received into the drawer.');
+        }
+
+        $cashImpact = $amount - $charges;
+        $drawer->increment('current_balance', $cashImpact);
         $drawer->refresh();
 
         $transaction = Transaction::create([
@@ -154,6 +173,7 @@ class TransactionPostingService
             'reference' => $this->reference(),
             'cheque_number' => $chequeNumber,
             'amount' => $amount,
+            'charges' => $charges,
             'balance_after' => max(0, (float) $account->balance - $amount),
             'description' => $description,
             'posted_at' => $postedAt,
@@ -169,11 +189,15 @@ class TransactionPostingService
             'drawer_session_id' => $session->id,
             'user_id' => $user->id,
             'type' => 'cash_in',
-            'amount' => $amount,
+            'amount' => $cashImpact,
             'balance_after' => $drawer->current_balance,
             'reference' => $transaction->reference,
             'description' => $description ?: 'Loan repayment',
         ]);
+
+        if ($charges > 0) {
+            $this->postChargeJournal($transaction, $drawer, $charges, $user, $postedAt, $description);
+        }
 
         $this->auditLogger->record('transaction.loan_repayment_posted', $transaction, [
             'account_number' => $account->account_number,
@@ -389,7 +413,7 @@ class TransactionPostingService
         return $transaction->refresh();
     }
 
-    public function postGeneralLedgerCash(ChartAccount $chartAccount, DrawerSession $session, string $entryType, float $amount, User $user, ?string $description = null, ?CarbonInterface $postedAt = null): JournalEntry
+    public function postGeneralLedgerCash(ChartAccount $chartAccount, DrawerSession $session, string $entryType, float $amount, User $user, ?string $description = null, ?CarbonInterface $postedAt = null, float $charges = 0): JournalEntry
     {
         $postedAt = TransactionTimestamp::forBusinessDate($postedAt);
 
@@ -398,11 +422,12 @@ class TransactionPostingService
         }
 
         CurrencyDenomination::assertValid($amount);
+        $this->assertCharges($charges);
 
-        return DB::transaction(function () use ($chartAccount, $session, $entryType, $amount, $user, $description, $postedAt): JournalEntry {
+        return DB::transaction(function () use ($chartAccount, $session, $entryType, $amount, $user, $description, $postedAt, $charges): JournalEntry {
             $chartAccount = ChartAccount::query()->whereKey($chartAccount->id)->lockForUpdate()->firstOrFail();
             $session = DrawerSession::query()->with('drawer')->whereKey($session->id)->lockForUpdate()->firstOrFail();
-            $drawer = $session->drawer()->lockForUpdate()->firstOrFail();
+            $drawer = $session->drawer()->with('branch')->lockForUpdate()->firstOrFail();
 
             if ($session->status !== 'open' || $drawer->status !== 'open') {
                 throw new InvalidArgumentException('Teller drawer is closed.');
@@ -434,15 +459,21 @@ class TransactionPostingService
 
             $financialControls = app(FinancialControlService::class);
             $businessDate = $financialControls->ensureFinancialDayOpen($user, (int) $drawer->branch_id, $postedAt);
-            $financialControls->enforceTransactionLimit($user, $amount, $businessDate);
+            $financialControls->enforceTransactionLimit($user, $amount + $charges, $businessDate);
 
-            if ($entryType === 'debit' && (float) $drawer->current_balance < $amount) {
+            if ($entryType === 'credit' && $charges > $amount) {
+                throw new InvalidArgumentException('Charges cannot exceed money received into the drawer.');
+            }
+
+            $cashImpact = $entryType === 'debit' ? $amount + $charges : $amount - $charges;
+
+            if ($entryType === 'debit' && (float) $drawer->current_balance < $cashImpact) {
                 throw new InvalidArgumentException('Insufficient drawer cash.');
             }
 
             $entryType === 'debit'
-                ? $drawer->decrement('current_balance', $amount)
-                : $drawer->increment('current_balance', $amount);
+                ? $drawer->decrement('current_balance', $cashImpact)
+                : $drawer->increment('current_balance', $cashImpact);
             $drawer->refresh();
 
             $type = TransactionType::query()->firstOrCreate(
@@ -462,6 +493,7 @@ class TransactionPostingService
                 'user_id' => $user->id,
                 'reference' => $this->reference(),
                 'amount' => $amount,
+                'charges' => $charges,
                 'balance_after' => $drawer->current_balance,
                 'currency' => $drawer->currency,
                 'description' => $description ?: 'Teller general ledger cash posting for '.$chartAccount->name,
@@ -470,7 +502,7 @@ class TransactionPostingService
             ]);
 
             $journal = JournalEntry::create([
-                'organization_id' => $user->organization_id,
+                'organization_id' => $drawer->branch->organization_id,
                 'branch_id' => $drawer->branch_id,
                 'created_by' => $user->id,
                 'posted_by' => $user->id,
@@ -488,16 +520,22 @@ class TransactionPostingService
                 'memo' => $description,
             ]);
 
-            $cashAccount = ChartAccount::query()->where('code', '1010')->first();
+            $cashAccount = $this->cashAccount($drawer);
+            $chargeAccount = $charges > 0 ? $this->generalLedger->transactionChargesExpense($drawer->branch) : null;
             $lines = $entryType === 'debit'
                 ? [
                     [$chartAccount->id, $amount, 0, $description ?: $chartAccount->name],
-                    [$cashAccount?->id, 0, $amount, 'Cash paid from teller drawer'],
+                    [$cashAccount->id, 0, $amount, 'Cash paid from teller drawer'],
                 ]
                 : [
-                    [$cashAccount?->id, $amount, 0, 'Cash received into teller drawer'],
+                    [$cashAccount->id, $amount, 0, 'Cash received into teller drawer'],
                     [$chartAccount->id, 0, $amount, $description ?: $chartAccount->name],
                 ];
+
+            if ($chargeAccount) {
+                $lines[] = [$chargeAccount->id, $charges, 0, 'Transaction charges'];
+                $lines[] = [$cashAccount->id, 0, $charges, 'Charges paid from teller drawer'];
+            }
 
             foreach ($lines as [$chartAccountId, $debit, $credit, $narration]) {
                 if ($chartAccountId) {
@@ -515,7 +553,7 @@ class TransactionPostingService
                 'drawer_session_id' => $session->id,
                 'user_id' => $user->id,
                 'type' => $entryType === 'debit' ? 'cash_out' : 'cash_in',
-                'amount' => $amount,
+                'amount' => $cashImpact,
                 'balance_after' => $drawer->current_balance,
                 'reference' => $transaction->reference,
                 'description' => $description ?: $chartAccount->name,
@@ -525,6 +563,7 @@ class TransactionPostingService
                 'chart_account' => $chartAccount->code,
                 'entry_type' => $entryType,
                 'amount' => $amount,
+                'charges' => $charges,
             ]);
             $this->notifications->notifyStaffByPermission(
                 ['manage-drawers', 'approve-reversals', 'view-reports'],
@@ -540,6 +579,72 @@ class TransactionPostingService
 
             return $journal->refresh();
         });
+    }
+
+    private function postChargeJournal(Transaction $transaction, TellerDrawer $drawer, float $charges, User $user, CarbonInterface $postedAt, ?string $description): void
+    {
+        $chargeAccount = $this->generalLedger->transactionChargesExpense($drawer->branch);
+        $cashAccount = $this->cashAccount($drawer);
+        $journal = JournalEntry::create([
+            'organization_id' => $drawer->branch->organization_id,
+            'branch_id' => $drawer->branch_id,
+            'created_by' => $user->id,
+            'posted_by' => $user->id,
+            'journal_number' => 'TC'.now()->format('ymdHis').Str::upper(Str::random(4)),
+            'journal_date' => $postedAt->toDateString(),
+            'description' => 'Transaction charges for '.$transaction->reference,
+            'status' => 'posted',
+            'posted_at' => $postedAt,
+            'transaction_id' => $transaction->id,
+            'reference' => $transaction->reference,
+            'account_name' => $chargeAccount->name,
+            'entry_type' => 'debit',
+            'amount' => $charges,
+            'memo' => $description,
+        ]);
+
+        foreach ([
+            [$chargeAccount->id, $charges, 0],
+            [$cashAccount->id, 0, $charges],
+        ] as [$accountId, $debit, $credit]) {
+            JournalLine::create([
+                'journal_entry_id' => $journal->id,
+                'chart_account_id' => $accountId,
+                'debit' => $debit,
+                'credit' => $credit,
+                'narration' => 'Transaction charges',
+            ]);
+        }
+    }
+
+    private function cashAccount(TellerDrawer $drawer): ChartAccount
+    {
+        $cashAccount = ChartAccount::query()
+            ->withoutGlobalScope('tenant')
+            ->where('is_cash_account', true)
+            ->where('is_active', true)
+            ->where(function ($query) use ($drawer): void {
+                $query->where('branch_id', $drawer->branch_id)->orWhereNull('branch_id');
+            })
+            ->orderByRaw('branch_id is null')
+            ->first();
+
+        if (! $cashAccount) {
+            throw new InvalidArgumentException('Configure an active cash ledger before posting drawer transactions.');
+        }
+
+        return $cashAccount;
+    }
+
+    private function assertCharges(float $charges): void
+    {
+        if ($charges < 0) {
+            throw new InvalidArgumentException('Charges cannot be negative.');
+        }
+
+        if ($charges > 0) {
+            CurrencyDenomination::assertValid($charges, 'Charges');
+        }
     }
 
     private function reference(): string

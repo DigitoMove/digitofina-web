@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreDrawerTransferRequest;
 use App\Models\Account;
 use App\Models\AccountType;
 use App\Models\Branch;
@@ -15,6 +16,7 @@ use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\DrawerTransferService;
 use App\Services\FinancialControlService;
 use App\Services\TellerService;
 use App\Services\TenantContext;
@@ -104,7 +106,7 @@ class TellerDrawerController extends Controller
             })
             ->where('outstanding_amount', '>', 0)
             ->where('status', '!=', 'paid')
-            ->whereDate('due_date', today())
+            ->whereDate('due_date', '<=', today())
             ->orderBy('due_date')
             ->limit(8)
             ->get();
@@ -137,6 +139,16 @@ class TellerDrawerController extends Controller
             'drawers' => $drawers,
             'branches' => $branches,
             'branchesWithoutDrawers' => $branches->reject(fn (Branch $branch): bool => $drawers->contains('branch_id', $branch->id)),
+            'openDrawerSessions' => DrawerSession::query()
+                ->with(['drawer.branch', 'user'])
+                ->where('status', 'open')
+                ->whereHas('drawer', function (Builder $query) use ($organizationId, $request): void {
+                    $query
+                        ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $this->scopeDrawersToOrganization($query, $organizationId))
+                        ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()) && $request->user()->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id));
+                })
+                ->orderBy('id')
+                ->get(),
             'tellers' => $canOpenForTellers
                 ? User::query()
                     ->with(['branch', 'role'])
@@ -247,6 +259,7 @@ class TellerDrawerController extends Controller
             'chart_account_id' => ['required', 'exists:chart_accounts,id'],
             'drawer_direction' => ['required', Rule::in(['cash_in', 'cash_out'])],
             'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+            'charges' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
             'transaction_date' => ['required', 'date', 'before_or_equal:today'],
             'description' => ['nullable', 'string', 'max:1000'],
         ]);
@@ -267,7 +280,7 @@ class TellerDrawerController extends Controller
                 throw new InvalidArgumentException('Select whether this posting adds to or takes from the drawer.');
             }
 
-            $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], $request->user(), $data['description'] ?? null, CarbonImmutable::parse($data['transaction_date']));
+            $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], $request->user(), $data['description'] ?? null, CarbonImmutable::parse($data['transaction_date']), (float) ($data['charges'] ?? 0));
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['managed_drawer_posting' => $exception->getMessage()])->withInput();
         }
@@ -398,6 +411,7 @@ class TellerDrawerController extends Controller
             'gl_entry_type' => ['nullable', 'in:debit,credit'],
             'transaction_type_id' => ['nullable', 'required_if:account_scope,client_account', 'exists:transaction_types,id'],
             'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+            'charges' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
             'transaction_date' => ['required', 'date', 'before_or_equal:today'],
             'cheque_number' => ['nullable', 'string', 'max:191'],
             'description' => ['nullable', 'string'],
@@ -437,7 +451,7 @@ class TellerDrawerController extends Controller
                     throw new InvalidArgumentException('Select whether the money is coming in or going out.');
                 }
 
-                $journal = $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $postedAt);
+                $journal = $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $postedAt, (float) ($data['charges'] ?? 0));
 
                 return redirect()
                     ->route('teller.index', [
@@ -469,7 +483,7 @@ class TellerDrawerController extends Controller
                 abort_unless($request->user()->canPerform('post-transactions'), 403);
             }
 
-            $transaction = $posting->postCash($account, $session, $type, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $data['cheque_number'] ?? null, $postedAt);
+            $transaction = $posting->postCash($account, $session, $type, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $data['cheque_number'] ?? null, $postedAt, (float) ($data['charges'] ?? 0));
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['amount' => $exception->getMessage()])->withInput();
         }
@@ -503,6 +517,32 @@ class TellerDrawerController extends Controller
         }
 
         return back()->with('status', 'Drawer closed.');
+    }
+
+    public function transfer(StoreDrawerTransferRequest $request, DrawerTransferService $transfers): RedirectResponse
+    {
+        $data = $request->validated();
+        $sourceSession = DrawerSession::query()->with('drawer.branch')->findOrFail($data['source_drawer_session_id']);
+        $destinationSession = DrawerSession::query()->with('drawer.branch')->findOrFail($data['destination_drawer_session_id']);
+
+        $this->authorizeDrawerBranch($request, $sourceSession->drawer->branch);
+        $this->authorizeDrawerBranch($request, $destinationSession->drawer->branch);
+
+        try {
+            $transaction = $transfers->transfer(
+                $sourceSession,
+                $destinationSession,
+                (float) $data['amount'],
+                (float) ($data['charges'] ?? 0),
+                $request->user(),
+                $data['description'] ?? null,
+                CarbonImmutable::parse($data['transaction_date']),
+            );
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['drawer_transfer' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Drawer transfer '.$transaction->reference.' completed.');
     }
 
     public function closeDrawer(Request $request, TellerDrawer $drawer, FinancialControlService $financialControls): RedirectResponse
