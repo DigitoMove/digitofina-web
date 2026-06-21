@@ -47,7 +47,7 @@ class NonCashTransactionController extends Controller
         $selectedLedger = $request->integer('chart_account_id')
             ? ChartAccount::query()
                 ->with('branch')
-                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->when($branchId, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
                 ->whereKey($request->integer('chart_account_id'))
                 ->first()
             : null;
@@ -87,7 +87,7 @@ class NonCashTransactionController extends Controller
                 ->get(),
             'ledgerResults' => ChartAccount::query()
                 ->with('branch')
-                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->when($branchId, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
                 ->where('is_active', true)
                 ->where('is_cash_account', false)
                 ->when($ledgerSearch !== '', fn (Builder $query): Builder => $query->whereAny(['code', 'name', 'type'], 'like', "%{$ledgerSearch}%"))
@@ -131,7 +131,7 @@ class NonCashTransactionController extends Controller
                 ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
                 ->findOrFail($data['account_id']);
             $chartAccount = ChartAccount::query()
-                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->when($branchId, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
                 ->findOrFail($data['chart_account_id']);
             $type = TransactionType::query()->findOrFail($data['transaction_type_id']);
 

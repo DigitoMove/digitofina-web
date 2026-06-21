@@ -289,8 +289,9 @@ class TransactionPostingService
                 throw new InvalidArgumentException('Select an active non-cash general ledger account.');
             }
 
-            if ((int) $account->branch_id !== (int) $offsetAccount->branch_id) {
-                throw new InvalidArgumentException('The offset general ledger account must belong to the same branch.');
+            if ((int) $account->organization_id !== (int) $offsetAccount->organization_id
+                || ($offsetAccount->branch_id !== null && (int) $account->branch_id !== (int) $offsetAccount->branch_id)) {
+                throw new InvalidArgumentException('The offset ledger must be organization-level or belong to the same branch.');
             }
 
             app(FinancialControlService::class)->ensureFinancialDayOpen($user, (int) $account->branch_id, $postedAt);
@@ -433,8 +434,9 @@ class TransactionPostingService
                 throw new InvalidArgumentException('Teller drawer is closed.');
             }
 
-            if ((int) $chartAccount->branch_id !== (int) $drawer->branch_id) {
-                throw new InvalidArgumentException('Select a general ledger account for this branch.');
+            if ((int) $chartAccount->organization_id !== (int) $drawer->branch->organization_id
+                || ($chartAccount->branch_id !== null && (int) $chartAccount->branch_id !== (int) $drawer->branch_id)) {
+                throw new InvalidArgumentException('Select an organization-level ledger or a ledger for this branch.');
             }
 
             if (! $chartAccount->is_active) {

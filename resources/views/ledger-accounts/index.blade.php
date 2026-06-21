@@ -12,7 +12,7 @@
     <div>
         <div class="text-sm font-semibold text-slate-500">Accounts</div>
         <h1 class="df-title">{{ $selectedTypeLabel }}</h1>
-        <p class="df-muted">Manage branch chart-of-account records for expenses, income, assets, liabilities, capital, and drawer-aware postings.</p>
+        <p class="df-muted">Manage branch and organization-level chart-of-account records, balances, drawer postings, and reconciliations.</p>
     </div>
     <button type="button" class="df-action-primary" data-ledger-modal-open="ledger-create-modal">New {{ $type ? str($selectedTypeLabel)->singular() : 'Ledger Account' }}</button>
 </div>
@@ -72,7 +72,7 @@
                     @endphp
                     <tr class="border-t border-slate-200 align-top">
                         <td class="p-3">{{ $account->branch?->name ?? 'Organization-level' }}</td>
-                        <td class="font-semibold text-slate-950">{{ $account->code }}</td>
+                        <td><a href="{{ route('ledger-accounts.show', $account) }}" class="font-semibold text-brand-700 hover:underline">{{ $account->code }}</a></td>
                         <td>
                             <div class="font-medium text-slate-950">{{ $account->name }}</div>
                             <div class="text-xs text-slate-500">{{ $account->is_cash_account ? 'Cash ledger' : 'Operating ledger' }}{{ $account->is_system ? ' · System account' : '' }}</div>
@@ -93,12 +93,18 @@
                         </td>
                         <td class="text-right font-semibold whitespace-nowrap {{ $currentBalance < 0 ? 'text-red-700' : 'text-slate-950' }}">UGX {{ number_format($currentBalance, 2) }}</td>
                         <td>
-                            <span class="rounded px-2 py-1 text-xs font-semibold {{ $account->is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700' }}">{{ $account->is_active ? 'Active' : 'Inactive' }}</span>
+                            <span class="rounded px-2 py-1 text-xs font-semibold {{ $account->is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700' }}">{{ $account->merged_into_id ? 'Merged' : ($account->is_active ? 'Active' : 'Inactive') }}</span>
+                            @if($account->mergedInto)
+                                <a href="{{ route('ledger-accounts.show', $account->mergedInto) }}" class="mt-1 block text-xs font-semibold text-brand-700">Into {{ $account->mergedInto->code }}</a>
+                            @endif
                         </td>
                         <td class="pr-3 text-right">
                             <div class="flex flex-wrap justify-end gap-2">
-                                <button type="button" class="rounded border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" data-ledger-modal-open="ledger-edit-modal-{{ $account->id }}">Edit</button>
-                                @if($account->branch_id)
+                                <a href="{{ route('ledger-accounts.show', $account) }}" class="rounded border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">View flows</a>
+                                @if(!$account->merged_into_id)
+                                    <button type="button" class="rounded border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" data-ledger-modal-open="ledger-edit-modal-{{ $account->id }}">Edit</button>
+                                @endif
+                                @if($account->branch_id && !$account->merged_into_id)
                                     <button type="button" class="rounded border border-brand-200 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50" data-ledger-modal-open="ledger-opening-modal-{{ $account->id }}">Opening balance</button>
                                 @endif
                                 @if($canDeleteLedgerAccounts)
@@ -128,22 +134,26 @@
         <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
             <div>
                 <h2 class="text-lg font-semibold text-slate-950">New Ledger Account</h2>
-                <p class="text-sm text-slate-500">Create a branch ledger with a branch-prefixed account code.</p>
+                <p class="text-sm text-slate-500">Create a branch ledger or a shared organization-level provider ledger.</p>
             </div>
             <button type="button" class="rounded px-3 py-1 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900" data-ledger-modal-close aria-label="Close ledger account dialog">&times;</button>
         </div>
         <form method="POST" action="{{ route('ledger-accounts.store') }}" class="grid gap-3 p-5 md:grid-cols-2">
             @csrf
             <input type="hidden" name="_ledger_modal" value="create">
-            <label class="text-sm font-semibold text-slate-700">Branch <x-required-badge />
-                <select name="branch_id" class="mt-1" required>
+            <label class="text-sm font-semibold text-slate-700">Branch
+                <select name="branch_id" class="mt-1">
+                    @if($canCreateGlobalLedgerAccounts)
+                        <option value="" @selected(blank(old('branch_id')))>Organization-level shared ledger</option>
+                    @endif
                     @foreach($branches as $branch)
                         <option value="{{ $branch->id }}" @selected((int) old('branch_id') === $branch->id)>{{ $branch->name }}</option>
                     @endforeach
                 </select>
             </label>
-            <label class="text-sm font-semibold text-slate-700">Code Suffix <x-required-badge />
-                <input name="suffix" value="{{ old('suffix') }}" class="mt-1" placeholder="1105, 2300, 5215" required>
+            <label class="text-sm font-semibold text-slate-700">Code or Branch Suffix <x-required-badge />
+                <input name="suffix" value="{{ old('suffix') }}" class="mt-1" placeholder="MTN-MERCHANT or 1105" required>
+                <span class="mt-1 block text-xs text-slate-500">Organization-level uses this as the full code. Branch ledgers receive the branch prefix.</span>
             </label>
             <label class="text-sm font-semibold text-slate-700 md:col-span-2">Account Name <x-required-badge />
                 <input name="name" value="{{ old('name') }}" class="mt-1" placeholder="Bank Cash Source, Transport Expense, Donations Income" required>
@@ -168,7 +178,7 @@
                         <option value="{{ $value }}" @selected(old('drawer_direction') === $value)>{{ $label }}</option>
                     @endforeach
                 </select>
-                <span class="mt-1 block text-xs text-slate-500">The selected branch determines the specific drawers that can use this ledger account.</span>
+                <span class="mt-1 block text-xs text-slate-500">Organization-level ledgers can be used by every branch; each posting still records its originating branch.</span>
             </label>
             <div class="flex justify-end gap-2 md:col-span-2">
                 <button type="button" class="df-action-secondary" data-ledger-modal-close>Cancel</button>

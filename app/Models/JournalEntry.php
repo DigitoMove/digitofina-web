@@ -27,6 +27,11 @@ class JournalEntry extends Model
         return $this->belongsTo(ChartAccount::class);
     }
 
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class);

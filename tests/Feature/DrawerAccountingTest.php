@@ -137,8 +137,8 @@ it('adds ledger cash to a drawer net of charges and keeps the journal balanced',
     [$drawer, $session] = openAccountingDrawer($organization, $branch, $user, 'MAIN-01', 200_000);
     $merchantCode = ChartAccount::create([
         'organization_id' => $organization->id,
-        'branch_id' => $branch->id,
-        'code' => 'BR01-1105',
+        'branch_id' => null,
+        'code' => 'MTN-MERCHANT',
         'name' => 'Merchant Code Clearing',
         'type' => 'asset',
         'normal_balance' => 'debit',
@@ -161,5 +161,6 @@ it('adds ledger cash to a drawer net of charges and keeps the journal balanced',
         ->and((float) $journal->transaction->charges)->toBe(1000.0)
         ->and((float) $journal->lines()->sum('debit'))->toBe(101000.0)
         ->and((float) $journal->lines()->sum('credit'))->toBe(101000.0)
+        ->and($journal->branch_id)->toBe($branch->id)
         ->and((float) DrawerMovement::where('reference', $journal->reference)->value('amount'))->toBe(99000.0);
 });

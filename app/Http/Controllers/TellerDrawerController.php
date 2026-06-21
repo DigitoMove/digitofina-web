@@ -85,7 +85,7 @@ class TellerDrawerController extends Controller
             ->get();
         $selectedChartAccount = $request->integer('chart_account_id')
             ? ChartAccount::query()
-                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->when($branchId, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
                 ->whereKey($request->integer('chart_account_id'))
                 ->first()
             : null;
@@ -163,7 +163,7 @@ class TellerDrawerController extends Controller
             'canApproveReversals' => $canApproveReversals,
             'accountTypes' => AccountType::where('is_active', true)->get(),
             'chartAccounts' => ChartAccount::query()
-                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->when($branchId, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
                 ->where('is_active', true)
                 ->where('is_cash_account', false)
                 ->where(fn (Builder $query): Builder => $query->whereNull('drawer_direction')->orWhere('drawer_direction', '!=', 'none'))
@@ -270,8 +270,9 @@ class TellerDrawerController extends Controller
         try {
             $this->authorizeDrawerBranch($request, $session->drawer->branch);
 
-            if ((int) $chartAccount->branch_id !== (int) $session->drawer->branch_id) {
-                throw new InvalidArgumentException('Select a ledger account from the same branch as the drawer.');
+            if ((int) $chartAccount->organization_id !== (int) $session->drawer->branch->organization_id
+                || ($chartAccount->branch_id !== null && (int) $chartAccount->branch_id !== (int) $session->drawer->branch_id)) {
+                throw new InvalidArgumentException('Select an organization-level ledger or a ledger from the same branch as the drawer.');
             }
 
             $entryType = $this->ledgerEntryType($chartAccount, $data['drawer_direction']);
@@ -438,11 +439,13 @@ class TellerDrawerController extends Controller
             if ($data['account_scope'] === 'general_ledger') {
                 $chartAccount = ChartAccount::query()
                     ->whereKey($data['chart_account_id'])
-                    ->where('branch_id', $session->drawer->branch_id)
+                    ->where(function (Builder $query) use ($session): void {
+                        $query->where('branch_id', $session->drawer->branch_id)->orWhereNull('branch_id');
+                    })
                     ->first();
 
                 if (! $chartAccount) {
-                    throw new InvalidArgumentException('The selected ledger account was not found for this drawer branch.');
+                    throw new InvalidArgumentException('The selected ledger account was not found for this organization or drawer branch.');
                 }
 
                 $entryType = $this->ledgerEntryType($chartAccount, $data['gl_entry_type'] ?? null);

@@ -158,6 +158,8 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::get('/loan-repayments/{loanRepayment}/receipt', [LoanRepaymentController::class, 'receipt'])->middleware('module:loans')->name('loan-repayments.receipt');
     Route::get('/ledger-accounts', [LedgerAccountController::class, 'index'])->middleware('module:accounting')->name('ledger-accounts.index');
     Route::post('/ledger-accounts', [LedgerAccountController::class, 'store'])->middleware('module:accounting')->name('ledger-accounts.store');
+    Route::get('/ledger-accounts/{chartAccount}', [LedgerAccountController::class, 'show'])->middleware('module:accounting')->name('ledger-accounts.show');
+    Route::post('/ledger-accounts/{chartAccount}/merge', [LedgerAccountController::class, 'merge'])->middleware('module:accounting')->name('ledger-accounts.merge');
     Route::post('/ledger-accounts/{chartAccount}/opening-balance', [LedgerAccountController::class, 'postOpeningBalance'])->middleware('module:accounting')->name('ledger-accounts.opening-balance');
     Route::put('/ledger-accounts/{chartAccount}', [LedgerAccountController::class, 'update'])->middleware('module:accounting')->name('ledger-accounts.update');
     Route::delete('/ledger-accounts/{chartAccount}', [LedgerAccountController::class, 'destroy'])->middleware('module:accounting')->name('ledger-accounts.destroy');
