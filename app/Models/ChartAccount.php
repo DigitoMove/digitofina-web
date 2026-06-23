@@ -19,6 +19,7 @@ class ChartAccount extends Model
             'is_cash_account' => 'boolean',
             'is_system' => 'boolean',
             'is_active' => 'boolean',
+            'merged_at' => 'datetime',
         ];
     }
 
@@ -35,6 +36,21 @@ class ChartAccount extends Model
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id');
+    }
+
+    public function mergedInto(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'merged_into_id');
+    }
+
+    public function mergedSources(): HasMany
+    {
+        return $this->hasMany(self::class, 'merged_into_id');
+    }
+
+    public function mergedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'merged_by');
     }
 
     public function journalEntries(): HasMany

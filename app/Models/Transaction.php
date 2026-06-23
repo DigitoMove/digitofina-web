@@ -19,6 +19,7 @@ class Transaction extends Model
     {
         return [
             'amount' => 'decimal:2',
+            'charges' => 'decimal:2',
             'balance_after' => 'decimal:2',
             'posted_at' => 'datetime',
             'reversed_at' => 'datetime',

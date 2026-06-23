@@ -33,6 +33,9 @@
                     <div class="flex justify-between gap-4"><dt class="text-slate-500">Client</dt><dd class="text-right">{{ $transaction->account?->client?->full_name ?? $transaction->account?->client?->business_name ?? 'General ledger posting' }}</dd></div>
                     <div class="flex justify-between gap-4"><dt class="text-slate-500">Account</dt><dd>{{ $transaction->account?->account_number ?? ($journalAccount ? $journalAccount->code.' · '.$journalAccount->name : 'Drawer ledger') }}</dd></div>
                     <div class="flex justify-between gap-4"><dt class="text-slate-500">Amount</dt><dd class="font-semibold text-slate-950">{{ number_format((float) $transaction->amount, 2) }} {{ $transaction->currency }}</dd></div>
+                    @if((float) $transaction->charges > 0)
+                        <div class="flex justify-between gap-4"><dt class="text-slate-500">Drawer charges</dt><dd class="font-semibold text-slate-950">{{ number_format((float) $transaction->charges, 2) }} {{ $transaction->currency }}</dd></div>
+                    @endif
                     <div class="flex justify-between gap-4"><dt class="text-slate-500">Balance after</dt><dd>{{ number_format((float) $transaction->balance_after, 2) }} {{ $transaction->currency }}</dd></div>
                     <div class="flex justify-between gap-4"><dt class="text-slate-500">Posted by</dt><dd>{{ $transaction->user?->name }}</dd></div>
                     <div class="flex justify-between gap-4"><dt class="text-slate-500">Posted at</dt><dd>{{ ($transaction->posted_at ?? $transaction->created_at)->format('d M Y H:i:s') }}</dd></div>

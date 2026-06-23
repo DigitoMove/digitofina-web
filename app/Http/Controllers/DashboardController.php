@@ -79,7 +79,7 @@ class DashboardController extends Controller
             $dueTodayScheduleScope = fn (Builder $query): Builder => $query
                 ->where('outstanding_amount', '>', 0)
                 ->where('status', '!=', 'paid')
-                ->whereDate('due_date', $today->toDateString());
+                ->whereDate('due_date', '<=', $today->toDateString());
             $dueToday = LoanSchedule::query()
                 ->with([
                     'loan' => fn ($query) => $query
@@ -92,7 +92,7 @@ class DashboardController extends Controller
                 ->whereHas('loan', $calendarScope)
                 ->where('outstanding_amount', '>', 0)
                 ->where('status', '!=', 'paid')
-                ->whereDate('due_date', $today->toDateString())
+                ->whereDate('due_date', '<=', $today->toDateString())
                 ->orderBy('due_date')
                 ->limit(10)
                 ->get();
@@ -102,7 +102,7 @@ class DashboardController extends Controller
                 ->whereHas('loan', $calendarScope)
                 ->where('outstanding_amount', '>', 0)
                 ->where('status', '!=', 'paid')
-                ->whereDate('due_date', $today->toDateString())
+                ->whereDate('due_date', '<=', $today->toDateString())
                 ->selectRaw('count(*) as total, coalesce(sum(outstanding_amount), 0) as amount')
                 ->first();
             if ($showRepaymentScheduleWidgets) {

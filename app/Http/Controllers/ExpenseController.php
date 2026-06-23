@@ -111,16 +111,17 @@ class ExpenseController extends Controller
                 }
 
                 $amount = (float) $expense->amount;
+                $cashImpact = (float) $movement->amount;
                 $restoreType = $movement->type === 'cash_out' ? 'cash_in' : 'cash_out';
 
                 if ($movement->type === 'cash_out') {
-                    $drawer->increment('current_balance', $amount);
+                    $drawer->increment('current_balance', $cashImpact);
                 } else {
-                    if ((float) $drawer->current_balance < $amount) {
+                    if ((float) $drawer->current_balance < $cashImpact) {
                         throw new InvalidArgumentException('This posting cannot be deleted because the drawer does not have enough cash to remove the original money-in amount.');
                     }
 
-                    $drawer->decrement('current_balance', $amount);
+                    $drawer->decrement('current_balance', $cashImpact);
                 }
 
                 $drawer->refresh();
@@ -135,7 +136,7 @@ class ExpenseController extends Controller
                     'drawer_session_id' => $session->id,
                     'user_id' => $expense->user_id,
                     'type' => $restoreType,
-                    'amount' => $amount,
+                    'amount' => $cashImpact,
                     'balance_after' => $drawer->current_balance,
                     'reference' => $expense->reference.'-RESTORE',
                     'description' => 'Ledger posting deleted by '.$request->user()->name.'. Drawer cash adjusted.',
@@ -154,6 +155,8 @@ class ExpenseController extends Controller
                     'transaction_id' => $expense->id,
                     'reference' => $expense->reference,
                     'amount' => $amount,
+                    'charges' => (float) $expense->charges,
+                    'cash_impact' => $cashImpact,
                     'ledger_type' => $postingAccount?->type,
                     'drawer_movement_removed' => $movement->type,
                     'drawer_movement_restored' => $restoreType,
@@ -173,7 +176,7 @@ class ExpenseController extends Controller
 
         $direction = $deleted['drawer_movement_restored'] === 'cash_in' ? 'restored to' : 'removed from';
 
-        return back()->with('status', 'Ledger posting deleted and UGX '.number_format((float) $deleted['amount'], 2).' '.$direction.' the cashier drawer.');
+        return back()->with('status', 'Ledger posting deleted and UGX '.number_format((float) $deleted['cash_impact'], 2).' '.$direction.' the cashier drawer.');
     }
 
     private function postingsQuery(Request $request): Builder

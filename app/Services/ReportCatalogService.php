@@ -498,6 +498,7 @@ class ReportCatalogService
             'Client' => $transaction->account?->client?->full_name ?? 'N/A',
             'Type' => $transaction->type?->name ?? 'N/A',
             'Amount' => $this->money((float) $transaction->amount),
+            'Charges' => $this->money((float) $transaction->charges),
             'Posted By' => $transaction->user?->name ?? 'System',
             'Action' => $canDelete && $this->canDeleteTransactionRow($transaction) ? 'Delete' : 'Receipt',
             '_delete_reference' => $canDelete && $this->canDeleteTransactionRow($transaction) ? $transaction->reference : null,
@@ -506,7 +507,14 @@ class ReportCatalogService
             ],
         ]);
 
-        return [['Date', 'Reference', 'Description', 'Client', 'Type', 'Amount', 'Posted By', 'Action'], $rows, ['Total amount' => $this->money((float) $query->sum('amount'))]];
+        return [
+            ['Date', 'Reference', 'Description', 'Client', 'Type', 'Amount', 'Charges', 'Posted By', 'Action'],
+            $rows,
+            [
+                'Total amount' => $this->money((float) (clone $query)->sum('amount')),
+                'Total charges' => $this->money((float) (clone $query)->sum('charges')),
+            ],
+        ];
     }
 
     private function nonCashTransactions(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user, ?int $chartAccountId = null, string $search = ''): array
@@ -2117,6 +2125,7 @@ class ReportCatalogService
     private function canDeleteTransactionRow(Transaction $transaction): bool
     {
         return $transaction->status === 'posted'
+            && $transaction->type?->code !== 'drawer_transfer'
             && $transaction->reversed_by === null
             && $transaction->reversal_of_id === null
             && filled($transaction->reference);

@@ -59,7 +59,7 @@
                     <th>Ledger Account</th>
                     <th>Drawer</th>
                     <th>Movement</th>
-                    <th class="text-right">Amount</th>
+                    <th class="text-right">Amount / Charges</th>
                     <th class="pr-3 text-right">Action</th>
                 </tr>
             </thead>
@@ -97,7 +97,13 @@
                         <td>
                             <span class="rounded px-2 py-1 text-xs font-semibold {{ $drawerMovement?->type === 'cash_in' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700' }}">{{ $drawerMovement?->type === 'cash_in' ? 'Money came in' : 'Money went out' }}</span>
                         </td>
-                        <td class="text-right font-semibold text-slate-950">UGX {{ number_format((float) $expense->amount, 2) }}</td>
+                        <td class="text-right">
+                            <div class="font-semibold text-slate-950">UGX {{ number_format((float) $expense->amount, 2) }}</div>
+                            @if((float) $expense->charges > 0)
+                                <div class="text-xs font-semibold text-red-700">+ UGX {{ number_format((float) $expense->charges, 2) }} charges</div>
+                                <div class="text-xs text-slate-500">Drawer impact UGX {{ number_format((float) ($drawerMovement?->amount ?? 0), 2) }}</div>
+                            @endif
+                        </td>
                         <td class="pr-3 text-right">
                             <form method="POST" action="{{ route('expenses.destroy', $expense) }}" data-confirm-title="Delete ledger posting" data-confirm-message="Delete this ledger posting and apply the opposite cash movement to the cashier drawer?" data-confirm-label="Delete posting" data-confirm-tone="danger">
                                 @csrf
