@@ -117,20 +117,17 @@ class StoreLoanApplicationRequest extends FormRequest
 
     private function loanOfficerCanUseClient(Client $client, User $user): bool
     {
-        if ((int) $client->branch_id !== (int) $user->branch_id) {
-            return false;
-        }
-
         if ((int) $client->officer_id === (int) $user->id) {
-            return true;
-        }
-
-        if ($client->officer_id !== null) {
-            return false;
+            return $user->branch_id === null || (int) $client->branch_id === (int) $user->branch_id;
         }
 
         return $client->loans()
             ->where('officer_id', $user->id)
+            ->where(function ($query) use ($user): void {
+                $query->whereNull('organization_id')
+                    ->orWhere('organization_id', $user->organization_id);
+            })
+            ->when($user->branch_id, fn ($query, int $branchId) => $query->where('branch_id', $branchId))
             ->exists();
     }
 }

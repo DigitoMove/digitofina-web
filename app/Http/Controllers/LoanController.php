@@ -165,19 +165,21 @@ class LoanController extends Controller
     {
         return Client::query()
             ->when($request->user()->isLoanOfficer(), fn ($query) => $query
-                ->where('branch_id', $request->user()->branch_id));
-                // ->where(function (Builder $query) use ($request): void {
-                //     $query->where('officer_id', $request->user()->id)
-                //         ->orWhere(function (Builder $query) use ($request): void {
-                //             $query->whereNull('officer_id')
-                //                 ->whereExists(function ($query) use ($request): void {
-                //                     $query->selectRaw('1')
-                //                         ->from('loans')
-                //                         ->whereColumn('loans.client_id', 'clients.id')
-                //                         ->where('loans.officer_id', $request->user()->id);
-                //                 });
-                //         });
-                // }));
+                ->where(function (Builder $query) use ($request): void {
+                    $query->where(function (Builder $query) use ($request): void {
+                        $query->where('officer_id', $request->user()->id)
+                            ->when($request->user()->branch_id, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
+                    })->orWhereHas('loans', function (Builder $query) use ($request): void {
+                        $query->where('officer_id', $request->user()->id)
+                            ->when($request->user()->organization_id, function (Builder $query, int $organizationId): Builder {
+                                return $query->where(function (Builder $query) use ($organizationId): void {
+                                    $query->whereNull('organization_id')
+                                        ->orWhere('organization_id', $organizationId);
+                                });
+                            })
+                            ->when($request->user()->branch_id, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
+                    });
+                }));
     }
 
     public function updateDraftTerms(Request $request, Loan $loan, LoanService $service): RedirectResponse

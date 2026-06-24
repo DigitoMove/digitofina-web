@@ -22,7 +22,7 @@ class ClientPolicy
     public function view(User $user, Client $client): bool
     {
         if ($user->isLoanOfficer()) {
-            return $this->canAccessBranch($user, $client);
+            return $this->loanOfficerCanAccessClient($user, $client);
         }
 
         return ($user->canPerform('manage-clients') || $user->canPerform('view-reports'))
@@ -76,5 +76,24 @@ class ClientPolicy
 
         return $user->branch_id === null
             || (int) $client->branch_id === (int) $user->branch_id;
+    }
+
+    private function loanOfficerCanAccessClient(User $user, Client $client): bool
+    {
+        if ((int) $client->officer_id === (int) $user->id
+            && $user->canAccessOrganization($client->organization_id)
+            && ($user->branch_id === null || (int) $client->branch_id === (int) $user->branch_id)) {
+            return true;
+        }
+
+        return $client->loans()
+            ->where('officer_id', $user->id)
+            ->where(function ($query) use ($user): void {
+                $query
+                    ->whereNull('organization_id')
+                    ->orWhere('organization_id', $user->organization_id);
+            })
+            ->when($user->branch_id, fn ($query, int $branchId) => $query->where('branch_id', $branchId))
+            ->exists();
     }
 }
