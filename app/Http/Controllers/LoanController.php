@@ -165,19 +165,19 @@ class LoanController extends Controller
     {
         return Client::query()
             ->when($request->user()->isLoanOfficer(), fn ($query) => $query
-                ->where('branch_id', $request->user()->branch_id)
-                ->where(function (Builder $query) use ($request): void {
-                    $query->where('officer_id', $request->user()->id)
-                        ->orWhere(function (Builder $query) use ($request): void {
-                            $query->whereNull('officer_id')
-                                ->whereExists(function ($query) use ($request): void {
-                                    $query->selectRaw('1')
-                                        ->from('loans')
-                                        ->whereColumn('loans.client_id', 'clients.id')
-                                        ->where('loans.officer_id', $request->user()->id);
-                                });
-                        });
-                }));
+                ->where('branch_id', $request->user()->branch_id);
+                // ->where(function (Builder $query) use ($request): void {
+                //     $query->where('officer_id', $request->user()->id)
+                //         ->orWhere(function (Builder $query) use ($request): void {
+                //             $query->whereNull('officer_id')
+                //                 ->whereExists(function ($query) use ($request): void {
+                //                     $query->selectRaw('1')
+                //                         ->from('loans')
+                //                         ->whereColumn('loans.client_id', 'clients.id')
+                //                         ->where('loans.officer_id', $request->user()->id);
+                //                 });
+                //         });
+                // }));
     }
 
     public function updateDraftTerms(Request $request, Loan $loan, LoanService $service): RedirectResponse
