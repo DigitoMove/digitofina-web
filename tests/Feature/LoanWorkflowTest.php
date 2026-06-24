@@ -2013,7 +2013,7 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->get(route('dashboard'))
         ->assertSuccessful()
         ->assertSee('Repayment Calendar')
-        ->assertSee('Due Today')
+        ->assertSee('Due today + arrears')
         ->assertSee('1001-LN-OFFICER-DUE')
         ->assertDontSee('Recent Loan Payments')
         ->assertDontSee('>Operations<', false)

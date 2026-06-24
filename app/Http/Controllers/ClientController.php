@@ -94,7 +94,7 @@ class ClientController extends Controller
 
     public function show(Client $client, FinancialRelationshipService $financialRelationships, ModuleService $modules): View
     {
-        Gate::authorize('viewAny', $client);
+        Gate::authorize('view', $client);
 
         $user = request()->user();
         $enabledModules = $user->hasRole('super-admin') || ! $user->organization
@@ -167,7 +167,7 @@ class ClientController extends Controller
 
     public function loans(Client $client): View
     {
-        Gate::authorize('viewAny', $client);
+        Gate::authorize('view', $client);
 
         $client->load([
             'branch',
