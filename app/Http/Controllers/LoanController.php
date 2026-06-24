@@ -174,15 +174,7 @@ class LoanController extends Controller
                                     $query->selectRaw('1')
                                         ->from('loans')
                                         ->whereColumn('loans.client_id', 'clients.id')
-                                        ->where('loans.officer_id', $request->user()->id)
-                                        ->whereRaw('loans.id = (
-                                            select recent_loans.id
-                                            from loans as recent_loans
-                                            where recent_loans.client_id = clients.id
-                                                and recent_loans.officer_id is not null
-                                            order by recent_loans.application_date desc, recent_loans.id desc
-                                            limit 1
-                                        )');
+                                        ->where('loans.officer_id', $request->user()->id);
                                 });
                         });
                 }));

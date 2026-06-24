@@ -24,6 +24,7 @@ use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
+use App\Policies\ClientPolicy;
 use App\Services\BusinessCalendarService;
 use App\Services\LoanApplicationService;
 use App\Services\LoanService;
@@ -1921,11 +1922,17 @@ it('shows arrears only for active branch loans', function () {
 
 it('scopes arrears and due repayment views to the assigned loan officer', function () {
     $admin = loanWorkflowUser();
-    $organization = loanWorkflowOrganizationWithModules($admin, ['loans', 'reports']);
+    $organization = loanWorkflowOrganizationWithModules($admin, ['clients', 'loans', 'reports']);
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
     $product->update(['organization_id' => $organization->id]);
     $officerRole = Role::firstOrCreate(['slug' => 'loan-officer'], ['name' => 'Loan Officer']);
-    Permission::whereIn('slug', ['manage-clients', 'manage-loans', 'view-reports'])->pluck('id')->each(fn (int $permissionId) => $officerRole->permissions()->syncWithoutDetaching([$permissionId]));
+    collect(['manage-clients', 'manage-loans', 'view-reports'])
+        ->map(fn (string $slug) => Permission::firstOrCreate(
+            ['slug' => $slug],
+            ['organization_id' => $organization->id, 'name' => str($slug)->headline()],
+        ))
+        ->pluck('id')
+        ->each(fn (int $permissionId) => $officerRole->permissions()->syncWithoutDetaching([$permissionId]));
     $officerRole->permissions()->syncWithoutDetaching([
         Permission::firstOrCreate(
             ['slug' => 'manage-clients'],
@@ -2197,11 +2204,11 @@ it('shows one due repayment demand per client and includes arrears from all thei
 
 it('backfills and falls back to recent loan officers for legacy client ownership', function () {
     $admin = loanWorkflowUser();
-    $organization = loanWorkflowOrganizationWithModules($admin, ['loans', 'reports']);
+    $organization = loanWorkflowOrganizationWithModules($admin, ['clients', 'loans', 'reports']);
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
     $product->update(['organization_id' => $organization->id]);
     $officerRole = Role::firstOrCreate(['slug' => 'loan-officer'], ['name' => 'Loan Officer']);
-    Permission::whereIn('slug', ['manage-loans', 'view-reports'])->pluck('id')->each(fn (int $permissionId) => $officerRole->permissions()->syncWithoutDetaching([$permissionId]));
+    Permission::whereIn('slug', ['manage-clients', 'manage-loans', 'view-reports'])->pluck('id')->each(fn (int $permissionId) => $officerRole->permissions()->syncWithoutDetaching([$permissionId]));
     $firstOfficer = User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $admin->branch_id, 'role_id' => $officerRole->id, 'status' => 'active', 'is_active' => true]);
     $secondOfficer = User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $admin->branch_id, 'role_id' => $officerRole->id, 'status' => 'active', 'is_active' => true]);
     $assignedClient = loanWorkflowClient($firstOfficer, '+256700140001');
@@ -2223,12 +2230,17 @@ it('backfills and falls back to recent loan officers for legacy client ownership
         ->assertSuccessful()
         ->assertSee('Assigned Client')
         ->assertSee('Fallback Client')
-        ->assertDontSee('Other Recent')
+        ->assertSee('Other Recent')
         ->assertDontSee('Unowned Client');
+
+    $clientPolicy = app(ClientPolicy::class);
+
+    expect($clientPolicy->view($firstOfficer, $otherRecentClient))->toBeTrue()
+        ->and($clientPolicy->view($firstOfficer, $unownedClient))->toBeFalse();
 
     $this->actingAs($firstOfficer)
         ->post(route('loans.store'), [
-            'client_id' => $otherRecentClient->id,
+            'client_id' => $unownedClient->id,
             'loan_product_id' => $product->id,
             'requested_amount' => 300000,
             'term_periods' => 1,

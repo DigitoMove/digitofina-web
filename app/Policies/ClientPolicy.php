@@ -21,6 +21,10 @@ class ClientPolicy
 
     public function view(User $user, Client $client): bool
     {
+        if ($user->isLoanOfficer()) {
+            return $this->canAccessBranch($user, $client);
+        }
+
         return ($user->canPerform('manage-clients') || $user->canPerform('view-reports'))
             && $this->canAccessBranch($user, $client);
     }
@@ -53,8 +57,21 @@ class ClientPolicy
         }
 
         if ($user->isLoanOfficer()) {
-            return (int) $client->officer_id === (int) $user->id
-                && (int) $client->branch_id === (int) $user->branch_id;
+            if ((int) $client->branch_id !== (int) $user->branch_id) {
+                return false;
+            }
+
+            if ((int) $client->officer_id === (int) $user->id) {
+                return true;
+            }
+
+            if ($client->officer_id !== null) {
+                return false;
+            }
+
+            return $client->loans()
+                ->where('officer_id', $user->id)
+                ->exists();
         }
 
         return $user->branch_id === null
