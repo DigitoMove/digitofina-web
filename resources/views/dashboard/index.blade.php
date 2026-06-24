@@ -51,9 +51,9 @@
     };
     $cards = array_values(array_filter($cards, $cardIsVisible));
     $essentialCardLabels = match (true) {
-        $isCashierDashboard => ['Due today', "Today's deposits", "Today's withdrawals"],
+        $isCashierDashboard => ['Due today + arrears', "Today's deposits", "Today's withdrawals"],
         $isLoanRecoveryDashboard => ['Total clients', 'Loans in arrears'],
-        $isLoanOfficerDashboard => ['Total clients', 'Loan applications', 'Loan portfolio', 'Loans in arrears', 'Due today'],
+        $isLoanOfficerDashboard => ['Total clients', 'Loan applications', 'Loan portfolio', 'Loans in arrears', 'Due today + arrears'],
         default => null,
     };
     $cards = $essentialCardLabels
@@ -272,22 +272,51 @@
             </div>
         </div>
         <div class="mt-5 divide-y divide-slate-200">
-            @forelse($nextRepayments as $schedule)
+            @forelse($nextRepayments as $repayment)
                 <div class="py-3">
-                    <div class="flex items-start justify-between gap-3">
-                        <div>
-                            <a href="{{ route('loans.show', $schedule->loan) }}" class="font-semibold text-slate-950 hover:text-brand-700">{{ $schedule->loan->client->full_name }}</a>
-                            <div class="mt-1 text-xs text-slate-500">{{ $schedule->loan->client->phone }}{{ $schedule->loan->client->alternative_phone ? ' / '.$schedule->loan->client->alternative_phone : '' }}</div>
+                    @if($isCompactDashboard)
+                        @php
+                            $client = $repayment['client'];
+                            $primaryLoan = $repayment['primary_loan'];
+                        @endphp
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                @if($primaryLoan)
+                                    <a href="{{ route('loans.show', $primaryLoan) }}" class="font-semibold text-slate-950 hover:text-brand-700">{{ $client->full_name }}</a>
+                                @else
+                                    <span class="font-semibold text-slate-950">{{ $client->full_name }}</span>
+                                @endif
+                                <div class="mt-1 text-xs text-slate-500">{{ $client->phone }}{{ $client->alternative_phone ? ' / '.$client->alternative_phone : '' }}</div>
+                            </div>
+                            <div class="text-right text-sm font-semibold text-slate-950">
+                                UGX {{ number_format((float) $repayment['total_amount'], 0) }}
+                                <div class="mt-1 text-xs font-medium text-slate-500">
+                                    {{ (int) $repayment['due_installments_count'] }} today · {{ (int) $repayment['arrears_installments_count'] }} arrears
+                                </div>
+                            </div>
                         </div>
-                        <div class="text-right text-sm font-semibold text-slate-950">
-                            UGX {{ number_format((float) ($schedule->loan->due_installments_amount ?? $schedule->outstanding_amount), 0) }}
-                            <div class="mt-1 text-xs font-medium text-slate-500">{{ (int) ($schedule->loan->due_installments_count ?? 1) }} installment{{ (int) ($schedule->loan->due_installments_count ?? 1) === 1 ? '' : 's' }} due</div>
+                        <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                            @foreach($repayment['loans'] as $loanDemand)
+                                <span>{{ $loanDemand['loan']->loan_number }} · UGX {{ number_format((float) $loanDemand['total_amount'], 0) }}</span>
+                            @endforeach
                         </div>
-                    </div>
-                    <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <span>{{ $schedule->due_date?->format('d M Y') }}</span>
-                        <span>{{ $schedule->loan->loan_number }} · Current schedule #{{ $schedule->installment_number }}</span>
-                    </div>
+                    @else
+                        @php($schedule = $repayment)
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <a href="{{ route('loans.show', $schedule->loan) }}" class="font-semibold text-slate-950 hover:text-brand-700">{{ $schedule->loan->client->full_name }}</a>
+                                <div class="mt-1 text-xs text-slate-500">{{ $schedule->loan->client->phone }}{{ $schedule->loan->client->alternative_phone ? ' / '.$schedule->loan->client->alternative_phone : '' }}</div>
+                            </div>
+                            <div class="text-right text-sm font-semibold text-slate-950">
+                                UGX {{ number_format((float) $schedule->outstanding_amount, 0) }}
+                                <div class="mt-1 text-xs font-medium text-slate-500">1 installment due</div>
+                            </div>
+                        </div>
+                        <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                            <span>{{ $schedule->due_date?->format('d M Y') }}</span>
+                            <span>{{ $schedule->loan->loan_number }} · Current schedule #{{ $schedule->installment_number }}</span>
+                        </div>
+                    @endif
                 </div>
             @empty
                 <div class="py-10 text-center text-sm text-slate-500">{{ $isCompactDashboard ? 'No loan repayments are due today.' : 'No upcoming repayments are scheduled.' }}</div>

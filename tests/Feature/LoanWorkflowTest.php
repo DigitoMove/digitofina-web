@@ -2151,3 +2151,96 @@ it('limits cashier repayment visibility to unpaid installments due today at thei
 
     expect($this->actingAs($cashier)->get(route('reports.show', 'loan-accounts-in-arrears'))->isSuccessful())->toBeFalse();
 });
+
+it('shows one due repayment demand per client and includes arrears from all their loans', function () {
+    $user = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($user, ['loans', 'reports']);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
+    $client = loanWorkflowClient($user, '+256700130001');
+    $client->update([
+        'organization_id' => $organization->id,
+        'first_name' => 'Grace',
+        'last_name' => 'Demand',
+    ]);
+    $arrearsOnlyClient = loanWorkflowClient($user, '+256700130002');
+    $arrearsOnlyClient->update([
+        'organization_id' => $organization->id,
+        'first_name' => 'Arrears',
+        'last_name' => 'Only',
+    ]);
+
+    $dueLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-DEMAND-DUE', 'active');
+    $firstArrearsLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-DEMAND-ARR1', 'active');
+    $secondArrearsLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-DEMAND-ARR2', 'active');
+    $arrearsOnlyLoan = loanWorkflowTrackedLoan($user, $arrearsOnlyClient, $product, '1001-LN-ARREARS-ONLY', 'active');
+
+    loanWorkflowSchedule($dueLoan, today(), 'pending');
+    loanWorkflowSchedule($firstArrearsLoan, today()->subDays(2), 'overdue');
+    loanWorkflowSchedule($secondArrearsLoan, today()->subDays(5), 'overdue');
+    loanWorkflowSchedule($arrearsOnlyLoan, today()->subDays(3), 'overdue');
+
+    $response = $this->actingAs($user)->get(route('due-repayments.index'));
+
+    $response
+        ->assertSuccessful()
+        ->assertSee('Grace Demand')
+        ->assertSee('1001-LN-DEMAND-DUE')
+        ->assertSee('1001-LN-DEMAND-ARR1')
+        ->assertSee('1001-LN-DEMAND-ARR2')
+        ->assertSee('UGX 900,000.00')
+        ->assertDontSee('1001-LN-ARREARS-ONLY')
+        ->assertDontSee('Arrears Only');
+
+    expect(substr_count($response->getContent(), 'Grace Demand'))->toBe(1);
+});
+
+it('backfills and falls back to recent loan officers for legacy client ownership', function () {
+    $admin = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($admin, ['loans', 'reports']);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
+    $officerRole = Role::firstOrCreate(['slug' => 'loan-officer'], ['name' => 'Loan Officer']);
+    Permission::whereIn('slug', ['manage-loans', 'view-reports'])->pluck('id')->each(fn (int $permissionId) => $officerRole->permissions()->syncWithoutDetaching([$permissionId]));
+    $firstOfficer = User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $admin->branch_id, 'role_id' => $officerRole->id, 'status' => 'active', 'is_active' => true]);
+    $secondOfficer = User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $admin->branch_id, 'role_id' => $officerRole->id, 'status' => 'active', 'is_active' => true]);
+    $assignedClient = loanWorkflowClient($firstOfficer, '+256700140001');
+    $fallbackClient = loanWorkflowClient($firstOfficer, '+256700140002');
+    $otherRecentClient = loanWorkflowClient($firstOfficer, '+256700140003');
+    $unownedClient = loanWorkflowClient($firstOfficer, '+256700140004');
+
+    $assignedClient->update(['organization_id' => $organization->id, 'officer_id' => $firstOfficer->id, 'first_name' => 'Assigned', 'last_name' => 'Client']);
+    $fallbackClient->update(['organization_id' => $organization->id, 'officer_id' => null, 'first_name' => 'Fallback', 'last_name' => 'Client']);
+    $otherRecentClient->update(['organization_id' => $organization->id, 'officer_id' => null, 'first_name' => 'Other', 'last_name' => 'Recent']);
+    $unownedClient->update(['organization_id' => $organization->id, 'officer_id' => null, 'first_name' => 'Unowned', 'last_name' => 'Client']);
+
+    loanWorkflowTrackedLoan($firstOfficer, $fallbackClient, $product, '1001-LN-FALLBACK-RECENT', 'active');
+    loanWorkflowTrackedLoan($firstOfficer, $otherRecentClient, $product, '1001-LN-OLDER-OFFICER', 'active');
+    loanWorkflowTrackedLoan($secondOfficer, $otherRecentClient, $product, '1001-LN-NEWER-OFFICER', 'active');
+
+    $this->actingAs($firstOfficer)
+        ->get(route('loans.create'))
+        ->assertSuccessful()
+        ->assertSee('Assigned Client')
+        ->assertSee('Fallback Client')
+        ->assertDontSee('Other Recent')
+        ->assertDontSee('Unowned Client');
+
+    $this->actingAs($firstOfficer)
+        ->post(route('loans.store'), [
+            'client_id' => $otherRecentClient->id,
+            'loan_product_id' => $product->id,
+            'requested_amount' => 300000,
+            'term_periods' => 1,
+            'repayment_frequency' => 'monthly',
+            'purpose' => 'Unauthorized client check',
+        ])
+        ->assertSessionHasErrors('client_id');
+
+    $migration = include database_path('migrations/2026_06_24_113711_backfill_client_officers_from_recent_loans.php');
+    $migration->up();
+
+    expect($fallbackClient->fresh()->officer_id)->toBe($firstOfficer->id)
+        ->and($otherRecentClient->fresh()->officer_id)->toBe($secondOfficer->id)
+        ->and($unownedClient->fresh()->officer_id)->toBeNull();
+});

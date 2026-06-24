@@ -15,6 +15,7 @@ use App\Models\SavingsAccount;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
+use App\Services\DueRepaymentDemandService;
 use App\Services\LoanVisibilityService;
 use App\Services\ModuleService;
 use App\Services\TenantContext;
@@ -32,7 +33,7 @@ use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request, LoanVisibilityService $visibility): View|RedirectResponse
+    public function __invoke(Request $request, LoanVisibilityService $visibility, DueRepaymentDemandService $dueRepayments): View|RedirectResponse
     {
         if (Auth::user()->isMember()) {
             return redirect()->route('member.dashboard');
@@ -58,6 +59,7 @@ class DashboardController extends Controller
         $isCashierDashboard = $user->isTellerCashier();
         $isLoanOfficerDashboard = $user->isLoanOfficer();
         $isLoanRecoveryDashboard = $user->isLoanRecoveryOfficer();
+        $isCompactDashboard = $isCashierDashboard || $isLoanOfficerDashboard || $isLoanRecoveryDashboard;
         $drawer = $user->drawerSessions()->with('drawer')->where('status', 'open')->latest()->first()?->drawer;
         $today = CarbonImmutable::today();
         $monthStart = $today->startOfMonth();
@@ -71,40 +73,23 @@ class DashboardController extends Controller
         $showRepaymentScheduleWidgets = true;
         $arrearsCutoffDate = $today->copy()->subDay()->toDateString();
         $dueToday = collect();
-        $dueTodayTotals = null;
+        $dueTodayTotals = [
+            'client_count' => 0,
+            'today_installment_count' => 0,
+            'arrears_installment_count' => 0,
+            'scheduled_count' => 0,
+            'today_amount' => 0.0,
+            'arrears_amount' => 0.0,
+            'total_amount' => 0.0,
+        ];
         $nextRepayments = collect();
         $calendarCounts = collect();
 
         if ($loansEnabled) {
-            $dueTodayScheduleScope = fn (Builder $query): Builder => $query
-                ->where('outstanding_amount', '>', 0)
-                ->where('status', '!=', 'paid')
-                ->whereDate('due_date', '<=', $today->toDateString());
-            $dueToday = LoanSchedule::query()
-                ->with([
-                    'loan' => fn ($query) => $query
-                        ->with(['client', 'product'])
-                        ->withCount(['schedules as due_installments_count' => $dueTodayScheduleScope])
-                        ->withSum(['schedules as due_installments_amount' => $dueTodayScheduleScope], 'outstanding_amount'),
-                ])
-                ->excludingCancelledLoans()
-                ->forActiveArrearsLoans()
-                ->whereHas('loan', $calendarScope)
-                ->where('outstanding_amount', '>', 0)
-                ->where('status', '!=', 'paid')
-                ->whereDate('due_date', '<=', $today->toDateString())
-                ->orderBy('due_date')
-                ->limit(10)
-                ->get();
-            $dueTodayTotals = LoanSchedule::query()
-                ->excludingCancelledLoans()
-                ->forActiveArrearsLoans()
-                ->whereHas('loan', $calendarScope)
-                ->where('outstanding_amount', '>', 0)
-                ->where('status', '!=', 'paid')
-                ->whereDate('due_date', '<=', $today->toDateString())
-                ->selectRaw('count(*) as total, coalesce(sum(outstanding_amount), 0) as amount')
-                ->first();
+            $dueTodayPayload = $dueRepayments->build($user, $today, (int) $selectedCalendarBranchId);
+            $dueToday = $dueTodayPayload['demands'];
+            $dueTodayTotals = $dueTodayPayload['summary'];
+
             if ($showRepaymentScheduleWidgets) {
                 $nextRepayments = LoanSchedule::query()
                     ->with(['loan.client', 'loan.product'])
@@ -137,7 +122,7 @@ class DashboardController extends Controller
                     ->keyBy(fn (LoanSchedule $schedule): string => $schedule->due_date->toDateString());
             }
 
-            if ($isCashierDashboard || $isLoanOfficerDashboard) {
+            if ($isCompactDashboard) {
                 $nextRepayments = $dueToday;
             }
 
@@ -222,8 +207,8 @@ class DashboardController extends Controller
                 ->limit(3)
                 ->get() : collect(),
             'dueToday' => $dueToday,
-            'dueTodayCount' => (int) ($dueTodayTotals?->total ?? 0),
-            'dueTodayAmount' => (float) ($dueTodayTotals?->amount ?? 0),
+            'dueTodayCount' => (int) ($dueTodayTotals['client_count'] ?? 0),
+            'dueTodayAmount' => (float) ($dueTodayTotals['total_amount'] ?? 0),
             'nextRepayments' => $nextRepayments,
             'cashierRecentTransactions' => $cashierRecentTransactions,
             'calendarDays' => $calendarDays,

@@ -72,6 +72,10 @@ class StoreLoanApplicationRequest extends FormRequest
 
                 $client = Client::query()->find($this->integer('client_id'));
 
+                if ($client && $this->user()?->isLoanOfficer() && ! $this->loanOfficerCanUseClient($client, $this->user())) {
+                    $validator->errors()->add('client_id', 'You can only create loans for clients assigned to you.');
+                }
+
                 if ($client && $client->client_type === 'individual') {
                     if (blank($client->national_id)) {
                         $validator->errors()->add('client_id', 'The selected client must have a National ID / NIN before a loan can be created.');
@@ -109,5 +113,38 @@ class StoreLoanApplicationRequest extends FormRequest
                 }
             },
         ];
+    }
+
+    private function loanOfficerCanUseClient(Client $client, User $user): bool
+    {
+        if ((int) $client->branch_id !== (int) $user->branch_id) {
+            return false;
+        }
+
+        if ((int) $client->officer_id === (int) $user->id) {
+            return true;
+        }
+
+        if ($client->officer_id !== null) {
+            return false;
+        }
+
+        return Client::query()
+            ->whereKey($client->id)
+            ->whereExists(function ($query) use ($user): void {
+                $query->selectRaw('1')
+                    ->from('loans')
+                    ->whereColumn('loans.client_id', 'clients.id')
+                    ->where('loans.officer_id', $user->id)
+                    ->whereRaw('loans.id = (
+                        select recent_loans.id
+                        from loans as recent_loans
+                        where recent_loans.client_id = clients.id
+                            and recent_loans.officer_id is not null
+                        order by recent_loans.application_date desc, recent_loans.id desc
+                        limit 1
+                    )');
+            })
+            ->exists();
     }
 }
