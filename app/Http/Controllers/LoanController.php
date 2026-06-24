@@ -165,7 +165,7 @@ class LoanController extends Controller
     {
         return Client::query()
             ->when($request->user()->isLoanOfficer(), fn ($query) => $query
-                ->where('branch_id', $request->user()->branch_id);
+                ->where('branch_id', $request->user()->branch_id));
                 // ->where(function (Builder $query) use ($request): void {
                 //     $query->where('officer_id', $request->user()->id)
                 //         ->orWhere(function (Builder $query) use ($request): void {
