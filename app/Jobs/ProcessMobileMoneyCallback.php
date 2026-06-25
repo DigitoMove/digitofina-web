@@ -7,6 +7,7 @@ use App\Models\PaymentCallback;
 use App\Models\PaymentProvider;
 use App\Models\PaymentRequest;
 use App\Models\WebhookEvent;
+use App\Services\OnlinePaymentPostingService;
 use App\Services\WebhookIngestionService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
@@ -24,7 +25,7 @@ class ProcessMobileMoneyCallback implements ShouldQueue
 
     public function __construct(public WebhookEvent $webhookEvent) {}
 
-    public function handle(WebhookIngestionService $webhooks): void
+    public function handle(WebhookIngestionService $webhooks, OnlinePaymentPostingService $onlinePayments): void
     {
         $event = WebhookEvent::query()->findOrFail($this->webhookEvent->id);
 
@@ -79,6 +80,8 @@ class ProcessMobileMoneyCallback implements ShouldQueue
                     'raw_response' => $data,
                 ],
             );
+
+            $onlinePayments->postIfSuccessful($paymentRequest, $data);
         }
 
         $webhooks->markProcessed($event, [

@@ -16,6 +16,7 @@ class PaymentRequest extends Model
             'amount' => 'decimal:2',
             'metadata' => 'array',
             'expires_at' => 'datetime',
+            'posted_at' => 'datetime',
         ];
     }
 
@@ -25,6 +26,11 @@ class PaymentRequest extends Model
     }
 
     public function payable(): MorphTo
+    {
+        return $this->morphTo();
+    }
+
+    public function postedTransaction(): MorphTo
     {
         return $this->morphTo();
     }

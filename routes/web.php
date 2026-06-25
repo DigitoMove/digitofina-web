@@ -27,6 +27,7 @@ use App\Http\Controllers\LoanController;
 use App\Http\Controllers\LoanGuarantorController;
 use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\LoanRepaymentController;
+use App\Http\Controllers\MemberPaymentController;
 use App\Http\Controllers\MemberPortalController;
 use App\Http\Controllers\ModuleManagementController;
 use App\Http\Controllers\NonCashTransactionController;
@@ -85,6 +86,9 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password.update');
     Route::get('/member', MemberPortalController::class)->name('member.dashboard');
+    Route::post('/member/loans/{loan}/repayments', [MemberPaymentController::class, 'repayLoan'])->middleware('module:loans')->name('member.loans.repayments.store');
+    Route::post('/member/savings-accounts/{savingsAccount}/deposits', [MemberPaymentController::class, 'depositSavings'])->middleware('module:savings')->name('member.savings.deposits.store');
+    Route::post('/member/investment-accounts/{investmentAccount}/top-ups', [MemberPaymentController::class, 'topUpInvestment'])->middleware('module:investments')->name('member.investments.top-ups.store');
     Route::resource('branches', BranchController::class)->except(['show', 'destroy']);
     Route::resource('users', UserManagementController::class)->except(['show', 'destroy']);
     Route::resource('roles', RoleController::class)->except(['show', 'destroy']);

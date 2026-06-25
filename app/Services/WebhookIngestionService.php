@@ -286,6 +286,8 @@ class WebhookIngestionService
             ],
         );
 
+        app(OnlinePaymentPostingService::class)->postIfSuccessful($paymentRequest, $payload);
+
         return ['handler' => 'payment', 'matched' => true, 'payment_request_id' => $paymentRequest->id];
     }
 
