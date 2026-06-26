@@ -111,6 +111,7 @@ class DrawerTransferService
             $reference = 'DT'.now()->format('ymdHis').Str::upper(Str::random(5));
             $narration = $description ?: 'Cash transfer from '.$sourceDrawer->code.' to '.$destinationDrawer->code;
             $transaction = Transaction::create([
+                'organization_id' => $sourceDrawer->branch?->organization_id,
                 'transaction_type_id' => $type->id,
                 'drawer_session_id' => $sourceSession->id,
                 'branch_id' => $sourceDrawer->branch_id,

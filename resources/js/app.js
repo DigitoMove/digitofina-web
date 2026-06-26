@@ -526,6 +526,7 @@ const initConfirmDialog = () => {
         dialog.classList.remove('flex');
         dialog.setAttribute('aria-hidden', 'true');
         document.body.classList.remove('overflow-hidden');
+        acceptButton.disabled = false;
         pendingForm = null;
     };
 
@@ -535,6 +536,7 @@ const initConfirmDialog = () => {
         title.textContent = form.dataset.confirmTitle || 'Confirm action';
         message.textContent = form.dataset.confirmMessage || 'Please confirm that you want to continue.';
         acceptButton.textContent = form.dataset.confirmLabel || 'Confirm';
+        acceptButton.disabled = false;
         const summaryRows = [...form.querySelectorAll('[data-confirm-summary-label]')]
             .map((field) => {
                 const label = field.dataset.confirmSummaryLabel;
@@ -585,8 +587,15 @@ const initConfirmDialog = () => {
             return;
         }
 
-        pendingForm.dataset.confirmed = 'true';
-        pendingForm.requestSubmit();
+        if (acceptButton.disabled) {
+            return;
+        }
+
+        const form = pendingForm;
+        acceptButton.disabled = true;
+        pendingForm = null;
+        form.dataset.confirmed = 'true';
+        form.requestSubmit();
     });
     cancelButton.addEventListener('click', close);
     dialog.addEventListener('click', (event) => {

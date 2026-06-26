@@ -27,6 +27,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -132,6 +133,48 @@ class TellerDrawerController extends Controller
             ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('id', $request->user()->branch_id))
             ->orderBy('name')
             ->get();
+        $recentMovements = $session
+            ? DrawerMovement::query()->with('session.drawer')->where('drawer_session_id', $session->id)->latest()->limit(50)->get()
+            : collect();
+        $recentMovementReferences = $recentMovements->pluck('reference')->filter()->unique()->values();
+        $recentTransactions = Transaction::query()
+            ->with([
+                'account.client',
+                'drawerSession.drawer',
+                'journalEntries.chartAccount',
+                'type',
+                'reversalRequests' => fn ($query) => $query->where('status', 'pending')->latest(),
+            ])
+            ->when($session, function (Builder $query, DrawerSession $session) use ($recentMovementReferences): Builder {
+                return $query->where(function (Builder $query) use ($session, $recentMovementReferences): void {
+                    $query->where('drawer_session_id', $session->id);
+
+                    if ($recentMovementReferences->isNotEmpty()) {
+                        $query->orWhereIn('reference', $recentMovementReferences);
+                    }
+                });
+            })
+            ->when(! $session, fn (Builder $query): Builder => $query->where('user_id', $request->user()->id))
+            ->when($isCashier, function (Builder $query) use ($request, $session, $recentMovementReferences): Builder {
+                return $query->where(function (Builder $query) use ($request, $session, $recentMovementReferences): void {
+                    $query->where(function (Builder $query) use ($request): void {
+                        $query->where('user_id', $request->user()->id)
+                            ->whereDate('posted_at', today());
+                    });
+
+                    if ($session) {
+                        $query->orWhere('drawer_session_id', $session->id);
+                    }
+
+                    if ($recentMovementReferences->isNotEmpty()) {
+                        $query->orWhereIn('reference', $recentMovementReferences);
+                    }
+                });
+            })
+            ->when($transactionSearch !== '', fn (Builder $query): Builder => $this->searchPostedTransactions($query, $transactionSearch))
+            ->latest('posted_at')
+            ->limit(50)
+            ->get();
 
         return view('teller.index', [
             'session' => $session,
@@ -184,26 +227,8 @@ class TellerDrawerController extends Controller
             'selectedAccountTypeId' => $selectedAccountTypeId,
             'isGeneralLedgerLookup' => $isGeneralLedgerLookup,
             'hasLookupSearch' => $accountSearch !== '',
-            'recentMovements' => $session
-                ? DrawerMovement::query()->with('session.drawer')->where('drawer_session_id', $session->id)->latest()->limit(50)->get()
-                : collect(),
-            'recentTransactions' => Transaction::query()
-                ->with([
-                    'account.client',
-                    'drawerSession.drawer',
-                    'journalEntries.chartAccount',
-                    'type',
-                    'reversalRequests' => fn ($query) => $query->where('status', 'pending')->latest(),
-                ])
-                ->when($session, fn (Builder $query, DrawerSession $session): Builder => $query->where('drawer_session_id', $session->id))
-                ->when(! $session, fn (Builder $query): Builder => $query->where('user_id', $request->user()->id))
-                ->when($isCashier, fn (Builder $query): Builder => $query
-                    ->where('user_id', $request->user()->id)
-                    ->whereDate('posted_at', today()))
-                ->when($transactionSearch !== '', fn (Builder $query): Builder => $this->searchPostedTransactions($query, $transactionSearch))
-                ->latest('posted_at')
-                ->limit(50)
-                ->get(),
+            'recentMovements' => $recentMovements,
+            'recentTransactions' => $recentTransactions,
             'transactionSearch' => $transactionSearch,
             'isCashier' => $isCashier,
             'pendingReversalRequests' => $canApproveReversals
@@ -419,6 +444,7 @@ class TellerDrawerController extends Controller
         ]);
 
         $postedAt = CarbonImmutable::parse($data['transaction_date']);
+        $submissionGuardKey = null;
 
         try {
             $session = DrawerSession::query()
@@ -454,6 +480,17 @@ class TellerDrawerController extends Controller
                     throw new InvalidArgumentException('Select whether the money is coming in or going out.');
                 }
 
+                $submissionGuardKey = $this->acquireSubmissionGuard($request, 'post', [
+                    'scope' => 'general_ledger',
+                    'drawer_session_id' => $session->id,
+                    'chart_account_id' => $chartAccount->id,
+                    'entry_type' => $entryType,
+                    'amount' => (float) $data['amount'],
+                    'charges' => (float) ($data['charges'] ?? 0),
+                    'transaction_date' => $postedAt->toDateString(),
+                    'description' => $data['description'] ?? null,
+                ]);
+
                 $journal = $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $postedAt, (float) ($data['charges'] ?? 0));
 
                 return redirect()
@@ -486,8 +523,24 @@ class TellerDrawerController extends Controller
                 abort_unless($request->user()->canPerform('post-transactions'), 403);
             }
 
+            $submissionGuardKey = $this->acquireSubmissionGuard($request, 'post', [
+                'scope' => 'client_account',
+                'drawer_session_id' => $session->id,
+                'account_id' => $account->id,
+                'transaction_type_id' => $type->id,
+                'amount' => (float) $data['amount'],
+                'charges' => (float) ($data['charges'] ?? 0),
+                'transaction_date' => $postedAt->toDateString(),
+                'cheque_number' => $data['cheque_number'] ?? null,
+                'description' => $data['description'] ?? null,
+            ]);
+
             $transaction = $posting->postCash($account, $session, $type, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $data['cheque_number'] ?? null, $postedAt, (float) ($data['charges'] ?? 0));
         } catch (InvalidArgumentException $exception) {
+            if ($submissionGuardKey) {
+                $this->releaseSubmissionGuard($submissionGuardKey);
+            }
+
             return back()->withErrors(['amount' => $exception->getMessage()])->withInput();
         }
 
@@ -531,7 +584,19 @@ class TellerDrawerController extends Controller
         $this->authorizeDrawerBranch($request, $sourceSession->drawer->branch);
         $this->authorizeDrawerBranch($request, $destinationSession->drawer->branch);
 
+        $submissionGuardKey = null;
+
         try {
+            $postedAt = CarbonImmutable::parse($data['transaction_date']);
+            $submissionGuardKey = $this->acquireSubmissionGuard($request, 'transfer', [
+                'source_drawer_session_id' => $sourceSession->id,
+                'destination_drawer_session_id' => $destinationSession->id,
+                'amount' => (float) $data['amount'],
+                'charges' => (float) ($data['charges'] ?? 0),
+                'transaction_date' => $postedAt->toDateString(),
+                'description' => $data['description'] ?? null,
+            ]);
+
             $transaction = $transfers->transfer(
                 $sourceSession,
                 $destinationSession,
@@ -539,9 +604,13 @@ class TellerDrawerController extends Controller
                 (float) ($data['charges'] ?? 0),
                 $request->user(),
                 $data['description'] ?? null,
-                CarbonImmutable::parse($data['transaction_date']),
+                $postedAt,
             );
         } catch (InvalidArgumentException $exception) {
+            if ($submissionGuardKey) {
+                $this->releaseSubmissionGuard($submissionGuardKey);
+            }
+
             return back()->withErrors(['drawer_transfer' => $exception->getMessage()])->withInput();
         }
 
@@ -699,6 +768,42 @@ class TellerDrawerController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function acquireSubmissionGuard(Request $request, string $action, array $payload): string
+    {
+        $key = 'teller-submission:'.$request->user()->id.':'.$action.':'.sha1(json_encode($this->normaliseGuardPayload($payload), JSON_THROW_ON_ERROR));
+
+        if (! Cache::add($key, true, now()->addSeconds(15))) {
+            throw new InvalidArgumentException('This transaction request is already being processed. Refresh the page before posting it again.');
+        }
+
+        return $key;
+    }
+
+    private function releaseSubmissionGuard(string $key): void
+    {
+        Cache::forget($key);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function normaliseGuardPayload(array $payload): array
+    {
+        ksort($payload);
+
+        foreach ($payload as $key => $value) {
+            if (is_array($value)) {
+                $payload[$key] = $this->normaliseGuardPayload($value);
+            }
+        }
+
+        return $payload;
     }
 
     private function assertAssignedTellerBelongsToBranch(?int $tellerUserId, Branch $branch): void

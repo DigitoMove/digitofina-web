@@ -1,16 +1,24 @@
 <?php
 
+use App\Models\Account;
+use App\Models\AccountType;
 use App\Models\Branch;
 use App\Models\ChartAccount;
+use App\Models\Client;
 use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
 use App\Models\JournalLine;
+use App\Models\Module;
 use App\Models\Organization;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\TellerDrawer;
+use App\Models\Transaction;
+use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\DrawerTransferService;
 use App\Services\LedgerOpeningBalanceService;
+use App\Services\ModuleService;
 use App\Services\TransactionPostingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -164,3 +172,127 @@ it('adds ledger cash to a drawer net of charges and keeps the journal balanced',
         ->and($journal->branch_id)->toBe($branch->id)
         ->and((float) DrawerMovement::where('reference', $journal->reference)->value('amount'))->toBe(99000.0);
 });
+
+it('blocks accidental duplicate teller posts for the same cashier request', function () {
+    [$organization, $branch] = drawerAccountingContext();
+    drawerAccountingEnableTellerModule($organization);
+    $cashier = drawerAccountingCashier($organization, $branch);
+    [$drawer] = openAccountingDrawer($organization, $branch, $cashier, 'POST-01', 100_000);
+    $client = drawerAccountingClient($organization, $branch, $cashier);
+    $accountType = AccountType::create([
+        'organization_id' => $organization->id,
+        'name' => 'Ordinary Savings',
+        'code' => fake()->unique()->bothify('SAV-??'),
+        'category' => 'savings',
+        'is_active' => true,
+    ]);
+    $account = Account::create([
+        'organization_id' => $organization->id,
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'account_type_id' => $accountType->id,
+        'account_number' => fake()->unique()->numerify('1001-SAV-####'),
+        'account_name' => $client->full_name.' Savings',
+        'status' => 'active',
+        'balance' => 0,
+        'opened_at' => today(),
+    ]);
+    $transactionType = TransactionType::create([
+        'organization_id' => $organization->id,
+        'name' => 'Deposit',
+        'code' => fake()->unique()->bothify('deposit-??'),
+        'direction' => 'credit',
+        'is_active' => true,
+    ]);
+    $payload = [
+        'account_scope' => 'client_account',
+        'account_number' => $account->account_number,
+        'transaction_type_id' => $transactionType->id,
+        'amount' => 10_000,
+        'charges' => 0,
+        'transaction_date' => today()->toDateString(),
+        'description' => 'Counter cash deposit',
+    ];
+
+    $this->actingAs($cashier)->post(route('teller.post'), $payload)->assertSessionHasNoErrors();
+    $this->actingAs($cashier)->post(route('teller.post'), $payload)->assertSessionHasErrors('amount');
+
+    expect(Transaction::where('account_id', $account->id)->count())->toBe(1)
+        ->and(DrawerMovement::where('drawer_session_id', $drawer->sessions()->value('id'))->count())->toBe(1)
+        ->and((float) $account->fresh()->balance)->toBe(10000.0);
+});
+
+it('shows incoming drawer transfers in the destination cashier records', function () {
+    [$organization, $branch, $sourceUser] = drawerAccountingContext();
+    drawerAccountingEnableTellerModule($organization);
+    $destinationCashier = drawerAccountingCashier($organization, $branch, 'receiver');
+    [$sourceDrawer, $sourceSession] = openAccountingDrawer($organization, $branch, $sourceUser, 'SRC-02', 500_000);
+    [$destinationDrawer, $destinationSession] = openAccountingDrawer($organization, $branch, $destinationCashier, 'DST-02', 100_000);
+
+    $transaction = app(DrawerTransferService::class)->transfer(
+        $sourceSession,
+        $destinationSession,
+        75_000,
+        0,
+        $sourceUser,
+        'Transfer float to receiver drawer',
+        today(),
+    );
+
+    $response = $this->actingAs($destinationCashier)->get(route('teller.index'));
+
+    $response->assertSuccessful()
+        ->assertViewHas('recentMovements', fn ($movements): bool => $movements->contains('reference', $transaction->reference))
+        ->assertViewHas('recentTransactions', fn ($transactions): bool => $transactions->contains('reference', $transaction->reference))
+        ->assertSee($transaction->reference);
+
+    expect((float) $sourceDrawer->fresh()->current_balance)->toBe(425000.0)
+        ->and((float) $destinationDrawer->fresh()->current_balance)->toBe(175000.0);
+});
+
+function drawerAccountingEnableTellerModule(Organization $organization): void
+{
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($organization);
+    $organization->modules()->syncWithoutDetaching([
+        Module::where('slug', 'teller')->firstOrFail()->id => ['is_enabled' => true, 'enabled_at' => now()],
+    ]);
+}
+
+function drawerAccountingCashier(Organization $organization, Branch $branch, string $slugSuffix = 'cashier'): User
+{
+    $role = Role::create([
+        'organization_id' => $organization->id,
+        'name' => 'Teller Cashier '.str($slugSuffix)->headline(),
+        'slug' => 'teller-cashier',
+    ]);
+    $permission = Permission::firstOrCreate(
+        ['slug' => 'post-transactions'],
+        ['organization_id' => $organization->id, 'name' => 'Post Transactions']
+    );
+    $role->permissions()->syncWithoutDetaching([$permission->id]);
+
+    return User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+}
+
+function drawerAccountingClient(Organization $organization, Branch $branch, User $officer): Client
+{
+    return Client::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'officer_id' => $officer->id,
+        'client_number' => fake()->unique()->numerify('1001-C######'),
+        'client_type' => 'individual',
+        'first_name' => fake()->firstName(),
+        'last_name' => fake()->lastName(),
+        'phone' => fake()->unique()->numerify('+2567########'),
+        'status' => 'active',
+    ]);
+}
