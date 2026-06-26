@@ -89,11 +89,10 @@ it('allows organization admins to create and update users with all branch access
         'status' => 'active',
         'is_active' => true,
     ]);
-    $recoveryRole = Role::create([
-        'organization_id' => $organization->id,
-        'name' => 'Loan Recovery Officer',
-        'slug' => 'loan-recovery-officer',
-    ]);
+    $recoveryRole = Role::firstOrCreate(
+        ['slug' => 'loan-recovery-officer'],
+        ['organization_id' => null, 'name' => 'Loan Recovery Officer']
+    );
 
     $this->actingAs($organizationAdmin)
         ->post(route('users.store'), [
@@ -277,6 +276,119 @@ it('lets super admin see all organization records', function () {
     $this->actingAs($superAdmin);
 
     expect(Client::query()->count())->toBe(2);
+});
+
+it('lets super admins filter user listing by organization and branch', function () {
+    [$organizationA, $branchA] = tenantShell('Atlas SACCO');
+    $branchA->update(['code' => 'ATL-MAIN', 'name' => 'Atlas Main']);
+    [$organizationB, $branchB] = tenantShell('Beacon SACCO');
+    $branchB->update(['code' => 'BEA-MAIN', 'name' => 'Beacon Main']);
+
+    $atlasRole = Role::create([
+        'organization_id' => $organizationA->id,
+        'name' => 'Atlas Teller',
+        'slug' => 'atlas-teller',
+    ]);
+    $beaconRole = Role::create([
+        'organization_id' => $organizationB->id,
+        'name' => 'Beacon Teller',
+        'slug' => 'beacon-teller',
+    ]);
+
+    User::factory()->create([
+        'organization_id' => $organizationA->id,
+        'branch_id' => $branchA->id,
+        'role_id' => $atlasRole->id,
+        'name' => 'Atlas Filter Cashier',
+        'email' => 'atlas-filter-cashier@example.test',
+        'phone' => '+256700991001',
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    User::factory()->create([
+        'organization_id' => $organizationA->id,
+        'branch_id' => $branchA->id,
+        'role_id' => $atlasRole->id,
+        'name' => 'Atlas Suspended Cashier',
+        'email' => 'atlas-suspended-cashier@example.test',
+        'phone' => '+256700991003',
+        'status' => 'suspended',
+        'is_active' => false,
+    ]);
+    User::factory()->create([
+        'organization_id' => $organizationB->id,
+        'branch_id' => $branchB->id,
+        'role_id' => $beaconRole->id,
+        'name' => 'Beacon Filter Cashier',
+        'email' => 'beacon-filter-cashier@example.test',
+        'phone' => '+256700991002',
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $superAdmin = superAdminUser();
+
+    $this->actingAs($superAdmin)
+        ->get(route('users.index', [
+            'organization_id' => $organizationA->id,
+            'branch_id' => $branchA->id,
+            'status' => 'active',
+        ]))
+        ->assertSuccessful()
+        ->assertSeeInOrder(['Atlas Filter Cashier', 'Atlas Teller', 'Atlas SACCO', 'Atlas Main'])
+        ->assertSee('<option value="'.$organizationA->id.'" selected', false)
+        ->assertSee('<option value="'.$branchA->id.'" selected', false)
+        ->assertSee('<option value="active" selected', false)
+        ->assertSee('data-label="Organization"', false)
+        ->assertDontSee('Atlas Suspended Cashier')
+        ->assertDontSee('Beacon Filter Cashier')
+        ->assertDontSee('Beacon Teller')
+        ->assertDontSee('Beacon Main');
+
+    $this->actingAs($superAdmin)
+        ->from(route('users.index'))
+        ->get(route('users.index', [
+            'organization_id' => $organizationA->id,
+            'branch_id' => $branchB->id,
+        ]))
+        ->assertRedirect(route('users.index'))
+        ->assertSessionHasErrors('branch_id');
+});
+
+it('lets super admins filter branch management by organization', function () {
+    [$organizationA, $branchA] = tenantShell('Atlas Branch SACCO');
+    $branchA->update(['code' => 'ATL-BR', 'name' => 'Atlas Listing Branch']);
+    $suspendedBranch = Branch::create([
+        'organization_id' => $organizationA->id,
+        'code' => 'ATL-SUSP',
+        'name' => 'Atlas Suspended Branch',
+        'status' => 'suspended',
+        'is_active' => false,
+    ]);
+    $staffRole = Role::create([
+        'organization_id' => $organizationA->id,
+        'name' => 'Atlas Branch Staff',
+        'slug' => 'atlas-branch-staff',
+    ]);
+    User::factory()->create([
+        'organization_id' => $organizationA->id,
+        'branch_id' => $branchA->id,
+        'role_id' => $staffRole->id,
+        'name' => 'Atlas Branch User',
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    [, $branchB] = tenantShell('Beacon Branch SACCO');
+    $branchB->update(['code' => 'BEA-BR', 'name' => 'Beacon Listing Branch']);
+
+    $this->actingAs(superAdminUser())
+        ->get(route('branches.index', ['organization_id' => $organizationA->id, 'status' => 'active']))
+        ->assertSuccessful()
+        ->assertSeeInOrder(['ATL-BR', 'Atlas Listing Branch', 'Atlas Branch SACCO'])
+        ->assertSee('<option value="'.$organizationA->id.'" selected', false)
+        ->assertSee('<option value="active" selected', false)
+        ->assertSee('data-label="Staff">1</td>', false)
+        ->assertDontSee($suspendedBranch->name)
+        ->assertDontSee('Beacon Listing Branch');
 });
 
 it('keeps system settings scoped to each organization', function () {

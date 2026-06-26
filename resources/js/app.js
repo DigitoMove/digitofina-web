@@ -763,6 +763,8 @@ const initReportLauncher = () => {
     const detailField = document.querySelector('[data-report-detail-field]');
     const interestField = document.querySelector('[data-report-interest-field]');
     const ledgerField = document.querySelector('[data-report-ledger-field]');
+    const ledgerSingleField = document.querySelector('[data-report-ledger-single-field]');
+    const ledgerMultipleField = document.querySelector('[data-report-ledger-multiple-field]');
 
     if (!modal || !form) {
         return;
@@ -816,9 +818,17 @@ const initReportLauncher = () => {
             }
 
             if (ledgerField) {
-                ledgerField.hidden = button.dataset.reportLedger !== '1';
-                ledgerField.querySelectorAll('select').forEach((select) => {
-                    select.disabled = ledgerField.hidden;
+                const showLedgerField = button.dataset.reportLedger === '1';
+                const ledgerMode = button.dataset.reportLedgerMode || 'single';
+
+                ledgerField.hidden = !showLedgerField;
+                ledgerSingleField?.classList.toggle('hidden', !showLedgerField || ledgerMode === 'multiple');
+                ledgerMultipleField?.classList.toggle('hidden', !showLedgerField || ledgerMode !== 'multiple');
+                ledgerSingleField?.querySelectorAll('select').forEach((select) => {
+                    select.disabled = !showLedgerField || ledgerMode === 'multiple';
+                });
+                ledgerMultipleField?.querySelectorAll('select').forEach((select) => {
+                    select.disabled = !showLedgerField || ledgerMode !== 'multiple';
                 });
             }
 

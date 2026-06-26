@@ -17,6 +17,8 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Exists;
 use Illuminate\View\View;
 
 class UserManagementController extends Controller
@@ -25,14 +27,27 @@ class UserManagementController extends Controller
     {
         Gate::authorize('viewAny', User::class);
 
+        $currentUser = $request->user();
+        $filters = $request->validate([
+            'search' => ['nullable', 'string', 'max:191'],
+            'organization_id' => ['nullable', 'integer', $this->organizationFilterRule($request)],
+            'role_id' => ['nullable', 'integer', $this->roleFilterRule($request)],
+            'branch_id' => ['nullable', 'integer', $this->branchFilterRule($request)],
+            'status' => ['nullable', 'in:active,suspended,disabled'],
+        ]);
+        $selectedOrganizationId = $currentUser->hasGlobalOrganizationAccess() && filled($filters['organization_id'] ?? null) ? (int) $filters['organization_id'] : null;
+        $selectedBranchId = filled($filters['branch_id'] ?? null) ? (int) $filters['branch_id'] : null;
+
         $users = User::query()
-            ->with(['branch', 'role'])
-            ->when(! $request->user()->hasRole('super-admin'), fn ($query) => $query->whereDoesntHave('role', fn ($query) => $query->where('slug', 'super-admin')))
-            ->when(! $request->user()->hasGlobalOrganizationAccess() && $request->user()->organization_id, fn ($query) => $query->where('organization_id', $request->user()->organization_id))
-            ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()) && $request->user()->branch_id, fn ($query) => $query->where('branch_id', $request->user()->branch_id))
-            ->when($request->search, fn ($query, string $search) => $query->whereAny(['name', 'email', 'phone', 'position'], 'like', "%{$search}%"))
-            ->when($request->role_id, fn ($query, string $roleId) => $query->where('role_id', $roleId))
-            ->when($request->branch_id, fn ($query, string $branchId) => $query->where('branch_id', $branchId))
+            ->with(['branch.organization', 'organization', 'role'])
+            ->when(! $currentUser->hasRole('super-admin'), fn ($query) => $query->whereDoesntHave('role', fn ($query) => $query->where('slug', 'super-admin')))
+            ->when($currentUser->hasGlobalOrganizationAccess() && $selectedOrganizationId, fn ($query) => $query->where('organization_id', $selectedOrganizationId))
+            ->when(! $currentUser->hasGlobalOrganizationAccess() && $currentUser->organization_id, fn ($query) => $query->where('organization_id', $currentUser->organization_id))
+            ->when(! ApiSecurity::hasGlobalBranchAccess($currentUser) && $currentUser->branch_id, fn ($query) => $query->where('branch_id', $currentUser->branch_id))
+            ->when($filters['search'] ?? null, fn ($query, string $search) => $query->whereAny(['name', 'email', 'phone', 'position'], 'like', "%{$search}%"))
+            ->when($filters['role_id'] ?? null, fn ($query, int|string $roleId) => $query->where('role_id', $roleId))
+            ->when($selectedBranchId, fn ($query) => $query->where('branch_id', $selectedBranchId))
+            ->when($filters['status'] ?? null, fn ($query, string $status) => $query->where('status', $status))
             ->latest()
             ->paginate(15)
             ->withQueryString();
@@ -40,16 +55,25 @@ class UserManagementController extends Controller
         return view('users.index', [
             'users' => $users,
             'roles' => Role::query()
-                ->when(! $request->user()->hasRole('super-admin'), fn ($query) => $query->where('slug', '!=', 'super-admin'))
-                ->when(! $request->user()->hasGlobalOrganizationAccess() && $request->user()->organization_id, fn ($query) => $query->where(function ($query) use ($request): void {
-                    $query->where('organization_id', $request->user()->organization_id)->orWhereNull('organization_id');
+                ->when(! $currentUser->hasRole('super-admin'), fn ($query) => $query->where('slug', '!=', 'super-admin'))
+                ->when($currentUser->hasGlobalOrganizationAccess() && $selectedOrganizationId, fn ($query) => $query->where(function ($query) use ($selectedOrganizationId): void {
+                    $query->where('organization_id', $selectedOrganizationId)->orWhereNull('organization_id');
+                }))
+                ->when(! $currentUser->hasGlobalOrganizationAccess() && $currentUser->organization_id, fn ($query) => $query->where(function ($query) use ($currentUser): void {
+                    $query->where('organization_id', $currentUser->organization_id)->orWhereNull('organization_id');
                 }))
                 ->orderBy('name')
                 ->get(),
             'branches' => Branch::query()
-                ->when(! $request->user()->hasGlobalOrganizationAccess() && $request->user()->organization_id, fn ($query) => $query->where('organization_id', $request->user()->organization_id))
+                ->with('organization')
+                ->when($currentUser->hasGlobalOrganizationAccess() && $selectedOrganizationId, fn ($query) => $query->where('organization_id', $selectedOrganizationId))
+                ->when(! $currentUser->hasGlobalOrganizationAccess() && $currentUser->organization_id, fn ($query) => $query->where('organization_id', $currentUser->organization_id))
+                ->when(! ApiSecurity::hasGlobalBranchAccess($currentUser) && $currentUser->branch_id, fn ($query) => $query->whereKey($currentUser->branch_id))
                 ->orderBy('name')
                 ->get(),
+            'organizations' => $currentUser->hasGlobalOrganizationAccess()
+                ? Organization::query()->orderBy('name')->get()
+                : Organization::query()->whereKey($currentUser->organization_id)->get(),
         ]);
     }
 
@@ -162,5 +186,58 @@ class UserManagementController extends Controller
         }
 
         return $data;
+    }
+
+    private function organizationFilterRule(Request $request): Exists
+    {
+        $currentUser = $request->user();
+
+        return Rule::exists('organizations', 'id')->where(function ($query) use ($currentUser): void {
+            if (! $currentUser->hasGlobalOrganizationAccess() && $currentUser->organization_id) {
+                $query->where('id', $currentUser->organization_id);
+            }
+        });
+    }
+
+    private function roleFilterRule(Request $request): Exists
+    {
+        $currentUser = $request->user();
+
+        return Rule::exists('roles', 'id')->where(function ($query) use ($currentUser, $request): void {
+            if (! $currentUser->hasRole('super-admin')) {
+                $query->where('slug', '!=', 'super-admin');
+            }
+
+            if ($currentUser->hasGlobalOrganizationAccess() && $request->filled('organization_id')) {
+                $query->where(function ($query) use ($request): void {
+                    $query->where('organization_id', $request->integer('organization_id'))->orWhereNull('organization_id');
+                });
+            }
+
+            if (! $currentUser->hasGlobalOrganizationAccess() && $currentUser->organization_id) {
+                $query->where(function ($query) use ($currentUser): void {
+                    $query->where('organization_id', $currentUser->organization_id)->orWhereNull('organization_id');
+                });
+            }
+        });
+    }
+
+    private function branchFilterRule(Request $request): Exists
+    {
+        $currentUser = $request->user();
+
+        return Rule::exists('branches', 'id')->where(function ($query) use ($currentUser, $request): void {
+            if ($currentUser->hasGlobalOrganizationAccess() && $request->filled('organization_id')) {
+                $query->where('organization_id', $request->integer('organization_id'));
+            }
+
+            if (! $currentUser->hasGlobalOrganizationAccess() && $currentUser->organization_id) {
+                $query->where('organization_id', $currentUser->organization_id);
+            }
+
+            if (! ApiSecurity::hasGlobalBranchAccess($currentUser) && $currentUser->branch_id) {
+                $query->where('id', $currentUser->branch_id);
+            }
+        });
     }
 }

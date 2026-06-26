@@ -7,6 +7,7 @@ use App\Models\ChartAccount;
 use App\Services\ReportCatalogService;
 use App\Support\ApiSecurity;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -21,16 +22,7 @@ class ReportController extends Controller
             'groups' => $reports->grouped($request->user()),
             'priorityReports' => $reports->priorityReports($request->user()),
             'branches' => Branch::query()->orderBy('name')->get(),
-            'chartAccounts' => ChartAccount::query()
-                ->with('branch')
-                ->where('is_active', true)
-                ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), function (Builder $query) use ($request): void {
-                    $query->where(function (Builder $query) use ($request): void {
-                        $query->where('branch_id', $request->user()->branch_id)->orWhereNull('branch_id');
-                    });
-                })
-                ->orderBy('code')
-                ->get(),
+            'chartAccounts' => $this->ledgerAccountOptions($request),
             'canChooseBranch' => ApiSecurity::hasGlobalBranchAccess($request->user()),
             'defaultFrom' => today()->toDateString(),
             'defaultTo' => now()->toDateString(),
@@ -47,6 +39,8 @@ class ReportController extends Controller
             'to' => ['nullable', 'date'],
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'chart_account_id' => ['nullable', 'integer', 'exists:chart_accounts,id'],
+            'chart_account_ids' => ['nullable', 'array'],
+            'chart_account_ids.*' => ['integer', 'distinct', 'exists:chart_accounts,id'],
             'detail' => ['nullable', 'in:brief,detailed'],
             'interest_basis' => ['nullable', 'in:collected,projected'],
             'search' => ['nullable', 'string', 'max:255'],
@@ -58,7 +52,26 @@ class ReportController extends Controller
 
         return view('reports.show', $reports->generate($report, $data, $request->user()) + [
             'branches' => Branch::query()->orderBy('name')->get(),
+            'chartAccounts' => $this->ledgerAccountOptions($request),
             'canChooseBranch' => ApiSecurity::hasGlobalBranchAccess($request->user()),
         ]);
+    }
+
+    /**
+     * @return EloquentCollection<int, ChartAccount>
+     */
+    private function ledgerAccountOptions(Request $request): EloquentCollection
+    {
+        return ChartAccount::query()
+            ->with('branch')
+            ->where('is_active', true)
+            ->whereNull('merged_into_id')
+            ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), function (Builder $query) use ($request): void {
+                $query->where(function (Builder $query) use ($request): void {
+                    $query->where('branch_id', $request->user()->branch_id)->orWhereNull('branch_id');
+                });
+            })
+            ->orderBy('code')
+            ->get();
     }
 }

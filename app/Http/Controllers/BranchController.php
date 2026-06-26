@@ -12,6 +12,8 @@ use App\Services\BranchGeneralLedgerService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Exists;
 use Illuminate\View\View;
 
 class BranchController extends Controller
@@ -20,14 +22,29 @@ class BranchController extends Controller
     {
         Gate::authorize('viewAny', Branch::class);
 
-        $branches = Branch::query()
-            ->with(['manager', 'organization', 'users'])
-            ->when(! $request->user()->hasGlobalOrganizationAccess() && $request->user()->organization_id, fn ($query) => $query->where('organization_id', $request->user()->organization_id))
-            ->when($request->search, fn ($query, string $search) => $query->whereAny(['code', 'name', 'phone', 'address'], 'like', "%{$search}%"))
-            ->latest()
-            ->paginate(15);
+        $currentUser = $request->user();
+        $filters = $request->validate([
+            'search' => ['nullable', 'string', 'max:191'],
+            'organization_id' => ['nullable', 'integer', $this->organizationFilterRule($request)],
+            'status' => ['nullable', 'in:active,inactive,suspended'],
+        ]);
+        $selectedOrganizationId = $currentUser->hasGlobalOrganizationAccess() && filled($filters['organization_id'] ?? null) ? (int) $filters['organization_id'] : null;
 
-        return view('branches.index', compact('branches'));
+        $branches = Branch::query()
+            ->with(['manager', 'organization'])
+            ->withCount('users')
+            ->when($currentUser->hasGlobalOrganizationAccess() && $selectedOrganizationId, fn ($query) => $query->where('organization_id', $selectedOrganizationId))
+            ->when(! $currentUser->hasGlobalOrganizationAccess() && $currentUser->organization_id, fn ($query) => $query->where('organization_id', $currentUser->organization_id))
+            ->when($filters['search'] ?? null, fn ($query, string $search) => $query->whereAny(['code', 'name', 'phone', 'address'], 'like', "%{$search}%"))
+            ->when($filters['status'] ?? null, fn ($query, string $status) => $query->where('status', $status))
+            ->latest()
+            ->paginate(15)
+            ->withQueryString();
+
+        return view('branches.index', [
+            'branches' => $branches,
+            'organizations' => $this->organizationOptions(),
+        ]);
     }
 
     public function create(): View
@@ -92,5 +109,16 @@ class BranchController extends Controller
         return request()->user()->hasGlobalOrganizationAccess()
             ? Organization::query()->orderBy('name')->get()
             : Organization::query()->whereKey(request()->user()->organization_id)->get();
+    }
+
+    private function organizationFilterRule(Request $request): Exists
+    {
+        $currentUser = $request->user();
+
+        return Rule::exists('organizations', 'id')->where(function ($query) use ($currentUser): void {
+            if (! $currentUser->hasGlobalOrganizationAccess() && $currentUser->organization_id) {
+                $query->where('id', $currentUser->organization_id);
+            }
+        });
     }
 }

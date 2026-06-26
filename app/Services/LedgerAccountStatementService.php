@@ -124,6 +124,6 @@ class LedgerAccountStatementService
 
     private function effectiveDateExpression(string $table = 'journal_entries'): string
     {
-        return "COALESCE({$table}.journal_date, DATE({$table}.posted_at), DATE({$table}.created_at))";
+        return "COALESCE(DATE({$table}.journal_date), DATE({$table}.posted_at), DATE({$table}.created_at))";
     }
 }

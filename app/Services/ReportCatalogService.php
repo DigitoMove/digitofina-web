@@ -87,6 +87,7 @@ class ReportCatalogService
             $this->report('active-clients', 'Clients', 'Active Clients', 'clients', ['status' => 'active'], false),
             $this->report('chart-of-accounts', 'Accounting', 'Chart Of Accounts', 'chart_accounts', [], false),
             $this->report('gl-account-transactions', 'Accounting', 'GL Account Transactions', 'journal_entries'),
+            $this->report('gl-daily-account-summary', 'Accounting', 'GL Daily Account Summary', 'daily_ledger_summary'),
             $this->report('gl-transaction-analysis', 'Accounting', 'GL Transaction Analysis', 'journal_analysis'),
             $this->report('income-accounts', 'Accounting', 'Income Accounts', 'ledger_section', ['types' => ['income'], 'label' => 'Income']),
             $this->report('expense-accounts', 'Accounting', 'Expense Accounts', 'ledger_section', ['types' => ['expense'], 'label' => 'Expenses']),
@@ -207,6 +208,17 @@ class ReportCatalogService
         $detail = (string) ($filters['detail'] ?? 'detailed');
         $branchId = isset($filters['branch_id']) && $filters['branch_id'] !== '' ? (int) $filters['branch_id'] : null;
         $chartAccountId = isset($filters['chart_account_id']) && $filters['chart_account_id'] !== '' ? (int) $filters['chart_account_id'] : null;
+        $chartAccountIds = collect($filters['chart_account_ids'] ?? [])
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($chartAccountId && $chartAccountIds === []) {
+            $chartAccountIds = [$chartAccountId];
+        }
+
         $search = trim((string) ($filters['search'] ?? ''));
         $payload = $definition['payload'];
         $interestBasis = in_array(($filters['interest_basis'] ?? $payload['interest_basis'] ?? 'collected'), ['collected', 'projected'], true)
@@ -225,6 +237,7 @@ class ReportCatalogService
             'officer_entries' => $this->officerEntries($from, $to, $branchId, $user),
             'chart_accounts' => $this->chartAccounts($branchId, $user),
             'journal_entries' => $this->journalEntries($from, $to, $branchId, $limit, $user, $chartAccountId, $search),
+            'daily_ledger_summary' => $this->dailyLedgerSummary($from, $to, $branchId, $user, $chartAccountIds),
             'journal_analysis' => $this->journalAnalysis($from, $to, $branchId, $user),
             'ledger_section' => $this->ledgerSection($payload, $from, $to, $branchId, $user),
             'accounting_statement' => $this->accountingStatement($payload, $from, $to, $branchId, $user),
@@ -251,7 +264,7 @@ class ReportCatalogService
             default => $this->placeholderRows($definition),
         };
 
-        return compact('definition', 'columns', 'rows', 'summary', 'from', 'to', 'detail', 'branchId', 'search', 'interestBasis');
+        return compact('definition', 'columns', 'rows', 'summary', 'from', 'to', 'detail', 'branchId', 'chartAccountIds', 'search', 'interestBasis');
     }
 
     /**
@@ -347,6 +360,7 @@ class ReportCatalogService
             'projected-profitability-summary' => 45,
             'branch-profitability-standing' => 50,
             'gl-account-transactions' => 110,
+            'gl-daily-account-summary' => 115,
             'gl-transaction-analysis' => 120,
             'chart-of-accounts' => 130,
             'all-posted-transactions' => 140,
@@ -427,6 +441,7 @@ class ReportCatalogService
             'projected-profitability-summary' => 'Profitability view using projected interest where needed.',
             'branch-profitability-standing' => 'Branch ranking for income, collections, portfolio standing, and net result.',
             'gl-account-transactions' => 'Drill into posted journal entries by account, memo, reference, branch, and period.',
+            'gl-daily-account-summary' => 'Selected ledger accounts summarized by day with money in, money out, and running balances.',
             'gl-transaction-analysis' => 'Ledger totals grouped for accounting review.',
             'chart-of-accounts' => 'Configured accounts used for accounting classification and posting.',
             'all-posted-transactions' => 'Complete transaction register with search and admin deletion controls.',
@@ -889,6 +904,159 @@ class ReportCatalogService
         });
     }
 
+    /**
+     * @param  array<int, int>  $chartAccountIds
+     * @return array{0: array<int, string>, 1: Collection<int, array<string, mixed>>, 2: array<string, mixed>}
+     */
+    private function dailyLedgerSummary(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, array $chartAccountIds): array
+    {
+        $accounts = ChartAccount::query()
+            ->with('branch')
+            ->where('is_active', true)
+            ->whereNull('merged_into_id')
+            ->when($chartAccountIds !== [], fn (Builder $query): Builder => $query->whereKey($chartAccountIds))
+            ->when($branchId, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id)->orWhereNull('branch_id')))
+            ->orderBy('code')
+            ->get()
+            ->keyBy('id');
+
+        if ($accounts->isEmpty()) {
+            return $this->emptyDailyLedgerSummary();
+        }
+
+        $dateExpression = $this->journalDateExpression();
+        $openingTotals = JournalEntry::query()
+            ->whereIn('chart_account_id', $accounts->keys())
+            ->where('status', 'posted')
+            ->whereRaw($dateExpression.' < ?', [$from->toDateString()])
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
+            ->selectRaw("chart_account_id, sum(case when entry_type = 'debit' then amount else 0 end) as debit_total, sum(case when entry_type = 'credit' then amount else 0 end) as credit_total")
+            ->groupBy('chart_account_id')
+            ->get()
+            ->keyBy('chart_account_id');
+        $dailyTotals = JournalEntry::query()
+            ->whereIn('chart_account_id', $accounts->keys())
+            ->where('status', 'posted')
+            ->whereRaw($dateExpression.' between ? and ?', [$from->toDateString(), $to->toDateString()])
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
+            ->selectRaw("chart_account_id, {$dateExpression} as business_date, count(*) as entry_count, sum(case when entry_type = 'debit' then amount else 0 end) as debit_total, sum(case when entry_type = 'credit' then amount else 0 end) as credit_total")
+            ->groupBy('chart_account_id')
+            ->groupByRaw($dateExpression)
+            ->orderBy('chart_account_id')
+            ->orderBy('business_date')
+            ->get()
+            ->groupBy('chart_account_id');
+
+        if ($chartAccountIds === []) {
+            $accounts = $accounts->filter(fn (ChartAccount $account): bool => $openingTotals->has($account->id) || $dailyTotals->has($account->id));
+        }
+
+        if ($accounts->isEmpty()) {
+            return $this->emptyDailyLedgerSummary();
+        }
+
+        $rows = collect();
+        $moneyInTotal = 0.0;
+        $moneyOutTotal = 0.0;
+        $closingBalanceTotal = 0.0;
+        $daysReported = 0;
+
+        foreach ($accounts as $account) {
+            $opening = $openingTotals->get($account->id);
+            $openingBalance = $this->normalBalanceMovement(
+                $account,
+                (float) ($opening?->debit_total ?? 0),
+                (float) ($opening?->credit_total ?? 0),
+            );
+            $runningBalance = $openingBalance;
+            $accountName = $account->code.' · '.$account->name;
+            $accountPeriodUrl = $this->reportUrl('gl-account-transactions', $from, $to, $branchId, ['chart_account_id' => $account->id]);
+
+            $rows->push([
+                'Account' => $accountName,
+                'Date' => Carbon::parse($from->toDateString())->subDay()->format('d M Y'),
+                'Description' => 'Opening balance before '.$from->format('d M Y'),
+                'Money In' => '',
+                'Money Out' => '',
+                'Balance' => $this->money($openingBalance),
+                '_links' => [
+                    'Account' => $accountPeriodUrl,
+                ],
+            ]);
+
+            foreach (($dailyTotals->get($account->id) ?? collect()) as $dailyTotal) {
+                $debit = (float) ($dailyTotal->debit_total ?? 0);
+                $credit = (float) ($dailyTotal->credit_total ?? 0);
+                $moneyIn = $this->normalBalanceIn($account, $debit, $credit);
+                $moneyOut = $this->normalBalanceOut($account, $debit, $credit);
+                $runningBalance += $moneyIn - $moneyOut;
+                $moneyInTotal += $moneyIn;
+                $moneyOutTotal += $moneyOut;
+                $daysReported++;
+
+                $entryCount = (int) ($dailyTotal->entry_count ?? 0);
+                $entryLabel = $entryCount === 1 ? 'entry' : 'entries';
+
+                $rows->push([
+                    'Account' => $accountName,
+                    'Date' => Carbon::parse($dailyTotal->business_date)->format('d M Y'),
+                    'Description' => "Daily total for {$account->name} ({$entryCount} {$entryLabel})",
+                    'Money In' => $this->money($moneyIn),
+                    'Money Out' => $this->money($moneyOut),
+                    'Balance' => $this->money($runningBalance),
+                    '_links' => [
+                        'Account' => $accountPeriodUrl,
+                        'Description' => $this->reportUrl('gl-account-transactions', Carbon::parse($dailyTotal->business_date), Carbon::parse($dailyTotal->business_date), $branchId, ['chart_account_id' => $account->id]),
+                    ],
+                ]);
+            }
+
+            $rows->push([
+                'Account' => $accountName,
+                'Date' => $to->format('d M Y'),
+                'Description' => 'Closing balance as at '.$to->format('d M Y'),
+                'Money In' => '',
+                'Money Out' => '',
+                'Balance' => $this->money($runningBalance),
+                '_is_total' => true,
+                '_links' => [
+                    'Account' => $accountPeriodUrl,
+                ],
+            ]);
+            $closingBalanceTotal += $runningBalance;
+        }
+
+        return [
+            ['Account', 'Date', 'Description', 'Money In', 'Money Out', 'Balance'],
+            $rows->values(),
+            [
+                'Ledger accounts' => number_format($accounts->count()),
+                'Days reported' => number_format($daysReported),
+                'Money in' => $this->money($moneyInTotal),
+                'Money out' => $this->money($moneyOutTotal),
+                'Closing balance' => $this->money($closingBalanceTotal),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{0: array<int, string>, 1: Collection<int, array<string, mixed>>, 2: array<string, mixed>}
+     */
+    private function emptyDailyLedgerSummary(): array
+    {
+        return [
+            ['Account', 'Date', 'Description', 'Money In', 'Money Out', 'Balance'],
+            collect(),
+            [
+                'Ledger accounts' => '0',
+                'Money in' => $this->money(0),
+                'Money out' => $this->money(0),
+                'Closing balance' => $this->money(0),
+            ],
+        ];
+    }
+
     private function journalAnalysis(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
     {
         $rows = JournalEntry::query()
@@ -1309,12 +1477,32 @@ class ReportCatalogService
         ], fn (mixed $value): bool => $value !== null && $value !== ''));
     }
 
+    private function normalBalanceMovement(ChartAccount $account, float $debit, float $credit): float
+    {
+        return $account->normal_balance === 'debit' ? $debit - $credit : $credit - $debit;
+    }
+
+    private function normalBalanceIn(ChartAccount $account, float $debit, float $credit): float
+    {
+        return $account->normal_balance === 'debit' ? $debit : $credit;
+    }
+
+    private function normalBalanceOut(ChartAccount $account, float $debit, float $credit): float
+    {
+        return $account->normal_balance === 'debit' ? $credit : $debit;
+    }
+
     private function naturalBalance(string $type, float $debit, float $credit): float
     {
         return match ($type) {
             'asset', 'expense' => $debit - $credit,
             default => $credit - $debit,
         };
+    }
+
+    private function journalDateExpression(string $table = 'journal_entries'): string
+    {
+        return "COALESCE(DATE({$table}.journal_date), DATE({$table}.posted_at), DATE({$table}.created_at))";
     }
 
     private function loanInterestIncome(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user, string $interestBasis): array

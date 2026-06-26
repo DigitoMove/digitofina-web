@@ -70,7 +70,8 @@
                         data-report-interest-basis="{{ $report['payload']['interest_basis'] ?? 'collected' }}"
                         data-report-from="{{ ($report['payload']['default_period'] ?? null) === 'full_month' ? now()->startOfMonth()->toDateString() : $defaultFrom }}"
                         data-report-to="{{ ($report['payload']['default_period'] ?? null) === 'full_month' ? now()->endOfMonth()->toDateString() : $defaultTo }}"
-                        data-report-ledger="{{ in_array($report['kind'], ['journal_entries', 'non_cash_transactions'], true) ? '1' : '0' }}"
+                        data-report-ledger="{{ in_array($report['kind'], ['journal_entries', 'non_cash_transactions', 'daily_ledger_summary'], true) ? '1' : '0' }}"
+                        data-report-ledger-mode="{{ $report['kind'] === 'daily_ledger_summary' ? 'multiple' : 'single' }}"
                     >
                         <span>{{ $report['title'] }}</span>
                         @if($prioritySlugs->contains($report['slug']))
@@ -124,7 +125,7 @@
         </div>
 
         <div class="mt-4" data-report-ledger-field hidden>
-            <label class="text-sm font-medium text-slate-700">Ledger account
+            <label class="text-sm font-medium text-slate-700" data-report-ledger-single-field>Ledger account
                 <select name="chart_account_id" class="mt-1 w-full rounded border-slate-300" disabled>
                     <option value="">All ledger accounts</option>
                     @foreach($chartAccounts as $chartAccount)
@@ -132,6 +133,14 @@
                     @endforeach
                 </select>
                 <span class="mt-1 block text-xs text-slate-500">Use this to report on a particular merchant-code, mobile-money, or general ledger account.</span>
+            </label>
+            <label class="hidden text-sm font-medium text-slate-700" data-report-ledger-multiple-field>Ledger accounts
+                <select name="chart_account_ids[]" multiple size="8" class="mt-1 w-full rounded border-slate-300" disabled>
+                    @foreach($chartAccounts as $chartAccount)
+                        <option value="{{ $chartAccount->id }}">{{ $chartAccount->code }} · {{ $chartAccount->name }}{{ $chartAccount->branch ? ' · '.$chartAccount->branch->name : '' }}</option>
+                    @endforeach
+                </select>
+                <span class="mt-1 block text-xs text-slate-500">Select the merchant, mobile-money, bank, or other ledgers to summarize together. Leave empty to include all active ledgers in scope.</span>
             </label>
         </div>
 

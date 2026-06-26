@@ -58,6 +58,25 @@
                 @endif
                 <button class="df-action-secondary">Apply Filters</button>
             </form>
+        @elseif($definition['kind'] === 'daily_ledger_summary')
+            <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-[9rem_9rem_12rem_minmax(18rem,26rem)_auto]">
+                <input name="from" type="date" value="{{ $from->toDateString() }}" class="rounded border-slate-300 text-sm">
+                <input name="to" type="date" value="{{ $to->toDateString() }}" class="rounded border-slate-300 text-sm">
+                @if($canChooseBranch)
+                    <select name="branch_id" class="rounded border-slate-300 text-sm">
+                        <option value="">All branches</option>
+                        @foreach($branches as $branch)
+                            <option value="{{ $branch->id }}" @selected((int) $branchId === (int) $branch->id)>{{ $branch->name }}</option>
+                        @endforeach
+                    </select>
+                @endif
+                <select name="chart_account_ids[]" multiple size="4" class="rounded border-slate-300 text-sm">
+                    @foreach($chartAccounts as $chartAccount)
+                        <option value="{{ $chartAccount->id }}" @selected(in_array($chartAccount->id, $chartAccountIds ?? [], true))>{{ $chartAccount->code }} · {{ $chartAccount->name }}{{ $chartAccount->branch ? ' · '.$chartAccount->branch->name : '' }}</option>
+                    @endforeach
+                </select>
+                <button class="df-action-secondary">Apply Filters</button>
+            </form>
         @elseif(in_array($definition['kind'], ['transactions', 'teller_transactions', 'journal_entries', 'non_cash_transactions'], true))
             <div class="grid gap-2">
                 <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="flex flex-wrap items-center justify-end gap-2">
