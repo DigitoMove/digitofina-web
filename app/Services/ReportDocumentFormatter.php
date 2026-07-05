@@ -8,10 +8,8 @@ use App\Models\ReportExport;
 use App\Models\SavingsAccount;
 use Carbon\Carbon;
 use DateTimeInterface;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
 use Throwable;
 use ZipArchive;
 
@@ -175,52 +173,22 @@ class ReportDocumentFormatter
      */
     private function renderPdf(array $document): string
     {
-        $html = $this->renderHtml($document);
-        $browser = $this->browserBinary();
-
-        if ($browser === null) {
-            return $html;
-        }
-
-        $htmlPath = $this->temporaryPath('df-export-', '.html');
-        $pdfPath = $this->temporaryPath('df-export-', '.pdf');
-
-        try {
-            file_put_contents($htmlPath, $html);
-
-            $process = new Process([
-                $browser,
-                '--headless',
-                '--disable-gpu',
-                '--disable-dev-shm-usage',
-                '--no-sandbox',
-                '--print-to-pdf-no-header',
-                '--print-to-pdf='.$pdfPath,
-                $this->fileUri($htmlPath),
-            ]);
-            $process->setTimeout(120);
-            $process->run();
-
-            if ($process->isSuccessful() && is_file($pdfPath) && filesize($pdfPath) > 0) {
-                return file_get_contents($pdfPath) ?: $html;
-            }
-
-            Log::warning('Browser PDF export failed; falling back to printable HTML.', [
-                'title' => $document['title'],
-                'exit_code' => $process->getExitCode(),
-                'error' => $process->getErrorOutput(),
-            ]);
-        } catch (Throwable $exception) {
-            Log::warning('Browser PDF export threw; falling back to printable HTML.', [
-                'title' => $document['title'],
-                'error' => $exception->getMessage(),
-            ]);
-        } finally {
-            @unlink($htmlPath);
-            @unlink($pdfPath);
-        }
-
-        return $html;
+        return app(ReportPdfRenderer::class)->render([
+            'title' => $document['title'],
+            'heading' => $document['heading'],
+            'organization_name' => $document['organization']?->name ?? config('app.name'),
+            'organization_description' => $this->organizationDescription($document['organization']),
+            'logo_path' => $this->logoPath($document['organization']),
+            'metadata' => $document['metadata'],
+            'columns' => array_map(fn (string $column): array => [
+                'key' => $column,
+                'label' => $this->columnLabel($column),
+                'numeric' => $this->isAmountColumn($column),
+            ], $document['columns']),
+            'rows' => array_map(fn (array $row): array => collect($document['columns'])
+                ->mapWithKeys(fn (string $column): array => [$column => $this->displayValue($row[$column] ?? null, $column)])
+                ->all(), $document['rows'] ?: [['message' => 'No records found for the selected period.']]),
+        ]);
     }
 
     /**
@@ -398,6 +366,14 @@ class ReportDocumentFormatter
             }
 
             if (! $hasImage && $row === 2) {
+                $cells[] = $this->textCell('A'.$row, $this->organizationDescription($document['organization']), 6);
+            }
+
+            if ($hasImage && $row === 5) {
+                $cells[] = $this->textCell('A'.$row, $document['organization']?->name ?? config('app.name'), 2);
+            }
+
+            if ($hasImage && $row === 6) {
                 $cells[] = $this->textCell('A'.$row, $this->organizationDescription($document['organization']), 6);
             }
 
@@ -850,6 +826,7 @@ class ReportDocumentFormatter
         return match ($extension) {
             'png' => ['path' => $path, 'extension' => 'png', 'content_type' => 'image/png'],
             'jpg' => ['path' => $path, 'extension' => 'jpg', 'content_type' => 'image/jpeg'],
+            'svg' => ['path' => $path, 'extension' => 'svg', 'content_type' => 'image/svg+xml'],
             default => null,
         };
     }
@@ -858,56 +835,42 @@ class ReportDocumentFormatter
     {
         $logo = $organization?->logo ?: $organization?->logo_path;
 
-        if (filled($logo) && ! Str::startsWith($logo, ['http://', 'https://'])) {
-            $normalized = ltrim((string) $logo, '/\\');
-            $publicPath = public_path($normalized);
-            $storagePath = Storage::disk('public')->path($normalized);
+        if (filled($logo)) {
+            $path = (string) $logo;
 
-            if (is_file($publicPath)) {
-                return $publicPath;
+            if (is_file($path)) {
+                return $path;
             }
 
-            if (is_file($storagePath)) {
-                return $storagePath;
+            if (Str::startsWith($path, ['http://', 'https://'])) {
+                $path = parse_url($path, PHP_URL_PATH) ?: $path;
+            }
+
+            $normalized = ltrim(str_replace('\\', '/', $path), '/');
+            $withoutStoragePrefix = Str::startsWith($normalized, 'storage/')
+                ? Str::after($normalized, 'storage/')
+                : $normalized;
+            $withoutPublicPrefix = Str::startsWith($withoutStoragePrefix, 'public/')
+                ? Str::after($withoutStoragePrefix, 'public/')
+                : $withoutStoragePrefix;
+
+            foreach (array_unique([
+                public_path($normalized),
+                public_path('storage/'.$withoutStoragePrefix),
+                public_path('storage/'.$withoutPublicPrefix),
+                Storage::disk('public')->path($withoutStoragePrefix),
+                Storage::disk('public')->path($withoutPublicPrefix),
+                storage_path('app/public/'.$withoutPublicPrefix),
+            ]) as $candidate) {
+                if (is_file($candidate)) {
+                    return $candidate;
+                }
             }
         }
 
         foreach ([public_path('brand/digitofina-logo.svg'), public_path('brand/digitofina-mark.svg')] as $fallback) {
             if (is_file($fallback)) {
                 return $fallback;
-            }
-        }
-
-        return null;
-    }
-
-    private function browserBinary(): ?string
-    {
-        $configured = env('EXPORT_PDF_BROWSER_PATH');
-
-        if (in_array(Str::lower((string) $configured), ['disabled', 'none', 'false'], true)) {
-            return null;
-        }
-
-        if (filled($configured) && is_file((string) $configured)) {
-            return (string) $configured;
-        }
-
-        $candidates = [
-            'C:\Program Files\Google\Chrome\Application\chrome.exe',
-            'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
-            'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
-            'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
-            '/usr/bin/google-chrome',
-            '/usr/bin/google-chrome-stable',
-            '/usr/bin/chromium',
-            '/usr/bin/chromium-browser',
-            '/usr/bin/microsoft-edge',
-        ];
-
-        foreach ($candidates as $candidate) {
-            if (is_file($candidate)) {
-                return $candidate;
             }
         }
 
@@ -926,11 +889,6 @@ class ReportDocumentFormatter
         @rename($path, $target);
 
         return $target;
-    }
-
-    private function fileUri(string $path): string
-    {
-        return 'file:///'.str_replace('\\', '/', $path);
     }
 
     private function escape(string $value): string

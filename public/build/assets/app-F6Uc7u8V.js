@@ -50,13 +50,14 @@ var e=(e,t)=>{let n=e.querySelectorAll(`[data-df-tab-target]`),r=e.querySelector
             </table>
         </body>
         </html>
-    `},u=(t,n)=>{let r=s(t),i=window.open(``,`_blank`,`noopener,noreferrer,width=1100,height=800`);if(!i){window.print();return}i.document.write(`
+    `},u=(t,n)=>{let r=s(t),i=`
             <!doctype html>
             <html>
             <head>
                 <meta charset="utf-8">
                 <title>${e(t)}</title>
                 <style>
+                    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                     body { font-family: Arial, sans-serif; color: #0f172a; margin: 24px; }
                     .document-header { align-items: flex-start; display: grid; gap: 24px; grid-template-columns: 1fr 1fr; margin-bottom: 14px; }
                     .brand img { display: block; max-height: 82px; max-width: 280px; object-fit: contain; }
@@ -88,7 +89,7 @@ var e=(e,t)=>{let n=e.querySelectorAll(`[data-df-tab-target]`),r=e.querySelector
                 <script>window.addEventListener('load', () => { window.print(); });<\/script>
             </body>
             </html>
-        `),i.document.close()};document.querySelectorAll(`main table:not([data-exportable="false"])`).forEach((e,r)=>{if(e.dataset.exportReady===`1`||i(e).length===0)return;let s=n(e,r),c=document.createElement(`div`);c.className=`mb-2 flex flex-wrap items-center justify-end gap-2 rounded-md bg-slate-50 px-4 py-2 text-xs`,c.dataset.tableExportToolbar=`1`,c.innerHTML=`
+        `,a=window.open(``,`_blank`,`width=1100,height=800`);if(a){a.document.write(i),a.document.close();return}let o=document.createElement(`iframe`);o.style.position=`fixed`,o.style.right=`0`,o.style.bottom=`0`,o.style.width=`0`,o.style.height=`0`,o.style.border=`0`,document.body.appendChild(o);let l=o.contentWindow;if(!l){o.remove();return}o.addEventListener(`load`,()=>{l.focus(),l.print(),setTimeout(()=>o.remove(),1e3)},{once:!0}),l.document.open(),l.document.write(i),l.document.close()};document.querySelectorAll(`main table:not([data-exportable="false"])`).forEach((e,r)=>{if(e.dataset.exportReady===`1`||i(e).length===0)return;let s=n(e,r),c=document.createElement(`div`);c.className=`mb-2 flex flex-wrap items-center justify-end gap-2 rounded-md bg-slate-50 px-4 py-2 text-xs`,c.dataset.tableExportToolbar=`1`,c.innerHTML=`
             <span class="mr-auto pl-2 font-semibold text-slate-700">Export table</span>
             <button type="button" class="rounded border border-emerald-700 bg-emerald-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-emerald-700" data-table-export="csv">CSV</button>
             <button type="button" class="rounded border border-blue-700 bg-blue-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-blue-700" data-table-export="xls">Excel</button>

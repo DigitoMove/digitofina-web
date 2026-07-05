@@ -1336,21 +1336,14 @@ const initTableExports = () => {
     };
     const printPdf = (title, rows) => {
         const brand = exportBrand(title);
-        const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=800');
-
-        if (!printWindow) {
-            window.print();
-
-            return;
-        }
-
-        printWindow.document.write(`
+        const documentHtml = `
             <!doctype html>
             <html>
             <head>
                 <meta charset="utf-8">
                 <title>${escapeHtml(title)}</title>
                 <style>
+                    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                     body { font-family: Arial, sans-serif; color: #0f172a; margin: 24px; }
                     .document-header { align-items: flex-start; display: grid; gap: 24px; grid-template-columns: 1fr 1fr; margin-bottom: 14px; }
                     .brand img { display: block; max-height: 82px; max-width: 280px; object-fit: contain; }
@@ -1382,8 +1375,41 @@ const initTableExports = () => {
                 <script>window.addEventListener('load', () => { window.print(); });<\/script>
             </body>
             </html>
-        `);
-        printWindow.document.close();
+        `;
+        const printWindow = window.open('', '_blank', 'width=1100,height=800');
+
+        if (printWindow) {
+            printWindow.document.write(documentHtml);
+            printWindow.document.close();
+
+            return;
+        }
+
+        const frame = document.createElement('iframe');
+        frame.style.position = 'fixed';
+        frame.style.right = '0';
+        frame.style.bottom = '0';
+        frame.style.width = '0';
+        frame.style.height = '0';
+        frame.style.border = '0';
+        document.body.appendChild(frame);
+
+        const frameWindow = frame.contentWindow;
+
+        if (!frameWindow) {
+            frame.remove();
+
+            return;
+        }
+
+        frame.addEventListener('load', () => {
+            frameWindow.focus();
+            frameWindow.print();
+            setTimeout(() => frame.remove(), 1000);
+        }, { once: true });
+        frameWindow.document.open();
+        frameWindow.document.write(documentHtml);
+        frameWindow.document.close();
     };
 
     document.querySelectorAll('main table:not([data-exportable="false"])').forEach((table, index) => {

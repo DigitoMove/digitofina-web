@@ -94,7 +94,7 @@ it('generates branded savings statement spreadsheets', function () {
     $user = queueOpsUser(['manage-accounts']);
     $user->organization->update([
         'name' => 'Kisem Financial Services',
-        'logo' => 'organization-logos/kisem.png',
+        'logo' => '/storage/organization-logos/kisem.png',
         'registration_number' => 'Reg. KFS-001',
         'phone' => '+256700000003',
         'email' => 'info@kisem.test',
@@ -139,10 +139,12 @@ it('generates branded savings statement spreadsheets', function () {
     $content = Storage::disk('local')->get($export->fresh()->path);
     $worksheet = queueOpsXlsxPart($content, 'xl/worksheets/sheet1.xml');
     $contentTypes = queueOpsXlsxPart($content, '[Content_Types].xml');
+    $logo = queueOpsXlsxPart($content, 'xl/media/logo.png');
 
     expect(substr($content, 0, 2))->toBe('PK')
         ->and($worksheet)->toContain('Savings Account Transactions', 'Account Name:', 'Account Number:', $account->account_number, 'Opening Balance', 'NASSANGA FATUMA thru mc')
-        ->and($contentTypes)->toContain('image/png');
+        ->and($contentTypes)->toContain('image/png')
+        ->and($logo)->not->toBe('');
 });
 
 it('queues mobile money callback processing', function () {

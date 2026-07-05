@@ -1729,7 +1729,6 @@ it('exports active loan balances and grouped arrears rows', function () {
         ->and($worksheet)->toContain('Loan Book', 'Report Name:', $organization->name, 'Balance Total', $activeLoan->loan_number, $arrearsLoan->loan_number)
         ->not->toContain($closedLoan->loan_number);
 
-    putenv('EXPORT_PDF_BROWSER_PATH=disabled');
     $pdfExport = ReportExport::create([
         'organization_id' => $organization->id,
         'branch_id' => $user->branch_id,
@@ -1740,9 +1739,9 @@ it('exports active loan balances and grouped arrears rows', function () {
     ]);
     (new GenerateReportExport($pdfExport))->handle();
     $pdfContent = Storage::disk('local')->get($pdfExport->fresh()->path);
-    putenv('EXPORT_PDF_BROWSER_PATH');
 
-    expect($pdfContent)->toContain('<!doctype html>', 'Loan Arrears Report', 'Report Name:', $organization->name, $arrearsLoan->loan_number)
+    expect(substr($pdfContent, 0, 5))->toBe('%PDF-')
+        ->and($pdfContent)->toContain('Loan Arrears Report', 'Report Name:', $organization->name, $arrearsLoan->loan_number)
         ->not->toContain($closedLoan->loan_number);
 });
 
