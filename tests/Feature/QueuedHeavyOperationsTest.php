@@ -9,14 +9,17 @@ use App\Models\Client;
 use App\Models\Organization;
 use App\Models\PaymentProvider;
 use App\Models\Permission;
+use App\Models\ReportExport;
 use App\Models\Role;
 use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
+use App\Models\SavingsTransaction;
 use App\Models\SmsProvider;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
@@ -82,6 +85,64 @@ it('queues savings statement generation', function () {
         ->assertJsonPath('data.status', 'queued');
 
     Queue::assertPushed(GenerateStatement::class);
+});
+
+it('generates branded savings statement spreadsheets', function () {
+    Storage::fake('local');
+    Storage::fake('public');
+
+    $user = queueOpsUser(['manage-accounts']);
+    $user->organization->update([
+        'name' => 'Kisem Financial Services',
+        'logo' => 'organization-logos/kisem.png',
+        'registration_number' => 'Reg. KFS-001',
+        'phone' => '+256700000003',
+        'email' => 'info@kisem.test',
+    ]);
+    Storage::disk('public')->put('organization-logos/kisem.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8z8BQDwAFgwJ/lPJGnQAAAABJRU5ErkJggg=='));
+
+    $account = queueOpsSavingsAccount($user);
+    SavingsTransaction::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'client_id' => $account->client_id,
+        'savings_account_id' => $account->id,
+        'reference' => 'STMT-DEP-001',
+        'type' => 'deposit',
+        'amount' => 30000,
+        'charges' => 0,
+        'balance_before' => 100000,
+        'balance_after' => 130000,
+        'payment_method' => 'mobile_money',
+        'narration' => 'NASSANGA FATUMA thru mc',
+        'transaction_date' => today(),
+        'value_date' => today(),
+        'status' => 'successful',
+    ]);
+
+    $export = ReportExport::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'requested_by' => $user->id,
+        'report_type' => 'savings_statement',
+        'format' => 'xlsx',
+        'filters' => [
+            'savings_account_id' => $account->id,
+            'date_from' => today()->toDateString(),
+            'date_to' => today()->toDateString(),
+        ],
+        'status' => 'queued',
+    ]);
+
+    (new GenerateStatement($export, $account->id))->handle();
+
+    $content = Storage::disk('local')->get($export->fresh()->path);
+    $worksheet = queueOpsXlsxPart($content, 'xl/worksheets/sheet1.xml');
+    $contentTypes = queueOpsXlsxPart($content, '[Content_Types].xml');
+
+    expect(substr($content, 0, 2))->toBe('PK')
+        ->and($worksheet)->toContain('Savings Account Transactions', 'Account Name:', 'Account Number:', $account->account_number, 'Opening Balance', 'NASSANGA FATUMA thru mc')
+        ->and($contentTypes)->toContain('image/png');
 });
 
 it('queues mobile money callback processing', function () {
@@ -170,4 +231,20 @@ function queueOpsSavingsAccount(User $user): SavingsAccount
         'available_balance' => 100000,
         'status' => 'active',
     ]);
+}
+
+function queueOpsXlsxPart(string $content, string $part): string
+{
+    $path = tempnam(sys_get_temp_dir(), 'queue-export-xlsx');
+    file_put_contents($path, $content);
+
+    $zip = new ZipArchive;
+    $zip->open($path);
+
+    try {
+        return $zip->getFromName($part) ?: '';
+    } finally {
+        $zip->close();
+        @unlink($path);
+    }
 }

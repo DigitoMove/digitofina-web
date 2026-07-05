@@ -179,6 +179,22 @@ function loanWorkflowTrackedLoan(User $officer, Client $client, LoanProduct $pro
     ]);
 }
 
+function loanWorkflowXlsxPart(string $content, string $part): string
+{
+    $path = tempnam(sys_get_temp_dir(), 'loan-export-xlsx');
+    file_put_contents($path, $content);
+
+    $zip = new ZipArchive;
+    $zip->open($path);
+
+    try {
+        return $zip->getFromName($part) ?: '';
+    } finally {
+        $zip->close();
+        @unlink($path);
+    }
+}
+
 function loanWorkflowSchedule(Loan $loan, mixed $dueDate, string $status, float $outstandingAmount = 300000): LoanSchedule
 {
     return LoanSchedule::create([
@@ -1696,6 +1712,38 @@ it('exports active loan balances and grouped arrears rows', function () {
     expect($arrearsContent)->toContain($arrearsLoan->loan_number, 'installments_due', 'total_due', 'days_due')
         ->toContain('300000', '11')
         ->not->toContain('installment_number');
+
+    $xlsxExport = ReportExport::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $user->branch_id,
+        'requested_by' => $user->id,
+        'report_type' => 'loan_report',
+        'format' => 'xlsx',
+        'status' => 'queued',
+    ]);
+    (new GenerateReportExport($xlsxExport))->handle();
+    $xlsxContent = Storage::disk('local')->get($xlsxExport->fresh()->path);
+    $worksheet = loanWorkflowXlsxPart($xlsxContent, 'xl/worksheets/sheet1.xml');
+
+    expect(substr($xlsxContent, 0, 2))->toBe('PK')
+        ->and($worksheet)->toContain('Loan Book', 'Report Name:', $organization->name, 'Balance Total', $activeLoan->loan_number, $arrearsLoan->loan_number)
+        ->not->toContain($closedLoan->loan_number);
+
+    putenv('EXPORT_PDF_BROWSER_PATH=disabled');
+    $pdfExport = ReportExport::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $user->branch_id,
+        'requested_by' => $user->id,
+        'report_type' => 'arrears_report',
+        'format' => 'pdf',
+        'status' => 'queued',
+    ]);
+    (new GenerateReportExport($pdfExport))->handle();
+    $pdfContent = Storage::disk('local')->get($pdfExport->fresh()->path);
+    putenv('EXPORT_PDF_BROWSER_PATH');
+
+    expect($pdfContent)->toContain('<!doctype html>', 'Loan Arrears Report', 'Report Name:', $organization->name, $arrearsLoan->loan_number)
+        ->not->toContain($closedLoan->loan_number);
 });
 
 it('shows missed amount penalty and total to pay on arrears listing', function () {

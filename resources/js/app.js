@@ -1266,18 +1266,76 @@ const initTableExports = () => {
         link.remove();
         URL.revokeObjectURL(url);
     };
-    const excelFor = (title, rows) => `
+    const exportBrand = (title) => {
+        const sidebarLogo = document.querySelector('#app-sidebar img');
+        const sidebarName = document.querySelector('#app-sidebar .font-semibold');
+        const branchLabel = document.querySelector('header span.text-slate-500');
+        const now = new Date();
+        const date = now.toLocaleDateString();
+        const stamp = now.toISOString().replace(/[-:T.Z]/g, '').slice(0, 12);
+
+        return {
+            logo: sidebarLogo?.getAttribute('src') || '/brand/digitofina-logo.svg',
+            organization: sidebarLogo?.getAttribute('alt') || sidebarName?.textContent?.trim() || 'DigitoFina',
+            reportNumber: `WEB-${stamp}`,
+            branch: branchLabel?.textContent?.trim() || 'Current branch',
+            currency: 'Uganda Shilling - UGX',
+            period: `${date} - ${date}`,
+            heading: `${title} As At: ${date}`,
+        };
+    };
+    const metadataRows = (brand, title) => [
+        ['Report Name', title],
+        ['Report Number', brand.reportNumber],
+        ['Currency', brand.currency],
+        ['Branch', brand.branch],
+        ['Period', brand.period],
+    ];
+    const excelFor = (title, rows) => {
+        const brand = exportBrand(title);
+        const span = Math.max(rows[0]?.length || 1, 5);
+
+        return `
         <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
-        <head><meta charset="utf-8"></head>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body { font-family: Arial, sans-serif; color: #111827; }
+                .brand-logo { max-height: 82px; max-width: 280px; }
+                .brand-name { font-size: 16px; font-weight: 700; text-transform: uppercase; }
+                .meta-label { font-family: "Courier New", monospace; font-weight: 700; }
+                .meta-value { font-family: "Courier New", monospace; }
+                .title { font-size: 16px; font-weight: 700; text-align: center; }
+                .report-table { border-collapse: collapse; width: 100%; }
+                .report-table th, .report-table td { border: 1px solid #1f2937; padding: 7px 9px; vertical-align: top; }
+                .report-table th { background: #e5e7eb; text-align: center; text-transform: uppercase; }
+            </style>
+        </head>
         <body>
             <table>
-                <caption>${escapeHtml(title)}</caption>
-                ${rows.map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join('')}
+                <tr>
+                    <td colspan="2" rowspan="5">
+                        <img class="brand-logo" src="${escapeHtml(brand.logo)}" alt="${escapeHtml(brand.organization)}">
+                        <div class="brand-name">${escapeHtml(brand.organization)}</div>
+                    </td>
+                    <td></td>
+                    <td class="meta-label">Report Name:</td>
+                    <td class="meta-value">${escapeHtml(title)}</td>
+                </tr>
+                ${metadataRows(brand, title).slice(1).map(([label, value]) => `
+                    <tr><td></td><td class="meta-label">${escapeHtml(label)}:</td><td class="meta-value">${escapeHtml(value)}</td></tr>
+                `).join('')}
+                <tr><td colspan="${span}" class="title">${escapeHtml(brand.heading)}</td></tr>
+            </table>
+            <table class="report-table">
+                ${rows.map((row, rowIndex) => `<tr>${row.map((value) => `<${rowIndex === 0 ? 'th' : 'td'}>${escapeHtml(value)}</${rowIndex === 0 ? 'th' : 'td'}>`).join('')}</tr>`).join('')}
             </table>
         </body>
         </html>
     `;
+    };
     const printPdf = (title, rows) => {
+        const brand = exportBrand(title);
         const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=800');
 
         if (!printWindow) {
@@ -1294,18 +1352,30 @@ const initTableExports = () => {
                 <title>${escapeHtml(title)}</title>
                 <style>
                     body { font-family: Arial, sans-serif; color: #0f172a; margin: 24px; }
-                    h1 { font-size: 20px; margin: 0 0 6px; }
-                    p { color: #64748b; margin: 0 0 18px; font-size: 12px; }
+                    .document-header { align-items: flex-start; display: grid; gap: 24px; grid-template-columns: 1fr 1fr; margin-bottom: 14px; }
+                    .brand img { display: block; max-height: 82px; max-width: 280px; object-fit: contain; }
+                    .brand-name { color: #111827; font-size: 16px; font-weight: 700; margin-top: 6px; text-transform: uppercase; }
+                    .metadata { display: grid; font-family: "Courier New", monospace; font-size: 13px; gap: 6px 14px; grid-template-columns: 160px minmax(220px, 1fr); justify-content: end; }
+                    .meta-label { font-weight: 700; }
+                    h1 { font-size: 16px; margin: 18px 0 7px; text-align: center; }
                     table { border-collapse: collapse; width: 100%; font-size: 11px; }
-                    th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; vertical-align: top; }
-                    th { background: #f1f5f9; }
+                    th, td { border: 1px solid #1f2937; padding: 7px 9px; text-align: left; vertical-align: top; }
+                    th { background: #e5e7eb; text-align: center; text-transform: uppercase; }
                     tr:nth-child(even) td { background: #f8fafc; }
                     @page { size: landscape; margin: 14mm; }
                 </style>
             </head>
             <body>
-                <h1>${escapeHtml(title)}</h1>
-                <p>Generated ${escapeHtml(new Date().toLocaleString())}</p>
+                <header class="document-header">
+                    <section class="brand">
+                        <img src="${escapeHtml(brand.logo)}" alt="${escapeHtml(brand.organization)}">
+                        <div class="brand-name">${escapeHtml(brand.organization)}</div>
+                    </section>
+                    <section class="metadata">
+                        ${metadataRows(brand, title).map(([label, value]) => `<div class="meta-label">${escapeHtml(label)}:</div><div>${escapeHtml(value)}</div>`).join('')}
+                    </section>
+                </header>
+                <h1>${escapeHtml(brand.heading)}</h1>
                 <table>${rows.map((row, rowIndex) => `
                     <tr>${row.map((value) => `<${rowIndex === 0 ? 'th' : 'td'}>${escapeHtml(value)}</${rowIndex === 0 ? 'th' : 'td'}>`).join('')}</tr>
                 `).join('')}</table>

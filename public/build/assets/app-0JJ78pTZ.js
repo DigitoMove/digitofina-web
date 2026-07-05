@@ -13,17 +13,44 @@ var e=(e,t)=>{let n=e.querySelectorAll(`[data-df-tab-target]`),r=e.querySelector
                     <td>${y(e.balance)}</td>
                 </tr>
             `).join(``)}},m=async()=>{let r=e.querySelector(`[name="requested_amount"]`)?.value,i=e.querySelector(`[name="term_periods"]`)?.value;if(!(!r||!i||!n?.value||!t?.value)){d(``),a.disabled=!0,a.textContent=`Previewing...`;try{let t=await fetch(e.dataset.previewUrl,{method:`POST`,headers:{Accept:`application/json`,"X-CSRF-TOKEN":document.querySelector(`meta[name="csrf-token"]`)?.content||``},body:new FormData(e)}),n=await t.json();if(!t.ok){let e=n.message||Object.values(n.errors||{})?.[0]?.[0]||`Unable to preview schedule.`;throw Error(e)}f(n.summary||{}),p(n.schedule||[])}catch(e){d(e.message)}finally{a.disabled=!1,a.textContent=`Preview Schedule`}}};c(),l(),t?.addEventListener(`change`,c),t?.addEventListener(`change`,m),n?.addEventListener(`change`,()=>{l(),u(),m()}),e.querySelector(`[name="requested_amount"]`)?.addEventListener(`change`,m),e.querySelector(`[name="term_periods"]`)?.addEventListener(`change`,m),e.querySelector(`[name="application_date"]`)?.addEventListener(`change`,m),a?.addEventListener(`click`,m),m()})},x=()=>{let e=document.querySelector(`[data-report-modal]`),t=document.querySelector(`[data-report-form]`),n=document.querySelector(`[data-report-modal-title]`),r=document.querySelector(`[data-report-modal-description]`),i=document.querySelector(`[data-report-date-fields]`),a=document.querySelector(`[data-report-detail-field]`),o=document.querySelector(`[data-report-interest-field]`),s=document.querySelector(`[data-report-ledger-field]`),c=document.querySelector(`[data-report-ledger-single-field]`),l=document.querySelector(`[data-report-ledger-multiple-field]`);if(!e||!t)return;let u=()=>{e.classList.add(`hidden`),e.classList.remove(`flex`)};document.querySelectorAll(`[data-report-open]`).forEach(u=>{u.addEventListener(`click`,()=>{if(t.action=u.dataset.reportUrl||``,n&&(n.textContent=u.dataset.reportTitle||`Generate Report`),r&&(r.textContent=u.dataset.reportDescription||`Choose the filters, then generate the report.`),i&&(i.hidden=u.dataset.reportDates!==`1`,i.querySelectorAll(`input`).forEach(e=>{e.disabled=i.hidden,e.name===`from`&&(e.value=u.dataset.reportFrom||e.value),e.name===`to`&&(e.value=u.dataset.reportTo||e.value)})),a&&(a.hidden=u.dataset.reportDetail!==`1`,a.querySelectorAll(`select`).forEach(e=>{e.disabled=a.hidden})),o&&(o.hidden=u.dataset.reportProfitability!==`1`,o.querySelectorAll(`select`).forEach(e=>{e.disabled=o.hidden,e.value=u.dataset.reportInterestBasis||`collected`})),s){let e=u.dataset.reportLedger===`1`,t=u.dataset.reportLedgerMode||`single`;s.hidden=!e,c?.classList.toggle(`hidden`,!e||t===`multiple`),l?.classList.toggle(`hidden`,!e||t!==`multiple`),c?.querySelectorAll(`select`).forEach(n=>{n.disabled=!e||t===`multiple`}),l?.querySelectorAll(`select`).forEach(n=>{n.disabled=!e||t!==`multiple`})}e.classList.remove(`hidden`),e.classList.add(`flex`)})}),e.querySelectorAll(`[data-report-close]`).forEach(e=>{e.addEventListener(`click`,u)}),e.addEventListener(`click`,t=>{t.target===e&&u()}),document.addEventListener(`keydown`,e=>{e.key===`Escape`&&u()})},S=()=>{let e=document.querySelector(`[data-teller-lookup-modal]`),t=document.querySelector(`[data-teller-lookup-open]`),n=document.querySelectorAll(`[data-teller-lookup-close]`),r=document.querySelectorAll(`[data-teller-lookup-select]`),i=document.querySelector(`[data-teller-lookup-loading]`),a=document.querySelector(`[data-teller-lookup-scope]`),o=document.querySelector(`[data-teller-lookup-modal-scope]`);if(!e||!t)return;let s=()=>{a&&o&&(o.value=a.value),e.classList.remove(`hidden`),e.classList.add(`grid`),e.querySelector(`input[name="account_search"]`)?.focus()},c=()=>{e.classList.add(`hidden`),e.classList.remove(`grid`)},l=()=>{c(),i?.classList.remove(`hidden`),i?.classList.add(`grid`),document.body.classList.add(`overflow-hidden`)};t.addEventListener(`click`,s),n.forEach(e=>e.addEventListener(`click`,c)),r.forEach(e=>e.addEventListener(`submit`,l)),e.addEventListener(`click`,t=>{t.target===e&&c()}),document.addEventListener(`keydown`,e=>{e.key===`Escape`&&c()}),e.dataset.open===`1`&&s()},C=()=>{let e=document.querySelectorAll(`[data-non-cash-lookup-modal]`),t=document.querySelectorAll(`[data-non-cash-lookup-open]`);if(!e.length||!t.length)return;let n=e=>{e.classList.add(`hidden`),e.classList.remove(`grid`)},r=e=>{e.classList.remove(`hidden`),e.classList.add(`grid`),e.querySelector(`input:not([type="hidden"])`)?.focus()};t.forEach(t=>{t.addEventListener(`click`,()=>{let n=[...e].find(e=>e.dataset.nonCashLookupModal===t.dataset.nonCashLookupOpen);n&&r(n)})}),e.forEach(e=>{e.querySelectorAll(`[data-non-cash-lookup-close]`).forEach(t=>t.addEventListener(`click`,()=>n(e))),e.addEventListener(`click`,t=>{t.target===e&&n(e)}),e.dataset.open===`1`&&r(e)}),document.addEventListener(`keydown`,t=>{t.key===`Escape`&&e.forEach(n)})},w=()=>{let e=document.querySelector(`[data-loan-repair-modal]`),t=document.querySelector(`[data-loan-repair-open]`),n=document.querySelectorAll(`[data-loan-repair-close]`);if(!e||!t)return;let r=()=>{e.classList.remove(`hidden`),e.classList.add(`flex`),e.querySelector(`[name="loan_product_id"]`)?.focus()},i=()=>{e.classList.add(`hidden`),e.classList.remove(`flex`)};t.addEventListener(`click`,r),n.forEach(e=>e.addEventListener(`click`,i)),e.addEventListener(`click`,t=>{t.target===e&&i()}),document.addEventListener(`keydown`,e=>{e.key===`Escape`&&i()}),e.dataset.open===`1`&&r()},T=()=>{let e=document.querySelector(`[data-loan-reopen-modal]`),t=document.querySelector(`[data-loan-reopen-open]`),n=document.querySelectorAll(`[data-loan-reopen-close]`);if(!e||!t)return;let r=()=>{e.classList.remove(`hidden`),e.classList.add(`flex`),e.querySelector(`[name="reason"]`)?.focus()},i=()=>{e.classList.add(`hidden`),e.classList.remove(`flex`)};t.addEventListener(`click`,r),n.forEach(e=>e.addEventListener(`click`,i)),e.addEventListener(`click`,t=>{t.target===e&&i()}),document.addEventListener(`keydown`,e=>{e.key===`Escape`&&i()}),e.dataset.open===`1`&&r()},E=()=>{let e=document.querySelector(`[data-loan-coverage-modal]`),t=document.querySelector(`[data-loan-coverage-open]`),n=document.querySelectorAll(`[data-loan-coverage-close]`);if(!e||!t)return;let r=()=>{e.classList.remove(`hidden`),e.classList.add(`flex`),e.querySelector(`[name="coverage_method"]`)?.focus()},i=()=>{e.classList.add(`hidden`),e.classList.remove(`flex`)};t.addEventListener(`click`,r),n.forEach(e=>e.addEventListener(`click`,i)),e.addEventListener(`click`,t=>{t.target===e&&i()}),document.addEventListener(`keydown`,e=>{e.key===`Escape`&&i()}),e.dataset.open===`1`&&r()},D=()=>{let e=document.querySelectorAll(`[data-ledger-modal]`),t=document.querySelectorAll(`[data-ledger-modal-open]`);if(!e.length||!t.length)return;let n=e=>{e.classList.remove(`hidden`),e.classList.add(`flex`),e.querySelector(`input:not([type="hidden"]), select, textarea`)?.focus()},r=e=>{e.classList.add(`hidden`),e.classList.remove(`flex`)},i=()=>e.forEach(r);t.forEach(e=>{e.addEventListener(`click`,()=>{let t=document.getElementById(e.dataset.ledgerModalOpen||``);t&&n(t)})}),e.forEach(e=>{e.querySelectorAll(`[data-ledger-modal-close]`).forEach(t=>{t.addEventListener(`click`,()=>r(e))}),e.addEventListener(`click`,t=>{t.target===e&&r(e)}),e.dataset.open===`1`&&n(e)}),document.addEventListener(`keydown`,e=>{e.key===`Escape`&&i()})},O=()=>{let e=document.querySelector(`[name="scope_type"]`),t=document.querySelectorAll(`[data-wipe-target]`),n=document.querySelector(`[data-wipe-target="branch"]`),r=document.querySelector(`[data-wipe-target="user"]`),i=document.querySelectorAll(`[data-wipe-category]`),a=document.querySelectorAll(`[data-wipe-mark]`);if(!e||!t.length)return;let o=()=>{i.forEach(e=>{let t=e.closest(`label`)?.querySelector(`[data-wipe-state]`);t&&(t.textContent=e.checked?`Clear/delete`:`Leave`,t.classList.toggle(`bg-red-50`,e.checked),t.classList.toggle(`text-red-700`,e.checked),t.classList.toggle(`bg-slate-100`,!e.checked),t.classList.toggle(`text-slate-600`,!e.checked))})},s=()=>{t.forEach(t=>{let n=t.dataset.wipeTarget===e.value||t.dataset.wipeTarget===`branch`&&e.value===`user`;t.disabled=!n,t.closest(`label`).hidden=!n}),c()},c=()=>{if(!n||!r)return;let e=n.value,t=[...r.options],i=null;t.forEach(t=>{let n=!e||t.dataset.branchId===e;t.hidden=!n,t.disabled=!n,n&&!i&&(i=t)}),r.selectedOptions[0]?.disabled&&i&&(r.value=i.value)};e.addEventListener(`change`,s),n?.addEventListener(`change`,c),i.forEach(e=>e.addEventListener(`change`,o)),a.forEach(e=>{e.addEventListener(`click`,()=>{let t=e.dataset.wipeMark===`clear`;i.forEach(e=>{e.checked=t}),o()})}),s(),o()},k=()=>{document.querySelectorAll(`main table`).forEach(e=>{if(e.dataset.mobileReady===`1`)return;let t=[...e.querySelectorAll(`thead th`)].map(e=>e.textContent.trim());e.querySelectorAll(`tbody tr`).forEach(e=>{e.querySelectorAll(`td`).forEach((e,n)=>{!e.dataset.label&&t[n]&&(e.dataset.label=t[n])})}),e.dataset.mobileReady=`1`})},A=()=>{let e=e=>String(e??``).replaceAll(`&`,`&amp;`).replaceAll(`<`,`&lt;`).replaceAll(`>`,`&gt;`).replaceAll(`"`,`&quot;`).replaceAll(`'`,`&#039;`),t=e=>String(e||`export`).toLowerCase().replace(/[^a-z0-9]+/g,`-`).replace(/^-+|-+$/g,``).slice(0,80)||`export`,n=(e,t)=>e.dataset.exportTitle||(e.closest(`.df-panel, section, article, main`)?.querySelector(`h1, h2, h3`)||document.querySelector(`main h1`))?.textContent?.trim()||`Table ${t+1}`,r=e=>e.textContent.replace(/\s+/g,` `).trim(),i=e=>[...e.querySelectorAll(`tr`)].map(e=>[...e.children].filter(e=>!e.matches(`[data-export-exclude]`)).map(r)).filter(e=>e.some(e=>e!==``)),a=e=>e.map(e=>e.map(e=>`"${String(e).replaceAll(`"`,`""`)}"`).join(`,`)).join(`\r
-`),o=(e,t,n)=>{let r=new Blob([e],{type:n}),i=URL.createObjectURL(r),a=document.createElement(`a`);a.href=i,a.download=t,document.body.appendChild(a),a.click(),a.remove(),URL.revokeObjectURL(i)},s=(t,n)=>`
+`),o=(e,t,n)=>{let r=new Blob([e],{type:n}),i=URL.createObjectURL(r),a=document.createElement(`a`);a.href=i,a.download=t,document.body.appendChild(a),a.click(),a.remove(),URL.revokeObjectURL(i)},s=e=>{let t=document.querySelector(`#app-sidebar img`),n=document.querySelector(`#app-sidebar .font-semibold`),r=document.querySelector(`header span.text-slate-500`),i=new Date,a=i.toLocaleDateString(),o=i.toISOString().replace(/[-:T.Z]/g,``).slice(0,12);return{logo:t?.getAttribute(`src`)||`/brand/digitofina-logo.svg`,organization:t?.getAttribute(`alt`)||n?.textContent?.trim()||`DigitoFina`,reportNumber:`WEB-${o}`,branch:r?.textContent?.trim()||`Current branch`,currency:`Uganda Shilling - UGX`,period:`${a} - ${a}`,heading:`${e} As At: ${a}`}},c=(e,t)=>[[`Report Name`,t],[`Report Number`,e.reportNumber],[`Currency`,e.currency],[`Branch`,e.branch],[`Period`,e.period]],l=(t,n)=>{let r=s(t),i=Math.max(n[0]?.length||1,5);return`
         <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
-        <head><meta charset="utf-8"></head>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body { font-family: Arial, sans-serif; color: #111827; }
+                .brand-logo { max-height: 82px; max-width: 280px; }
+                .brand-name { font-size: 16px; font-weight: 700; text-transform: uppercase; }
+                .meta-label { font-family: "Courier New", monospace; font-weight: 700; }
+                .meta-value { font-family: "Courier New", monospace; }
+                .title { font-size: 16px; font-weight: 700; text-align: center; }
+                .report-table { border-collapse: collapse; width: 100%; }
+                .report-table th, .report-table td { border: 1px solid #1f2937; padding: 7px 9px; vertical-align: top; }
+                .report-table th { background: #e5e7eb; text-align: center; text-transform: uppercase; }
+            </style>
+        </head>
         <body>
             <table>
-                <caption>${e(t)}</caption>
-                ${n.map(t=>`<tr>${t.map(t=>`<td>${e(t)}</td>`).join(``)}</tr>`).join(``)}
+                <tr>
+                    <td colspan="2" rowspan="5">
+                        <img class="brand-logo" src="${e(r.logo)}" alt="${e(r.organization)}">
+                        <div class="brand-name">${e(r.organization)}</div>
+                    </td>
+                    <td></td>
+                    <td class="meta-label">Report Name:</td>
+                    <td class="meta-value">${e(t)}</td>
+                </tr>
+                ${c(r,t).slice(1).map(([t,n])=>`
+                    <tr><td></td><td class="meta-label">${e(t)}:</td><td class="meta-value">${e(n)}</td></tr>
+                `).join(``)}
+                <tr><td colspan="${i}" class="title">${e(r.heading)}</td></tr>
+            </table>
+            <table class="report-table">
+                ${n.map((t,n)=>`<tr>${t.map(t=>`<${n===0?`th`:`td`}>${e(t)}</${n===0?`th`:`td`}>`).join(``)}</tr>`).join(``)}
             </table>
         </body>
         </html>
-    `,c=(t,n)=>{let r=window.open(``,`_blank`,`noopener,noreferrer,width=1100,height=800`);if(!r){window.print();return}r.document.write(`
+    `},u=(t,n)=>{let r=s(t),i=window.open(``,`_blank`,`noopener,noreferrer,width=1100,height=800`);if(!i){window.print();return}i.document.write(`
             <!doctype html>
             <html>
             <head>
@@ -31,27 +58,39 @@ var e=(e,t)=>{let n=e.querySelectorAll(`[data-df-tab-target]`),r=e.querySelector
                 <title>${e(t)}</title>
                 <style>
                     body { font-family: Arial, sans-serif; color: #0f172a; margin: 24px; }
-                    h1 { font-size: 20px; margin: 0 0 6px; }
-                    p { color: #64748b; margin: 0 0 18px; font-size: 12px; }
+                    .document-header { align-items: flex-start; display: grid; gap: 24px; grid-template-columns: 1fr 1fr; margin-bottom: 14px; }
+                    .brand img { display: block; max-height: 82px; max-width: 280px; object-fit: contain; }
+                    .brand-name { color: #111827; font-size: 16px; font-weight: 700; margin-top: 6px; text-transform: uppercase; }
+                    .metadata { display: grid; font-family: "Courier New", monospace; font-size: 13px; gap: 6px 14px; grid-template-columns: 160px minmax(220px, 1fr); justify-content: end; }
+                    .meta-label { font-weight: 700; }
+                    h1 { font-size: 16px; margin: 18px 0 7px; text-align: center; }
                     table { border-collapse: collapse; width: 100%; font-size: 11px; }
-                    th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; vertical-align: top; }
-                    th { background: #f1f5f9; }
+                    th, td { border: 1px solid #1f2937; padding: 7px 9px; text-align: left; vertical-align: top; }
+                    th { background: #e5e7eb; text-align: center; text-transform: uppercase; }
                     tr:nth-child(even) td { background: #f8fafc; }
                     @page { size: landscape; margin: 14mm; }
                 </style>
             </head>
             <body>
-                <h1>${e(t)}</h1>
-                <p>Generated ${e(new Date().toLocaleString())}</p>
+                <header class="document-header">
+                    <section class="brand">
+                        <img src="${e(r.logo)}" alt="${e(r.organization)}">
+                        <div class="brand-name">${e(r.organization)}</div>
+                    </section>
+                    <section class="metadata">
+                        ${c(r,t).map(([t,n])=>`<div class="meta-label">${e(t)}:</div><div>${e(n)}</div>`).join(``)}
+                    </section>
+                </header>
+                <h1>${e(r.heading)}</h1>
                 <table>${n.map((t,n)=>`
                     <tr>${t.map(t=>`<${n===0?`th`:`td`}>${e(t)}</${n===0?`th`:`td`}>`).join(``)}</tr>
                 `).join(``)}</table>
                 <script>window.addEventListener('load', () => { window.print(); });<\/script>
             </body>
             </html>
-        `),r.document.close()};document.querySelectorAll(`main table:not([data-exportable="false"])`).forEach((e,r)=>{if(e.dataset.exportReady===`1`||i(e).length===0)return;let l=n(e,r),u=document.createElement(`div`);u.className=`mb-2 flex flex-wrap items-center justify-end gap-2 rounded-md bg-slate-50 px-4 py-2 text-xs`,u.dataset.tableExportToolbar=`1`,u.innerHTML=`
+        `),i.document.close()};document.querySelectorAll(`main table:not([data-exportable="false"])`).forEach((e,r)=>{if(e.dataset.exportReady===`1`||i(e).length===0)return;let s=n(e,r),c=document.createElement(`div`);c.className=`mb-2 flex flex-wrap items-center justify-end gap-2 rounded-md bg-slate-50 px-4 py-2 text-xs`,c.dataset.tableExportToolbar=`1`,c.innerHTML=`
             <span class="mr-auto pl-2 font-semibold text-slate-700">Export table</span>
             <button type="button" class="rounded border border-emerald-700 bg-emerald-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-emerald-700" data-table-export="csv">CSV</button>
             <button type="button" class="rounded border border-blue-700 bg-blue-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-blue-700" data-table-export="xls">Excel</button>
             <button type="button" class="mr-2 rounded border border-rose-700 bg-rose-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-rose-700" data-table-export="pdf">PDF</button>
-        `;let d=e.parentElement,f=d?.classList.contains(`overflow-auto`)?d.parentElement:d,p=d?.classList.contains(`overflow-auto`)?d:e;f?.insertBefore(u,p),u.querySelectorAll(`[data-table-export]`).forEach(n=>{n.addEventListener(`click`,()=>{let r=i(e),u=`${t(l)}-${new Date().toISOString().slice(0,10)}`;n.dataset.tableExport===`csv`?o(a(r),`${u}.csv`,`text/csv;charset=utf-8`):n.dataset.tableExport===`xls`?o(s(l,r),`${u}.xls`,`application/vnd.ms-excel;charset=utf-8`):c(l,r)})}),e.dataset.exportReady=`1`})};document.addEventListener(`DOMContentLoaded`,()=>{t(),r(),i(),a(),o(),p(),g(),_(),v(),b(),x(),S(),C(),w(),T(),E(),D(),O(),A(),k()});
+        `;let d=e.parentElement,f=d?.classList.contains(`overflow-auto`)?d.parentElement:d,p=d?.classList.contains(`overflow-auto`)?d:e;f?.insertBefore(c,p),c.querySelectorAll(`[data-table-export]`).forEach(n=>{n.addEventListener(`click`,()=>{let r=i(e),c=`${t(s)}-${new Date().toISOString().slice(0,10)}`;n.dataset.tableExport===`csv`?o(a(r),`${c}.csv`,`text/csv;charset=utf-8`):n.dataset.tableExport===`xls`?o(l(s,r),`${c}.xls`,`application/vnd.ms-excel;charset=utf-8`):u(s,r)})}),e.dataset.exportReady=`1`})};document.addEventListener(`DOMContentLoaded`,()=>{t(),r(),i(),a(),o(),p(),g(),_(),v(),b(),x(),S(),C(),w(),T(),E(),D(),O(),A(),k()});

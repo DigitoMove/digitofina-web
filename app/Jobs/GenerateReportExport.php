@@ -10,6 +10,7 @@ use App\Models\ReportExport;
 use App\Models\SavingsAccount;
 use App\Models\SavingsTransaction;
 use App\Services\BusinessCalendarService;
+use App\Services\ReportDocumentFormatter;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -39,7 +40,7 @@ class GenerateReportExport implements ShouldQueue
         $rows = $this->rows($export);
         $path = $this->path($export);
 
-        Storage::disk($export->disk ?? 'local')->put($path, $this->serialize($rows, $export->format));
+        Storage::disk($export->disk ?? 'local')->put($path, $this->serialize($rows, $export));
 
         $export->update([
             'path' => $path,
@@ -213,9 +214,9 @@ class GenerateReportExport implements ShouldQueue
     /**
      * @param  array<int, array<string, mixed>>  $rows
      */
-    private function serialize(array $rows, string $format): string
+    private function serialize(array $rows, ReportExport $export): string
     {
-        if ($format === 'csv') {
+        if ($export->format === 'csv') {
             $handle = fopen('php://temp', 'r+');
             $headers = array_keys($rows[0] ?? ['generated_at' => now()->toIso8601String()]);
             fputcsv($handle, $headers);
@@ -229,10 +230,6 @@ class GenerateReportExport implements ShouldQueue
             return stream_get_contents($handle) ?: '';
         }
 
-        return json_encode([
-            'generated_at' => now()->toIso8601String(),
-            'format' => $format,
-            'rows' => $rows,
-        ], JSON_PRETTY_PRINT);
+        return app(ReportDocumentFormatter::class)->renderReport($export, $rows);
     }
 }

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\ReportExport;
 use App\Models\SavingsAccount;
+use App\Services\ReportDocumentFormatter;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -26,7 +27,9 @@ class GenerateStatement implements ShouldQueue
     public function handle(): void
     {
         $export = ReportExport::query()->findOrFail($this->reportExport->id);
-        $account = SavingsAccount::query()->findOrFail($this->savingsAccountId);
+        $account = SavingsAccount::query()
+            ->with(['branch', 'client', 'organization'])
+            ->findOrFail($this->savingsAccountId);
         $filters = $export->filters ?? [];
 
         $export->update(['status' => 'processing']);
@@ -36,19 +39,16 @@ class GenerateStatement implements ShouldQueue
             ->when($filters['date_to'] ?? null, fn ($query, string $date) => $query->whereDate('transaction_date', '<=', $date))
             ->orderBy('transaction_date')
             ->orderBy('id')
-            ->get(['reference', 'type', 'amount', 'charges', 'balance_before', 'balance_after', 'payment_method', 'status', 'transaction_date', 'updated_at'])
-            ->map(fn ($transaction): array => $transaction->only(['reference', 'type', 'amount', 'charges', 'balance_before', 'balance_after', 'payment_method', 'status', 'transaction_date', 'updated_at']))
+            ->get(['reference', 'type', 'amount', 'charges', 'balance_before', 'balance_after', 'payment_method', 'status', 'narration', 'transaction_date', 'updated_at'])
+            ->map(fn ($transaction): array => $transaction->only(['reference', 'type', 'amount', 'charges', 'balance_before', 'balance_after', 'payment_method', 'status', 'narration', 'transaction_date', 'updated_at']))
             ->all();
 
         $path = "reports/statements/{$account->id}/statement-{$export->id}.{$export->format}";
 
-        Storage::disk($export->disk ?? 'local')->put($path, json_encode([
-            'generated_at' => now()->toIso8601String(),
-            'account_number' => $account->account_number,
-            'opening_balance' => $transactions[0]['balance_before'] ?? $account->current_balance,
-            'closing_balance' => $account->current_balance,
-            'transactions' => $transactions,
-        ], JSON_PRETTY_PRINT));
+        Storage::disk($export->disk ?? 'local')->put(
+            $path,
+            app(ReportDocumentFormatter::class)->renderStatement($export, $account, $transactions)
+        );
 
         $export->update([
             'path' => $path,
