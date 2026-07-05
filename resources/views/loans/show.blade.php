@@ -22,6 +22,13 @@
     $isNonPerforming = in_array($loan->status, ['in_arrears', 'written_off'], true);
     $hasSavingsAccount = $client->accounts->contains(fn ($account) => $account->accountType?->category === 'savings');
     $canCreateLoan = auth()->user()->can('create', \App\Models\Loan::class);
+    $canOpenAccounts = auth()->user()->can('create', \App\Models\Account::class);
+    $canGenerateSavingsAccount = auth()->user()->canPerform('manage-accounts') || auth()->user()->canPerform('manage-loans');
+    $canViewAuditLogs = auth()->user()->canPerform('view-audit-logs');
+    $canViewReports = auth()->user()->canPerform('view-reports');
+    $savingsEnabled = auth()->user()->canAccessModule('savings');
+    $sharesEnabled = auth()->user()->canAccessModule('shares');
+    $fixedDepositsEnabled = auth()->user()->canAccessModule('fixed-deposits');
     $canCancel = (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans')) && ! in_array($loan->status, ['cancelled', 'rejected', 'disbursed', 'active', 'in_arrears', 'fully_paid', 'closed', 'written_off'], true);
     $canUpdateDraftTerms = $loan->status === 'draft' && (auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-users') || auth()->user()->canPerform('disburse-loans') || $canManageCreatedApplication);
     $loanAccountNeedsReopen = $loan->loanAccount && $loan->loanAccount->status !== 'active' && in_array($loan->status, ['disbursed', 'active', 'in_arrears'], true);
@@ -84,26 +91,27 @@
             'balance' => (float) $loan->penalty_balance,
         ],
     ];
-    $actionItems = $isLoanRecoveryView ? [
+    $actionItems = array_filter($isLoanRecoveryView ? [
         ['Client Account Dashboard', route('clients.show', $client), 'CD', 0],
         ['Loan Account Details', route('loans.show', $loan), 'LA', null],
     ] : [
         ['Client Account Dashboard', route('clients.show', $client), 'CD', 0],
         ['Loan Account Details', route('loans.show', $loan), 'LA', null],
-        ['Transaction Authorisation Details', route('audit-logs.index', ['search' => $loanAccountNumber]), 'TA', 0],
-        ['Disburse Loan', route('loans.show', $loan), 'DL', $loan->status === 'approved' ? 1 : 0],
-        ['Assign Officer', route('loans.show', $loan), 'AO', $canAssignOfficer ? 1 : 0],
-        ['Loan Account Reports', route('reports.show', 'loan-book'), 'LR', null],
+        $canViewAuditLogs ? ['Transaction Authorisation Details', route('audit-logs.index', ['search' => $loanAccountNumber]), 'TA', 0] : null,
+        auth()->user()->canPerform('disburse-loans') ? ['Disburse Loan', route('loans.show', $loan), 'DL', $loan->status === 'approved' ? 1 : 0] : null,
+        $canAssignOfficer ? ['Assign Officer', route('loans.show', $loan), 'AO', 1] : null,
+        $canViewReports ? ['Loan Account Reports', route('reports.show', 'loan-book'), 'LR', null] : null,
         ['Account Notes', route('loans.show', $loan), 'AN', 0],
         ['Account Notifications', route('loans.show', $loan), 'NO', 0],
-    ];
+    ]);
     $accountMenus = $isLoanRecoveryView ? [] : [
-        ['Savings Accounts', array_filter([! $hasSavingsAccount ? ['Generate savings account', route('clients.savings-accounts.generate', $client), 'post'] : null, ['View accounts', route('clients.savings-accounts', $client), 'get']])],
+        $savingsEnabled ? ['Savings Accounts', array_filter([(! $hasSavingsAccount && $canGenerateSavingsAccount) ? ['Generate savings account', route('clients.savings-accounts.generate', $client), 'post'] : null, ['View accounts', route('clients.savings-accounts', $client), 'get']])] : null,
         ['Loan Accounts', array_filter([$canCreateLoan ? ['New application', route('loans.create', ['client_id' => $client->id])] : null, ['View loans', route('clients.loans', $client)]])],
-        ['Current Accounts', [['Open current account', route('accounts.create', ['client_id' => $client->id])], ['View accounts', route('clients.accounts', $client)]]],
-        ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]],
-        ['Term Deposits', [['Maturity report', route('reports.show', 'term-deposits-maturity-report')], ['Funded term deposits', route('reports.show', 'funded-term-deposit-accounts')]]],
+        ['Current Accounts', array_filter([$canOpenAccounts ? ['Open current account', route('accounts.create', ['client_id' => $client->id])] : null, ['View accounts', route('clients.accounts', $client)]])],
+        ($sharesEnabled && $canViewReports) ? ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]] : null,
+        ($fixedDepositsEnabled && $canViewReports) ? ['Term Deposits', [['Maturity report', route('reports.show', 'term-deposits-maturity-report')], ['Funded term deposits', route('reports.show', 'funded-term-deposit-accounts')]]] : null,
     ];
+    $accountMenus = array_values(array_filter($accountMenus));
 @endphp
 
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">

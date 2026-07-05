@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\GenerateReportExport;
 use App\Models\Account;
 use App\Models\AccountType;
 use App\Models\Branch;
@@ -18,6 +19,7 @@ use App\Models\LoanWriteOff;
 use App\Models\Module;
 use App\Models\Organization;
 use App\Models\Permission;
+use App\Models\ReportExport;
 use App\Models\Role;
 use App\Models\SystemSetting;
 use App\Models\TellerDrawer;
@@ -32,6 +34,7 @@ use App\Services\ModuleService;
 use App\Services\ReportCatalogService;
 use App\Services\TransactionPostingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
 
@@ -1512,12 +1515,176 @@ it('combines multiple overdue schedules into one arrears listing row per loan', 
     $response = $this->actingAs($user)
         ->get(route('arrears.index'))
         ->assertSuccessful()
-        ->assertSee('2 due')
-        ->assertSee('#1')
-        ->assertSee('#2')
-        ->assertSee('UGX 300,000.00');
+        ->assertSee('installments due')
+        ->assertSee('UGX 300,000.00')
+        ->assertDontSee('#1')
+        ->assertDontSee('#2');
 
     expect(substr_count($response->getContent(), '1001-LN-MULTI-ARREARS'))->toBe(1);
+});
+
+it('summarizes loan arrears reports by loan instead of installment rows', function () {
+    $user = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($user, ['loans', 'reports']);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
+    $client = loanWorkflowClient($user, '+256700220010');
+    $client->update(['organization_id' => $organization->id]);
+    $loan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-REPORT-ARREARS', 'active');
+
+    LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subDays(15),
+        'principal_due' => 100000,
+        'interest_due' => 0,
+        'total_due' => 100000,
+        'outstanding_amount' => 100000,
+        'balance_due' => 100000,
+        'status' => 'overdue',
+        'days_overdue' => 15,
+    ]);
+    LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 2,
+        'due_date' => today()->subDays(5),
+        'principal_due' => 200000,
+        'interest_due' => 0,
+        'total_due' => 200000,
+        'outstanding_amount' => 200000,
+        'balance_due' => 200000,
+        'status' => 'overdue',
+        'days_overdue' => 5,
+    ]);
+
+    $report = app(ReportCatalogService::class)->generate('loan-accounts-in-arrears', [
+        'from' => today()->subMonth()->toDateString(),
+        'to' => today()->toDateString(),
+    ], $user);
+    $row = $report['rows']->first();
+
+    expect($report['columns'])->toBe(['Due Date', 'Loan', 'Client', 'Product', 'Installments Due', 'Total Due', 'Days Due', 'Status'])
+        ->and($report['rows'])->toHaveCount(1)
+        ->and($row['Loan'])->toBe('1001-LN-REPORT-ARREARS')
+        ->and($row['Installments Due'])->toBe('2')
+        ->and($row['Total Due'])->toBe('UGX 300,000.00')
+        ->and($row['Days Due'])->toBe('15')
+        ->and($report['summary']['Installments due'])->toBe('2')
+        ->and($report['summary']['Total due'])->toBe('UGX 300,000.00');
+
+    $this->actingAs($user)
+        ->get(route('reports.show', 'loan-accounts-in-arrears'))
+        ->assertSuccessful()
+        ->assertSee('Installments Due')
+        ->assertSee('UGX 300,000.00')
+        ->assertDontSee('#1')
+        ->assertDontSee('#2');
+});
+
+it('limits the loan book to active loans with positive loan balances', function () {
+    $user = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($user, ['loans', 'reports']);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
+    $client = loanWorkflowClient($user, '+256700220011');
+    $client->update(['organization_id' => $organization->id]);
+
+    $activeLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-BOOK-ACTIVE', 'active');
+    $arrearsLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-BOOK-ARREARS', 'in_arrears');
+    $closedLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-BOOK-CLOSED', 'closed');
+    $draftLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-BOOK-DRAFT', 'draft');
+    $rejectedLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-BOOK-REJECTED', 'rejected');
+    $zeroBalanceLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-BOOK-ZERO', 'active');
+    $zeroBalanceLoan->update([
+        'principal_balance' => 0,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+    ]);
+
+    $report = app(ReportCatalogService::class)->generate('loan-book', [], $user);
+    $accounts = $report['rows']->pluck('Account')->all();
+
+    expect($accounts)->toContain($activeLoan->loan_number, $arrearsLoan->loan_number)
+        ->and($accounts)->not->toContain($closedLoan->loan_number, $draftLoan->loan_number, $rejectedLoan->loan_number, $zeroBalanceLoan->loan_number)
+        ->and($report['summary']['Loans'])->toBe('2')
+        ->and($report['summary']['Balance total'])->toBe('UGX 600,000.00');
+
+    $this->actingAs($user)
+        ->get(route('reports.show', 'loan-book'))
+        ->assertSuccessful()
+        ->assertSee('1001-LN-BOOK-ACTIVE')
+        ->assertSee('1001-LN-BOOK-ARREARS')
+        ->assertDontSee('1001-LN-BOOK-CLOSED')
+        ->assertDontSee('1001-LN-BOOK-DRAFT')
+        ->assertDontSee('1001-LN-BOOK-REJECTED')
+        ->assertDontSee('1001-LN-BOOK-ZERO');
+});
+
+it('exports active loan balances and grouped arrears rows', function () {
+    Storage::fake('local');
+
+    $user = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($user, ['loans', 'reports']);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
+    $client = loanWorkflowClient($user, '+256700220012');
+    $client->update(['organization_id' => $organization->id]);
+
+    $activeLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-EXPORT-ACTIVE', 'active');
+    $arrearsLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-EXPORT-ARREARS', 'in_arrears');
+    $closedLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-EXPORT-CLOSED', 'closed');
+    LoanSchedule::create([
+        'loan_id' => $arrearsLoan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subDays(11),
+        'principal_due' => 100000,
+        'total_due' => 100000,
+        'outstanding_amount' => 100000,
+        'balance_due' => 100000,
+        'status' => 'overdue',
+        'days_overdue' => 11,
+    ]);
+    LoanSchedule::create([
+        'loan_id' => $arrearsLoan->id,
+        'installment_number' => 2,
+        'due_date' => today()->subDays(3),
+        'principal_due' => 200000,
+        'total_due' => 200000,
+        'outstanding_amount' => 200000,
+        'balance_due' => 200000,
+        'status' => 'overdue',
+        'days_overdue' => 3,
+    ]);
+
+    $loanExport = ReportExport::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $user->branch_id,
+        'requested_by' => $user->id,
+        'report_type' => 'loan_report',
+        'format' => 'csv',
+        'status' => 'queued',
+    ]);
+    (new GenerateReportExport($loanExport))->handle();
+    $loanContent = Storage::disk('local')->get($loanExport->fresh()->path);
+
+    expect($loanContent)->toContain($activeLoan->loan_number, $arrearsLoan->loan_number, 'balance_total')
+        ->not->toContain($closedLoan->loan_number);
+
+    $arrearsExport = ReportExport::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $user->branch_id,
+        'requested_by' => $user->id,
+        'report_type' => 'arrears_report',
+        'format' => 'csv',
+        'status' => 'queued',
+    ]);
+    (new GenerateReportExport($arrearsExport))->handle();
+    $arrearsContent = Storage::disk('local')->get($arrearsExport->fresh()->path);
+
+    expect($arrearsContent)->toContain($arrearsLoan->loan_number, 'installments_due', 'total_due', 'days_due')
+        ->toContain('300000', '11')
+        ->not->toContain('installment_number');
 });
 
 it('shows missed amount penalty and total to pay on arrears listing', function () {
@@ -1992,7 +2159,7 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->get(route('loans.index', ['search' => '1001-LN']))
         ->assertSuccessful()
         ->assertSee('1001-LN-OFFICER-ARREARS')
-        ->assertDontSee('1001-LN-OTHER-ARREARS');
+        ->assertSee('1001-LN-OTHER-ARREARS');
 
     $this->actingAs($officer)
         ->get(route('clients.index', ['search' => '256700110']))
@@ -2000,8 +2167,15 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->assertSee($officerClient->client_number)
         ->assertSee($otherClient->client_number);
 
-    expect($this->actingAs($officer)->get(route('loans.show', $otherArrears))->isSuccessful())->toBeFalse()
-        ->and($this->actingAs($officer)->get(route('clients.show', $otherClient))->isSuccessful())->toBeFalse();
+    $this->actingAs($officer)
+        ->get(route('loans.show', $otherArrears))
+        ->assertSuccessful()
+        ->assertSee('1001-LN-OTHER-ARREARS');
+
+    $this->actingAs($officer)
+        ->get(route('clients.show', $otherClient))
+        ->assertSuccessful()
+        ->assertSee($otherClient->client_number);
 
     $manualPenaltyResponse = $this->actingAs($officer)
         ->post(route('arrears.apply-penalties'));
@@ -2020,7 +2194,7 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->get(route('dashboard'))
         ->assertSuccessful()
         ->assertSee('Repayment Calendar')
-        ->assertSee('Due today + arrears')
+        ->assertSee('Due today')
         ->assertSee('1001-LN-OFFICER-DUE')
         ->assertDontSee('Recent Loan Payments')
         ->assertDontSee('>Operations<', false)
@@ -2053,7 +2227,11 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->assertSee('1001-LN-OFFICER-ARREARS')
         ->assertSee('1001-LN-OTHER-ARREARS');
 
-    expect($this->actingAs($recoveryOfficer)->get(route('loans.index'))->isSuccessful())->toBeFalse();
+    $this->actingAs($recoveryOfficer)
+        ->get(route('loans.index'))
+        ->assertSuccessful()
+        ->assertSee('1001-LN-OFFICER-ARREARS')
+        ->assertSee('1001-LN-OTHER-ARREARS');
 
     $this->actingAs($recoveryOfficer)
         ->get(route('loans.show', $ownArrears))
@@ -2070,7 +2248,12 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->assertDontSee('Loan Account Reports')
         ->assertDontSee('Transaction Authorisation Details');
 
-    expect($this->actingAs($recoveryOfficer)->get(route('loans.show', $ownDueToday))->isSuccessful())->toBeFalse();
+    $this->actingAs($recoveryOfficer)
+        ->get(route('loans.show', $ownDueToday))
+        ->assertSuccessful()
+        ->assertSee('1001-LN-OFFICER-DUE')
+        ->assertSee('Loan Schedule')
+        ->assertDontSee('Workflow Actions');
 
     $this->actingAs($recoveryOfficer)
         ->get(route('dashboard'))
@@ -2150,16 +2333,17 @@ it('limits cashier repayment visibility to unpaid installments due today at thei
         ->assertDontSee('1002-LN-CASHIER-OTHER')
         ->assertDontSee('Open total')
         ->assertSee('Amount to pay')
-        ->assertSee('Earlier arrears')
-        ->assertSee('2 open installments')
-        ->assertSee('UGX 600,000.00');
+        ->assertDontSee('Earlier arrears')
+        ->assertDontSee('2 open installments')
+        ->assertSee('1 open installment')
+        ->assertSee('UGX 300,000.00');
 
     expect($this->actingAs($cashier)->get(route('arrears.index'))->isSuccessful())->toBeFalse();
 
     expect($this->actingAs($cashier)->get(route('reports.show', 'loan-accounts-in-arrears'))->isSuccessful())->toBeFalse();
 });
 
-it('shows one due repayment demand per client and includes arrears from all their loans', function () {
+it('shows one due repayment demand per client for installments due today only', function () {
     $user = loanWorkflowUser();
     $organization = loanWorkflowOrganizationWithModules($user, ['loans', 'reports']);
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
@@ -2193,9 +2377,9 @@ it('shows one due repayment demand per client and includes arrears from all thei
         ->assertSuccessful()
         ->assertSee('Grace Demand')
         ->assertSee('1001-LN-DEMAND-DUE')
-        ->assertSee('1001-LN-DEMAND-ARR1')
-        ->assertSee('1001-LN-DEMAND-ARR2')
-        ->assertSee('UGX 900,000.00')
+        ->assertDontSee('1001-LN-DEMAND-ARR1')
+        ->assertDontSee('1001-LN-DEMAND-ARR2')
+        ->assertSee('UGX 300,000.00')
         ->assertDontSee('1001-LN-ARREARS-ONLY')
         ->assertDontSee('Arrears Only');
 

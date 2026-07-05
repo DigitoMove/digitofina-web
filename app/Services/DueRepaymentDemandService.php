@@ -40,7 +40,7 @@ class DueRepaymentDemandService
             ->forActiveArrearsLoans()
             ->whereHas('loan', fn (Builder $query): Builder => $this->visibleLoans($query, $user, $branchId)->whereIn('client_id', $clientIds))
             ->tap(fn (Builder $query): Builder => $this->openSchedules($query))
-            ->whereDate('due_date', '<=', $date->toDateString())
+            ->whereDate('due_date', $date->toDateString())
             ->orderBy('due_date')
             ->orderBy('installment_number')
             ->get();
@@ -103,17 +103,16 @@ class DueRepaymentDemandService
     private function buildLoanDemand(Collection $loanSchedules, CarbonImmutable $date): array
     {
         $todaySchedules = $loanSchedules->filter(fn (LoanSchedule $schedule): bool => $schedule->due_date?->toDateString() === $date->toDateString());
-        $arrearsSchedules = $loanSchedules->filter(fn (LoanSchedule $schedule): bool => $schedule->due_date?->lt($date) === true);
 
         return [
             'loan' => $loanSchedules->first()->loan,
             'due_today_amount' => $this->sumOutstanding($todaySchedules),
-            'arrears_amount' => $this->sumOutstanding($arrearsSchedules),
-            'total_amount' => $this->sumOutstanding($loanSchedules),
+            'arrears_amount' => 0.0,
+            'total_amount' => $this->sumOutstanding($todaySchedules),
             'due_installments_count' => $todaySchedules->count(),
-            'arrears_installments_count' => $arrearsSchedules->count(),
-            'open_installments_count' => $loanSchedules->count(),
-            'schedules' => $loanSchedules->values(),
+            'arrears_installments_count' => 0,
+            'open_installments_count' => $todaySchedules->count(),
+            'schedules' => $todaySchedules->values(),
         ];
     }
 

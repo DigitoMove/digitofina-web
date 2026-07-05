@@ -31,8 +31,7 @@ class LoanController extends Controller
 
         $loans = Loan::query()
             ->with(['client', 'product', 'officer'])
-            ->tap(fn ($query) => $visibility->scope($query, $request->user()))
-            ->tap(fn (Builder $query): Builder => $visibility->scopeOperationalOrCreated($query, $request->user()))
+            ->tap(fn (Builder $query): Builder => $visibility->scopeViewable($query, $request->user()))
             ->when($request->string('search')->toString(), function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
                     $query->where('loan_number', 'like', "%{$search}%")

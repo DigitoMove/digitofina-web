@@ -90,7 +90,7 @@
                             'label' => 'Clients',
                             'icon' => 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0',
                             'items' => [
-                                ['label' => 'Clients', 'route' => 'clients.index', 'module' => 'clients', 'permissions' => ['manage-clients', 'view-reports'], 'icon' => 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0'],
+                                ['label' => 'Clients', 'route' => 'clients.index', 'module' => 'clients', 'permissions' => [], 'icon' => 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0'],
                                 ['label' => 'Client Groups', 'route' => 'client-groups.index', 'module' => 'clients', 'permissions' => ['manage-clients', 'view-reports'], 'icon' => 'M7 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M17 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M3 21a6 6 0 0 1 8-5.7 M13 15.3A6 6 0 0 1 21 21'],
                             ],
                         ],
@@ -98,7 +98,7 @@
                             'label' => 'Loans',
                             'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5',
                             'items' => [
-                                ['label' => 'Loans', 'route' => 'loans.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'view-reports', 'view-arrears'], 'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5'],
+                                ['label' => 'Loans', 'route' => 'loans.index', 'module' => 'loans', 'permissions' => [], 'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5'],
                                 ['label' => 'Arrears', 'route' => 'arrears.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'view-reports', 'view-arrears'], 'hide_for_cashier' => true, 'icon' => 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
                                 ['label' => 'Loan Products', 'route' => 'loan-products.index', 'module' => 'loans', 'permissions' => ['manage-loans'], 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
                             ],
@@ -138,7 +138,7 @@
                         if ($user->isTellerCashier()) {
                             $group['items'] = match ($group['label']) {
                                 'Operations' => array_values(array_filter($group['items'], fn (array $item): bool => $item['label'] === 'Teller Drawer')),
-                                'Clients', 'Loans', 'Accounts' => [],
+                                'Accounts' => [],
                                 default => $group['items'],
                             };
                         }
@@ -146,7 +146,7 @@
                         if ($user->isLoanRecoveryOfficer()) {
                             $group['items'] = match ($group['label']) {
                                 'Clients' => array_values(array_filter($group['items'], fn (array $item): bool => $item['label'] === 'Clients')),
-                                'Loans' => array_values(array_filter($group['items'], fn (array $item): bool => $item['label'] === 'Arrears')),
+                                'Loans' => array_values(array_filter($group['items'], fn (array $item): bool => in_array($item['label'], ['Loans', 'Arrears'], true))),
                                 default => $group['items'],
                             };
                         }
@@ -337,7 +337,7 @@
                 <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 5h16v10H7l-3 3V5z"/></svg>
                 <span>Chat</span>
             </a>
-            @if(auth()->user()->canAccessModule('clients') && auth()->user()->canPerform('manage-clients'))
+            @if(auth()->user()->canAccessModule('clients') && ! auth()->user()->isMember())
                 <a href="{{ route('clients.index') }}" class="{{ request()->routeIs('clients.*') ? 'is-active' : '' }}">
                     <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0"/></svg>
                     <span>Clients</span>
@@ -349,7 +349,7 @@
                     <span>Teller</span>
                 </a>
             @endif
-            @if(auth()->user()->canAccessModule('loans') && (auth()->user()->canPerform('manage-loans') || auth()->user()->canPerform('view-reports')))
+            @if(auth()->user()->canAccessModule('loans') && ! auth()->user()->isMember())
                 <a href="{{ route('loans.index') }}" class="{{ request()->routeIs('loans.*') || request()->routeIs('arrears.*') ? 'is-active' : '' }}">
                     <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 6h16v12H4z M8 10h8 M8 14h5"/></svg>
                     <span>Loans</span>

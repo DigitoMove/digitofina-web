@@ -39,6 +39,23 @@ class LoanVisibilityService
      * @param  Builder<Loan>  $query
      * @return Builder<Loan>
      */
+    public function scopeViewable(Builder $query, User $user): Builder
+    {
+        if ($user->isMember()) {
+            return $query->where('client_id', $user->client?->id);
+        }
+
+        if (ApiSecurity::hasGlobalBranchAccess($user)) {
+            return $query;
+        }
+
+        return $user->branch_id ? $query->where('branch_id', $user->branch_id) : $query;
+    }
+
+    /**
+     * @param  Builder<Loan>  $query
+     * @return Builder<Loan>
+     */
     public function scopeOperationalOrCreated(Builder $query, User $user): Builder
     {
         if (! ($user->isTellerCashier() || $user->isLoanOfficer() || $user->isLoanRecoveryOfficer())) {

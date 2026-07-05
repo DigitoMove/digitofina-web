@@ -11,6 +11,7 @@ use App\Services\AuditLogger;
 use App\Services\InAppNotificationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -18,6 +19,8 @@ class AccountController extends Controller
 {
     public function index(): View
     {
+        Gate::authorize('viewAny', Account::class);
+
         return view('accounts.index', [
             'accounts' => Account::with(['client', 'accountType', 'branch'])->latest()->paginate(15),
         ]);
@@ -25,6 +28,8 @@ class AccountController extends Controller
 
     public function create(Request $request): View
     {
+        Gate::authorize('create', Account::class);
+
         return view('accounts.create', [
             'clients' => Client::orderBy('first_name')->get(),
             'types' => AccountType::where('is_active', true)->get(),
@@ -35,6 +40,8 @@ class AccountController extends Controller
 
     public function store(Request $request, AccountNumberGenerator $numbers, AuditLogger $auditLogger, InAppNotificationService $notifications): RedirectResponse
     {
+        Gate::authorize('create', Account::class);
+
         $data = $request->validate([
             'client_id' => ['required', 'exists:clients,id'],
             'branch_id' => ['required', 'exists:branches,id'],
@@ -74,6 +81,8 @@ class AccountController extends Controller
 
     public function show(Account $account): View
     {
+        Gate::authorize('view', $account);
+
         return view('accounts.show', [
             'account' => $account->load(['client', 'accountType', 'transactions.type']),
         ]);

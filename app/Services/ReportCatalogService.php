@@ -28,6 +28,7 @@ use App\Support\ApiSecurity;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -1886,7 +1887,8 @@ class ReportCatalogService
 
         $loans = Loan::query()
             ->with(['client', 'product', 'loanAccount', 'officer', 'schedules'])
-            ->whereIn('status', ['approved', 'disbursed', 'active', 'in_arrears', 'restructured', 'fully_paid', 'closed'])
+            ->whereIn('status', Loan::OPERATIONAL_STATUSES)
+            ->where(fn (Builder $query): Builder => $this->scopePositiveLoanBalance($query))
             ->tap(fn (Builder $query) => $this->scopeLoanReport($query, $branchId, $user))
             ->orderBy('loan_product_id')
             ->orderBy('loan_number')
@@ -1915,10 +1917,10 @@ class ReportCatalogService
             $overdueInterest = $this->remainingScheduleBucket($overdueSchedules, 'interest');
             $overdueFees = $this->remainingScheduleBucket($overdueSchedules, 'fees');
             $overduePenalty = $this->remainingScheduleBucket($overdueSchedules, 'penalty');
-            $balancePrincipal = max(0, $principalDue - $paidPrincipal);
-            $balanceInterest = max(0, $interestDue - $paidInterest);
-            $balanceFees = max(0, $feesDue - $paidFees);
-            $balancePenalty = max(0, $penaltyDue - $paidPenalty);
+            $balancePrincipal = max(0, (float) $loan->principal_balance);
+            $balanceInterest = max(0, (float) $loan->interest_balance);
+            $balanceFees = max(0, (float) $loan->fees_balance);
+            $balancePenalty = max(0, (float) $loan->penalty_balance);
 
             return [
                 'Product' => $loan->product?->name ?? 'N/A',
@@ -1965,26 +1967,55 @@ class ReportCatalogService
 
     private function loanSchedules(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
     {
-        $query = LoanSchedule::query()
-            ->with(['loan.client', 'loan.product'])
-            ->excludingCancelledLoans()
-            ->when($payload['arrears'] ?? false, fn (Builder $query): Builder => $query->eligibleForArrears(today()))
-            ->where('outstanding_amount', '>', 0)
-            ->where('status', '!=', 'paid')
-            ->when($payload['future'] ?? false, fn (Builder $query): Builder => $query->whereBetween('due_date', [$from, $to]))
+        $scheduleScope = fn (Builder|HasMany $query): Builder|HasMany => $this->scopeDueReportSchedules($query, $payload, $from, $to);
+        $loanQuery = Loan::query()
+            ->with([
+                'client',
+                'product',
+                'schedules' => fn (Builder|HasMany $query): Builder|HasMany => $scheduleScope($query)->orderBy('due_date')->orderBy('installment_number'),
+            ])
+            ->whereHas('schedules', $scheduleScope)
+            ->withCount(['schedules as due_installments_count' => $scheduleScope])
+            ->withSum(['schedules as due_installments_total' => $scheduleScope], 'outstanding_amount')
+            ->withMin(['schedules as due_earliest_due_date' => $scheduleScope], 'due_date')
+            ->tap(fn (Builder $query): Builder => $this->scopeRepaymentReport($query, $branchId, $user))
+            ->orderBy('due_earliest_due_date')
+            ->orderBy('loan_number');
+        $scheduleQuery = LoanSchedule::query()
+            ->tap($scheduleScope)
             ->whereHas('loan', fn (Builder $query): Builder => $this->scopeRepaymentReport($query, $branchId, $user));
+        $rows = (clone $loanQuery)
+            ->limit($limit)
+            ->get()
+            ->map(function (Loan $loan) use ($payload): array {
+                $schedules = $loan->schedules;
+                $earliestSchedule = $schedules->sortBy('due_date')->first();
 
-        $rows = $query->orderBy('due_date')->limit($limit)->get()->map(fn (LoanSchedule $schedule): array => [
-            'Due Date' => $schedule->due_date?->format('d M Y'),
-            'Loan' => $schedule->loan?->loan_number ?? 'N/A',
-            'Client' => $schedule->loan?->client?->full_name ?? 'N/A',
-            'Installment' => '#'.$schedule->installment_number,
-            'Outstanding' => $this->money((float) $schedule->outstanding_amount),
-            'Days Due' => number_format((int) ($schedule->days_overdue ?: ($schedule->due_date ? $this->calendar->businessDaysBetween($schedule->due_date, now()) : 0))),
-            'Status' => Str::headline($schedule->status),
-        ]);
+                return [
+                    'Due Date' => $earliestSchedule?->due_date?->format('d M Y') ?? 'N/A',
+                    'Loan' => $loan->loan_number,
+                    'Client' => $loan->client?->full_name ?? 'N/A',
+                    'Product' => $loan->product?->name ?? 'N/A',
+                    'Installments Due' => number_format((int) $loan->due_installments_count),
+                    'Total Due' => $this->money((float) $loan->due_installments_total),
+                    'Days Due' => number_format($this->maxScheduleDaysDue($schedules)),
+                    'Status' => ($payload['arrears'] ?? false) ? 'In Arrears' : 'Due',
+                    '_is_arrears' => (bool) ($payload['arrears'] ?? false),
+                    '_links' => [
+                        'Loan' => route('loans.show', $loan),
+                    ],
+                ];
+            });
 
-        return [['Due Date', 'Loan', 'Client', 'Installment', 'Outstanding', 'Days Due', 'Status'], $rows, ['Outstanding' => $this->money((float) $query->sum('outstanding_amount'))]];
+        return [
+            ['Due Date', 'Loan', 'Client', 'Product', 'Installments Due', 'Total Due', 'Days Due', 'Status'],
+            $rows,
+            [
+                (($payload['arrears'] ?? false) ? 'Loans in arrears' : 'Loans due') => number_format((clone $loanQuery)->count()),
+                'Installments due' => number_format((clone $scheduleQuery)->count()),
+                'Total due' => $this->money((float) (clone $scheduleQuery)->sum('outstanding_amount')),
+            ],
+        ];
     }
 
     private function loanSummary(?int $branchId, User $user): array
@@ -2285,6 +2316,34 @@ class ReportCatalogService
         return $branchId ? $query->where($query->getModel()->qualifyColumn('branch_id'), $branchId) : $query;
     }
 
+    private function scopePositiveLoanBalance(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query->where('principal_balance', '>', 0)
+                ->orWhere('interest_balance', '>', 0)
+                ->orWhere('fees_balance', '>', 0)
+                ->orWhere('penalty_balance', '>', 0);
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function scopeDueReportSchedules(Builder|HasMany $query, array $payload, CarbonInterface $from, CarbonInterface $to): Builder|HasMany
+    {
+        $query
+            ->excludingCancelledLoans()
+            ->forActiveArrearsLoans()
+            ->where('outstanding_amount', '>', 0)
+            ->where('status', '!=', 'paid');
+
+        if ($payload['arrears'] ?? false) {
+            return $query->eligibleForArrears(today());
+        }
+
+        return $query->whereBetween('due_date', [$from->toDateString(), $to->toDateString()]);
+    }
+
     private function journalTypeNet(string $type, CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): float
     {
         return (float) JournalEntry::query()
@@ -2351,6 +2410,14 @@ class ReportCatalogService
     private function remainingScheduleBucket(Collection $schedules, string $bucket): float
     {
         return (float) $schedules->sum(fn (LoanSchedule $schedule): float => max(0, (float) $schedule->getAttribute("{$bucket}_due") - (float) $schedule->getAttribute("{$bucket}_paid")));
+    }
+
+    /**
+     * @param  Collection<int, LoanSchedule>  $schedules
+     */
+    private function maxScheduleDaysDue(Collection $schedules): int
+    {
+        return (int) $schedules->max(fn (LoanSchedule $schedule): int => (int) ($schedule->days_overdue ?: ($schedule->due_date ? $this->calendar->businessDaysBetween($schedule->due_date, today()) : 0)));
     }
 
     private function periodicInterestRate(Loan $loan): string

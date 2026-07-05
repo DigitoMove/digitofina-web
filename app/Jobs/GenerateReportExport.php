@@ -9,6 +9,7 @@ use App\Models\LoanSchedule;
 use App\Models\ReportExport;
 use App\Models\SavingsAccount;
 use App\Models\SavingsTransaction;
+use App\Services\BusinessCalendarService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -99,23 +100,8 @@ class GenerateReportExport implements ShouldQueue
                 ->get(['reference', 'type', 'amount', 'charges', 'payment_method', 'status', 'transaction_date', 'updated_at'])
                 ->map(fn (SavingsTransaction $transaction): array => $transaction->only(['reference', 'type', 'amount', 'charges', 'payment_method', 'status', 'transaction_date', 'updated_at']))
                 ->all(),
-            'loans', 'loan_report' => Loan::query()
-                ->where('organization_id', $export->organization_id)
-                ->when($export->branch_id, fn ($query, int $branchId) => $query->where('branch_id', $branchId))
-                ->latest()
-                ->limit(5000)
-                ->get(['loan_number', 'client_id', 'approved_amount', 'principal_balance', 'interest_balance', 'penalty_balance', 'status', 'updated_at'])
-                ->map(fn (Loan $loan): array => $loan->only(['loan_number', 'client_id', 'approved_amount', 'principal_balance', 'interest_balance', 'penalty_balance', 'status', 'updated_at']))
-                ->all(),
-            'arrears', 'arrears_report' => LoanSchedule::query()
-                ->excludingCancelledLoans()
-                ->eligibleForArrears(now())
-                ->whereHas('loan', fn ($query) => $query->where('organization_id', $export->organization_id)->when($export->branch_id, fn ($query, int $branchId) => $query->where('branch_id', $branchId)))
-                ->latest()
-                ->limit(5000)
-                ->get(['loan_id', 'installment_number', 'due_date', 'outstanding_amount', 'days_overdue', 'status', 'updated_at'])
-                ->map(fn (LoanSchedule $schedule): array => $schedule->only(['loan_id', 'installment_number', 'due_date', 'outstanding_amount', 'days_overdue', 'status', 'updated_at']))
-                ->all(),
+            'loans', 'loan_report' => $this->activeLoanRows($export),
+            'arrears', 'arrears_report' => $this->arrearsLoanRows($export),
             'branch_performance' => Branch::query()
                 ->where('organization_id', $export->organization_id)
                 ->withCount('clients')
@@ -136,6 +122,87 @@ class GenerateReportExport implements ShouldQueue
                 'generated_at' => now()->toIso8601String(),
             ]],
         };
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function activeLoanRows(ReportExport $export): array
+    {
+        return Loan::query()
+            ->with('client')
+            ->where('organization_id', $export->organization_id)
+            ->when($export->branch_id, fn ($query, int $branchId) => $query->where('branch_id', $branchId))
+            ->whereIn('status', Loan::OPERATIONAL_STATUSES)
+            ->where(function ($query): void {
+                $query->where('principal_balance', '>', 0)
+                    ->orWhere('interest_balance', '>', 0)
+                    ->orWhere('fees_balance', '>', 0)
+                    ->orWhere('penalty_balance', '>', 0);
+            })
+            ->latest()
+            ->limit(5000)
+            ->get(['id', 'loan_number', 'client_id', 'approved_amount', 'principal_balance', 'interest_balance', 'fees_balance', 'penalty_balance', 'status', 'updated_at'])
+            ->map(fn (Loan $loan): array => [
+                'loan_number' => $loan->loan_number,
+                'client_id' => $loan->client_id,
+                'client' => $loan->client?->full_name,
+                'approved_amount' => (float) $loan->approved_amount,
+                'principal_balance' => (float) $loan->principal_balance,
+                'interest_balance' => (float) $loan->interest_balance,
+                'fees_balance' => (float) $loan->fees_balance,
+                'penalty_balance' => (float) $loan->penalty_balance,
+                'balance_total' => (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance,
+                'status' => $loan->status,
+                'updated_at' => $loan->updated_at,
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function arrearsLoanRows(ReportExport $export): array
+    {
+        $scheduleScope = fn ($query) => $query
+            ->excludingCancelledLoans()
+            ->eligibleForArrears(now());
+        $calendar = app(BusinessCalendarService::class);
+
+        return Loan::query()
+            ->with([
+                'client',
+                'schedules' => fn ($query) => $scheduleScope($query)->orderBy('due_date')->orderBy('installment_number'),
+            ])
+            ->where('organization_id', $export->organization_id)
+            ->when($export->branch_id, fn ($query, int $branchId) => $query->where('branch_id', $branchId))
+            ->whereHas('schedules', $scheduleScope)
+            ->withCount(['schedules as due_installments_count' => $scheduleScope])
+            ->withSum(['schedules as due_installments_total' => $scheduleScope], 'outstanding_amount')
+            ->withMin(['schedules as earliest_due_date' => $scheduleScope], 'due_date')
+            ->orderBy('earliest_due_date')
+            ->limit(5000)
+            ->get()
+            ->map(function (Loan $loan) use ($calendar): array {
+                $earliestSchedule = $loan->schedules->sortBy('due_date')->first();
+                $daysDue = (int) $loan->schedules->max(
+                    fn (LoanSchedule $schedule): int => (int) ($schedule->days_overdue ?: ($schedule->due_date ? $calendar->businessDaysBetween($schedule->due_date, today()) : 0))
+                );
+
+                return [
+                    'loan_id' => $loan->id,
+                    'loan_number' => $loan->loan_number,
+                    'client_id' => $loan->client_id,
+                    'client' => $loan->client?->full_name,
+                    'earliest_due_date' => $earliestSchedule?->due_date?->toDateString(),
+                    'installments_due' => (int) $loan->due_installments_count,
+                    'total_due' => (float) $loan->due_installments_total,
+                    'days_due' => $daysDue,
+                    'status' => $loan->status,
+                    'updated_at' => $loan->updated_at,
+                ];
+            })
+            ->all();
     }
 
     private function path(ReportExport $export): string

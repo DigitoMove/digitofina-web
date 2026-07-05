@@ -3,7 +3,9 @@
 <div class="mb-5 flex flex-wrap justify-between gap-3">
     <h1 class="text-2xl font-semibold">Loans</h1>
     <div class="flex gap-2">
-        <a href="{{ route('arrears.index') }}" class="rounded border px-4 py-2 text-sm font-semibold">Arrears</a>
+        @if(auth()->user()->canPerform('manage-loans') || auth()->user()->canPerform('view-reports') || auth()->user()->canPerform('view-arrears'))
+            <a href="{{ route('arrears.index') }}" class="rounded border px-4 py-2 text-sm font-semibold">Arrears</a>
+        @endif
         @can('create', \App\Models\Loan::class)
             <a href="{{ route('loans.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">New Application</a>
         @endcan

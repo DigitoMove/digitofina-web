@@ -238,16 +238,108 @@ it('shows incoming drawer transfers in the destination cashier records', functio
         'Transfer float to receiver drawer',
         today(),
     );
+    $yesterdayReference = 'DST-YESTERDAY-'.fake()->unique()->bothify('??##');
+    $drawerTransferType = TransactionType::where('code', 'drawer_transfer')->firstOrFail();
+    $yesterday = today()->subDay();
+    Transaction::create([
+        'organization_id' => $organization->id,
+        'transaction_type_id' => $drawerTransferType->id,
+        'drawer_session_id' => $destinationSession->id,
+        'branch_id' => $branch->id,
+        'user_id' => $destinationCashier->id,
+        'reference' => $yesterdayReference,
+        'amount' => 12_000,
+        'charges' => 0,
+        'balance_after' => 112_000,
+        'currency' => 'UGX',
+        'description' => 'Yesterday destination drawer activity',
+        'status' => 'posted',
+        'posted_at' => $yesterday,
+        'created_at' => $yesterday,
+        'updated_at' => $yesterday,
+    ]);
+    DrawerMovement::create([
+        'organization_id' => $organization->id,
+        'drawer_session_id' => $destinationSession->id,
+        'user_id' => $destinationCashier->id,
+        'type' => 'cash_in',
+        'amount' => 12_000,
+        'balance_after' => 112_000,
+        'reference' => $yesterdayReference,
+        'description' => 'Yesterday destination drawer activity',
+        'created_at' => $yesterday,
+        'updated_at' => $yesterday,
+    ]);
 
     $response = $this->actingAs($destinationCashier)->get(route('teller.index'));
 
     $response->assertSuccessful()
-        ->assertViewHas('recentMovements', fn ($movements): bool => $movements->contains('reference', $transaction->reference))
-        ->assertViewHas('recentTransactions', fn ($transactions): bool => $transactions->contains('reference', $transaction->reference))
-        ->assertSee($transaction->reference);
+        ->assertViewHas('recentMovements', fn ($movements): bool => $movements->contains('reference', $transaction->reference)
+            && ! $movements->contains('reference', $yesterdayReference))
+        ->assertViewHas('recentTransactions', fn ($transactions): bool => $transactions->contains('reference', $transaction->reference)
+            && ! $transactions->contains('reference', $yesterdayReference))
+        ->assertSee($transaction->reference)
+        ->assertDontSee($yesterdayReference);
 
     expect((float) $sourceDrawer->fresh()->current_balance)->toBe(425000.0)
         ->and((float) $destinationDrawer->fresh()->current_balance)->toBe(175000.0);
+});
+
+it('shows only current-day cashier transactions on the cashier dashboard', function () {
+    [$organization, $branch] = drawerAccountingContext();
+    drawerAccountingEnableTellerModule($organization);
+    $cashier = drawerAccountingCashier($organization, $branch, 'dashboard');
+    [, $session] = openAccountingDrawer($organization, $branch, $cashier, 'DASH-01', 100_000);
+    $depositType = TransactionType::create([
+        'organization_id' => $organization->id,
+        'name' => 'Deposit',
+        'code' => fake()->unique()->bothify('dashboard-deposit-??'),
+        'direction' => 'credit',
+        'is_active' => true,
+    ]);
+    $todayReference = 'DASH-TODAY-'.fake()->unique()->bothify('??##');
+    $yesterdayReference = 'DASH-YESTERDAY-'.fake()->unique()->bothify('??##');
+
+    Transaction::create([
+        'organization_id' => $organization->id,
+        'transaction_type_id' => $depositType->id,
+        'drawer_session_id' => $session->id,
+        'branch_id' => $branch->id,
+        'user_id' => $cashier->id,
+        'reference' => $todayReference,
+        'amount' => 25_000,
+        'charges' => 0,
+        'balance_after' => 125_000,
+        'currency' => 'UGX',
+        'description' => 'Today cashier dashboard transaction',
+        'status' => 'posted',
+        'posted_at' => now(),
+    ]);
+    Transaction::create([
+        'organization_id' => $organization->id,
+        'transaction_type_id' => $depositType->id,
+        'drawer_session_id' => $session->id,
+        'branch_id' => $branch->id,
+        'user_id' => $cashier->id,
+        'reference' => $yesterdayReference,
+        'amount' => 15_000,
+        'charges' => 0,
+        'balance_after' => 115_000,
+        'currency' => 'UGX',
+        'description' => 'Yesterday cashier dashboard transaction',
+        'status' => 'posted',
+        'posted_at' => today()->subDay(),
+        'created_at' => today()->subDay(),
+        'updated_at' => today()->subDay(),
+    ]);
+
+    $response = $this->actingAs($cashier)->get(route('dashboard'));
+
+    $response->assertSuccessful()
+        ->assertViewHas('cashierRecentTransactions', fn ($transactions): bool => $transactions->contains('reference', $todayReference)
+            && ! $transactions->contains('reference', $yesterdayReference))
+        ->assertSee($todayReference)
+        ->assertDontSee($yesterdayReference);
 });
 
 function drawerAccountingEnableTellerModule(Organization $organization): void

@@ -21,12 +21,11 @@ class ClientPolicy
 
     public function view(User $user, Client $client): bool
     {
-        if ($user->isLoanOfficer()) {
-            return $this->loanOfficerCanAccessClient($user, $client);
+        if ($user->isMember()) {
+            return (int) $client->user_id === (int) $user->id;
         }
 
-        return ($user->canPerform('manage-clients') || $user->canPerform('view-reports'))
-            && $this->canAccessBranch($user, $client);
+        return $this->canReadClient($user, $client);
     }
 
     public function update(User $user, Client $client): bool
@@ -76,6 +75,11 @@ class ClientPolicy
 
         return $user->branch_id === null
             || (int) $client->branch_id === (int) $user->branch_id;
+    }
+
+    private function canReadClient(User $user, Client $client): bool
+    {
+        return $user->canAccessBranch($client->branch_id, $client->organization_id);
     }
 
     private function loanOfficerCanAccessClient(User $user, Client $client): bool

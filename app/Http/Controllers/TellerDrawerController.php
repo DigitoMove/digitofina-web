@@ -48,6 +48,7 @@ class TellerDrawerController extends Controller
         $canOpenForTellers = $this->canOpenForTellers($request);
         $isCashier = $request->user()->isTellerCashier();
         $canApproveReversals = $request->user()->canPerform('approve-reversals') || $request->user()->canPerform('override-maker-checker');
+        $today = CarbonImmutable::today();
         $session = DrawerSession::with('drawer')->where('user_id', auth()->id())->where('status', 'open')->latest()->first();
         $branchId = $session?->drawer?->branch_id ?? $request->user()->branch_id;
         $lookupScope = $request->string('lookup_scope')->toString();
@@ -93,7 +94,7 @@ class TellerDrawerController extends Controller
         $todayMovements = $session
             ? DrawerMovement::query()
                 ->where('drawer_session_id', $session->id)
-                ->whereDate('created_at', today())
+                ->whereDate('created_at', $today->toDateString())
                 ->get()
             : collect();
         $cashIn = (float) $todayMovements->where('type', 'cash_in')->sum('amount');
@@ -107,7 +108,7 @@ class TellerDrawerController extends Controller
             })
             ->where('outstanding_amount', '>', 0)
             ->where('status', '!=', 'paid')
-            ->whereDate('due_date', '<=', today())
+            ->whereDate('due_date', $today->toDateString())
             ->orderBy('due_date')
             ->limit(8)
             ->get();
@@ -134,7 +135,13 @@ class TellerDrawerController extends Controller
             ->orderBy('name')
             ->get();
         $recentMovements = $session
-            ? DrawerMovement::query()->with('session.drawer')->where('drawer_session_id', $session->id)->latest()->limit(50)->get()
+            ? DrawerMovement::query()
+                ->with('session.drawer')
+                ->where('drawer_session_id', $session->id)
+                ->whereDate('created_at', $today->toDateString())
+                ->latest()
+                ->limit(50)
+                ->get()
             : collect();
         $recentMovementReferences = $recentMovements->pluck('reference')->filter()->unique()->values();
         $recentTransactions = Transaction::query()
@@ -155,12 +162,10 @@ class TellerDrawerController extends Controller
                 });
             })
             ->when(! $session, fn (Builder $query): Builder => $query->where('user_id', $request->user()->id))
+            ->when($isCashier, fn (Builder $query): Builder => $query->whereDate('posted_at', $today->toDateString()))
             ->when($isCashier, function (Builder $query) use ($request, $session, $recentMovementReferences): Builder {
                 return $query->where(function (Builder $query) use ($request, $session, $recentMovementReferences): void {
-                    $query->where(function (Builder $query) use ($request): void {
-                        $query->where('user_id', $request->user()->id)
-                            ->whereDate('posted_at', today());
-                    });
+                    $query->where('user_id', $request->user()->id);
 
                     if ($session) {
                         $query->orWhere('drawer_session_id', $session->id);

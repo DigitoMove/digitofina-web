@@ -25,7 +25,7 @@
         ['Loan applications', $loanApplications, 'bg-sky-50 text-sky-700', 'from-sky-500 to-blue-600', [30, 45, 62, 58, 75], route('loans.index', ['status_group' => 'applications'])],
         ['Loan portfolio', number_format($totalLoans, 2).' UGX', 'bg-brand-50 text-brand-800', 'from-brand-600 to-sun-400', [35, 48, 65, 62, 80], route('loans.index')],
         ['Loans in arrears', $arrearsCount, 'bg-red-50 text-red-700', 'from-red-500 to-rose-600', [20, 34, 48, 42, 60], route('arrears.index')],
-        ['Due today + arrears', $dueTodayCount, 'bg-violet-50 text-violet-700', 'from-violet-500 to-indigo-600', [24, 38, 50, 70, 64], route('due-repayments.index')],
+        ['Due today', $dueTodayCount, 'bg-violet-50 text-violet-700', 'from-violet-500 to-indigo-600', [24, 38, 50, 70, 64], route('due-repayments.index')],
         ['Savings balance', number_format($savingsLedgerBalance, 2).' UGX', 'bg-teal-50 text-teal-700', 'from-teal-500 to-cyan-500', [40, 50, 58, 70, 86], route('savings-accounts.index')],
         ['Investment balance', number_format($totalInvestmentBalance, 2).' UGX', 'bg-indigo-50 text-indigo-700', 'from-indigo-500 to-sky-500', [40, 46, 66, 72, 88], route('reports.show', 'investment-plan-performance')],
         ["Today's deposits", number_format($todayDeposits, 2).' UGX', 'bg-green-50 text-green-700', 'from-green-500 to-emerald-500', [28, 44, 50, 72, 88], $cashMovementRoute],
@@ -37,7 +37,7 @@
         'Loan applications' => 'loans',
         'Loan portfolio' => 'loans',
         'Loans in arrears' => 'loans',
-        'Due today + arrears' => 'loans',
+        'Due today' => 'loans',
         'Savings balance' => 'savings',
         "Today's deposits" => 'teller',
         "Today's withdrawals" => 'teller',
@@ -51,9 +51,9 @@
     };
     $cards = array_values(array_filter($cards, $cardIsVisible));
     $essentialCardLabels = match (true) {
-        $isCashierDashboard => ['Due today + arrears', "Today's deposits", "Today's withdrawals"],
+        $isCashierDashboard => ['Due today', "Today's deposits", "Today's withdrawals"],
         $isLoanRecoveryDashboard => ['Total clients', 'Loans in arrears'],
-        $isLoanOfficerDashboard => ['Total clients', 'Loan applications', 'Loan portfolio', 'Loans in arrears', 'Due today + arrears'],
+        $isLoanOfficerDashboard => ['Total clients', 'Loan applications', 'Loan portfolio', 'Loans in arrears', 'Due today'],
         default => null,
     };
     $cards = $essentialCardLabels
@@ -263,8 +263,8 @@
     <section class="df-panel p-5">
         <div class="flex items-center justify-between gap-3">
             <div>
-                <h2 class="text-lg font-semibold text-slate-950">{{ $isCompactDashboard ? 'Due today + arrears' : 'Next Repayments' }}</h2>
-                <p class="text-sm text-slate-500">{{ $isCompactDashboard ? 'Today’s installments plus unpaid arrears.' : 'Upcoming clients expected to pay.' }}</p>
+                <h2 class="text-lg font-semibold text-slate-950">{{ $isCompactDashboard ? 'Due today' : 'Next Repayments' }}</h2>
+                <p class="text-sm text-slate-500">{{ $isCompactDashboard ? "Today's installments." : 'Upcoming clients expected to pay.' }}</p>
             </div>
             <div class="text-right">
                 <div class="text-2xl font-semibold text-slate-950">{{ $nextRepayments->count() }}</div>
@@ -291,7 +291,7 @@
                             <div class="text-right text-sm font-semibold text-slate-950">
                                 UGX {{ number_format((float) $repayment['total_amount'], 0) }}
                                 <div class="mt-1 text-xs font-medium text-slate-500">
-                                    {{ (int) $repayment['due_installments_count'] }} today · {{ (int) $repayment['arrears_installments_count'] }} arrears
+                                    {{ (int) $repayment['due_installments_count'] }} installment{{ (int) $repayment['due_installments_count'] === 1 ? '' : 's' }} today
                                 </div>
                             </div>
                         </div>

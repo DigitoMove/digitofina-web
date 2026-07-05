@@ -27,7 +27,7 @@ class ClientController extends Controller
         Gate::authorize('viewAny', Client::class);
         $user = $request->user();
         $canViewAllBranches = $user->branch_id === null;
-        $canBrowseClientList = $user->isLoanOfficer() || $user->hasRole('organization-admin') || $canViewAllBranches || $user->hasRole('supervisor') || $user->canPerform('manage-users') || $user->canPerform('disburse-loans');
+        $canBrowseClientList = ! $user->isMember();
 
         $hasClientSearch = $request->filled('search')
             || $request->filled('branch_id')

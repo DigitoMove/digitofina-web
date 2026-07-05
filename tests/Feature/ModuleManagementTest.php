@@ -313,6 +313,126 @@ it('renders a loan-only client dashboard without disabled financial modules', fu
         ->assertDontSee('Term Deposits');
 });
 
+it('lets branch users and cashiers view clients and loans without edit rights', function () {
+    $viewer = moduleManagementUser([]);
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($viewer->organization);
+    $modules->enable($viewer->organization, Module::where('slug', 'clients')->firstOrFail(), $viewer);
+    $modules->enable($viewer->organization, Module::where('slug', 'loans')->firstOrFail(), $viewer);
+    $modules->enable($viewer->organization, Module::where('slug', 'teller')->firstOrFail(), $viewer);
+
+    $client = moduleManagementClient($viewer);
+    $client->update([
+        'first_name' => 'Read',
+        'last_name' => 'Only',
+    ]);
+    $product = LoanProduct::create([
+        'organization_id' => $viewer->organization_id,
+        'name' => 'Read Only Loan',
+        'code' => fake()->unique()->bothify('RO-??'),
+        'min_amount' => 1000,
+        'max_amount' => 1000000,
+        'annual_interest_rate' => 12,
+        'interest_method' => 'flat',
+        'repayment_frequency' => 'monthly',
+        'default_term_months' => 6,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $loan = Loan::create([
+        'organization_id' => $viewer->organization_id,
+        'branch_id' => $viewer->branch_id,
+        'client_id' => $client->id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $viewer->id,
+        'created_by' => $viewer->id,
+        'loan_number' => '1001-LN-READ-ONLY',
+        'requested_amount' => 250000,
+        'approved_amount' => 250000,
+        'principal_balance' => 200000,
+        'interest_balance' => 15000,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 12,
+        'term_periods' => 6,
+        'repayment_frequency' => 'monthly',
+        'status' => 'active',
+    ]);
+    LoanSchedule::create([
+        'organization_id' => $viewer->organization_id,
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today()->addMonth(),
+        'principal_due' => 250000,
+        'total_due' => 250000,
+        'outstanding_amount' => 250000,
+        'status' => 'pending',
+    ]);
+    $cashierRole = Role::create([
+        'organization_id' => $viewer->organization_id,
+        'name' => 'Teller Cashier',
+        'slug' => 'teller-cashier',
+    ]);
+    $cashier = User::factory()->create([
+        'organization_id' => $viewer->organization_id,
+        'branch_id' => $viewer->branch_id,
+        'role_id' => $cashierRole->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+
+    foreach ([$viewer, $cashier] as $actor) {
+        $this->actingAs($actor)
+            ->get(route('clients.index'))
+            ->assertSuccessful()
+            ->assertSee($client->client_number);
+
+        $this->actingAs($actor)
+            ->get(route('clients.show', $client))
+            ->assertSuccessful()
+            ->assertSee('Client Account Dashboard')
+            ->assertSee('1001-LN-READ-ONLY')
+            ->assertDontSee('Edit Client Details')
+            ->assertDontSee('Loan Prospects')
+            ->assertDontSee('Open Account')
+            ->assertDontSee('Update KYC')
+            ->assertDontSee('Upload Document')
+            ->assertDontSee('Add Note');
+
+        $this->actingAs($actor)
+            ->get(route('loans.index'))
+            ->assertSuccessful()
+            ->assertSee('1001-LN-READ-ONLY')
+            ->assertDontSee(route('arrears.index'), false)
+            ->assertDontSee('New Application');
+
+        $this->actingAs($actor)
+            ->get(route('loans.show', $loan))
+            ->assertSuccessful()
+            ->assertSee('Client Account Dashboard')
+            ->assertSee('1001-LN-READ-ONLY')
+            ->assertSee('Loan Schedule')
+            ->assertDontSee('Workflow Actions')
+            ->assertDontSee('Administrative Actions')
+            ->assertDontSee('Add guarantor')
+            ->assertDontSee('Add collateral');
+
+        $editResponse = $this->actingAs($actor)->get(route('clients.edit', $client));
+        expect($editResponse->isForbidden() || $editResponse->isRedirect())->toBeTrue();
+
+        $createLoanResponse = $this->actingAs($actor)->get(route('loans.create'));
+        expect($createLoanResponse->isForbidden() || $createLoanResponse->isRedirect())->toBeTrue();
+
+        $noteResponse = $this->actingAs($actor)->post(route('clients.notes.store', $client), [
+            'category' => 'general',
+            'note' => 'Should not be accepted.',
+        ]);
+        expect($noteResponse->isForbidden() || $noteResponse->isRedirect())->toBeTrue()
+            ->and($client->notes()->count())->toBe(0);
+    }
+});
+
 it('renders a savings-only client dashboard without loan workflow links', function () {
     $user = moduleManagementUser(['manage-clients']);
     $modules = app(ModuleService::class);

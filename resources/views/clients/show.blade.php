@@ -13,6 +13,17 @@
     $fixedDepositsEnabled = $moduleEnabled('fixed-deposits');
     $groupSavingsEnabled = $moduleEnabled('group-savings');
     $profilePhotoDocument = $documentsEnabled ? $client->documents->firstWhere('type', 'profile_photo') : null;
+    $canUpdateClient = auth()->user()->can('update', $client);
+    $canUploadDocument = auth()->user()->can('uploadDocument', $client);
+    $canVerifyKyc = auth()->user()->can('verifyKyc', $client);
+    $canOpenAccounts = auth()->user()->can('create', \App\Models\Account::class);
+    $canGenerateSavingsAccount = auth()->user()->canPerform('manage-accounts') || auth()->user()->canPerform('manage-loans');
+    $canViewAuditLogs = auth()->user()->canPerform('view-audit-logs');
+    $canViewReports = auth()->user()->canPerform('view-reports');
+    $canViewDueRepayments = auth()->user()->canPerform('manage-loans')
+        || auth()->user()->canPerform('post-repayments')
+        || auth()->user()->canPerform('view-reports')
+        || auth()->user()->canPerform('view-arrears');
     $basicSavingsAccounts = $savingsEnabled ? $client->accounts->filter(fn ($account) => $account->accountType?->category === 'savings') : collect();
     $savingsPackages = $savingsEnabled ? $client->savingsAccounts : collect();
     $hasSavingsAccount = $basicSavingsAccounts->isNotEmpty();
@@ -77,7 +88,7 @@
             'rightValue' => $dormantCurrent,
             'href' => route('clients.accounts', $client),
         ] : null,
-        $fixedDepositsEnabled ? [
+        ($fixedDepositsEnabled && $canViewReports) ? [
             'title' => 'Term Deposits',
             'count' => 0,
             'tone' => 'bg-sky-100 text-sky-800',
@@ -88,7 +99,7 @@
             'rightValue' => 0,
             'href' => route('reports.show', 'term-deposits-maturity-report'),
         ] : null,
-        $sharesEnabled ? [
+        ($sharesEnabled && $canViewReports) ? [
             'title' => 'Shares Accounts',
             'count' => $client->shareAccounts->count(),
             'tone' => 'bg-blue-600 text-white',
@@ -102,13 +113,13 @@
     ]));
     $actionItems = array_filter([
         ['Client Account Dashboard', route('clients.show', $client), 'CD', 0],
-        ['Transaction Authorisation Details', route('audit-logs.index', ['search' => $client->client_number]), 'TA', 0],
-        ['Edit Client Details', route('clients.edit', $client), 'ED', null],
-        ($savingsEnabled || $loansEnabled || $investmentsEnabled) ? ['Open Account', route('accounts.create', ['client_id' => $client->id]), 'OA', $client->accounts->count()] : null,
+        $canViewAuditLogs ? ['Transaction Authorisation Details', route('audit-logs.index', ['search' => $client->client_number]), 'TA', 0] : null,
+        $canUpdateClient ? ['Edit Client Details', route('clients.edit', $client), 'ED', null] : null,
+        (($savingsEnabled || $loansEnabled || $investmentsEnabled) && $canOpenAccounts) ? ['Open Account', route('accounts.create', ['client_id' => $client->id]), 'OA', $client->accounts->count()] : null,
         $savingsEnabled ? ['Savings Account', route('clients.savings-accounts', $client), 'SA', $basicSavingsAccounts->count()] : null,
         ($savingsEnabled || $loansEnabled || $investmentsEnabled) ? ['Account Queries', route('clients.accounts', $client), 'AQ', $client->accounts->count()] : null,
         $canCreateLoan ? ['Loan Prospects', route('loans.create', ['client_id' => $client->id]), 'LP', $newApplications->count()] : null,
-        $loansEnabled ? ['Due Repayments', route('due-repayments.index', ['search' => $client->client_number]), 'DR', $arrearsLoans] : null,
+        ($loansEnabled && $canViewDueRepayments) ? ['Due Repayments', route('due-repayments.index', ['search' => $client->client_number]), 'DR', $arrearsLoans] : null,
     ]);
     $kycChecks = [
         'identity_confirmed' => 'Identity confirmed',
@@ -144,11 +155,11 @@
         ['label' => 'Net Position', 'value' => $financialOverview['net_financial_position'] ?? 0, 'tone' => (($financialOverview['net_financial_position'] ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-700'), 'show' => true],
     ])->filter(fn (array $metric): bool => $metric['show'])->values();
     $accountDropdowns = array_values(array_filter([
-        $savingsEnabled ? ['Savings Accounts', array_filter([! $hasSavingsAccount ? ['Generate savings account', route('clients.savings-accounts.generate', $client), 'post'] : null, ['View accounts', route('clients.savings-accounts', $client), 'get']])] : null,
+        $savingsEnabled ? ['Savings Accounts', array_filter([(! $hasSavingsAccount && $canGenerateSavingsAccount) ? ['Generate savings account', route('clients.savings-accounts.generate', $client), 'post'] : null, ['View accounts', route('clients.savings-accounts', $client), 'get']])] : null,
         $loansEnabled ? ['Loan Accounts', array_filter([$canCreateLoan ? ['New application', route('loans.create', ['client_id' => $client->id])] : null, ['View loans', route('clients.loans', $client)]])] : null,
-        ($savingsEnabled || $loansEnabled || $investmentsEnabled) ? ['Current Accounts', [['Open current account', route('accounts.create', ['client_id' => $client->id])], ['View accounts', route('clients.accounts', $client)]]] : null,
-        $sharesEnabled ? ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]] : null,
-        $fixedDepositsEnabled ? ['Term Deposits', [['Maturity report', route('reports.show', 'term-deposits-maturity-report')], ['Funded term deposits', route('reports.show', 'funded-term-deposit-accounts')]]] : null,
+        ($savingsEnabled || $loansEnabled || $investmentsEnabled) ? ['Current Accounts', array_filter([$canOpenAccounts ? ['Open current account', route('accounts.create', ['client_id' => $client->id])] : null, ['View accounts', route('clients.accounts', $client)]])] : null,
+        ($sharesEnabled && $canViewReports) ? ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]] : null,
+        ($fixedDepositsEnabled && $canViewReports) ? ['Term Deposits', [['Maturity report', route('reports.show', 'term-deposits-maturity-report')], ['Funded term deposits', route('reports.show', 'funded-term-deposit-accounts')]]] : null,
     ]));
     $accountsTabEnabled = count($accountTiles) > 0 || $savingsEnabled || $loansEnabled || $investmentsEnabled;
 @endphp
@@ -363,7 +374,7 @@
                 <div class="df-panel p-5">
                     <div class="flex items-center justify-between gap-3">
                         <h2 class="font-semibold text-slate-950">Savings Accounts</h2>
-                        @if(! $hasSavingsAccount)
+                        @if(! $hasSavingsAccount && $canGenerateSavingsAccount)
                             <form method="POST" action="{{ route('clients.savings-accounts.generate', $client) }}">
                                 @csrf
                                 <button class="df-action-secondary min-h-9 px-3 py-1.5">Generate</button>
@@ -391,7 +402,9 @@
                 <div class="df-panel p-5">
                     <div class="flex items-center justify-between gap-3">
                         <h2 class="font-semibold text-slate-950">Other Accounts</h2>
-                        <a class="df-action-secondary min-h-9 px-3 py-1.5" href="{{ route('accounts.create', ['client_id' => $client->id]) }}">Open</a>
+                        @if($canOpenAccounts)
+                            <a class="df-action-secondary min-h-9 px-3 py-1.5" href="{{ route('accounts.create', ['client_id' => $client->id]) }}">Open</a>
+                        @endif
                     </div>
                     <div class="mt-4 grid gap-3">
                         @forelse($client->accounts as $account)
@@ -552,48 +565,65 @@
             <section data-df-tab-panel="kyc" class="grid gap-5 xl:grid-cols-[1fr_1.1fr]">
                 <div class="df-panel p-5">
                     <h2 class="font-semibold text-slate-950">KYC Checklist</h2>
-                    <form method="POST" action="{{ route('clients.kyc.update', $client) }}" class="mt-4 grid gap-4">
-                        @csrf
-                        @method('PUT')
+                    @if($canVerifyKyc)
+                        <form method="POST" action="{{ route('clients.kyc.update', $client) }}" class="mt-4 grid gap-4">
+                            @csrf
+                            @method('PUT')
+                    @else
+                        <div class="mt-4 grid gap-4">
+                    @endif
                         <div class="grid gap-2 sm:grid-cols-2">
                             @foreach ($kycChecks as $key => $label)
-                                <label class="df-soft-panel flex cursor-pointer items-center gap-3 p-3 text-sm font-medium transition hover:border-brand-300 hover:bg-brand-50">
-                                    <input type="checkbox" name="kyc_checklist[]" value="{{ $key }}" @checked((bool) data_get($client->kyc_documents, $key))>
+                                <label class="df-soft-panel flex {{ $canVerifyKyc ? 'cursor-pointer transition hover:border-brand-300 hover:bg-brand-50' : '' }} items-center gap-3 p-3 text-sm font-medium">
+                                    <input type="checkbox" name="kyc_checklist[]" value="{{ $key }}" @checked((bool) data_get($client->kyc_documents, $key)) @disabled(! $canVerifyKyc)>
                                     <span>{{ $label }}</span>
                                 </label>
                             @endforeach
                         </div>
-                        <div class="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-                            <select name="kyc_status">
-                                @foreach(['pending','verified','rejected'] as $status)
-                                    <option value="{{ $status }}" @selected($client->kyc_status === $status)>{{ str($status)->headline() }}</option>
-                                @endforeach
-                            </select>
-                            <select name="risk_rating">
-                                <option value="">Unrated</option>
-                                @foreach(['low','medium','high'] as $rating)
-                                    <option value="{{ $rating }}" @selected($client->risk_rating === $rating)>{{ str($rating)->headline() }}</option>
-                                @endforeach
-                            </select>
-                            <button class="df-action-primary">Update KYC</button>
+                        @if($canVerifyKyc)
+                            <div class="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                                <select name="kyc_status">
+                                    @foreach(['pending','verified','rejected'] as $status)
+                                        <option value="{{ $status }}" @selected($client->kyc_status === $status)>{{ str($status)->headline() }}</option>
+                                    @endforeach
+                                </select>
+                                <select name="risk_rating">
+                                    <option value="">Unrated</option>
+                                    @foreach(['low','medium','high'] as $rating)
+                                        <option value="{{ $rating }}" @selected($client->risk_rating === $rating)>{{ str($rating)->headline() }}</option>
+                                    @endforeach
+                                </select>
+                                <button class="df-action-primary">Update KYC</button>
+                            </div>
+                        @else
+                            <div class="grid gap-3 md:grid-cols-2">
+                                <div class="df-soft-panel p-3 text-sm"><span class="text-slate-500">KYC status</span><div class="mt-1 font-semibold">{{ str($client->kyc_status)->headline() }}</div></div>
+                                <div class="df-soft-panel p-3 text-sm"><span class="text-slate-500">Risk rating</span><div class="mt-1 font-semibold">{{ $client->risk_rating ? str($client->risk_rating)->headline() : 'Unrated' }}</div></div>
+                            </div>
+                        @endif
+                    @if($canVerifyKyc)
+                        </form>
+                    @else
                         </div>
-                    </form>
+                    @endif
                 </div>
 
                 @if($documentsEnabled)
                 <div class="df-panel p-5">
                     <h2 class="font-semibold text-slate-950">Documents</h2>
-                    <form method="POST" action="{{ route('clients.documents.store', $client) }}" enctype="multipart/form-data" class="mt-4 grid gap-3 md:grid-cols-[12rem_1fr]">
-                        @csrf
-                        <label class="text-sm font-semibold text-slate-700">Document type <x-required-badge /><select name="type" required>
-                            @foreach($documentTypes as $value => $label)
-                                <option value="{{ $value }}">{{ $label }}</option>
-                            @endforeach
-                        </select></label>
-                        <label class="text-sm font-semibold text-slate-700">Title <x-required-badge /><input name="title" placeholder="Document title" required></label>
-                        <label class="text-sm font-semibold text-slate-700 md:col-span-2">Document <x-required-badge /><input name="document" type="file" class="mt-1 w-full" required></label>
-                        <button class="df-action-secondary md:col-span-2">Upload Document</button>
-                    </form>
+                    @if($canUploadDocument)
+                        <form method="POST" action="{{ route('clients.documents.store', $client) }}" enctype="multipart/form-data" class="mt-4 grid gap-3 md:grid-cols-[12rem_1fr]">
+                            @csrf
+                            <label class="text-sm font-semibold text-slate-700">Document type <x-required-badge /><select name="type" required>
+                                @foreach($documentTypes as $value => $label)
+                                    <option value="{{ $value }}">{{ $label }}</option>
+                                @endforeach
+                            </select></label>
+                            <label class="text-sm font-semibold text-slate-700">Title <x-required-badge /><input name="title" placeholder="Document title" required></label>
+                            <label class="text-sm font-semibold text-slate-700 md:col-span-2">Document <x-required-badge /><input name="document" type="file" class="mt-1 w-full" required></label>
+                            <button class="df-action-secondary md:col-span-2">Upload Document</button>
+                        </form>
+                    @endif
                     <div class="mt-4 grid gap-3">
                         @forelse ($client->documents as $document)
                             <div class="df-soft-panel p-3 text-sm">
@@ -617,16 +647,18 @@
 
             <section data-df-tab-panel="notes" class="df-panel p-5">
                 <h2 class="font-semibold text-slate-950">Notes</h2>
-                <form method="POST" action="{{ route('clients.notes.store', $client) }}" class="mt-4 grid gap-3 md:grid-cols-[220px_1fr_auto]">
-                    @csrf
-                    <label class="text-sm font-semibold text-slate-700">Category <x-required-badge /><select name="category" required>
-                        @foreach(['general','kyc','risk','collections','field_visit'] as $category)
-                            <option value="{{ $category }}">{{ str($category)->headline() }}</option>
-                        @endforeach
-                    </select></label>
-                    <label class="text-sm font-semibold text-slate-700">Note <x-required-badge /><textarea name="note" rows="2" placeholder="Add a client note" required></textarea></label>
-                    <button class="df-action-primary self-start">Add Note</button>
-                </form>
+                @if($canUpdateClient)
+                    <form method="POST" action="{{ route('clients.notes.store', $client) }}" class="mt-4 grid gap-3 md:grid-cols-[220px_1fr_auto]">
+                        @csrf
+                        <label class="text-sm font-semibold text-slate-700">Category <x-required-badge /><select name="category" required>
+                            @foreach(['general','kyc','risk','collections','field_visit'] as $category)
+                                <option value="{{ $category }}">{{ str($category)->headline() }}</option>
+                            @endforeach
+                        </select></label>
+                        <label class="text-sm font-semibold text-slate-700">Note <x-required-badge /><textarea name="note" rows="2" placeholder="Add a client note" required></textarea></label>
+                        <button class="df-action-primary self-start">Add Note</button>
+                    </form>
+                @endif
                 <div class="mt-4 grid gap-3">
                     @forelse ($client->notes as $note)
                         <div class="df-soft-panel p-4 text-sm">

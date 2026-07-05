@@ -90,46 +90,8 @@
                     <td class="px-4 py-3 text-slate-700">{{ $loan->branch?->name ?? 'Unassigned' }}</td>
                     <td class="px-4 py-3 text-slate-700">{{ $loan->officer?->name ?? 'Unassigned' }}</td>
                     <td class="px-4 py-3">
-                        <details class="group/schedules">
-                            <summary class="inline-flex cursor-pointer list-none items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
-                                <span>{{ number_format((int) $loan->arrears_schedules_count) }} due</span>
-                                <span class="text-slate-400 group-open/schedules:rotate-180">v</span>
-                            </summary>
-                            <div class="mt-2 w-[28rem] max-w-[70vw] rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
-                                <table class="w-full text-xs">
-                                    <thead class="text-slate-400">
-                                        <tr>
-                                            <th class="px-2 py-1 text-left">Installment</th>
-                                            <th class="px-2 py-1 text-right">Missed</th>
-                                            <th class="px-2 py-1 text-right">Penalty</th>
-                                            <th class="px-2 py-1 text-right"></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-slate-100">
-                                        @foreach($arrearsSchedules as $schedule)
-                                            @php
-                                                $schedulePenalty = max(0, (float) $schedule->penalty_due - (float) $schedule->penalty_paid);
-                                                $scheduleMissed = max(0, (float) $schedule->outstanding_amount - $schedulePenalty);
-                                            @endphp
-                                            <tr>
-                                                <td class="px-2 py-1.5 font-medium text-slate-700">#{{ $schedule->installment_number }} · {{ $schedule->due_date?->format('d M Y') }}</td>
-                                                <td class="px-2 py-1.5 text-right text-slate-700">UGX {{ number_format($scheduleMissed, 2) }}</td>
-                                                <td class="px-2 py-1.5 text-right text-slate-700">UGX {{ number_format($schedulePenalty, 2) }}</td>
-                                                <td class="px-2 py-1.5 text-right">
-                                                    @if($canRunManualPenalties && $schedulePenalty > 0)
-                                                        <form method="POST" action="{{ route('arrears.clear-penalties') }}" onsubmit="return confirm('Clear this schedule penalty?')">
-                                                            @csrf
-                                                            <input type="hidden" name="loan_schedule_id" value="{{ $schedule->id }}">
-                                                            <button class="text-xs font-semibold text-red-700 hover:text-red-900">Clear</button>
-                                                        </form>
-                                                    @endif
-                                                </td>
-                                            </tr>
-                                        @endforeach
-                                    </tbody>
-                                </table>
-                            </div>
-                        </details>
+                        <div class="font-semibold text-slate-950">{{ number_format((int) $loan->arrears_schedules_count) }}</div>
+                        <div class="text-xs text-slate-500">installment{{ (int) $loan->arrears_schedules_count === 1 ? '' : 's' }} due</div>
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap text-slate-700">{{ $earliestSchedule?->due_date?->format('d M Y') ?? 'N/A' }}</td>
                     <td class="px-4 py-3 text-right text-slate-700">{{ number_format((int) $maxDaysDue) }}</td>

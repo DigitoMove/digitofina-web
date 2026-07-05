@@ -29,6 +29,7 @@
         || $canPostTellerLoanRepayment;
 @endphp
 
+@if($hasVisibleWorkflowAction)
 <section class="df-panel p-5">
     <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -161,7 +162,5 @@
         </div>
     @endif
 
-    @unless($hasVisibleWorkflowAction)
-        <p class="mt-4 text-sm text-slate-500">There are no workflow actions available for this loan at the current status.</p>
-    @endunless
 </section>
+@endif
