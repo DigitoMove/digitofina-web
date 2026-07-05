@@ -9,7 +9,9 @@ use App\Models\DailyAccountingSummary;
 use App\Models\DrawerSession;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
+use App\Models\Module;
 use App\Models\Organization;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\TellerDrawer;
 use App\Models\Transaction;
@@ -17,6 +19,7 @@ use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\LedgerAccountMergeService;
 use App\Services\LedgerAccountStatementService;
+use App\Services\ModuleService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -168,6 +171,158 @@ it('uses activity before the selected period as opening balance and breaks down 
         ->and((float) $statement['entries']->last()->running_balance_after)->toBe(300000.0);
 });
 
+it('includes drawer merchant-code activity recorded on journal lines in ledger balances', function () {
+    [$organization, $branch, , $user] = ledgerManagementContext();
+    $merchant = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => null,
+        'code' => 'MTN-MERCHANT',
+        'name' => 'MTN Merchant Code',
+        'type' => 'asset',
+        'normal_balance' => 'debit',
+        'drawer_direction' => 'cash_in',
+        'is_active' => true,
+    ]);
+    $cashAccount = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'code' => 'BR01-CASH',
+        'name' => 'Branch Cash',
+        'type' => 'asset',
+        'normal_balance' => 'debit',
+        'is_cash_account' => true,
+        'is_system' => true,
+        'is_active' => true,
+    ]);
+    $drawer = TellerDrawer::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'name' => 'Main Drawer',
+        'code' => 'DR01',
+        'currency' => 'UGX',
+        'current_balance' => 100_000,
+        'status' => 'open',
+    ]);
+    $session = DrawerSession::create([
+        'organization_id' => $organization->id,
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $user->id,
+        'opening_balance' => 0,
+        'status' => 'open',
+        'opened_at' => '2026-01-20 08:00:00',
+    ]);
+    $transactionType = TransactionType::create([
+        'organization_id' => $organization->id,
+        'name' => 'Drawer GL Cash In',
+        'code' => 'drawer_gl_cash_in',
+        'direction' => 'credit',
+        'affects_cash_drawer' => true,
+        'is_active' => true,
+    ]);
+    $transaction = Transaction::create([
+        'organization_id' => $organization->id,
+        'transaction_type_id' => $transactionType->id,
+        'drawer_session_id' => $session->id,
+        'branch_id' => $branch->id,
+        'user_id' => $user->id,
+        'reference' => 'DRAW-MTN001',
+        'amount' => 100_000,
+        'description' => 'Merchant code withdrawal into drawer',
+        'posted_at' => '2026-01-20 12:00:00',
+    ]);
+    $journal = JournalEntry::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'created_by' => $user->id,
+        'posted_by' => $user->id,
+        'journal_number' => 'DRAW-MTN-JE001',
+        'journal_date' => '2026-01-20',
+        'description' => 'Merchant code withdrawal into drawer',
+        'status' => 'posted',
+        'posted_at' => '2026-01-20 12:00:00',
+        'chart_account_id' => $cashAccount->id,
+        'transaction_id' => $transaction->id,
+        'reference' => $transaction->reference,
+        'account_name' => $cashAccount->name,
+        'entry_type' => 'debit',
+        'amount' => 100_000,
+    ]);
+    JournalLine::create(['journal_entry_id' => $journal->id, 'chart_account_id' => $cashAccount->id, 'debit' => 100_000, 'credit' => 0, 'narration' => 'Cash received into teller drawer']);
+    JournalLine::create(['journal_entry_id' => $journal->id, 'chart_account_id' => $merchant->id, 'debit' => 0, 'credit' => 100_000, 'narration' => 'Merchant code withdrawal']);
+
+    $statement = app(LedgerAccountStatementService::class)->build(
+        $merchant,
+        CarbonImmutable::parse('2026-01-01'),
+        CarbonImmutable::parse('2026-01-31'),
+    );
+
+    expect($statement['period_debits'])->toBe(0.0)
+        ->and($statement['period_credits'])->toBe(100000.0)
+        ->and($statement['drawer_funding_out'])->toBe(100000.0)
+        ->and($statement['closing_balance'])->toBe(-100000.0)
+        ->and($statement['entries']->first()->reference)->toBe('DRAW-MTN001')
+        ->and((float) $statement['entries']->first()->statement_credit)->toBe(100000.0)
+        ->and((float) $statement['entries']->first()->running_balance_after)->toBe(-100000.0);
+});
+
+it('uses journal lines for ledger account index current balances', function () {
+    [$organization, $branch, , $user] = ledgerManagementContext();
+    ledgerManagementEnableAccounting($organization, $user);
+    $merchant = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => null,
+        'code' => 'MTN-MERCHANT',
+        'name' => 'MTN Merchant Code',
+        'type' => 'asset',
+        'normal_balance' => 'debit',
+        'drawer_direction' => 'cash_in',
+        'is_active' => true,
+    ]);
+    $cashAccount = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'code' => 'BR01-CASH',
+        'name' => 'Branch Cash',
+        'type' => 'asset',
+        'normal_balance' => 'debit',
+        'is_cash_account' => true,
+        'is_system' => true,
+        'is_active' => true,
+    ]);
+    $journal = JournalEntry::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'created_by' => $user->id,
+        'posted_by' => $user->id,
+        'journal_number' => 'INDEX-MTN-JE001',
+        'journal_date' => '2026-01-20',
+        'description' => 'Merchant code withdrawal into drawer',
+        'status' => 'posted',
+        'posted_at' => '2026-01-20 12:00:00',
+        'chart_account_id' => $cashAccount->id,
+        'reference' => 'INDEX-MTN001',
+        'account_name' => $cashAccount->name,
+        'entry_type' => 'debit',
+        'amount' => 100_000,
+    ]);
+    JournalLine::create(['journal_entry_id' => $journal->id, 'chart_account_id' => $cashAccount->id, 'debit' => 100_000, 'credit' => 0]);
+    JournalLine::create(['journal_entry_id' => $journal->id, 'chart_account_id' => $merchant->id, 'debit' => 0, 'credit' => 100_000]);
+
+    $response = $this->actingAs($user)->get(route('ledger-accounts.index', ['search' => 'MTN-MERCHANT']));
+
+    $response->assertSuccessful()
+        ->assertViewHas('accounts', function ($accounts) use ($merchant): bool {
+            $account = $accounts->getCollection()->firstWhere('id', $merchant->id);
+
+            return $account
+                && (float) $account->posted_line_debit_total === 0.0
+                && (float) $account->posted_line_credit_total === 100000.0
+                && (float) ($account->posted_legacy_debit_total ?? 0) === 0.0
+                && (float) ($account->posted_legacy_credit_total ?? 0) === 0.0;
+        })
+        ->assertSee('UGX -100,000.00');
+});
+
 it('merges branch ledgers into a global ledger without losing transaction branches', function () {
     [$organization, $branchOne, $branchTwo, $user] = ledgerManagementContext();
     $target = ChartAccount::create([
@@ -255,3 +410,22 @@ it('merges branch ledgers into a global ledger without losing transaction branch
         ->and((float) DailyAccountingSummary::query()->where('branch_id', $branchOne->id)->where('chart_account_id', $target->id)->value('debit_total'))->toBe(400000.0)
         ->and(DailyAccountingSummary::query()->where('branch_id', $branchOne->id)->whereDate('business_date', '2026-01-10')->count())->toBe(1);
 });
+
+function ledgerManagementEnableAccounting(Organization $organization, User $user): void
+{
+    Permission::firstOrCreate(
+        ['slug' => 'manage-accounting'],
+        ['organization_id' => $organization->id, 'name' => 'Manage Accounting']
+    );
+    $user->role->permissions()->syncWithoutDetaching([
+        Permission::where('slug', 'manage-accounting')->firstOrFail()->id,
+    ]);
+
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($organization);
+    $organization->modules()->syncWithoutDetaching([
+        Module::where('slug', 'accounting')->firstOrFail()->id => ['is_enabled' => true, 'enabled_at' => now()],
+    ]);
+    $modules->clearCache($organization);
+}

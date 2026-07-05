@@ -33,8 +33,10 @@ class LedgerAccountController extends Controller
         $accounts = ChartAccount::query()
             ->with(['branch.drawers', 'parent', 'mergedInto'])
             ->withCount(['children', 'journalEntries', 'journalLines'])
-            ->withSum(['journalEntries as posted_debit_total' => fn (Builder $query): Builder => $query->where('status', 'posted')->where('entry_type', 'debit')], 'amount')
-            ->withSum(['journalEntries as posted_credit_total' => fn (Builder $query): Builder => $query->where('status', 'posted')->where('entry_type', 'credit')], 'amount')
+            ->withSum(['journalLines as posted_line_debit_total' => fn (Builder $query): Builder => $query->whereHas('journalEntry', fn (Builder $query): Builder => $query->where('status', 'posted'))], 'debit')
+            ->withSum(['journalLines as posted_line_credit_total' => fn (Builder $query): Builder => $query->whereHas('journalEntry', fn (Builder $query): Builder => $query->where('status', 'posted'))], 'credit')
+            ->withSum(['journalEntries as posted_legacy_debit_total' => fn (Builder $query): Builder => $this->legacyLedgerEntryTotals($query, 'debit')], 'amount')
+            ->withSum(['journalEntries as posted_legacy_credit_total' => fn (Builder $query): Builder => $this->legacyLedgerEntryTotals($query, 'credit')], 'amount')
             ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id)->orWhereNull('branch_id')))
             ->when($type, fn (Builder $query, string $type): Builder => $query->where('type', $type))
             ->when($search !== '', function (Builder $query) use ($search): void {
@@ -365,5 +367,13 @@ class LedgerAccountController extends Controller
     private function ledgerType(string $type): ?string
     {
         return array_key_exists($type, $this->accountTypes()) ? $type : null;
+    }
+
+    private function legacyLedgerEntryTotals(Builder $query, string $entryType): Builder
+    {
+        return $query
+            ->where('status', 'posted')
+            ->where('entry_type', $entryType)
+            ->whereDoesntHave('lines', fn (Builder $query): Builder => $query->whereColumn('journal_lines.chart_account_id', 'journal_entries.chart_account_id'));
     }
 }

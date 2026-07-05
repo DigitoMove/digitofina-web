@@ -66,8 +66,8 @@
             <tbody>
                 @forelse($accounts as $account)
                     @php
-                        $debitTotal = (float) ($account->posted_debit_total ?? 0);
-                        $creditTotal = (float) ($account->posted_credit_total ?? 0);
+                        $debitTotal = (float) ($account->posted_line_debit_total ?? 0) + (float) ($account->posted_legacy_debit_total ?? 0);
+                        $creditTotal = (float) ($account->posted_line_credit_total ?? 0) + (float) ($account->posted_legacy_credit_total ?? 0);
                         $currentBalance = $account->normal_balance === 'debit' ? $debitTotal - $creditTotal : $creditTotal - $debitTotal;
                     @endphp
                     <tr class="border-t border-slate-200 align-top">

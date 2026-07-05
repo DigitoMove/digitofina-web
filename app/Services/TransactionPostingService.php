@@ -98,6 +98,7 @@ class TransactionPostingService
             $drawer->refresh();
 
             $transaction = Transaction::create([
+                'organization_id' => $account->organization_id,
                 'account_id' => $account->id,
                 'transaction_type_id' => $type->id,
                 'drawer_session_id' => $session->id,
@@ -113,6 +114,7 @@ class TransactionPostingService
             ]);
 
             DrawerMovement::create([
+                'organization_id' => $drawer->branch->organization_id,
                 'drawer_session_id' => $session->id,
                 'user_id' => $user->id,
                 'type' => $movementType,
@@ -165,6 +167,7 @@ class TransactionPostingService
         $drawer->refresh();
 
         $transaction = Transaction::create([
+            'organization_id' => $account->organization_id,
             'account_id' => $account->id,
             'transaction_type_id' => $type->id,
             'drawer_session_id' => $session->id,
@@ -186,6 +189,7 @@ class TransactionPostingService
         $transaction->update(['balance_after' => $account->balance]);
 
         DrawerMovement::create([
+            'organization_id' => $drawer->branch->organization_id,
             'drawer_session_id' => $session->id,
             'user_id' => $user->id,
             'type' => 'cash_in',
@@ -218,6 +222,7 @@ class TransactionPostingService
             $account->refresh();
 
             $transaction = Transaction::create([
+                'organization_id' => $account->organization_id,
                 'account_id' => $account->id,
                 'transaction_type_id' => $type->id,
                 'branch_id' => $account->branch_id,
@@ -325,6 +330,7 @@ class TransactionPostingService
             $account->refresh();
 
             $transaction = Transaction::create([
+                'organization_id' => $account->organization_id,
                 'account_id' => $account->id,
                 'transaction_type_id' => $type->id,
                 'branch_id' => $account->branch_id,
@@ -387,6 +393,7 @@ class TransactionPostingService
         }
 
         $transaction = Transaction::create([
+            'organization_id' => $account->organization_id,
             'account_id' => $account->id,
             'transaction_type_id' => $type->id,
             'branch_id' => $account->branch_id,
@@ -488,6 +495,7 @@ class TransactionPostingService
                 ],
             );
             $transaction = Transaction::create([
+                'organization_id' => $drawer->branch->organization_id,
                 'account_id' => null,
                 'transaction_type_id' => $type->id,
                 'drawer_session_id' => $session->id,
@@ -552,6 +560,7 @@ class TransactionPostingService
             }
 
             DrawerMovement::create([
+                'organization_id' => $drawer->branch->organization_id,
                 'drawer_session_id' => $session->id,
                 'user_id' => $user->id,
                 'type' => $entryType === 'debit' ? 'cash_out' : 'cash_in',

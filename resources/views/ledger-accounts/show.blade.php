@@ -93,6 +93,8 @@
                     @php
                         $transaction = $entry->transaction;
                         $client = $transaction?->account?->client;
+                        $statementDebit = (float) ($entry->statement_debit ?? ($entry->entry_type === 'debit' ? $entry->amount : 0));
+                        $statementCredit = (float) ($entry->statement_credit ?? ($entry->entry_type === 'credit' ? $entry->amount : 0));
                         $source = $transaction?->account
                             ? (($client?->full_name ?: $client?->business_name ?: $client?->client_number) .' · '.$transaction->account->account_number)
                             : ($transaction?->drawerSession?->drawer ? 'Drawer · '.$transaction->drawerSession->drawer->code : 'Manual / opening journal');
@@ -102,8 +104,8 @@
                         <td>{{ $entry->branch?->name ?? 'Organization-level' }}</td>
                         <td><div class="font-medium text-slate-950">{{ $source }}</div><div class="text-xs text-slate-500">{{ $transaction?->type?->name ?? ($entry->journal_number ?: 'Journal entry') }}</div></td>
                         <td class="max-w-80">{{ $entry->description ?: $entry->memo ?: '—' }}</td>
-                        <td class="text-right font-medium">{{ $entry->entry_type === 'debit' ? number_format((float) $entry->amount, 2) : '—' }}</td>
-                        <td class="text-right font-medium">{{ $entry->entry_type === 'credit' ? number_format((float) $entry->amount, 2) : '—' }}</td>
+                        <td class="text-right font-medium">{{ $statementDebit > 0 ? number_format($statementDebit, 2) : '—' }}</td>
+                        <td class="text-right font-medium">{{ $statementCredit > 0 ? number_format($statementCredit, 2) : '—' }}</td>
                         <td class="pr-3 text-right font-semibold {{ (float) $entry->running_balance_after < 0 ? 'text-red-700' : 'text-slate-950' }}">{{ number_format((float) $entry->running_balance_after, 2) }}</td>
                     </tr>
                 @empty
