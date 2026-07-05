@@ -17,6 +17,7 @@ use App\Services\EndOfDayService;
 use App\Support\ApiSecurity;
 use App\Support\CurrencyDenomination;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -29,12 +30,9 @@ class EndOfDayController extends Controller
         abort_unless($request->user()->canPerform('view-reports') || $request->user()->canPerform('manage-end-of-day') || $request->user()->canPerform('manage-drawers'), 403);
 
         $businessDate = $request->date('business_date') ?: today();
-        $branch = Branch::query()->find($request->integer('branch_id')) ?: $request->user()->branch;
+        $branches = $this->availableBranches($request)->get();
+        $branch = $this->resolveBranch($request, $branches);
         abort_unless($branch, 404);
-
-        if (! ApiSecurity::hasGlobalBranchAccess($request->user())) {
-            abort_unless((int) $branch->id === (int) $request->user()->branch_id, 403);
-        }
 
         $financialDay = $endOfDay->getOrOpenFinancialDay($branch, $businessDate, $request->user());
         $summary = BranchDailySummary::query()
@@ -104,10 +102,7 @@ class EndOfDayController extends Controller
             ->values();
 
         return view('end-of-day.index', [
-            'branches' => Branch::query()
-                ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->whereKey($request->user()->branch_id))
-                ->orderBy('name')
-                ->get(),
+            'branches' => $branches,
             'branch' => $branch,
             'businessDate' => $businessDate,
             'financialDay' => $financialDay,
@@ -203,5 +198,36 @@ class EndOfDayController extends Controller
         }
 
         return $branch;
+    }
+
+    private function availableBranches(Request $request): Builder
+    {
+        return Branch::query()
+            ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->whereKey($request->user()->branch_id))
+            ->orderBy('name');
+    }
+
+    /**
+     * @param  EloquentCollection<int, Branch>  $branches
+     */
+    private function resolveBranch(Request $request, EloquentCollection $branches): ?Branch
+    {
+        $requestedBranchId = $request->integer('branch_id');
+
+        if ($requestedBranchId) {
+            $branch = $branches->firstWhere('id', $requestedBranchId);
+
+            if ($branch) {
+                return $branch;
+            }
+
+            abort(Branch::query()->whereKey($requestedBranchId)->exists() ? 403 : 404);
+        }
+
+        if ($request->user()->branch_id) {
+            return $branches->firstWhere('id', $request->user()->branch_id);
+        }
+
+        return $branches->first();
     }
 }

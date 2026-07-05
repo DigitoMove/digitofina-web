@@ -8,12 +8,15 @@ use App\Models\Loan;
 use App\Models\LoanPenalty;
 use App\Models\LoanProduct;
 use App\Models\LoanSchedule;
+use App\Models\Module;
+use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\SmsLog;
 use App\Models\User;
 use App\Services\EndOfDayService;
 use App\Services\LoanService;
+use App\Services\ModuleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 
@@ -88,7 +91,7 @@ it('runs end of day processing with summaries, penalties, and repayment reminder
     LoanSchedule::create([
         'loan_id' => $loan->id,
         'installment_number' => 1,
-        'due_date' => today()->subDay(),
+        'due_date' => today()->subWeek(),
         'principal_due' => 100000,
         'interest_due' => 10000,
         'total_due' => 110000,
@@ -128,3 +131,81 @@ it('locks a closed business day and rejects later repayments for that date', fun
 
     app(LoanService::class)->repay($loan, 10000, $user, paidAt: today());
 })->throws(InvalidArgumentException::class, 'The financial day is closed and locked for this branch.');
+
+it('opens end of day for organization users without a default branch and links reports', function () {
+    $organization = Organization::create([
+        'name' => 'End Of Day SACCO',
+        'slug' => 'end-of-day-sacco',
+        'status' => 'active',
+    ]);
+    $branch = Branch::create([
+        'organization_id' => $organization->id,
+        'code' => 'KAV',
+        'name' => 'Kavule Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    Branch::create([
+        'organization_id' => $organization->id,
+        'code' => 'LUW',
+        'name' => 'Luweero Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $role = Role::create([
+        'organization_id' => $organization->id,
+        'name' => 'Organization Admin',
+        'slug' => 'organization-admin',
+    ]);
+    $permissionIds = collect(['manage-end-of-day', 'view-reports'])
+        ->map(fn (string $slug): int => Permission::firstOrCreate(
+            ['slug' => $slug],
+            ['organization_id' => $organization->id, 'name' => str($slug)->headline()]
+        )->id)
+        ->all();
+    $role->permissions()->sync($permissionIds);
+    endOfDayEnableModules($organization);
+    $user = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => null,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+
+    $response = $this->actingAs($user)->get(route('end-of-day.index'));
+
+    $response->assertSuccessful()
+        ->assertViewHas('branch', fn (Branch $selectedBranch): bool => (int) $selectedBranch->id === (int) $branch->id)
+        ->assertSee('Kavule Branch')
+        ->assertSee(route('reports.show', [
+            'report' => 'daily-teller-transactions',
+            'from' => today()->toDateString(),
+            'to' => today()->toDateString(),
+            'branch_id' => $branch->id,
+        ]));
+
+    foreach (['daily-teller-transactions', 'drawer-balances-by-teller', 'officer-entries', 'branch-period-summary'] as $report) {
+        $this->actingAs($user)
+            ->get(route('reports.show', [
+                'report' => $report,
+                'from' => today()->toDateString(),
+                'to' => today()->toDateString(),
+                'branch_id' => $branch->id,
+            ]))
+            ->assertSuccessful();
+    }
+});
+
+function endOfDayEnableModules(Organization $organization): void
+{
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($organization);
+    $organization->modules()->syncWithoutDetaching([
+        Module::where('slug', 'teller')->firstOrFail()->id => ['is_enabled' => true, 'enabled_at' => now()],
+        Module::where('slug', 'reports')->firstOrFail()->id => ['is_enabled' => true, 'enabled_at' => now()],
+        Module::where('slug', 'clients')->firstOrFail()->id => ['is_enabled' => true, 'enabled_at' => now()],
+    ]);
+    $modules->clearCache($organization);
+}
