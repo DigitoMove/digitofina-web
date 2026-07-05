@@ -11,7 +11,11 @@ class StoreLoanProductRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->canPerform('manage-loans') ?? false;
+        $user = $this->user();
+
+        return $user !== null
+            && ! ($user->isTellerCashier() || $user->isLoanOfficer() || $user->isLoanRecoveryOfficer())
+            && $user->canPerform('manage-loans');
     }
 
     protected function prepareForValidation(): void

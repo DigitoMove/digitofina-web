@@ -197,7 +197,7 @@ it('shows only the eight most relevant super admin dashboard cards', function ()
         ->assertDontSee('Active accounts');
 });
 
-it('hides repayment calendar amounts for loan officers', function () {
+it('shows repayment calendar and due-today totals for loan officers', function () {
     $user = moduleManagementUser(['manage-loans', 'view-reports']);
     $loanOfficerRole = Role::firstOrCreate(
         ['slug' => 'loan-officer'],
@@ -258,9 +258,9 @@ it('hides repayment calendar amounts for loan officers', function () {
         ->get(route('dashboard'))
         ->assertSuccessful()
         ->assertSee('Due today')
-        ->assertDontSee('Repayment Calendar')
+        ->assertSee('Repayment Calendar')
         ->assertDontSee('Next Repayments')
-        ->assertDontSee('UGX 123,400');
+        ->assertSee('UGX 123,400');
 });
 
 it('renders a loan-only client dashboard without disabled financial modules', function () {
@@ -382,12 +382,66 @@ it('lets branch users and cashiers view clients and loans without edit rights', 
         'is_active' => true,
     ]);
 
-    foreach ([$viewer, $cashier] as $actor) {
-        $this->actingAs($actor)
-            ->get(route('clients.index'))
-            ->assertSuccessful()
-            ->assertSee($client->client_number);
+    $this->actingAs($viewer)
+        ->get(route('clients.index'))
+        ->assertSuccessful()
+        ->assertSee($client->client_number);
 
+    $this->actingAs($viewer)
+        ->get(route('loans.index'))
+        ->assertSuccessful()
+        ->assertSee('1001-LN-READ-ONLY')
+        ->assertDontSee(route('arrears.index'), false)
+        ->assertDontSee('New Application');
+
+    $this->actingAs($cashier)
+        ->get(route('clients.index'))
+        ->assertSuccessful()
+        ->assertSee('Search for a client by name, client number, phone, or national ID.')
+        ->assertDontSee($client->client_number);
+
+    $this->actingAs($cashier)
+        ->get(route('clients.index', ['status' => 'active']))
+        ->assertSuccessful()
+        ->assertDontSee($client->client_number);
+
+    $this->actingAs($cashier)
+        ->get(route('clients.index', ['search' => $client->client_number]))
+        ->assertSuccessful()
+        ->assertSee($client->client_number);
+
+    $this->actingAs($cashier)
+        ->get(route('loans.index'))
+        ->assertSuccessful()
+        ->assertSee('Search for a client or loan to view loan details.')
+        ->assertDontSee('1001-LN-READ-ONLY')
+        ->assertDontSee(route('arrears.index'), false)
+        ->assertDontSee('New Application');
+
+    $this->actingAs($cashier)
+        ->get(route('loans.index', ['loan_product_id' => $product->id]))
+        ->assertSuccessful()
+        ->assertDontSee('1001-LN-READ-ONLY');
+
+    $this->actingAs($cashier)
+        ->get(route('loans.index', ['search' => '1001-LN-READ-ONLY']))
+        ->assertSuccessful()
+        ->assertSee('1001-LN-READ-ONLY');
+
+    $this->actingAs($cashier)
+        ->get(route('loan-products.index'))
+        ->assertSuccessful()
+        ->assertSee('Read Only Loan')
+        ->assertDontSee('New Product')
+        ->assertDontSee('Edit');
+
+    $createProductResponse = $this->actingAs($cashier)->get(route('loan-products.create'));
+    $editProductResponse = $this->actingAs($cashier)->get(route('loan-products.edit', $product));
+
+    expect($createProductResponse->isForbidden() || $createProductResponse->isRedirect())->toBeTrue()
+        ->and($editProductResponse->isForbidden() || $editProductResponse->isRedirect())->toBeTrue();
+
+    foreach ([$viewer, $cashier] as $actor) {
         $this->actingAs($actor)
             ->get(route('clients.show', $client))
             ->assertSuccessful()
@@ -399,13 +453,6 @@ it('lets branch users and cashiers view clients and loans without edit rights', 
             ->assertDontSee('Update KYC')
             ->assertDontSee('Upload Document')
             ->assertDontSee('Add Note');
-
-        $this->actingAs($actor)
-            ->get(route('loans.index'))
-            ->assertSuccessful()
-            ->assertSee('1001-LN-READ-ONLY')
-            ->assertDontSee(route('arrears.index'), false)
-            ->assertDontSee('New Application');
 
         $this->actingAs($actor)
             ->get(route('loans.show', $loan))
@@ -1006,6 +1053,7 @@ it('shows the full loan repayment amount when looking up a loan account', functi
 it('shows general ledger drawer expenses in cashier entries without cashier reversal requests', function () {
     $user = moduleManagementUser(['post-transactions']);
     enableTellerModule($user->organization);
+    moduleManagementCashLedger($user);
     $expenseAccount = ChartAccount::create([
         'organization_id' => $user->organization_id,
         'branch_id' => $user->branch_id,
@@ -1066,6 +1114,7 @@ it('shows general ledger drawer expenses in cashier entries without cashier reve
 it('lets drawer admins list and delete branch expenses while restoring cashier drawer cash', function () {
     $cashier = moduleManagementUser(['post-transactions']);
     enableTellerModule($cashier->organization);
+    moduleManagementCashLedger($cashier);
     $admin = drawerAdminUser($cashier->organization, null, 'organization-admin', ['manage-drawers']);
     $expenseAccount = ChartAccount::create([
         'organization_id' => $cashier->organization_id,
@@ -1179,6 +1228,7 @@ it('lets drawer admins list and delete branch expenses while restoring cashier d
 it('lets drawer admins delete income ledger postings while removing cash from the cashier drawer', function () {
     $cashier = moduleManagementUser(['post-transactions']);
     enableTellerModule($cashier->organization);
+    moduleManagementCashLedger($cashier);
     $admin = drawerAdminUser($cashier->organization, null, 'organization-admin', ['manage-drawers']);
     $incomeAccount = ChartAccount::create([
         'organization_id' => $cashier->organization_id,
@@ -1253,6 +1303,7 @@ it('lets drawer admins delete income ledger postings while removing cash from th
 it('shows ledger cash received into the drawer without a cashier reversal action', function () {
     $user = moduleManagementUser(['post-transactions']);
     enableTellerModule($user->organization);
+    moduleManagementCashLedger($user);
     $incomeAccount = ChartAccount::create([
         'organization_id' => $user->organization_id,
         'branch_id' => $user->branch_id,
@@ -1656,6 +1707,22 @@ function moduleManagementClient(User $user): Client
         'last_name' => fake()->lastName(),
         'phone' => fake()->unique()->numerify('+2567########'),
         'status' => 'active',
+    ]);
+}
+
+function moduleManagementCashLedger(User $user): ChartAccount
+{
+    return ChartAccount::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'code' => fake()->unique()->bothify('CASH-??'),
+        'name' => 'Cash on Hand',
+        'type' => 'asset',
+        'normal_balance' => 'debit',
+        'drawer_direction' => 'both',
+        'is_cash_account' => true,
+        'is_system' => true,
+        'is_active' => true,
     ]);
 }
 

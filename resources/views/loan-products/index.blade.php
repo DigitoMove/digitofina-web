@@ -2,7 +2,9 @@
 @section('content')
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
     <h1 class="text-2xl font-semibold">Loan Products</h1>
-    <a href="{{ route('loan-products.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">New Product</a>
+    @if($canManageLoanProducts)
+        <a href="{{ route('loan-products.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">New Product</a>
+    @endif
 </div>
 <form class="mb-4 grid gap-3 rounded border bg-white p-4 md:grid-cols-[1fr_180px_auto]">
     <input name="search" value="{{ request('search') }}" placeholder="Search product or code" class="rounded border-slate-300">
@@ -11,7 +13,7 @@
 </form>
 <div class="overflow-hidden rounded border bg-white">
     <table class="w-full text-left text-sm">
-        <thead class="bg-slate-50"><tr><th class="p-3">Product</th><th>Range</th><th>Interest</th><th>Requirements</th><th>Status</th><th></th></tr></thead>
+        <thead class="bg-slate-50"><tr><th class="p-3">Product</th><th>Range</th><th>Interest</th><th>Requirements</th><th>Status</th>@if($canManageLoanProducts)<th></th>@endif</tr></thead>
         <tbody>
             @forelse($products as $product)
                 <tr class="border-t">
@@ -20,10 +22,12 @@
                     <td>{{ $product->annual_interest_rate }}% · {{ str($product->interest_method)->headline() }}</td>
                     <td>{{ $product->require_guarantors ? $product->minimum_guarantors.' guarantor(s)' : 'No guarantors' }} · {{ $product->require_collateral ? 'Collateral' : 'No collateral' }}</td>
                     <td><span class="rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">{{ str($product->status)->headline() }}</span></td>
-                    <td class="p-3 text-right"><a class="text-sm font-semibold text-blue-700" href="{{ route('loan-products.edit', $product) }}">Edit</a></td>
+                    @if($canManageLoanProducts)
+                        <td class="p-3 text-right"><a class="text-sm font-semibold text-blue-700" href="{{ route('loan-products.edit', $product) }}">Edit</a></td>
+                    @endif
                 </tr>
             @empty
-                <tr><td colspan="6" class="p-6 text-center text-slate-500">No loan products found.</td></tr>
+                <tr><td colspan="{{ $canManageLoanProducts ? 6 : 5 }}" class="p-6 text-center text-slate-500">No loan products found.</td></tr>
             @endforelse
         </tbody>
     </table>

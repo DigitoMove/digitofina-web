@@ -26,14 +26,11 @@ class ClientController extends Controller
     {
         Gate::authorize('viewAny', Client::class);
         $user = $request->user();
+        $mustSearchClientDirectory = $this->mustSearchClientDirectory($user);
         $canViewAllBranches = $user->branch_id === null;
-        $canBrowseClientList = ! $user->isMember();
+        $canBrowseClientList = ! $user->isMember() && ! $mustSearchClientDirectory;
 
-        $hasClientSearch = $request->filled('search')
-            || $request->filled('branch_id')
-            || $request->filled('status')
-            || $request->filled('officer_id')
-            || $request->filled('client_type');
+        $hasClientSearch = $request->filled('search');
 
         $selectedBranchId = $canViewAllBranches
             ? $request->integer('branch_id')
@@ -55,6 +52,7 @@ class ClientController extends Controller
             'clients' => $clients,
             'hasClientSearch' => $hasClientSearch,
             'canBrowseClientList' => $canBrowseClientList,
+            'mustSearchClientDirectory' => $mustSearchClientDirectory,
             'canViewAllBranches' => $canViewAllBranches,
             'branches' => Branch::query()
                 ->when(! $canViewAllBranches && $user->branch_id, fn ($query) => $query->whereKey($user->branch_id))
@@ -66,6 +64,13 @@ class ClientController extends Controller
                 ->orderBy('name')
                 ->get(),
         ]);
+    }
+
+    private function mustSearchClientDirectory(User $user): bool
+    {
+        return $user->isTellerCashier()
+            || $user->isLoanOfficer()
+            || $user->isLoanRecoveryOfficer();
     }
 
     public function create(Request $request): View

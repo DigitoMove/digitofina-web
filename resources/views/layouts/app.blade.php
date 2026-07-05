@@ -72,6 +72,7 @@
                     $moduleEnabled = fn (?string $slug): bool => $slug === null || $user->canAccessModule($slug);
                     $modulesEnabled = fn (array $slugs): bool => collect($slugs)->contains(fn (?string $slug): bool => $moduleEnabled($slug));
                     $canAny = fn (array $permissions): bool => $permissions === [] || collect($permissions)->contains(fn (string $permission): bool => $user->canPerform($permission));
+                    $canViewOperationalReference = fn (): bool => $user->isTellerCashier() || $user->isLoanOfficer() || $user->isLoanRecoveryOfficer();
                     $isRouteActive = fn (string $route): bool => request()->routeIs($route) || request()->routeIs(strtok($route, '.').'.*');
                     $isItemActive = function (array $item) use ($isRouteActive): bool {
                         if (! $isRouteActive($item['route'])) {
@@ -100,7 +101,7 @@
                             'items' => [
                                 ['label' => 'Loans', 'route' => 'loans.index', 'module' => 'loans', 'permissions' => [], 'icon' => 'M4 6h16v12H4z M8 10h8 M8 14h5'],
                                 ['label' => 'Arrears', 'route' => 'arrears.index', 'module' => 'loans', 'permissions' => ['manage-loans', 'view-reports', 'view-arrears'], 'hide_for_cashier' => true, 'icon' => 'M12 8v5l3 3 M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0z'],
-                                ['label' => 'Loan Products', 'route' => 'loan-products.index', 'module' => 'loans', 'permissions' => ['manage-loans'], 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
+                                ['label' => 'Loan Products', 'route' => 'loan-products.index', 'module' => 'loans', 'permissions' => ['manage-loans'], 'operational_reference' => true, 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'],
                             ],
                         ],
                         [
@@ -127,7 +128,7 @@
                             ],
                         ],
                     ];
-                    $itemVisible = fn (array $item): bool => ! (($item['hide_for_cashier'] ?? false) && $user->isTellerCashier()) && $modulesEnabled($item['modules'] ?? [$item['module'] ?? null]) && $canAny($item['permissions'] ?? []);
+                    $itemVisible = fn (array $item): bool => ! (($item['hide_for_cashier'] ?? false) && $user->isTellerCashier()) && $modulesEnabled($item['modules'] ?? [$item['module'] ?? null]) && ($canAny($item['permissions'] ?? []) || (($item['operational_reference'] ?? false) && $canViewOperationalReference()));
                     $navGroups = array_values(array_filter(array_map(function (array $group) use ($itemVisible, $user): array {
                         $group['items'] = array_values(array_filter($group['items'], $itemVisible));
 
@@ -146,7 +147,7 @@
                         if ($user->isLoanRecoveryOfficer()) {
                             $group['items'] = match ($group['label']) {
                                 'Clients' => array_values(array_filter($group['items'], fn (array $item): bool => $item['label'] === 'Clients')),
-                                'Loans' => array_values(array_filter($group['items'], fn (array $item): bool => in_array($item['label'], ['Loans', 'Arrears'], true))),
+                                'Loans' => array_values(array_filter($group['items'], fn (array $item): bool => in_array($item['label'], ['Loans', 'Arrears', 'Loan Products'], true))),
                                 default => $group['items'],
                             };
                         }

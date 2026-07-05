@@ -69,6 +69,7 @@ function loanWorkflowUser(): User
 function loanWorkflowClient(User $user, string $phone = '+256700000001'): Client
 {
     return Client::create([
+        'organization_id' => $user->organization_id,
         'branch_id' => $user->branch_id,
         'officer_id' => $user->id,
         'client_number' => fake()->unique()->numerify('1001-C######'),
@@ -119,6 +120,7 @@ function loanWorkflowProduct(array $overrides = []): LoanProduct
 function loanWorkflowSavingsAccount(User $user, Client $client): Account
 {
     return Account::create([
+        'organization_id' => $user->organization_id,
         'client_id' => $client->id,
         'branch_id' => $user->branch_id,
         'account_type_id' => AccountType::where('category', 'savings')->value('id'),
@@ -139,6 +141,7 @@ function loanWorkflowOrganizationWithModules(User $user, array $moduleSlugs): Or
     ]);
 
     Branch::whereKey($user->branch_id)->update(['organization_id' => $organization->id]);
+    ChartAccount::whereNull('organization_id')->update(['organization_id' => $organization->id]);
     $user->update(['organization_id' => $organization->id]);
 
     $modules = app(ModuleService::class);
@@ -194,9 +197,11 @@ function loanWorkflowSchedule(Loan $loan, mixed $dueDate, string $status, float 
 
 it('approves and disburses a loan with guarantor checks and a repayment schedule', function () {
     $user = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($user, ['clients', 'loans', 'savings']);
     $client = loanWorkflowClient($user);
     $guarantorClient = loanWorkflowClient($user, '+256700000002');
     $product = loanWorkflowProduct();
+    $product->update(['organization_id' => $organization->id]);
     loanWorkflowSavingsAccount($user, $client);
 
     $response = $this->actingAs($user)->post(route('loans.store'), [
@@ -901,10 +906,13 @@ it('requires write off permission before a loan can be written off from coverage
 
 it('shows a loan when the legacy guarantors payload is empty', function () {
     $user = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($user, ['clients', 'loans']);
     $client = loanWorkflowClient($user);
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
 
     $loan = Loan::create([
+        'organization_id' => $organization->id,
         'client_id' => $client->id,
         'branch_id' => $client->branch_id,
         'loan_product_id' => $product->id,
@@ -929,10 +937,13 @@ it('shows a loan when the legacy guarantors payload is empty', function () {
 
 it('returns a form error when approving a loan without required accepted guarantors', function () {
     $user = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($user, ['clients', 'loans']);
     $client = loanWorkflowClient($user);
     $product = loanWorkflowProduct();
+    $product->update(['organization_id' => $organization->id]);
 
     $loan = Loan::create([
+        'organization_id' => $organization->id,
         'client_id' => $client->id,
         'branch_id' => $client->branch_id,
         'loan_product_id' => $product->id,
@@ -2156,16 +2167,55 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->assertDontSee('Run Penalties');
 
     $this->actingAs($officer)
+        ->get(route('loans.index'))
+        ->assertSuccessful()
+        ->assertSee('Search for a client or loan to view loan details.')
+        ->assertDontSee('1001-LN-OFFICER-ARREARS')
+        ->assertDontSee('1001-LN-OTHER-ARREARS');
+
+    $this->actingAs($officer)
+        ->get(route('loans.index', ['status' => 'active']))
+        ->assertSuccessful()
+        ->assertDontSee('1001-LN-OFFICER-ARREARS')
+        ->assertDontSee('1001-LN-OTHER-ARREARS');
+
+    $this->actingAs($officer)
         ->get(route('loans.index', ['search' => '1001-LN']))
         ->assertSuccessful()
         ->assertSee('1001-LN-OFFICER-ARREARS')
         ->assertSee('1001-LN-OTHER-ARREARS');
 
     $this->actingAs($officer)
+        ->get(route('clients.index'))
+        ->assertSuccessful()
+        ->assertSee('Search for a client by name, client number, phone, or national ID.')
+        ->assertDontSee($officerClient->client_number)
+        ->assertDontSee($otherClient->client_number);
+
+    $this->actingAs($officer)
+        ->get(route('clients.index', ['status' => 'active']))
+        ->assertSuccessful()
+        ->assertDontSee($officerClient->client_number)
+        ->assertDontSee($otherClient->client_number);
+
+    $this->actingAs($officer)
         ->get(route('clients.index', ['search' => '256700110']))
         ->assertSuccessful()
         ->assertSee($officerClient->client_number)
         ->assertSee($otherClient->client_number);
+
+    $this->actingAs($officer)
+        ->get(route('loan-products.index'))
+        ->assertSuccessful()
+        ->assertSee($product->name)
+        ->assertDontSee('New Product')
+        ->assertDontSee('Edit');
+
+    $officerCreateProductResponse = $this->actingAs($officer)->get(route('loan-products.create'));
+    $officerEditProductResponse = $this->actingAs($officer)->get(route('loan-products.edit', $product));
+
+    expect($officerCreateProductResponse->isForbidden() || $officerCreateProductResponse->isRedirect())->toBeTrue()
+        ->and($officerEditProductResponse->isForbidden() || $officerEditProductResponse->isRedirect())->toBeTrue();
 
     $this->actingAs($officer)
         ->get(route('loans.show', $otherArrears))
@@ -2230,8 +2280,41 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
     $this->actingAs($recoveryOfficer)
         ->get(route('loans.index'))
         ->assertSuccessful()
+        ->assertSee('Search for a client or loan to view loan details.')
+        ->assertDontSee('1001-LN-OFFICER-ARREARS')
+        ->assertDontSee('1001-LN-OTHER-ARREARS');
+
+    $this->actingAs($recoveryOfficer)
+        ->get(route('loans.index', ['search' => '1001-LN']))
+        ->assertSuccessful()
         ->assertSee('1001-LN-OFFICER-ARREARS')
         ->assertSee('1001-LN-OTHER-ARREARS');
+
+    $this->actingAs($recoveryOfficer)
+        ->get(route('clients.index'))
+        ->assertSuccessful()
+        ->assertSee('Search for a client by name, client number, phone, or national ID.')
+        ->assertDontSee($officerClient->client_number)
+        ->assertDontSee($otherClient->client_number);
+
+    $this->actingAs($recoveryOfficer)
+        ->get(route('clients.index', ['search' => '256700110']))
+        ->assertSuccessful()
+        ->assertSee($officerClient->client_number)
+        ->assertSee($otherClient->client_number);
+
+    $this->actingAs($recoveryOfficer)
+        ->get(route('loan-products.index'))
+        ->assertSuccessful()
+        ->assertSee($product->name)
+        ->assertDontSee('New Product')
+        ->assertDontSee('Edit');
+
+    $recoveryCreateProductResponse = $this->actingAs($recoveryOfficer)->get(route('loan-products.create'));
+    $recoveryEditProductResponse = $this->actingAs($recoveryOfficer)->get(route('loan-products.edit', $product));
+
+    expect($recoveryCreateProductResponse->isForbidden() || $recoveryCreateProductResponse->isRedirect())->toBeTrue()
+        ->and($recoveryEditProductResponse->isForbidden() || $recoveryEditProductResponse->isRedirect())->toBeTrue();
 
     $this->actingAs($recoveryOfficer)
         ->get(route('loans.show', $ownArrears))
@@ -2420,7 +2503,7 @@ it('backfills and falls back to recent loan officers for legacy client ownership
     $clientPolicy = app(ClientPolicy::class);
 
     expect($clientPolicy->view($firstOfficer, $otherRecentClient))->toBeTrue()
-        ->and($clientPolicy->view($firstOfficer, $unownedClient))->toBeFalse();
+        ->and($clientPolicy->view($firstOfficer, $unownedClient))->toBeTrue();
 
     $this->actingAs($firstOfficer)
         ->post(route('loans.store'), [

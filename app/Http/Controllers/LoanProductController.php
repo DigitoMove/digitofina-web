@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreLoanProductRequest;
 use App\Http\Requests\UpdateLoanProductRequest;
 use App\Models\LoanProduct;
+use App\Models\User;
 use App\Services\AuditLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -14,7 +15,10 @@ class LoanProductController extends Controller
 {
     public function index(Request $request): View
     {
-        abort_unless($request->user()->canPerform('manage-loans'), 403);
+        $user = $request->user();
+        $canManageLoanProducts = $this->canManageLoanProducts($user);
+
+        abort_unless($canManageLoanProducts || $this->canViewLoanProductsReference($user), 403);
 
         $products = LoanProduct::query()
             ->when($request->string('search')->toString(), function ($query, string $search): void {
@@ -28,19 +32,22 @@ class LoanProductController extends Controller
             ->paginate(15)
             ->withQueryString();
 
-        return view('loan-products.index', ['products' => $products]);
+        return view('loan-products.index', [
+            'products' => $products,
+            'canManageLoanProducts' => $canManageLoanProducts,
+        ]);
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
-        abort_unless(auth()->user()->canPerform('manage-loans'), 403);
+        abort_unless($this->canManageLoanProducts($request->user()), 403);
 
         return view('loan-products.create');
     }
 
     public function store(StoreLoanProductRequest $request, AuditLogger $auditLogger): RedirectResponse
     {
-        abort_unless($request->user()->canPerform('manage-loans'), 403);
+        abort_unless($this->canManageLoanProducts($request->user()), 403);
 
         $product = LoanProduct::create($this->payload($request->validated()));
 
@@ -49,16 +56,16 @@ class LoanProductController extends Controller
         return redirect()->route('loan-products.index')->with('status', 'Loan product created.');
     }
 
-    public function edit(LoanProduct $loanProduct): View
+    public function edit(Request $request, LoanProduct $loanProduct): View
     {
-        abort_unless(auth()->user()->canPerform('manage-loans'), 403);
+        abort_unless($this->canManageLoanProducts($request->user()), 403);
 
         return view('loan-products.edit', ['product' => $loanProduct]);
     }
 
     public function update(UpdateLoanProductRequest $request, LoanProduct $loanProduct, AuditLogger $auditLogger): RedirectResponse
     {
-        abort_unless($request->user()->canPerform('manage-loans'), 403);
+        abort_unless($this->canManageLoanProducts($request->user()), 403);
 
         $old = $loanProduct->toArray();
         $loanProduct->update($this->payload($request->validated()));
@@ -80,5 +87,18 @@ class LoanProductController extends Controller
             'require_collateral' => request()->boolean('require_collateral'),
             'auto_deduct_repayment_from_savings' => request()->boolean('auto_deduct_repayment_from_savings'),
         ]);
+    }
+
+    private function canViewLoanProductsReference(User $user): bool
+    {
+        return $user->isTellerCashier()
+            || $user->isLoanOfficer()
+            || $user->isLoanRecoveryOfficer();
+    }
+
+    private function canManageLoanProducts(User $user): bool
+    {
+        return ! $this->canViewLoanProductsReference($user)
+            && $user->canPerform('manage-loans');
     }
 }

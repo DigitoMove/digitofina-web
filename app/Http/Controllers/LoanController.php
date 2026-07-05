@@ -7,6 +7,7 @@ use App\Http\Requests\StoreLoanApplicationRequest;
 use App\Models\Client;
 use App\Models\Loan;
 use App\Models\LoanProduct;
+use App\Models\User;
 use App\Services\LoanApplicationService;
 use App\Services\LoanApprovalService;
 use App\Services\LoanDisbursementService;
@@ -29,9 +30,14 @@ class LoanController extends Controller
     {
         Gate::authorize('viewAny', Loan::class);
 
+        $user = $request->user();
+        $mustSearchLoanDirectory = $this->mustSearchLoanDirectory($user);
+        $hasLoanSearch = $request->filled('search');
+
         $loans = Loan::query()
             ->with(['client', 'product', 'officer'])
-            ->tap(fn (Builder $query): Builder => $visibility->scopeViewable($query, $request->user()))
+            ->tap(fn (Builder $query): Builder => $visibility->scopeViewable($query, $user))
+            ->when($mustSearchLoanDirectory && ! $hasLoanSearch, fn (Builder $query): Builder => $query->whereRaw('1 = 0'))
             ->when($request->string('search')->toString(), function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
                     $query->where('loan_number', 'like', "%{$search}%")
@@ -54,8 +60,17 @@ class LoanController extends Controller
         return view('loans.index', [
             'loans' => $loans,
             'products' => LoanProduct::orderBy('name')->get(),
-            'officers' => $visibility->assignableOfficers($request->user())->get(),
+            'officers' => $visibility->assignableOfficers($user)->get(),
+            'hasLoanSearch' => $hasLoanSearch,
+            'mustSearchLoanDirectory' => $mustSearchLoanDirectory,
         ]);
+    }
+
+    private function mustSearchLoanDirectory(User $user): bool
+    {
+        return $user->isTellerCashier()
+            || $user->isLoanOfficer()
+            || $user->isLoanRecoveryOfficer();
     }
 
     public function create(Request $request, LoanVisibilityService $visibility): View

@@ -4,7 +4,7 @@
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div>
         <h1 class="text-2xl font-semibold text-slate-950">Clients</h1>
-        <p class="text-sm text-slate-500">Client registry, KYC status, risk ratings, branch ownership, and officer assignment.</p>
+        <p class="text-sm text-slate-500">{{ $mustSearchClientDirectory ? 'Search for a client to view their dashboard, accounts, and loans.' : 'Client registry, KYC status, risk ratings, branch ownership, and officer assignment.' }}</p>
     </div>
     <div class="flex gap-2">
         <a href="{{ route('client-groups.index') }}" class="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Groups</a>
@@ -14,17 +14,19 @@
     </div>
 </div>
 
-<form class="mb-4 grid gap-3 lg:grid-cols-[1fr_11rem_11rem_12rem_12rem_auto]">
+<form class="mb-4 grid gap-3 {{ $mustSearchClientDirectory ? 'lg:grid-cols-[1fr_auto]' : 'lg:grid-cols-[1fr_11rem_11rem_12rem_12rem_auto]' }}">
     <input name="search" value="{{ request('search') }}" class="rounded border-slate-300" placeholder="Search name, client number, phone or national ID">
-    <select name="client_type" class="rounded border-slate-300"><option value="">All types</option>@foreach(['individual', 'group', 'business', 'institution'] as $type)<option value="{{ $type }}" @selected(request('client_type') === $type)>{{ str($type)->headline() }}</option>@endforeach</select>
-    <select name="status" class="rounded border-slate-300"><option value="">All status</option>@foreach(['pending','active','dormant','suspended','blacklisted','closed'] as $status)<option value="{{ $status }}" @selected(request('status') === $status)>{{ str($status)->headline() }}</option>@endforeach</select>
-    @if($canViewAllBranches)
-        <select name="branch_id" class="rounded border-slate-300"><option value="">All branches</option>@foreach($branches as $branch)<option value="{{ $branch->id }}" @selected(request('branch_id') == $branch->id)>{{ $branch->name }}</option>@endforeach</select>
-    @else
-        <select class="rounded border-slate-300" disabled>@foreach($branches as $branch)<option>{{ $branch->name }}</option>@endforeach</select>
+    @if(! $mustSearchClientDirectory)
+        <select name="client_type" class="rounded border-slate-300"><option value="">All types</option>@foreach(['individual', 'group', 'business', 'institution'] as $type)<option value="{{ $type }}" @selected(request('client_type') === $type)>{{ str($type)->headline() }}</option>@endforeach</select>
+        <select name="status" class="rounded border-slate-300"><option value="">All status</option>@foreach(['pending','active','dormant','suspended','blacklisted','closed'] as $status)<option value="{{ $status }}" @selected(request('status') === $status)>{{ str($status)->headline() }}</option>@endforeach</select>
+        @if($canViewAllBranches)
+            <select name="branch_id" class="rounded border-slate-300"><option value="">All branches</option>@foreach($branches as $branch)<option value="{{ $branch->id }}" @selected(request('branch_id') == $branch->id)>{{ $branch->name }}</option>@endforeach</select>
+        @else
+            <select class="rounded border-slate-300" disabled>@foreach($branches as $branch)<option>{{ $branch->name }}</option>@endforeach</select>
+        @endif
+        <select name="officer_id" class="rounded border-slate-300"><option value="">All officers</option>@foreach($officers as $officer)<option value="{{ $officer->id }}" @selected(request('officer_id') == $officer->id)>{{ $officer->name }}</option>@endforeach</select>
     @endif
-    <select name="officer_id" class="rounded border-slate-300"><option value="">All officers</option>@foreach($officers as $officer)<option value="{{ $officer->id }}" @selected(request('officer_id') == $officer->id)>{{ $officer->name }}</option>@endforeach</select>
-    <button class="rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white">Filter</button>
+    <button class="rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white">{{ $mustSearchClientDirectory ? 'Search' : 'Filter' }}</button>
 </form>
 
 <div class="overflow-hidden rounded border border-slate-200 bg-white shadow-sm">
@@ -48,7 +50,7 @@
             @empty
                 <tr>
                     <td class="p-6 text-center text-slate-500" colspan="7">
-                        {{ $hasClientSearch || $canBrowseClientList ? 'No clients found for this search.' : 'Search for a client by name, client number, phone, national ID, or use a filter to show branch results.' }}
+                        {{ $hasClientSearch || $canBrowseClientList ? 'No clients found for this search.' : 'Search for a client by name, client number, phone, or national ID.' }}
                     </td>
                 </tr>
             @endforelse
