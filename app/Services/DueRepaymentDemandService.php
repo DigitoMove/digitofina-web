@@ -22,7 +22,7 @@ class DueRepaymentDemandService
     public function build(User $user, CarbonImmutable $date, int $branchId = 0): array
     {
         $clientIds = $this->visibleLoans(Loan::query()->forOperationalListing(), $user, $branchId)
-            ->whereHas('schedules', fn (Builder $query): Builder => $this->openSchedules($query)->whereDate('due_date', $date->toDateString()))
+            ->whereHas('schedules', fn (Builder $query): Builder => $this->dueTodaySchedules($query, $date))
             ->pluck('client_id')
             ->unique()
             ->values();
@@ -35,12 +35,11 @@ class DueRepaymentDemandService
         }
 
         $schedules = LoanSchedule::query()
-            ->with(['loan.client', 'loan.officer', 'loan.product'])
+            ->with(['loan.client', 'loan.loanAccount', 'loan.officer', 'loan.product'])
             ->excludingCancelledLoans()
             ->forActiveArrearsLoans()
             ->whereHas('loan', fn (Builder $query): Builder => $this->visibleLoans($query, $user, $branchId)->whereIn('client_id', $clientIds))
-            ->tap(fn (Builder $query): Builder => $this->openSchedules($query))
-            ->whereDate('due_date', $date->toDateString())
+            ->tap(fn (Builder $query): Builder => $this->payableSchedules($query, $date))
             ->orderBy('due_date')
             ->orderBy('installment_number')
             ->get();
@@ -69,6 +68,24 @@ class DueRepaymentDemandService
         return $query
             ->where('outstanding_amount', '>', 0)
             ->where('status', '!=', 'paid');
+    }
+
+    private function dueTodaySchedules(Builder $query, CarbonImmutable $date): Builder
+    {
+        return $this->openSchedules($query)
+            ->whereDate('due_date', $date->toDateString());
+    }
+
+    private function payableSchedules(Builder $query, CarbonImmutable $date): Builder
+    {
+        $arrearsCutoffDate = $date->copy()->subDay()->toDateString();
+
+        return $this->openSchedules($query)
+            ->where(function (Builder $query) use ($date, $arrearsCutoffDate): Builder {
+                return $query
+                    ->whereDate('due_date', $date->toDateString())
+                    ->orWhereDate('due_date', '<', $arrearsCutoffDate);
+            });
     }
 
     /**
@@ -103,16 +120,20 @@ class DueRepaymentDemandService
     private function buildLoanDemand(Collection $loanSchedules, CarbonImmutable $date): array
     {
         $todaySchedules = $loanSchedules->filter(fn (LoanSchedule $schedule): bool => $schedule->due_date?->toDateString() === $date->toDateString());
+        $arrearsCutoffDate = $date->copy()->subDay();
+        $arrearsSchedules = $loanSchedules->filter(fn (LoanSchedule $schedule): bool => $schedule->due_date?->lt($arrearsCutoffDate) ?? false);
+        $todayAmount = $this->sumOutstanding($todaySchedules);
+        $arrearsAmount = $this->sumOutstanding($arrearsSchedules);
 
         return [
             'loan' => $loanSchedules->first()->loan,
-            'due_today_amount' => $this->sumOutstanding($todaySchedules),
-            'arrears_amount' => 0.0,
-            'total_amount' => $this->sumOutstanding($todaySchedules),
+            'due_today_amount' => $todayAmount,
+            'arrears_amount' => $arrearsAmount,
+            'total_amount' => $todayAmount + $arrearsAmount,
             'due_installments_count' => $todaySchedules->count(),
-            'arrears_installments_count' => 0,
-            'open_installments_count' => $todaySchedules->count(),
-            'schedules' => $todaySchedules->values(),
+            'arrears_installments_count' => $arrearsSchedules->count(),
+            'open_installments_count' => $todaySchedules->count() + $arrearsSchedules->count(),
+            'schedules' => $todaySchedules->merge($arrearsSchedules)->sortBy('due_date')->values(),
         ];
     }
 

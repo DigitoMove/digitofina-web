@@ -33,6 +33,7 @@ use App\Services\LoanService;
 use App\Services\ModuleService;
 use App\Services\ReportCatalogService;
 use App\Services\TransactionPostingService;
+use App\Support\CurrencyDenomination;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\ViewErrorBag;
@@ -2042,14 +2043,16 @@ it('applies rounded penalties to the missed schedule only', function () {
         'status' => 'pending',
         'days_overdue' => 0,
     ]);
+    $chargeableDays = max(0, app(BusinessCalendarService::class)->businessDaysBetween($missedSchedule->due_date, today(), $loan->organization_id ? (int) $loan->organization_id : null) - 1);
+    $expectedPenalty = (float) (ceil(((float) $missedSchedule->outstanding_amount * 0.01 * $chargeableDays) / CurrencyDenomination::MINIMUM_UNIT) * CurrencyDenomination::MINIMUM_UNIT);
 
     expect(app(LoanService::class)->applyOverduePenalties($loan, today()))->toBe(1)
-        ->and((float) $missedSchedule->fresh()->penalty_due)->toBe(200.0)
-        ->and((float) $missedSchedule->fresh()->outstanding_amount)->toBe(18050.0)
+        ->and((float) $missedSchedule->fresh()->penalty_due)->toBe($expectedPenalty)
+        ->and((float) $missedSchedule->fresh()->outstanding_amount)->toBe(17850.0 + $expectedPenalty)
         ->and((float) $futureSchedule->fresh()->penalty_due)->toBe(0.0)
-        ->and((float) $loan->fresh()->penalty_balance)->toBe(200.0);
+        ->and((float) $loan->fresh()->penalty_balance)->toBe($expectedPenalty);
 
-    expect((float) LoanPenalty::where('loan_schedule_id', $missedSchedule->id)->value('amount'))->toBe(200.0);
+    expect((float) LoanPenalty::where('loan_schedule_id', $missedSchedule->id)->value('amount'))->toBe($expectedPenalty);
 });
 
 it('shows arrears only for active branch loans', function () {
@@ -2424,6 +2427,7 @@ it('limits cashier repayment visibility to unpaid installments due today at thei
 
     loanWorkflowSchedule($todayLoan, today(), 'pending');
     loanWorkflowSchedule($todayLoan, today()->subDays(3), 'overdue');
+    loanWorkflowSchedule($todayLoan, today()->subDay(), 'overdue');
     loanWorkflowSchedule($futureLoan, today()->addDay(), 'pending');
     loanWorkflowSchedule($paidLoan, today(), 'paid', 0);
     loanWorkflowSchedule($approvedLoan, today(), 'pending');
@@ -2447,6 +2451,8 @@ it('limits cashier repayment visibility to unpaid installments due today at thei
         ->assertSee('Due today')
         ->assertSee('Repayment Calendar')
         ->assertSee('1001-LN-CASHIER-TODAY')
+        ->assertSee('UGX 600,000')
+        ->assertSee('1 missed included')
         ->assertDontSee('Reports')
         ->assertDontSee('1001-LN-CASHIER-FUTURE')
         ->assertDontSee('1002-LN-CASHIER-OTHER');
@@ -2463,17 +2469,17 @@ it('limits cashier repayment visibility to unpaid installments due today at thei
         ->assertDontSee('1002-LN-CASHIER-OTHER')
         ->assertDontSee('Open total')
         ->assertSee('Amount to pay')
-        ->assertDontSee('Earlier arrears')
-        ->assertDontSee('2 open installments')
-        ->assertSee('1 open installment')
-        ->assertSee('UGX 300,000.00');
+        ->assertSee('Missed UGX 300,000.00')
+        ->assertSee('1 missed installment')
+        ->assertSee('2 open installments')
+        ->assertSee('UGX 600,000.00');
 
     expect($this->actingAs($cashier)->get(route('arrears.index'))->isSuccessful())->toBeFalse();
 
     expect($this->actingAs($cashier)->get(route('reports.show', 'loan-accounts-in-arrears'))->isSuccessful())->toBeFalse();
 });
 
-it('shows one due repayment demand per client for installments due today only', function () {
+it('shows one due repayment demand per client with missed arrears included', function () {
     $user = loanWorkflowUser();
     $organization = loanWorkflowOrganizationWithModules($user, ['loans', 'reports']);
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
@@ -2494,11 +2500,13 @@ it('shows one due repayment demand per client for installments due today only', 
     $dueLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-DEMAND-DUE', 'active');
     $firstArrearsLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-DEMAND-ARR1', 'active');
     $secondArrearsLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-DEMAND-ARR2', 'active');
+    $futureLoan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-DEMAND-FUTURE', 'active');
     $arrearsOnlyLoan = loanWorkflowTrackedLoan($user, $arrearsOnlyClient, $product, '1001-LN-ARREARS-ONLY', 'active');
 
     loanWorkflowSchedule($dueLoan, today(), 'pending');
     loanWorkflowSchedule($firstArrearsLoan, today()->subDays(2), 'overdue');
     loanWorkflowSchedule($secondArrearsLoan, today()->subDays(5), 'overdue');
+    loanWorkflowSchedule($futureLoan, today()->addDay(), 'pending');
     loanWorkflowSchedule($arrearsOnlyLoan, today()->subDays(3), 'overdue');
 
     $response = $this->actingAs($user)->get(route('due-repayments.index'));
@@ -2507,9 +2515,11 @@ it('shows one due repayment demand per client for installments due today only', 
         ->assertSuccessful()
         ->assertSee('Grace Demand')
         ->assertSee('1001-LN-DEMAND-DUE')
-        ->assertDontSee('1001-LN-DEMAND-ARR1')
-        ->assertDontSee('1001-LN-DEMAND-ARR2')
-        ->assertSee('UGX 300,000.00')
+        ->assertSee('1001-LN-DEMAND-ARR1')
+        ->assertSee('1001-LN-DEMAND-ARR2')
+        ->assertSee('UGX 900,000.00')
+        ->assertSee('2 missed installments')
+        ->assertDontSee('1001-LN-DEMAND-FUTURE')
         ->assertDontSee('1001-LN-ARREARS-ONLY')
         ->assertDontSee('Arrears Only');
 

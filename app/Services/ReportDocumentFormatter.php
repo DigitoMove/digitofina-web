@@ -580,22 +580,38 @@ class ReportDocumentFormatter
     private function drawingXml(array $image): string
     {
         [$width, $height] = @getimagesize($image['path']) ?: [320, 120];
-        $ratio = max(1, $width / max(1, $height));
-        $toColumn = $ratio > 2 ? 3 : 2;
+        $dimensions = $this->constrainedLogoDimensions((int) $width, (int) $height);
 
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
-    <xdr:twoCellAnchor editAs="oneCell">
-        <xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
-        <xdr:to><xdr:col>'.$toColumn.'</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>4</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+    <xdr:oneCellAnchor>
+        <xdr:from><xdr:col>0</xdr:col><xdr:colOff>95250</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>95250</xdr:rowOff></xdr:from>
+        <xdr:ext cx="'.$dimensions['cx'].'" cy="'.$dimensions['cy'].'"/>
         <xdr:pic>
             <xdr:nvPicPr><xdr:cNvPr id="1" name="Organization Logo"/><xdr:cNvPicPr/></xdr:nvPicPr>
             <xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>
             <xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>
         </xdr:pic>
         <xdr:clientData/>
-    </xdr:twoCellAnchor>
+    </xdr:oneCellAnchor>
 </xdr:wsDr>';
+    }
+
+    /**
+     * @return array{cx: int, cy: int}
+     */
+    private function constrainedLogoDimensions(int $width, int $height): array
+    {
+        $maxWidth = 170;
+        $maxHeight = 70;
+        $scale = min($maxWidth / max(1, $width), $maxHeight / max(1, $height), 1);
+        $displayWidth = max(40, (int) round($width * $scale));
+        $displayHeight = max(24, (int) round($height * $scale));
+
+        return [
+            'cx' => $displayWidth * 9525,
+            'cy' => $displayHeight * 9525,
+        ];
     }
 
     private function textCell(string $cell, mixed $value, int $style = 0): string

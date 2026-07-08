@@ -113,7 +113,7 @@
                                 ['label' => 'Transaction Search', 'route' => 'reports.show', 'params' => ['report' => 'all-posted-transactions'], 'module' => 'teller', 'permissions' => ['post-transactions', 'manage-drawers', 'view-reports'], 'icon' => 'M10 5a5 5 0 1 0 3.5 8.5L19 19 M8 10h4'],
                                 ['label' => 'Drawer Ledger Postings', 'route' => 'expenses.index', 'module' => 'teller', 'permissions' => ['manage-drawers', 'manage-accounting'], 'icon' => 'M6 5h12v14H6z M9 9h6 M9 13h6 M9 17h3'],
                                 ['label' => 'Non-Cash Transactions', 'route' => 'non-cash.index', 'module' => 'teller', 'permissions' => ['post-transactions', 'manage-accounting'], 'icon' => 'M7 7h10M7 12h10M7 17h6 M4 5h16v14H4z'],
-                                ['label' => 'End of Day', 'route' => 'end-of-day.index', 'module' => 'teller', 'permissions' => ['manage-end-of-day', 'view-reports'], 'icon' => 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'],
+                                ['label' => 'End of Day', 'route' => 'end-of-day.index', 'module' => 'teller', 'permissions' => ['manage-end-of-day', 'manage-drawers', 'view-reports'], 'icon' => 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'],
                                 ['label' => 'Data Imports', 'route' => 'imports.index', 'module' => 'settings', 'permissions' => ['import-data', 'manage-settings'], 'icon' => 'M12 3v12m0 0 4-4m-4 4-4-4 M5 19h14 M5 15v4 M19 15v4'],
                             ],
                         ],

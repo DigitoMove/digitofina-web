@@ -293,15 +293,27 @@
                                 <div class="mt-1 text-xs font-medium text-slate-500">
                                     {{ (int) $repayment['due_installments_count'] }} installment{{ (int) $repayment['due_installments_count'] === 1 ? '' : 's' }} today
                                 </div>
+                                @if((int) $repayment['arrears_installments_count'] > 0)
+                                    <div class="text-xs font-semibold text-red-700">
+                                        {{ (int) $repayment['arrears_installments_count'] }} missed included
+                                    </div>
+                                @endif
                             </div>
                         </div>
                         <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                             @foreach($repayment['loans'] as $loanDemand)
-                                <span>{{ $loanDemand['loan']->loan_number }} · UGX {{ number_format((float) $loanDemand['total_amount'], 0) }}</span>
+                                <span>
+                                    {{ $loanDemand['loan']->loan_number }} · UGX {{ number_format((float) $loanDemand['total_amount'], 0) }}
+                                    @if((int) $loanDemand['arrears_installments_count'] > 0)
+                                        ({{ (int) $loanDemand['arrears_installments_count'] }} missed)
+                                    @endif
+                                </span>
                             @endforeach
                         </div>
                     @else
-                        @php($schedule = $repayment)
+                        @php
+                            $schedule = $repayment;
+                        @endphp
                         <div class="flex items-start justify-between gap-3">
                             <div>
                                 <a href="{{ route('loans.show', $schedule->loan) }}" class="font-semibold text-slate-950 hover:text-brand-700">{{ $schedule->loan->client->full_name }}</a>
@@ -340,7 +352,9 @@
         </div>
         <div class="mt-6 grid h-64 grid-cols-3 items-end gap-4 border-b border-slate-200 px-2 pb-3">
             @foreach ($cashRows as [$label, $amount, $barClass])
-                @php($height = max(8, ($amount / $cashMax) * 100))
+                @php
+                    $height = max(8, ($amount / $cashMax) * 100);
+                @endphp
                 <div class="flex h-full flex-col justify-end gap-3">
                     <div class="rounded-t-2xl {{ $barClass }} shadow-lg shadow-slate-200" style="height: {{ $height }}%"></div>
                     <div>
@@ -359,7 +373,9 @@
         <p class="text-sm text-slate-500">Enabled financial modules summarized in one view.</p>
         <div class="mt-6 space-y-5">
             @foreach ($portfolioRows as [$label, $amount, $barClass])
-                @php($width = ($amount / $portfolioTotal) * 100)
+                @php
+                    $width = ($amount / $portfolioTotal) * 100;
+                @endphp
                 <div>
                     <div class="mb-2 flex items-center justify-between gap-3 text-sm">
                         <span class="font-medium text-slate-700">{{ $label }}</span>
@@ -398,6 +414,54 @@
                 </div>
             </div>
         @endforeach
+    </div>
+</section>
+@endif
+
+@if(($transactionGraph ?? collect())->isNotEmpty())
+@php
+    $graphMoneyInTotal = (float) $transactionGraph->sum('money_in');
+    $graphMoneyOutTotal = (float) $transactionGraph->sum('money_out');
+    $graphNetTotal = $graphMoneyInTotal - $graphMoneyOutTotal;
+@endphp
+<section class="df-panel mt-6 p-5">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+            <h2 class="text-lg font-semibold text-slate-950">Money Transaction Trend</h2>
+            <p class="text-sm text-slate-500">Last 7 days of posted cash movement.</p>
+        </div>
+        <div class="grid gap-2 text-right text-xs sm:grid-cols-3 sm:text-left">
+            <div>
+                <div class="font-semibold text-emerald-700">UGX {{ number_format($graphMoneyInTotal, 0) }}</div>
+                <div class="text-slate-500">Money in</div>
+            </div>
+            <div>
+                <div class="font-semibold text-amber-700">UGX {{ number_format($graphMoneyOutTotal, 0) }}</div>
+                <div class="text-slate-500">Money out</div>
+            </div>
+            <div>
+                <div class="font-semibold {{ $graphNetTotal >= 0 ? 'text-slate-950' : 'text-red-700' }}">UGX {{ number_format($graphNetTotal, 0) }}</div>
+                <div class="text-slate-500">Net</div>
+            </div>
+        </div>
+    </div>
+    <div class="mt-6 grid h-72 grid-cols-7 items-end gap-2 border-b border-slate-200 px-1 pb-4 sm:gap-4">
+        @foreach($transactionGraph as $point)
+            <div class="flex h-full min-w-0 flex-col justify-end gap-3">
+                <div class="flex h-full items-end justify-center gap-1.5">
+                    <div class="w-full max-w-7 rounded-t-md bg-emerald-500" title="Money in UGX {{ number_format((float) $point['money_in'], 0) }}" style="height: {{ $point['in_height'] }}%"></div>
+                    <div class="w-full max-w-7 rounded-t-md bg-amber-500" title="Money out UGX {{ number_format((float) $point['money_out'], 0) }}" style="height: {{ $point['out_height'] }}%"></div>
+                </div>
+                <div class="text-center">
+                    <div class="text-xs font-semibold text-slate-700">{{ $point['label'] }}</div>
+                    <div class="text-[11px] text-slate-500">{{ $point['date']->format('d M') }}</div>
+                </div>
+            </div>
+        @endforeach
+    </div>
+    <div class="mt-4 flex flex-wrap items-center gap-4 text-xs font-medium text-slate-600">
+        <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>Money in</span>
+        <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-amber-500"></span>Money out</span>
     </div>
 </section>
 @endif

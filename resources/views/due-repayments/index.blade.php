@@ -9,11 +9,16 @@
     <a href="{{ route('dashboard') }}" class="rounded border px-4 py-2 text-sm font-semibold">Back to Dashboard</a>
 </div>
 
-<div class="mb-4 grid gap-3 sm:grid-cols-2">
+<div class="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
     <div class="rounded-lg border border-violet-200 bg-violet-50 p-4">
         <div class="text-xs font-semibold uppercase tracking-wide text-violet-700">Due on selected date</div>
         <div class="mt-2 text-xl font-semibold text-violet-950">UGX {{ number_format($todayAmount, 2) }}</div>
         <div class="text-sm text-violet-700">{{ $todayInstallmentCount }} installment{{ $todayInstallmentCount === 1 ? '' : 's' }}</div>
+    </div>
+    <div class="rounded-lg border border-red-200 bg-red-50 p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-red-700">Missed arrears</div>
+        <div class="mt-2 text-xl font-semibold text-red-950">UGX {{ number_format($arrearsAmount, 2) }}</div>
+        <div class="text-sm text-red-700">{{ $arrearsInstallmentCount }} missed installment{{ $arrearsInstallmentCount === 1 ? '' : 's' }}</div>
     </div>
     <div class="rounded-lg border border-slate-300 bg-slate-900 p-4 text-white">
         <div class="text-xs font-semibold uppercase tracking-wide text-slate-300">Total due today</div>
@@ -62,7 +67,9 @@
                     $client = $demand['client'];
                     $primaryLoan = $demand['primary_loan'];
                     $dueAmount = (float) $demand['due_today_amount'];
+                    $arrearsAmount = (float) $demand['arrears_amount'];
                     $openAmount = (float) $demand['total_amount'];
+                    $missedInstallmentCount = (int) $demand['arrears_installments_count'];
                     $loanCount = $demand['loans']->count();
                 @endphp
                 <tr class="border-t align-top">
@@ -79,7 +86,9 @@
                     <td>
                         <div class="space-y-2">
                             @foreach($demand['loans'] as $loanDemand)
-                                @php($loan = $loanDemand['loan'])
+                                @php
+                                    $loan = $loanDemand['loan'];
+                                @endphp
                                 <div class="rounded bg-slate-50 p-2">
                                     @if($isCashier)
                                         <span class="font-semibold text-slate-950">{{ $loan->loan_number }}</span>
@@ -87,8 +96,16 @@
                                         <a class="font-semibold text-blue-700" href="{{ route('loans.show', $loan) }}">{{ $loan->loan_number }}</a>
                                     @endif
                                     <div class="mt-1 text-xs text-slate-500">
-                                        {{ $loan->product->name }} ·
-                                        Due UGX {{ number_format((float) $loanDemand['due_today_amount'], 2) }}
+                                        {{ $loan->product->name }}
+                                        @if((float) $loanDemand['due_today_amount'] > 0)
+                                            <span class="ml-1">Today UGX {{ number_format((float) $loanDemand['due_today_amount'], 2) }}</span>
+                                        @endif
+                                        @if((int) $loanDemand['arrears_installments_count'] > 0)
+                                            <span class="ml-1 font-semibold text-red-700">
+                                                Missed UGX {{ number_format((float) $loanDemand['arrears_amount'], 2) }}
+                                                ({{ (int) $loanDemand['arrears_installments_count'] }} installment{{ (int) $loanDemand['arrears_installments_count'] === 1 ? '' : 's' }})
+                                            </span>
+                                        @endif
                                     </div>
                                 </div>
                             @endforeach
@@ -108,9 +125,15 @@
                     <td class="text-right">
                         <div class="font-semibold whitespace-nowrap text-violet-800">UGX {{ number_format($dueAmount, 2) }}</div>
                         <div class="text-xs text-slate-500">{{ (int) $demand['due_installments_count'] }} installment{{ (int) $demand['due_installments_count'] === 1 ? '' : 's' }}</div>
+                        @if($missedInstallmentCount > 0)
+                            <div class="mt-1 text-xs font-semibold text-red-700">+ UGX {{ number_format($arrearsAmount, 2) }} missed</div>
+                        @endif
                     </td>
                     <td class="pr-3 text-right">
                         <div class="font-semibold whitespace-nowrap text-slate-950">UGX {{ number_format($openAmount, 2) }}</div>
+                        @if($missedInstallmentCount > 0)
+                            <div class="text-xs text-red-700">{{ $missedInstallmentCount }} missed installment{{ $missedInstallmentCount === 1 ? '' : 's' }} included</div>
+                        @endif
                     </td>
                 </tr>
             @empty

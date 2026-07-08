@@ -36,4 +36,9 @@ class DrawerSession extends Model
     {
         return $this->hasMany(DrawerMovement::class);
     }
+
+    public function denominations(): HasMany
+    {
+        return $this->hasMany(CashDenomination::class);
+    }
 }

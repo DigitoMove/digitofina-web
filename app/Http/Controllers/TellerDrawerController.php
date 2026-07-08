@@ -9,7 +9,7 @@ use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
-use App\Models\LoanSchedule;
+use App\Models\JournalEntry;
 use App\Models\MakerCheckerRequest;
 use App\Models\TellerDrawer;
 use App\Models\Transaction;
@@ -17,7 +17,9 @@ use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\DrawerTransferService;
+use App\Services\DueRepaymentDemandService;
 use App\Services\FinancialControlService;
+use App\Services\LedgerAccountStatementService;
 use App\Services\TellerService;
 use App\Services\TenantContext;
 use App\Services\TransactionPostingService;
@@ -35,7 +37,7 @@ use InvalidArgumentException;
 
 class TellerDrawerController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, DueRepaymentDemandService $dueRepayments): View
     {
         abort_unless(
             $request->user()->canPerform('post-transactions')
@@ -49,7 +51,7 @@ class TellerDrawerController extends Controller
         $isCashier = $request->user()->isTellerCashier();
         $canApproveReversals = $request->user()->canPerform('approve-reversals') || $request->user()->canPerform('override-maker-checker');
         $today = CarbonImmutable::today();
-        $session = DrawerSession::with('drawer')->where('user_id', auth()->id())->where('status', 'open')->latest()->first();
+        $session = DrawerSession::with(['drawer.branch', 'denominations'])->where('user_id', auth()->id())->where('status', 'open')->latest()->first();
         $branchId = $session?->drawer?->branch_id ?? $request->user()->branch_id;
         $lookupScope = $request->string('lookup_scope')->toString();
         $accountSearch = $request->string('account_search')->trim()->toString();
@@ -99,19 +101,8 @@ class TellerDrawerController extends Controller
             : collect();
         $cashIn = (float) $todayMovements->where('type', 'cash_in')->sum('amount');
         $cashOut = (float) $todayMovements->where('type', 'cash_out')->sum('amount');
-        $dueToday = LoanSchedule::query()
-            ->with(['loan.client', 'loan.loanAccount'])
-            ->excludingCancelledLoans()
-            ->forActiveArrearsLoans()
-            ->whereHas('loan', function (Builder $query) use ($branchId): void {
-                $query->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId));
-            })
-            ->where('outstanding_amount', '>', 0)
-            ->where('status', '!=', 'paid')
-            ->whereDate('due_date', $today->toDateString())
-            ->orderBy('due_date')
-            ->limit(8)
-            ->get();
+        $dueTodayPayload = $dueRepayments->build($request->user(), $today, (int) $branchId);
+        $dueToday = $dueTodayPayload['demands']->take(8)->values();
         $drawers = TellerDrawer::query()
             ->withoutGlobalScope('tenant')
             ->with(['branch', 'assignedUser'])
@@ -250,9 +241,12 @@ class TellerDrawerController extends Controller
             'cashOut' => $cashOut,
             'netCashMovement' => $cashIn - $cashOut,
             'dueToday' => $dueToday,
-            'dueTodayAmount' => (float) $dueToday->sum('outstanding_amount'),
+            'dueTodayAmount' => (float) ($dueTodayPayload['summary']['total_amount'] ?? 0),
             'expectedBalance' => (float) ($session?->opening_balance ?? 0) + $cashIn - $cashOut,
             'receiptTransaction' => $this->receiptTransaction($request),
+            'ugxDenominations' => CurrencyDenomination::ugxDenominations(),
+            'currentDrawerReport' => $session ? $this->drawerEndOfDayReport($session) : null,
+            'closedDrawerReport' => $this->closedDrawerReport($request),
         ]);
     }
 
@@ -561,9 +555,11 @@ class TellerDrawerController extends Controller
 
     public function close(Request $request, FinancialControlService $financialControls): RedirectResponse
     {
-        abort_if($request->user()->isTellerCashier(), 403);
-
-        $data = $request->validate(['closing_balance' => ['required', 'numeric', 'min:0', CurrencyDenomination::validationRule()]]);
+        $data = $request->validate([
+            'closing_balance' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
+            'denominations' => ['nullable', 'array'],
+            'denominations.*' => ['nullable', 'integer', 'min:0'],
+        ]);
 
         try {
             $session = DrawerSession::query()->where('user_id', auth()->id())->where('status', 'open')->latest()->first();
@@ -572,12 +568,15 @@ class TellerDrawerController extends Controller
                 throw new InvalidArgumentException('Open your teller drawer before closing it.');
             }
 
-            $financialControls->closeDrawer($session, $request->user(), (float) $data['closing_balance']);
+            [$closingBalance, $denominations] = $this->closingBalanceFromRequest($data);
+            $closedSession = $financialControls->closeDrawer($session, $request->user(), $closingBalance, $denominations);
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['closing_balance' => $exception->getMessage()])->withInput();
         }
 
-        return back()->with('status', 'Drawer closed.');
+        return redirect()
+            ->route('teller.index', ['closed_session_id' => $closedSession->id])
+            ->with('status', 'Drawer closed. End-of-day report generated.');
     }
 
     public function transfer(StoreDrawerTransferRequest $request, DrawerTransferService $transfers): RedirectResponse
@@ -642,6 +641,179 @@ class TellerDrawerController extends Controller
         }
 
         return back()->with('status', 'Drawer closed.');
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function closedDrawerReport(Request $request): ?array
+    {
+        $closedSessionId = $request->integer('closed_session_id');
+
+        if (! $closedSessionId) {
+            return null;
+        }
+
+        $session = DrawerSession::query()
+            ->with(['drawer.branch', 'user', 'denominations'])
+            ->find($closedSessionId);
+
+        if (! $session) {
+            return null;
+        }
+
+        if ($request->user()->isTellerCashier() && (int) $session->user_id !== (int) $request->user()->id) {
+            abort(403);
+        }
+
+        $this->authorizeDrawerBranch($request, $session->drawer->branch);
+
+        return $this->drawerEndOfDayReport($session);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function drawerEndOfDayReport(DrawerSession $session): array
+    {
+        $session->loadMissing(['drawer.branch', 'user', 'denominations']);
+        $movements = DrawerMovement::query()
+            ->where('drawer_session_id', $session->id)
+            ->orderBy('created_at')
+            ->get();
+        $denominationRows = $this->denominationRows($session);
+        $hasClosingDenominations = $session->denominations->where('context', 'closing')->isNotEmpty();
+        $countedCash = (float) collect($denominationRows)->sum('total');
+
+        if (! $hasClosingDenominations && $session->status === 'closed') {
+            $countedCash = (float) $session->closing_balance;
+        }
+
+        $expectedCash = (float) ($session->expected_balance ?? $session->drawer?->current_balance ?? 0);
+
+        return [
+            'session' => $session,
+            'business_date' => CarbonImmutable::parse($session->closed_at ?? $session->opened_at ?? today())->toDateString(),
+            'cash_in' => (float) $movements->where('type', 'cash_in')->sum('amount'),
+            'cash_out' => (float) $movements->where('type', 'cash_out')->sum('amount'),
+            'net_cash' => (float) $movements->where('type', 'cash_in')->sum('amount') - (float) $movements->where('type', 'cash_out')->sum('amount'),
+            'expected_cash' => $expectedCash,
+            'counted_cash' => $countedCash,
+            'variance' => (float) ($session->variance ?? ($countedCash - $expectedCash)),
+            'denominations' => $denominationRows,
+            'has_closing_denominations' => $hasClosingDenominations,
+            'ledger_rows' => $this->drawerLedgerRows($session),
+        ];
+    }
+
+    /**
+     * @return array<int, array{denomination: int, label: string, quantity: int, total: float}>
+     */
+    private function denominationRows(DrawerSession $session): array
+    {
+        $saved = $session->denominations->where('context', 'closing')->keyBy('denomination');
+
+        return collect(CurrencyDenomination::ugxDenominations())
+            ->map(function (string $label, int $denomination) use ($saved): array {
+                $row = $saved->get($denomination);
+                $quantity = (int) ($row?->quantity ?? 0);
+
+                return [
+                    'denomination' => $denomination,
+                    'label' => $label,
+                    'quantity' => $quantity,
+                    'total' => (float) ($row?->total ?? ($denomination * $quantity)),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function drawerLedgerRows(DrawerSession $session): array
+    {
+        $entries = JournalEntry::query()
+            ->with(['lines.chartAccount', 'transaction.type'])
+            ->where('status', 'posted')
+            ->whereHas('transaction', fn (Builder $query): Builder => $query->where('drawer_session_id', $session->id))
+            ->get();
+
+        $ledgerLines = $entries
+            ->flatMap(fn (JournalEntry $entry) => $entry->lines->map(function ($line) use ($entry): ?array {
+                $account = $line->chartAccount;
+
+                if (! $account || $account->is_cash_account || $account->drawer_direction === 'none') {
+                    return null;
+                }
+
+                $intoDrawer = (float) $line->credit;
+                $outOfDrawer = (float) $line->debit;
+
+                if ($intoDrawer <= 0 && $outOfDrawer <= 0) {
+                    return null;
+                }
+
+                return [
+                    'account' => $account,
+                    'reference' => $entry->reference,
+                    'into_drawer' => $intoDrawer,
+                    'out_of_drawer' => $outOfDrawer,
+                ];
+            })->filter())
+            ->groupBy(fn (array $row): int => (int) $row['account']->id);
+
+        $statement = app(LedgerAccountStatementService::class);
+        $from = CarbonImmutable::parse('1900-01-01');
+        $to = CarbonImmutable::today();
+
+        return $ledgerLines
+            ->map(function ($rows) use ($statement, $from, $to, $session): array {
+                $account = $rows->first()['account'];
+                $intoDrawer = (float) $rows->sum('into_drawer');
+                $outOfDrawer = (float) $rows->sum('out_of_drawer');
+                $branchId = $account->branch_id ?: $session->drawer?->branch_id;
+                $statementPayload = $statement->build($account, $from, $to, $branchId);
+
+                return [
+                    'account' => $account,
+                    'transaction_count' => $rows->count(),
+                    'into_drawer' => $intoDrawer,
+                    'out_of_drawer' => $outOfDrawer,
+                    'net_drawer_movement' => $intoDrawer - $outOfDrawer,
+                    'ledger_balance' => (float) ($statementPayload['closing_balance'] ?? 0),
+                ];
+            })
+            ->sortBy(fn (array $row): string => $row['account']->name)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{0: float, 1: array<int|string, mixed>}
+     */
+    private function closingBalanceFromRequest(array $data): array
+    {
+        $denominations = $data['denominations'] ?? null;
+
+        $filledDenominations = is_array($denominations)
+            ? array_filter($denominations, fn (mixed $quantity): bool => $quantity !== null && $quantity !== '')
+            : [];
+
+        if ($filledDenominations !== []) {
+            $total = collect(CurrencyDenomination::ugxDenominations())
+                ->sum(fn (string $label, int $denomination): int => $denomination * (int) max(0, (int) ($denominations[$denomination] ?? $denominations[(string) $denomination] ?? 0)));
+
+            return [(float) $total, $denominations];
+        }
+
+        if (! array_key_exists('closing_balance', $data) || $data['closing_balance'] === null || $data['closing_balance'] === '') {
+            throw new InvalidArgumentException('Enter the closing balance or count the drawer denominations.');
+        }
+
+        return [(float) $data['closing_balance'], []];
     }
 
     public function destroyDrawer(Request $request, TellerDrawer $drawer, AuditLogger $auditLogger): RedirectResponse

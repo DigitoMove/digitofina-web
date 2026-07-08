@@ -6,6 +6,7 @@ use App\Jobs\ProcessMobileMoneyCallback;
 use App\Jobs\SendSmsMessage;
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\Module;
 use App\Models\Organization;
 use App\Models\PaymentProvider;
 use App\Models\Permission;
@@ -16,6 +17,8 @@ use App\Models\SavingsProduct;
 use App\Models\SavingsTransaction;
 use App\Models\SmsProvider;
 use App\Models\User;
+use App\Services\ModuleService;
+use App\Support\ModuleCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
@@ -139,11 +142,14 @@ it('generates branded savings statement spreadsheets', function () {
     $content = Storage::disk('local')->get($export->fresh()->path);
     $worksheet = queueOpsXlsxPart($content, 'xl/worksheets/sheet1.xml');
     $contentTypes = queueOpsXlsxPart($content, '[Content_Types].xml');
+    $drawing = queueOpsXlsxPart($content, 'xl/drawings/drawing1.xml');
     $logo = queueOpsXlsxPart($content, 'xl/media/logo.png');
 
     expect(substr($content, 0, 2))->toBe('PK')
         ->and($worksheet)->toContain('Savings Account Transactions', 'Account Name:', 'Account Number:', $account->account_number, 'Opening Balance', 'NASSANGA FATUMA thru mc')
         ->and($contentTypes)->toContain('image/png')
+        ->and($drawing)->toContain('<xdr:oneCellAnchor>', 'cx="381000"', 'cy="228600"')
+        ->and($drawing)->not->toContain('<xdr:twoCellAnchor')
         ->and($logo)->not->toBe('');
 });
 
@@ -183,6 +189,8 @@ function queueOpsUser(array $permissions): User
         $role->permissions()->syncWithoutDetaching([$permissionModel->id]);
     }
 
+    queueOpsEnableModules($organization, $permissions);
+
     return User::factory()->create([
         'organization_id' => $organization->id,
         'branch_id' => $branch->id,
@@ -191,6 +199,40 @@ function queueOpsUser(array $permissions): User
         'status' => 'active',
         'is_active' => true,
     ]);
+}
+
+/**
+ * @param  array<int, string>  $permissions
+ */
+function queueOpsEnableModules(Organization $organization, array $permissions): void
+{
+    app(ModuleService::class)->syncCatalog();
+
+    $slugs = collect($permissions)
+        ->map(fn (string $permission): ?string => ModuleCatalog::moduleForPermission($permission))
+        ->filter()
+        ->values();
+
+    if (in_array('manage-settings', $permissions, true)) {
+        $slugs = $slugs->merge(['settings', 'sms']);
+    }
+
+    if (in_array('manage-accounts', $permissions, true)) {
+        $slugs = $slugs->merge(['clients', 'savings']);
+    }
+
+    $slugs = $slugs
+        ->flatMap(fn (string $slug): array => [$slug, ...(ModuleCatalog::dependencies()[$slug] ?? [])])
+        ->unique()
+        ->values();
+
+    $organization->modules()->syncWithoutDetaching(
+        Module::query()
+            ->whereIn('slug', $slugs)
+            ->pluck('id')
+            ->mapWithKeys(fn (int $id): array => [$id => ['is_enabled' => true, 'enabled_at' => now()]])
+            ->all()
+    );
 }
 
 function queueOpsSavingsAccount(User $user): SavingsAccount

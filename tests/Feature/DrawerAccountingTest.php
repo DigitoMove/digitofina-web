@@ -338,6 +338,8 @@ it('shows only current-day cashier transactions on the cashier dashboard', funct
     $response->assertSuccessful()
         ->assertViewHas('cashierRecentTransactions', fn ($transactions): bool => $transactions->contains('reference', $todayReference)
             && ! $transactions->contains('reference', $yesterdayReference))
+        ->assertViewHas('transactionGraph', fn ($graph): bool => (float) ($graph->first(fn (array $point): bool => $point['date']->isToday())['money_in'] ?? 0) === 25_000.0)
+        ->assertSee('Money Transaction Trend')
         ->assertSee($todayReference)
         ->assertDontSee($yesterdayReference);
 });

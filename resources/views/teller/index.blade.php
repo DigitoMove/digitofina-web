@@ -47,6 +47,87 @@
     @endforeach
 </div>
 
+@if($closedDrawerReport)
+    @php
+        $closedSession = $closedDrawerReport['session'];
+        $closedLedgerRows = $closedDrawerReport['ledger_rows'];
+    @endphp
+    <section class="df-panel mt-6 overflow-hidden">
+        <div class="border-b border-slate-200 px-5 py-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h2 class="font-semibold text-slate-950">End-of-Day Closing Report</h2>
+                    <p class="df-muted">{{ $closedSession->drawer?->code }} · {{ $closedSession->drawer?->name }} · {{ $closedSession->user?->name }} · {{ $closedSession->closed_at?->format('d M Y H:i') }}</p>
+                </div>
+                <span class="df-badge border-emerald-500/20 bg-emerald-50 text-emerald-700">Closed</span>
+            </div>
+        </div>
+        <div class="grid gap-5 p-5 xl:grid-cols-[0.95fr_1.05fr]">
+            <div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <div class="df-soft-panel p-4 text-sm">
+                        <div class="text-slate-500">Expected cash</div>
+                        <div class="mt-1 text-lg font-semibold text-slate-950">UGX {{ number_format((float) $closedDrawerReport['expected_cash'], 2) }}</div>
+                    </div>
+                    <div class="df-soft-panel p-4 text-sm">
+                        <div class="text-slate-500">Counted cash</div>
+                        <div class="mt-1 text-lg font-semibold text-slate-950">UGX {{ number_format((float) $closedDrawerReport['counted_cash'], 2) }}</div>
+                    </div>
+                    <div class="df-soft-panel p-4 text-sm">
+                        <div class="text-slate-500">Cash in</div>
+                        <div class="mt-1 text-lg font-semibold text-emerald-700">UGX {{ number_format((float) $closedDrawerReport['cash_in'], 2) }}</div>
+                    </div>
+                    <div class="df-soft-panel p-4 text-sm">
+                        <div class="text-slate-500">Cash out</div>
+                        <div class="mt-1 text-lg font-semibold text-amber-700">UGX {{ number_format((float) $closedDrawerReport['cash_out'], 2) }}</div>
+                    </div>
+                </div>
+
+                <div class="mt-4 overflow-hidden rounded-lg border border-slate-200">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600"><tr><th class="p-3">Denomination</th><th class="text-right">Quantity</th><th class="text-right">Total</th></tr></thead>
+                        <tbody>
+                            @foreach($closedDrawerReport['denominations'] as $row)
+                                <tr class="border-t border-slate-200">
+                                    <td class="p-3">{{ $row['label'] }}</td>
+                                    <td class="text-right">{{ number_format($row['quantity']) }}</td>
+                                    <td class="text-right font-semibold">UGX {{ number_format((float) $row['total'], 2) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="overflow-hidden rounded-lg border border-slate-200">
+                <div class="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">Ledger / E-Cash Movement</div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-white text-slate-600">
+                            <tr><th class="p-3">Ledger</th><th class="text-right">Into drawer</th><th class="text-right">Out of drawer</th><th class="text-right">Ledger balance</th></tr>
+                        </thead>
+                        <tbody>
+                            @forelse($closedLedgerRows as $row)
+                                <tr class="border-t border-slate-200">
+                                    <td class="p-3">
+                                        <div class="font-semibold text-slate-950">{{ $row['account']->name }}</div>
+                                        <div class="text-xs text-slate-500">{{ $row['account']->code }} · {{ number_format($row['transaction_count']) }} transaction{{ $row['transaction_count'] === 1 ? '' : 's' }}</div>
+                                    </td>
+                                    <td class="text-right">UGX {{ number_format((float) $row['into_drawer'], 2) }}</td>
+                                    <td class="text-right">UGX {{ number_format((float) $row['out_of_drawer'], 2) }}</td>
+                                    <td class="text-right font-semibold">UGX {{ number_format((float) $row['ledger_balance'], 2) }}</td>
+                                </tr>
+                            @empty
+                                <tr><td colspan="4" class="p-6 text-center text-slate-500">No ledger or e-cash drawer activity for this session.</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+@endif
+
 <div class="mt-6 grid items-start gap-5 xl:grid-cols-3">
     @if($isCashier || ! $canOpenForTellers || $session)
     <section class="df-panel p-5 xl:col-span-1">
@@ -110,6 +191,71 @@
             </div>
         @endunless
     </section>
+    @endif
+
+    @if($session)
+        <section class="df-panel p-5 xl:col-span-2">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h2 class="font-semibold text-slate-950">End-of-Day Drawer Count</h2>
+                    <p class="df-muted">Count the drawer by UGX notes and coins before closing.</p>
+                </div>
+                <span class="df-badge">UGX</span>
+            </div>
+            <form method="POST" action="{{ route('teller.close') }}" class="mt-4 grid gap-4" data-confirm-title="Close drawer" data-confirm-message="This will close the active drawer session and generate the end-of-day report." data-confirm-label="Close drawer" data-confirm-tone="danger">
+                @csrf
+                <div class="overflow-hidden rounded-lg border border-slate-200">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600"><tr><th class="p-3">Denomination</th><th class="w-32 text-right">Quantity</th><th class="text-right">Value</th></tr></thead>
+                        <tbody>
+                            @foreach($ugxDenominations as $denomination => $label)
+                                <tr class="border-t border-slate-200">
+                                    <td class="p-3 font-medium text-slate-950">{{ $label }}</td>
+                                    <td class="text-right">
+                                        <input name="denominations[{{ $denomination }}]" type="number" min="0" step="1" value="{{ old("denominations.{$denomination}") }}" placeholder="0" class="w-24 rounded border-slate-300 text-right text-sm">
+                                    </td>
+                                    <td class="text-right text-slate-600">UGX {{ number_format($denomination, 0) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                <div class="grid gap-3 md:grid-cols-[1fr_auto]">
+                    <label class="text-sm font-semibold text-slate-700">Manual closing balance
+                        <input name="closing_balance" type="number" min="0" step="100" value="{{ old('closing_balance', $drawer?->current_balance) }}" class="mt-1" placeholder="Closing balance" required>
+                    </label>
+                    <div class="flex items-end">
+                        <button class="df-action-danger w-full justify-center">Close Drawer</button>
+                    </div>
+                </div>
+            </form>
+
+            @if($currentDrawerReport && filled($currentDrawerReport['ledger_rows']))
+                <div class="mt-5 overflow-hidden rounded-lg border border-slate-200">
+                    <div class="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">Ledger / E-Cash In This Drawer</div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-white text-slate-600">
+                                <tr><th class="p-3">Ledger</th><th class="text-right">Into drawer</th><th class="text-right">Out of drawer</th><th class="text-right">Current ledger balance</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach($currentDrawerReport['ledger_rows'] as $row)
+                                    <tr class="border-t border-slate-200">
+                                        <td class="p-3">
+                                            <div class="font-semibold text-slate-950">{{ $row['account']->name }}</div>
+                                            <div class="text-xs text-slate-500">{{ $row['account']->code }}</div>
+                                        </td>
+                                        <td class="text-right">UGX {{ number_format((float) $row['into_drawer'], 2) }}</td>
+                                        <td class="text-right">UGX {{ number_format((float) $row['out_of_drawer'], 2) }}</td>
+                                        <td class="text-right font-semibold">UGX {{ number_format((float) $row['ledger_balance'], 2) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @endif
+        </section>
     @endif
 
     @if($canOpenForTellers)
@@ -457,12 +603,35 @@
                     <tr><th class="p-3">Name</th><th>Telephone</th><th>Account</th><th class="text-right">Amount</th></tr>
                 </thead>
                 <tbody>
-                    @forelse($dueToday as $schedule)
+                    @forelse($dueToday as $demand)
+                        @php
+                            $client = $demand['client'];
+                            $missedInstallmentCount = (int) $demand['arrears_installments_count'];
+                        @endphp
                         <tr class="border-t border-slate-200">
-                            <td class="p-3 font-medium text-slate-950">{{ $schedule->loan->client->full_name }}</td>
-                            <td>{{ $schedule->loan->client->phone }}</td>
-                            <td>{{ $schedule->loan->loanAccount?->account_number ?? $schedule->loan->loan_number }}</td>
-                            <td class="text-right font-semibold">UGX {{ number_format($schedule->outstanding_amount, 0) }}</td>
+                            <td class="p-3 font-medium text-slate-950">{{ $client->full_name }}</td>
+                            <td>{{ $client->phone }}</td>
+                            <td>
+                                <div class="space-y-1 py-2">
+                                    @foreach($demand['loans'] as $loanDemand)
+                                        @php
+                                            $loan = $loanDemand['loan'];
+                                        @endphp
+                                        <div>
+                                            <span class="font-medium text-slate-950">{{ $loan->loanAccount?->account_number ?? $loan->loan_number }}</span>
+                                            @if((int) $loanDemand['arrears_installments_count'] > 0)
+                                                <span class="ml-1 text-xs font-semibold text-red-700">{{ (int) $loanDemand['arrears_installments_count'] }} missed</span>
+                                            @endif
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </td>
+                            <td class="text-right font-semibold">
+                                UGX {{ number_format((float) $demand['total_amount'], 0) }}
+                                @if($missedInstallmentCount > 0)
+                                    <div class="text-xs font-medium text-red-700">{{ $missedInstallmentCount }} missed included</div>
+                                @endif
+                            </td>
                         </tr>
                     @empty
                         <tr><td colspan="4" class="p-8 text-center text-slate-500">No installments due today.</td></tr>

@@ -5,8 +5,11 @@ use App\Models\ChartAccount;
 use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
 use App\Models\JournalEntry;
+use App\Models\JournalLine;
 use App\Models\Role;
 use App\Models\TellerDrawer;
+use App\Models\Transaction;
+use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\ReportCatalogService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -92,6 +95,7 @@ it('summarizes selected ledger accounts by day with opening and closing balances
     accountingReportJournalEntry($mtn, $branch, '2026-02-01', 'debit', 50, 'MTN-IN-2');
     accountingReportJournalEntry($mtn, $branch, '2026-02-01', 'credit', 125, 'MTN-OUT-1');
     accountingReportJournalEntry($mtn, $branch, '2026-02-02', 'credit', 75, 'MTN-OUT-2');
+    accountingReportLineBackedDrawerLedgerEntry($mtn, $branch, $admin, '2026-02-02', 25);
     accountingReportJournalEntry($airtel, $branch, '2026-02-01', 'debit', 200, 'AIR-IN-1');
     accountingReportJournalEntry($unselected, $branch, '2026-02-01', 'debit', 999, 'BANK-IN-1');
 
@@ -114,14 +118,28 @@ it('summarizes selected ledger accounts by day with opening and closing balances
         ->and($mtnFirstDay['Money In'])->toBe('UGX 350.00')
         ->and($mtnFirstDay['Money Out'])->toBe('UGX 125.00')
         ->and($mtnFirstDay['Balance'])->toBe('UGX 1,225.00')
-        ->and($mtnSecondDay['Money Out'])->toBe('UGX 75.00')
-        ->and($mtnSecondDay['Balance'])->toBe('UGX 1,150.00')
+        ->and($mtnSecondDay['Money Out'])->toBe('UGX 100.00')
+        ->and($mtnSecondDay['Balance'])->toBe('UGX 1,125.00')
         ->and($airtelFirstDay['Money In'])->toBe('UGX 200.00')
         ->and($report['summary']['Money in'])->toBe('UGX 550.00')
-        ->and($report['summary']['Money out'])->toBe('UGX 200.00')
-        ->and($report['summary']['Closing balance'])->toBe('UGX 1,350.00')
+        ->and($report['summary']['Money out'])->toBe('UGX 225.00')
+        ->and($report['summary']['Closing balance'])->toBe('UGX 1,325.00')
         ->and($mtnFirstDay['_links']['Account'])->toContain('reports/gl-account-transactions')
         ->and($rows->contains(fn (array $row): bool => str_contains($row['Account'], 'Unselected Bank Account')))->toBeFalse();
+
+    $drillDown = app(ReportCatalogService::class)->generate('gl-account-transactions', [
+        'from' => '2026-02-02',
+        'to' => '2026-02-02',
+        'branch_id' => $branch->id,
+        'chart_account_id' => $mtn->id,
+    ], $admin);
+
+    expect($drillDown['rows']->where('Reference', 'DRAW-LINE-MTN')->first())
+        ->toMatchArray([
+            'Account' => 'MTN Merchant Code',
+            'Entry' => 'Credit',
+            'Amount' => 'UGX 25.00',
+        ]);
 
     $this->actingAs($admin)
         ->get(route('reports.show', [
@@ -248,6 +266,48 @@ function accountingReportJournalEntry(ChartAccount $account, Branch $branch, str
         'status' => 'posted',
         'posted_at' => $date.' 12:00:00',
     ]);
+}
+
+function accountingReportLineBackedDrawerLedgerEntry(ChartAccount $merchant, Branch $branch, User $user, string $date, int $amount): void
+{
+    $cash = accountingReportLedgerAccount($branch, '1001-CASH', 'Branch Cash');
+    $cash->update(['is_cash_account' => true, 'is_system' => true]);
+    $drawer = accountingReportDrawer($branch, $user, 'LINE-DR', 100000);
+    $session = accountingReportDrawerSession($drawer, $user, 100000);
+    $type = TransactionType::create([
+        'name' => 'Drawer GL Cash In',
+        'code' => 'drawer_gl_cash_in',
+        'direction' => 'credit',
+        'affects_cash_drawer' => true,
+        'is_active' => true,
+    ]);
+    $transaction = Transaction::create([
+        'transaction_type_id' => $type->id,
+        'drawer_session_id' => $session->id,
+        'branch_id' => $branch->id,
+        'user_id' => $user->id,
+        'reference' => 'DRAW-LINE-MTN',
+        'amount' => $amount,
+        'description' => 'Merchant code withdrawal into drawer',
+        'status' => 'posted',
+        'posted_at' => $date.' 12:00:00',
+    ]);
+    $journal = JournalEntry::create([
+        'branch_id' => $branch->id,
+        'chart_account_id' => $cash->id,
+        'journal_date' => $date,
+        'reference' => $transaction->reference,
+        'transaction_id' => $transaction->id,
+        'account_name' => $cash->name,
+        'entry_type' => 'debit',
+        'amount' => $amount,
+        'memo' => 'Line-backed drawer ledger report test',
+        'status' => 'posted',
+        'posted_at' => $date.' 12:00:00',
+    ]);
+
+    JournalLine::create(['journal_entry_id' => $journal->id, 'chart_account_id' => $cash->id, 'debit' => $amount, 'credit' => 0, 'narration' => 'Cash received into teller drawer']);
+    JournalLine::create(['journal_entry_id' => $journal->id, 'chart_account_id' => $merchant->id, 'debit' => 0, 'credit' => $amount, 'narration' => 'Merchant code withdrawal']);
 }
 
 function accountingReportDrawer(Branch $branch, User $user, string $code, int $balance): TellerDrawer

@@ -3,6 +3,7 @@
 use App\Models\Account;
 use App\Models\AccountType;
 use App\Models\Branch;
+use App\Models\CashDenomination;
 use App\Models\ChartAccount;
 use App\Models\Client;
 use App\Models\DrawerMovement;
@@ -1562,10 +1563,9 @@ it('allows an organization admin to open an organization drawer for a teller', f
         ->assigned_user_id->toBe($teller->id);
 });
 
-it('allows a cashier to open only their assigned drawer while an admin closes it', function () {
+it('allows a cashier to open only their assigned drawer and close it with denominations', function () {
     [$organization, $branch] = drawerAdminOrganization();
     enableTellerModule($organization);
-    $admin = drawerAdminUser($organization, $branch->id, 'organization-admin', ['manage-organization', 'manage-users', 'manage-drawers']);
     $cashier = drawerAdminUser($organization, $branch->id, 'teller-cashier', ['post-transactions', 'post-repayments', 'request-reversals']);
     $drawer = TellerDrawer::create([
         'organization_id' => $organization->id,
@@ -1602,15 +1602,34 @@ it('allows a cashier to open only their assigned drawer while an admin closes it
 
     expect($drawer->fresh()->status)->toBe('open');
 
-    $cashierCloseResponse = $this->actingAs($cashier)
-        ->post(route('teller.close'), ['closing_balance' => 1000]);
-
-    expect($cashierCloseResponse->isSuccessful())->toBeFalse()
-        ->and($drawer->fresh()->status)->toBe('open');
-
-    $this->actingAs($admin)
-        ->post(route('teller.drawers.close', $drawer), ['closing_balance' => 1000])
+    $this->actingAs($cashier)
+        ->post(route('teller.close'), [
+            'denominations' => [
+                1000 => 1,
+            ],
+        ])
+        ->assertRedirect()
         ->assertSessionHasNoErrors();
+
+    $session = DrawerSession::query()->where('user_id', $cashier->id)->latest()->firstOrFail();
+    $denomination = CashDenomination::query()
+        ->where('drawer_session_id', $session->id)
+        ->where('denomination', 1000)
+        ->first();
+
+    expect($drawer->fresh()->status)->toBe('closed')
+        ->and($session->status)->toBe('closed')
+        ->and((float) $session->closing_balance)->toBe(1000.0)
+        ->and($denomination)->not->toBeNull()
+        ->and($denomination->quantity)->toBe(1)
+        ->and((float) $denomination->total)->toBe(1000.0);
+
+    $this->actingAs($cashier)
+        ->get(route('teller.index', ['closed_session_id' => $session->id]))
+        ->assertSuccessful()
+        ->assertSee('End-of-Day Closing Report')
+        ->assertSee('1,000 note')
+        ->assertSee('UGX 1,000.00');
 });
 
 it('shows selected organization drawers and tellers to a super admin', function () {

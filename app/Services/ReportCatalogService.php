@@ -859,12 +859,29 @@ class ReportCatalogService
 
     private function journalEntries(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user, ?int $chartAccountId = null, string $search = ''): array
     {
+        $selectedChartAccount = $chartAccountId ? ChartAccount::query()->find($chartAccountId) : null;
         $query = JournalEntry::query()
-            ->with(['chartAccount', 'transaction'])
+            ->with([
+                'chartAccount',
+                'transaction',
+                'lines' => fn (HasMany $query): HasMany => $chartAccountId ? $query->where('chart_account_id', $chartAccountId) : $query,
+            ])
             ->whereBetween(DB::raw('coalesce(posted_at, created_at)'), [$from, $to])
-            ->when($chartAccountId, fn (Builder $query, int $chartAccountId): Builder => $query->where('chart_account_id', $chartAccountId))
+            ->when($chartAccountId, fn (Builder $query, int $chartAccountId): Builder => $query->where(function (Builder $query) use ($chartAccountId): void {
+                $query->where('chart_account_id', $chartAccountId)
+                    ->orWhereHas('lines', fn (Builder $query): Builder => $query->where('chart_account_id', $chartAccountId));
+            }))
             ->when($search !== '', fn (Builder $query): Builder => $this->searchJournalEntries($query, $search))
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user));
+
+        if ($selectedChartAccount) {
+            [$debitExpression, $debitBindings] = $this->journalEntryStatementAmountExpression($selectedChartAccount, 'debit', 'debit');
+            [$creditExpression, $creditBindings] = $this->journalEntryStatementAmountExpression($selectedChartAccount, 'credit', 'credit');
+            $query
+                ->select('journal_entries.*')
+                ->selectRaw("({$debitExpression}) AS report_debit", $debitBindings)
+                ->selectRaw("({$creditExpression}) AS report_credit", $creditBindings);
+        }
 
         $canDelete = $this->canAdminReverseTransactions($user);
 
@@ -873,19 +890,28 @@ class ReportCatalogService
             ->orderByDesc('created_at')
             ->limit($limit)
             ->get()
-            ->map(fn (JournalEntry $entry): array => [
-                'Date' => ($entry->posted_at ?? $entry->created_at)?->format('d M Y H:i:s'),
-                'Reference' => $entry->reference,
-                'Account' => $entry->chartAccount?->name ?? $entry->account_name,
-                'Entry' => Str::headline($entry->entry_type),
-                'Amount' => $this->money((float) $entry->amount),
-                'Memo' => $entry->memo ?? $entry->description,
-                'Action' => $entry->transaction && $canDelete && $this->canDeleteTransactionRow($entry->transaction) ? 'Delete' : 'N/A',
-                '_delete_reference' => $entry->transaction && $canDelete && $this->canDeleteTransactionRow($entry->transaction) ? $entry->transaction->reference : null,
-                '_links' => $entry->transaction ? [
-                    'Reference' => route('receipts.show', $entry->transaction),
-                ] : [],
-            ]);
+            ->map(function (JournalEntry $entry) use ($canDelete, $selectedChartAccount): array {
+                $debit = (float) ($entry->getAttribute('report_debit') ?? 0);
+                $credit = (float) ($entry->getAttribute('report_credit') ?? 0);
+                $amount = $selectedChartAccount ? max($debit, $credit) : (float) $entry->amount;
+                $entryType = $selectedChartAccount
+                    ? ($debit > 0 && $credit > 0 ? 'Split' : ($debit > 0 ? 'Debit' : 'Credit'))
+                    : Str::headline($entry->entry_type);
+
+                return [
+                    'Date' => ($entry->posted_at ?? $entry->created_at)?->format('d M Y H:i:s'),
+                    'Reference' => $entry->reference,
+                    'Account' => $selectedChartAccount?->name ?? $entry->chartAccount?->name ?? $entry->account_name,
+                    'Entry' => $entryType,
+                    'Amount' => $this->money($amount),
+                    'Memo' => $entry->lines->first()?->narration ?? $entry->memo ?? $entry->description,
+                    'Action' => $entry->transaction && $canDelete && $this->canDeleteTransactionRow($entry->transaction) ? 'Delete' : 'N/A',
+                    '_delete_reference' => $entry->transaction && $canDelete && $this->canDeleteTransactionRow($entry->transaction) ? $entry->transaction->reference : null,
+                    '_links' => $entry->transaction ? [
+                        'Reference' => route('receipts.show', $entry->transaction),
+                    ] : [],
+                ];
+            });
 
         return [['Date', 'Reference', 'Account', 'Entry', 'Amount', 'Memo', 'Action'], $rows, ['Entries' => number_format($query->count())]];
     }
@@ -926,27 +952,9 @@ class ReportCatalogService
             return $this->emptyDailyLedgerSummary();
         }
 
-        $dateExpression = $this->journalDateExpression();
-        $openingTotals = JournalEntry::query()
-            ->whereIn('chart_account_id', $accounts->keys())
-            ->where('status', 'posted')
-            ->whereRaw($dateExpression.' < ?', [$from->toDateString()])
-            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
-            ->selectRaw("chart_account_id, sum(case when entry_type = 'debit' then amount else 0 end) as debit_total, sum(case when entry_type = 'credit' then amount else 0 end) as credit_total")
-            ->groupBy('chart_account_id')
-            ->get()
+        $openingTotals = $this->ledgerMovementTotals($accounts->keys(), null, $from, $branchId, $user, before: true)
             ->keyBy('chart_account_id');
-        $dailyTotals = JournalEntry::query()
-            ->whereIn('chart_account_id', $accounts->keys())
-            ->where('status', 'posted')
-            ->whereRaw($dateExpression.' between ? and ?', [$from->toDateString(), $to->toDateString()])
-            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
-            ->selectRaw("chart_account_id, {$dateExpression} as business_date, count(*) as entry_count, sum(case when entry_type = 'debit' then amount else 0 end) as debit_total, sum(case when entry_type = 'credit' then amount else 0 end) as credit_total")
-            ->groupBy('chart_account_id')
-            ->groupByRaw($dateExpression)
-            ->orderBy('chart_account_id')
-            ->orderBy('business_date')
-            ->get()
+        $dailyTotals = $this->ledgerMovementTotals($accounts->keys(), $from, $to, $branchId, $user, daily: true)
             ->groupBy('chart_account_id');
 
         if ($chartAccountIds === []) {
@@ -1406,13 +1414,7 @@ class ReportCatalogService
         }
 
         $start = $cumulative ? Carbon::parse('1900-01-01')->startOfDay() : $from;
-        $totals = JournalEntry::query()
-            ->whereIn('chart_account_id', $accounts->keys())
-            ->whereBetween(DB::raw('coalesce(posted_at, created_at)'), [$start, $to])
-            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
-            ->selectRaw("chart_account_id, sum(case when entry_type = 'debit' then amount else 0 end) as debit_total, sum(case when entry_type = 'credit' then amount else 0 end) as credit_total")
-            ->groupBy('chart_account_id')
-            ->get()
+        $totals = $this->ledgerMovementTotals($accounts->keys(), $start, $to, $branchId, $user)
             ->keyBy('chart_account_id');
 
         return $accounts
@@ -1476,6 +1478,114 @@ class ReportCatalogService
             'branch_id' => $branchId,
             ...$extra,
         ], fn (mixed $value): bool => $value !== null && $value !== ''));
+    }
+
+    /**
+     * @param  Collection<int, int>  $accountIds
+     * @return Collection<int, object>
+     */
+    private function ledgerMovementTotals(Collection $accountIds, ?CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, bool $daily = false, bool $before = false): Collection
+    {
+        if ($accountIds->isEmpty()) {
+            return collect();
+        }
+
+        $ids = $accountIds->values()->all();
+        $dateExpression = $this->journalDateExpression('journal_entries');
+        $dateSelect = $daily ? ", {$dateExpression} as business_date" : '';
+        $dateGroup = $daily ? [$dateExpression] : [];
+        $branchScope = $this->effectiveBranchId($branchId, $user);
+        $applyDateScope = function ($query) use ($dateExpression, $from, $to, $before): void {
+            if ($before) {
+                $query->whereRaw($dateExpression.' < ?', [$to->toDateString()]);
+
+                return;
+            }
+
+            $query->whereRaw($dateExpression.' between ? and ?', [
+                Carbon::parse($from ?: '1900-01-01')->toDateString(),
+                $to->toDateString(),
+            ]);
+        };
+        $applyBranchScope = function ($query) use ($branchScope): void {
+            if (! $branchScope) {
+                return;
+            }
+
+            $query->where(function ($query) use ($branchScope): void {
+                $query->where('journal_entries.branch_id', $branchScope)
+                    ->orWhere(function ($query) use ($branchScope): void {
+                        $query->whereNull('journal_entries.branch_id')
+                            ->where('transactions.branch_id', $branchScope);
+                    });
+            });
+        };
+
+        $lineTotals = DB::table('journal_lines')
+            ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
+            ->leftJoin('transactions', 'transactions.id', '=', 'journal_entries.transaction_id')
+            ->whereIn('journal_lines.chart_account_id', $ids)
+            ->where('journal_entries.status', 'posted')
+            ->tap($applyDateScope)
+            ->tap($applyBranchScope)
+            ->selectRaw("journal_lines.chart_account_id as chart_account_id{$dateSelect}, count(distinct journal_entries.id) as entry_count, coalesce(sum(journal_lines.debit), 0) as debit_total, coalesce(sum(journal_lines.credit), 0) as credit_total")
+            ->groupBy('journal_lines.chart_account_id')
+            ->when($daily, fn ($query) => $query->groupByRaw(implode(', ', $dateGroup)))
+            ->get();
+
+        $fallbackTotals = DB::table('journal_entries')
+            ->leftJoin('transactions', 'transactions.id', '=', 'journal_entries.transaction_id')
+            ->whereIn('journal_entries.chart_account_id', $ids)
+            ->where('journal_entries.status', 'posted')
+            ->whereNotExists(function ($query): void {
+                $query->selectRaw('1')
+                    ->from('journal_lines')
+                    ->whereColumn('journal_lines.journal_entry_id', 'journal_entries.id')
+                    ->whereColumn('journal_lines.chart_account_id', 'journal_entries.chart_account_id');
+            })
+            ->tap($applyDateScope)
+            ->tap($applyBranchScope)
+            ->selectRaw("journal_entries.chart_account_id as chart_account_id{$dateSelect}, count(*) as entry_count, coalesce(sum(case when journal_entries.entry_type = 'debit' then journal_entries.amount else 0 end), 0) as debit_total, coalesce(sum(case when journal_entries.entry_type = 'credit' then journal_entries.amount else 0 end), 0) as credit_total")
+            ->groupBy('journal_entries.chart_account_id')
+            ->when($daily, fn ($query) => $query->groupByRaw(implode(', ', $dateGroup)))
+            ->get();
+
+        return $lineTotals
+            ->concat($fallbackTotals)
+            ->reduce(function (Collection $totals, object $row) use ($daily): Collection {
+                $key = (int) $row->chart_account_id.($daily ? '|'.(string) $row->business_date : '');
+                $current = $totals->get($key) ?? (object) [
+                    'chart_account_id' => (int) $row->chart_account_id,
+                    'business_date' => $daily ? (string) $row->business_date : null,
+                    'entry_count' => 0,
+                    'debit_total' => 0.0,
+                    'credit_total' => 0.0,
+                ];
+
+                $current->entry_count += (int) $row->entry_count;
+                $current->debit_total += (float) $row->debit_total;
+                $current->credit_total += (float) $row->credit_total;
+                $totals->put($key, $current);
+
+                return $totals;
+            }, collect())
+            ->values()
+            ->sortBy([
+                ['chart_account_id', 'asc'],
+                ['business_date', 'asc'],
+            ])
+            ->values();
+    }
+
+    /**
+     * @return array{0: string, 1: array<int, mixed>}
+     */
+    private function journalEntryStatementAmountExpression(ChartAccount $chartAccount, string $lineColumn, string $fallbackEntryType): array
+    {
+        return [
+            "COALESCE((SELECT SUM(report_lines.{$lineColumn}) FROM journal_lines AS report_lines WHERE report_lines.journal_entry_id = journal_entries.id AND report_lines.chart_account_id = ?), CASE WHEN journal_entries.chart_account_id = ? AND journal_entries.entry_type = ? THEN journal_entries.amount ELSE 0 END)",
+            [$chartAccount->id, $chartAccount->id, $fallbackEntryType],
+        ];
     }
 
     private function normalBalanceMovement(ChartAccount $account, float $debit, float $credit): float
@@ -2279,11 +2389,7 @@ class ReportCatalogService
     private function scopeBranch(Builder $query, ?int $branchId, User $user): Builder
     {
         $branchColumn = $query->getModel()->qualifyColumn('branch_id');
-        $effectiveBranchId = $branchId;
-
-        if (! $effectiveBranchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id) {
-            $effectiveBranchId = (int) $user->branch_id;
-        }
+        $effectiveBranchId = $this->effectiveBranchId($branchId, $user);
 
         if (! $effectiveBranchId) {
             return $query;
@@ -2300,6 +2406,19 @@ class ReportCatalogService
         }
 
         return $query->where($branchColumn, $effectiveBranchId);
+    }
+
+    private function effectiveBranchId(?int $branchId, User $user): ?int
+    {
+        if ($branchId) {
+            return $branchId;
+        }
+
+        if (! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id) {
+            return (int) $user->branch_id;
+        }
+
+        return null;
     }
 
     private function scopeLoanReport(Builder $query, ?int $branchId, User $user): Builder

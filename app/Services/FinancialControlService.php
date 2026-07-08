@@ -250,8 +250,17 @@ class FinancialControlService
         return $alert;
     }
 
-    public function closeDrawer(DrawerSession $session, User $user, float $closingBalance): DrawerSession
+    /**
+     * @param  array<int|string, mixed>  $denominations
+     */
+    public function closeDrawer(DrawerSession $session, User $user, float $closingBalance, array $denominations = []): DrawerSession
     {
+        $normalizedDenominations = $this->normalizeDenominations($denominations);
+
+        if ($denominations !== []) {
+            $closingBalance = $this->denominationTotal($normalizedDenominations);
+        }
+
         if ($closingBalance < 0) {
             throw new InvalidArgumentException('Closing balance cannot be negative.');
         }
@@ -260,7 +269,7 @@ class FinancialControlService
             CurrencyDenomination::assertValid($closingBalance, 'Closing balance');
         }
 
-        return DB::transaction(function () use ($session, $user, $closingBalance): DrawerSession {
+        return DB::transaction(function () use ($session, $user, $closingBalance, $normalizedDenominations, $denominations): DrawerSession {
             $session = DrawerSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
             $drawer = $session->drawer()->lockForUpdate()->firstOrFail();
             $expected = (float) $drawer->current_balance;
@@ -279,6 +288,20 @@ class FinancialControlService
 
             $drawer->update(['status' => 'closed', 'current_balance' => $closingBalance]);
 
+            if ($denominations !== []) {
+                $session->denominations()->where('context', 'closing')->delete();
+
+                foreach ($normalizedDenominations as $denomination => $quantity) {
+                    $session->denominations()->create([
+                        'currency' => $drawer->currency,
+                        'denomination' => $denomination,
+                        'quantity' => $quantity,
+                        'total' => $denomination * $quantity,
+                        'context' => 'closing',
+                    ]);
+                }
+            }
+
             if (abs($closingBalance - $expected) > 0) {
                 $this->recordSuspiciousTransaction($user, $session, abs($closingBalance - $expected), 'drawer_closing_variance', $drawer->branch_id);
             }
@@ -290,6 +313,31 @@ class FinancialControlService
 
             return $session->refresh();
         });
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $denominations
+     * @return array<int, int>
+     */
+    private function normalizeDenominations(array $denominations): array
+    {
+        return collect(CurrencyDenomination::ugxDenominations())
+            ->mapWithKeys(function (string $label, int $denomination) use ($denominations): array {
+                $quantity = (int) max(0, (int) ($denominations[$denomination] ?? $denominations[(string) $denomination] ?? 0));
+
+                return [$denomination => $quantity];
+            })
+            ->all();
+    }
+
+    /**
+     * @param  array<int, int>  $denominations
+     */
+    private function denominationTotal(array $denominations): float
+    {
+        return (float) collect($denominations)
+            ->map(fn (int $quantity, int $denomination): int => $denomination * $quantity)
+            ->sum();
     }
 
     public function reconcileBranchCash(Branch $branch, User $user, CarbonInterface|string|null $businessDate, float $countedCash, ?string $notes = null): BranchCashReconciliation

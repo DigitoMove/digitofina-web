@@ -178,6 +178,8 @@ class DashboardController extends Controller
             $this->markReversalAvailability($cashierRecentTransactions, $user);
         }
 
+        $transactionGraph = $this->moneyTransactionGraph($user, $tellerEnabled, $isCashierDashboard, $selectedCalendarBranchId ?: null, $today);
+
         return view('dashboard.index', [
             'totalClients' => $clientsEnabled ? Client::query()->count() : 0,
             'activeAccounts' => ($savingsEnabled || $loansEnabled || $investmentsEnabled) ? Account::query()->where('status', 'active')->count() : 0,
@@ -222,6 +224,7 @@ class DashboardController extends Controller
             'canFilterCalendarBranch' => $canFilterCalendarBranch,
             'calendarBranches' => $loansEnabled ? Branch::orderBy('name')->get() : collect(),
             'selectedCalendarBranchId' => $selectedCalendarBranchId,
+            'transactionGraph' => $transactionGraph,
             'enabledModules' => $enabledModules,
             'alerts' => array_filter([
                 'Loans in arrears' => $moduleIsEnabled('loans') ? $arrearsCount : null,
@@ -229,6 +232,57 @@ class DashboardController extends Controller
                 'Organization' => $user->organization?->name ?? 'Not assigned',
             ], fn (mixed $value): bool => $value !== null),
         ]);
+    }
+
+    private function moneyTransactionGraph(User $user, bool $tellerEnabled, bool $isCashierDashboard, ?int $branchId, CarbonImmutable $today): Collection
+    {
+        if (! $tellerEnabled) {
+            return collect();
+        }
+
+        $from = $today->subDays(6);
+        $dateExpression = 'date(coalesce(transactions.posted_at, transactions.created_at))';
+        $effectiveBranchId = $branchId;
+
+        if (! $effectiveBranchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id) {
+            $effectiveBranchId = (int) $user->branch_id;
+        }
+
+        $rows = Transaction::query()
+            ->join('transaction_types', 'transaction_types.id', '=', 'transactions.transaction_type_id')
+            ->where('transactions.status', 'posted')
+            ->whereRaw($dateExpression.' between ? and ?', [$from->toDateString(), $today->toDateString()])
+            ->when($isCashierDashboard, fn (Builder $query): Builder => $query->where('transactions.user_id', $user->id))
+            ->when($effectiveBranchId, fn (Builder $query, int $branchId): Builder => $query->where('transactions.branch_id', $branchId))
+            ->selectRaw("{$dateExpression} as business_date")
+            ->selectRaw("coalesce(sum(case when transaction_types.direction = 'credit' then transactions.amount else 0 end), 0) as money_in")
+            ->selectRaw("coalesce(sum(case when transaction_types.direction = 'debit' then transactions.amount else 0 end), 0) as money_out")
+            ->selectRaw('count(*) as transaction_count')
+            ->groupByRaw($dateExpression)
+            ->get()
+            ->keyBy('business_date');
+
+        $maxAmount = max(1.0, (float) $rows->max('money_in'), (float) $rows->max('money_out'));
+
+        return collect(CarbonPeriod::create($from, $today))
+            ->map(function ($date) use ($rows, $maxAmount): array {
+                $key = $date->toDateString();
+                $row = $rows->get($key);
+                $moneyIn = (float) ($row?->money_in ?? 0);
+                $moneyOut = (float) ($row?->money_out ?? 0);
+
+                return [
+                    'date' => $date->copy(),
+                    'label' => $date->format('D'),
+                    'money_in' => $moneyIn,
+                    'money_out' => $moneyOut,
+                    'net' => $moneyIn - $moneyOut,
+                    'transaction_count' => (int) ($row?->transaction_count ?? 0),
+                    'in_height' => max(4, (int) round(($moneyIn / $maxAmount) * 100)),
+                    'out_height' => max(4, (int) round(($moneyOut / $maxAmount) * 100)),
+                ];
+            })
+            ->values();
     }
 
     private function markReversalAvailability(Collection $transactions, User $user): void
