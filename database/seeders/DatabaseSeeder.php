@@ -262,6 +262,7 @@ class DatabaseSeeder extends Seeder
             ['key' => 'large_withdrawal_maker_checker_threshold', 'label' => 'Large withdrawal checker threshold', 'value' => '5000000', 'type' => 'money', 'group' => 'approvals', 'description' => 'Withdrawals at or above this amount require maker-checker approval.'],
             ['key' => 'investment_approval_threshold', 'label' => 'Investment approval threshold', 'value' => '5000000', 'type' => 'money', 'group' => 'approvals', 'description' => 'Investments at or above this amount require maker-checker approval before activation.'],
             ['key' => 'suspicious_transaction_threshold', 'label' => 'Suspicious transaction threshold', 'value' => '10000000', 'type' => 'money', 'group' => 'controls', 'description' => 'Transactions at or above this amount create suspicious activity alerts.'],
+            ['key' => 'cashier_drawer_count_enabled', 'label' => 'Cashier drawer denomination count', 'value' => '0', 'type' => 'boolean', 'group' => 'teller', 'description' => 'Allow teller/cashier users to count UGX notes and coins before closing their drawer.'],
             ['key' => 'sms_sender_id', 'label' => 'SMS sender ID', 'value' => 'DigitoFina', 'type' => 'string', 'group' => 'notifications', 'description' => 'Default SMS sender name.'],
             ['key' => 'mobile_money_default_provider', 'label' => 'Default mobile money provider', 'value' => 'manual', 'type' => 'string', 'group' => 'integrations', 'description' => 'Payment provider used for new collection requests.'],
         ];

@@ -66,6 +66,7 @@ class SystemSettingController extends Controller
             'notifications' => in_array('sms', $enabledModules, true),
             'integrations' => in_array('mobile-money', $enabledModules, true),
             'loans' => in_array('loans', $enabledModules, true),
+            'teller' => in_array('teller', $enabledModules, true),
             default => true,
         };
     }
@@ -80,6 +81,11 @@ class SystemSettingController extends Controller
 
         foreach ($request->validated('settings', []) as $key => $value) {
             $setting = SystemSetting::forOrganization($organizationId)->where('key', $key)->firstOrFail();
+
+            if ($setting->type === 'boolean') {
+                $value = filter_var($value, FILTER_VALIDATE_BOOLEAN) ? '1' : '0';
+            }
+
             try {
                 if ($setting->type === 'money' && (float) $value > 0) {
                     CurrencyDenomination::assertValid((float) $value, $setting->label ?? str($key)->headline()->toString());

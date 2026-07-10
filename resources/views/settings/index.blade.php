@@ -41,6 +41,13 @@
                     <label class="block text-sm font-medium text-slate-700">{{ $setting->label ?? str($setting->key)->headline() }}
                         @if($setting->type === 'json')
                             <textarea name="settings[{{ $setting->key }}]" rows="8" class="mt-1 w-full rounded border-slate-300 font-mono text-xs">{{ old('settings.'.$setting->key, $setting->value) }}</textarea>
+                        @elseif($setting->type === 'boolean')
+                            @php($settingValue = old('settings.'.$setting->key, $setting->value))
+                            <input type="hidden" name="settings[{{ $setting->key }}]" value="0">
+                            <span class="mt-1 flex items-center gap-2 rounded border border-slate-200 px-3 py-2 font-normal text-slate-700">
+                                <input type="checkbox" name="settings[{{ $setting->key }}]" value="1" class="rounded border-slate-300" @checked(filter_var($settingValue, FILTER_VALIDATE_BOOLEAN))>
+                                <span>Enabled</span>
+                            </span>
                         @else
                             <input name="settings[{{ $setting->key }}]" value="{{ old('settings.'.$setting->key, $setting->value) }}" @if($setting->type === 'money') type="number" min="0" step="100" @elseif($setting->type === 'number') type="number" min="0" step="0.0001" @endif class="mt-1 w-full rounded border-slate-300">
                         @endif

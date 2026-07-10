@@ -11,6 +11,7 @@ use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
 use App\Models\JournalEntry;
 use App\Models\MakerCheckerRequest;
+use App\Models\SystemSetting;
 use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\TransactionType;
@@ -49,6 +50,7 @@ class TellerDrawerController extends Controller
         $organizationId = $this->activeOrganizationId($request);
         $canOpenForTellers = $this->canOpenForTellers($request);
         $isCashier = $request->user()->isTellerCashier();
+        $cashierDrawerCountEnabled = $this->cashierDrawerCountEnabled($request);
         $canApproveReversals = $request->user()->canPerform('approve-reversals') || $request->user()->canPerform('override-maker-checker');
         $today = CarbonImmutable::today();
         $session = DrawerSession::with(['drawer.branch', 'denominations'])->where('user_id', auth()->id())->where('status', 'open')->latest()->first();
@@ -227,6 +229,7 @@ class TellerDrawerController extends Controller
             'recentTransactions' => $recentTransactions,
             'transactionSearch' => $transactionSearch,
             'isCashier' => $isCashier,
+            'cashierDrawerCountEnabled' => $cashierDrawerCountEnabled,
             'pendingReversalRequests' => $canApproveReversals
                 ? MakerCheckerRequest::query()
                     ->with(['requestedBy', 'branch', 'subject'])
@@ -568,6 +571,10 @@ class TellerDrawerController extends Controller
                 throw new InvalidArgumentException('Open your teller drawer before closing it.');
             }
 
+            if ($request->user()->isTellerCashier() && ! $this->cashierDrawerCountEnabled($request)) {
+                $data['denominations'] = [];
+            }
+
             [$closingBalance, $denominations] = $this->closingBalanceFromRequest($data);
             $closedSession = $financialControls->closeDrawer($session, $request->user(), $closingBalance, $denominations);
         } catch (InvalidArgumentException $exception) {
@@ -886,6 +893,14 @@ class TellerDrawerController extends Controller
             || $request->user()->hasRole('organization-admin')
             || $request->user()->canPerform('manage-organization')
             || ($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'));
+    }
+
+    private function cashierDrawerCountEnabled(Request $request): bool
+    {
+        return filter_var(
+            SystemSetting::value('cashier_drawer_count_enabled', '0', $this->activeOrganizationId($request)),
+            FILTER_VALIDATE_BOOLEAN,
+        );
     }
 
     private function activeOrganizationId(Request $request): ?int

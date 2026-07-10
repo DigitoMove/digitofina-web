@@ -21,6 +21,7 @@
     $availableTransactionTypes = $isLoanAccountPosting
         ? $transactionTypes->where('code', 'loan_repayment')
         : $transactionTypes->reject(fn ($type) => $type->code === 'loan_repayment');
+    $cashierCanCountDrawer = ! $isCashier || ($cashierDrawerCountEnabled ?? false);
 @endphp
 
 <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
@@ -83,20 +84,22 @@
                     </div>
                 </div>
 
-                <div class="mt-4 overflow-hidden rounded-lg border border-slate-200">
-                    <table class="w-full text-left text-sm">
-                        <thead class="bg-slate-50 text-slate-600"><tr><th class="p-3">Denomination</th><th class="text-right">Quantity</th><th class="text-right">Total</th></tr></thead>
-                        <tbody>
-                            @foreach($closedDrawerReport['denominations'] as $row)
-                                <tr class="border-t border-slate-200">
-                                    <td class="p-3">{{ $row['label'] }}</td>
-                                    <td class="text-right">{{ number_format($row['quantity']) }}</td>
-                                    <td class="text-right font-semibold">UGX {{ number_format((float) $row['total'], 2) }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
+                @if($closedDrawerReport['has_closing_denominations'])
+                    <div class="mt-4 overflow-hidden rounded-lg border border-slate-200">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-50 text-slate-600"><tr><th class="p-3">Denomination</th><th class="text-right">Quantity</th><th class="text-right">Total</th></tr></thead>
+                            <tbody>
+                                @foreach($closedDrawerReport['denominations'] as $row)
+                                    <tr class="border-t border-slate-200">
+                                        <td class="p-3">{{ $row['label'] }}</td>
+                                        <td class="text-right">{{ number_format($row['quantity']) }}</td>
+                                        <td class="text-right font-semibold">UGX {{ number_format((float) $row['total'], 2) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
             </div>
 
             <div class="overflow-hidden rounded-lg border border-slate-200">
@@ -197,29 +200,31 @@
         <section class="df-panel p-5 xl:col-span-2">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <h2 class="font-semibold text-slate-950">End-of-Day Drawer Count</h2>
-                    <p class="df-muted">Count the drawer by UGX notes and coins before closing.</p>
+                    <h2 class="font-semibold text-slate-950">{{ $cashierCanCountDrawer ? 'End-of-Day Drawer Count' : 'Close Drawer' }}</h2>
+                    <p class="df-muted">{{ $cashierCanCountDrawer ? 'Count the drawer by UGX notes and coins before closing.' : 'Confirm the drawer balance before closing.' }}</p>
                 </div>
                 <span class="df-badge">UGX</span>
             </div>
             <form method="POST" action="{{ route('teller.close') }}" class="mt-4 grid gap-4" data-confirm-title="Close drawer" data-confirm-message="This will close the active drawer session and generate the end-of-day report." data-confirm-label="Close drawer" data-confirm-tone="danger">
                 @csrf
-                <div class="overflow-hidden rounded-lg border border-slate-200">
-                    <table class="w-full text-left text-sm">
-                        <thead class="bg-slate-50 text-slate-600"><tr><th class="p-3">Denomination</th><th class="w-32 text-right">Quantity</th><th class="text-right">Value</th></tr></thead>
-                        <tbody>
-                            @foreach($ugxDenominations as $denomination => $label)
-                                <tr class="border-t border-slate-200">
-                                    <td class="p-3 font-medium text-slate-950">{{ $label }}</td>
-                                    <td class="text-right">
-                                        <input name="denominations[{{ $denomination }}]" type="number" min="0" step="1" value="{{ old("denominations.{$denomination}") }}" placeholder="0" class="w-24 rounded border-slate-300 text-right text-sm">
-                                    </td>
-                                    <td class="text-right text-slate-600">UGX {{ number_format($denomination, 0) }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
+                @if($cashierCanCountDrawer)
+                    <div class="overflow-hidden rounded-lg border border-slate-200">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-50 text-slate-600"><tr><th class="p-3">Denomination</th><th class="w-32 text-right">Quantity</th><th class="text-right">Value</th></tr></thead>
+                            <tbody>
+                                @foreach($ugxDenominations as $denomination => $label)
+                                    <tr class="border-t border-slate-200">
+                                        <td class="p-3 font-medium text-slate-950">{{ $label }}</td>
+                                        <td class="text-right">
+                                            <input name="denominations[{{ $denomination }}]" type="number" min="0" step="1" value="{{ old("denominations.{$denomination}") }}" placeholder="0" class="w-24 rounded border-slate-300 text-right text-sm">
+                                        </td>
+                                        <td class="text-right text-slate-600">UGX {{ number_format($denomination, 0) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
                 <div class="grid gap-3 md:grid-cols-[1fr_auto]">
                     <label class="text-sm font-semibold text-slate-700">Manual closing balance
                         <input name="closing_balance" type="number" min="0" step="100" value="{{ old('closing_balance', $drawer?->current_balance) }}" class="mt-1" placeholder="Closing balance" required>
