@@ -206,7 +206,7 @@
                         </details>
                     @endforeach
 
-                    @if(! $isGlobalSuperAdmin && $moduleEnabled('reports') && $user->canPerform('view-reports') && ! ($user->isLoanOfficer() || $user->isLoanRecoveryOfficer()))
+                    @if(! $isGlobalSuperAdmin && $moduleEnabled('reports') && (! $user->isTellerCashier() || $moduleEnabled('accounting')) && $user->canPerform('view-reports') && ! ($user->isLoanOfficer() || $user->isLoanRecoveryOfficer()))
                     <a href="{{ route('reports.index') }}" class="group flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition {{ $isRouteActive('reports.index') ? 'bg-brand-50 text-brand-900 ring-1 ring-brand-200 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-brand-900' }}">
                         <span class="grid h-8 w-8 place-items-center rounded-lg transition group-hover:scale-105 {{ $isRouteActive('reports.index') ? 'bg-brand-700 text-white' : 'bg-slate-100 text-brand-700' }}">
                             <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h4"/></svg>

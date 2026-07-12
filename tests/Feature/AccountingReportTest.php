@@ -6,11 +6,16 @@ use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
+use App\Models\Module;
+use App\Models\Organization;
+use App\Models\OrganizationModule;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
+use App\Services\ModuleService;
 use App\Services\ReportCatalogService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -156,6 +161,63 @@ it('summarizes selected ledger accounts by day with opening and closing balances
         ->assertDontSee('Daily total for Unselected Bank Account');
 });
 
+it('limits teller cashiers to the ledger accounts report category', function () {
+    $organization = Organization::create(['name' => 'Kisem Financial Services', 'slug' => 'kisem-financial-services', 'status' => 'active']);
+    $branch = Branch::create(['organization_id' => $organization->id, 'code' => '1001', 'name' => 'Kavule Branch', 'is_active' => true, 'status' => 'active']);
+    $role = Role::create(['name' => 'Teller Cashier', 'slug' => 'teller-cashier']);
+    $permission = Permission::firstOrCreate(['slug' => 'view-reports'], ['name' => 'View Reports']);
+    $role->permissions()->sync([$permission->id]);
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($organization);
+    OrganizationModule::updateOrCreate(
+        ['organization_id' => $organization->id, 'module_id' => Module::where('slug', 'accounting')->firstOrFail()->id],
+        ['is_enabled' => true, 'enabled_at' => now()],
+    );
+    $modules->clearCache($organization);
+    $cashier = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $merchant = accountingReportLedgerAccount($branch, '1001-MTN', 'MTN Merchant Code');
+
+    accountingReportJournalEntry($merchant, $branch, '2026-02-04', 'debit', 2500, 'CASHIER-MTN-IN');
+
+    $this->actingAs($cashier)
+        ->get(route('reports.index'))
+        ->assertSuccessful()
+        ->assertSee('Ledger Accounts')
+        ->assertSee('GL Account Transactions')
+        ->assertSee('GL Daily Account Summary')
+        ->assertSee('Chart Of Accounts')
+        ->assertDontSee('Posted Transactions')
+        ->assertDontSee('Loan Accounts')
+        ->assertDontSee('Income Statement');
+
+    $this->actingAs($cashier)
+        ->get(route('reports.show', [
+            'report' => 'gl-account-transactions',
+            'from' => '2026-02-04',
+            'to' => '2026-02-04',
+            'chart_account_id' => $merchant->id,
+        ]))
+        ->assertSuccessful()
+        ->assertSee('GL Account Transactions')
+        ->assertSee('MTN Merchant Code')
+        ->assertSee('CASHIER-MTN-IN');
+
+    $this->actingAs($cashier)
+        ->get(route('reports.show', 'loan-book'))
+        ->assertNotFound();
+
+    $this->actingAs($cashier)
+        ->get(route('reports.show', 'all-posted-transactions'))
+        ->assertNotFound();
+});
+
 it('reports both source and destination sides of drawer transfers for the day', function () {
     $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
     $admin = User::factory()->create([
@@ -217,6 +279,7 @@ it('reports both source and destination sides of drawer transfers for the day', 
 function accountingReportEntry(Branch $branch, string $code, string $name, string $type, string $normalBalance, string $entryType, int $amount): ChartAccount
 {
     $account = ChartAccount::create([
+        'organization_id' => $branch->organization_id,
         'branch_id' => $branch->id,
         'code' => $code,
         'name' => $name,
@@ -226,6 +289,7 @@ function accountingReportEntry(Branch $branch, string $code, string $name, strin
     ]);
 
     JournalEntry::create([
+        'organization_id' => $branch->organization_id,
         'branch_id' => $branch->id,
         'chart_account_id' => $account->id,
         'reference' => 'JE-ACCOUNTING-'.$code,
@@ -243,6 +307,7 @@ function accountingReportEntry(Branch $branch, string $code, string $name, strin
 function accountingReportLedgerAccount(Branch $branch, string $code, string $name): ChartAccount
 {
     return ChartAccount::create([
+        'organization_id' => $branch->organization_id,
         'branch_id' => $branch->id,
         'code' => $code,
         'name' => $name,
@@ -255,6 +320,7 @@ function accountingReportLedgerAccount(Branch $branch, string $code, string $nam
 function accountingReportJournalEntry(ChartAccount $account, Branch $branch, string $date, string $entryType, int $amount, string $reference): void
 {
     JournalEntry::create([
+        'organization_id' => $branch->organization_id,
         'branch_id' => $branch->id,
         'chart_account_id' => $account->id,
         'journal_date' => $date,
@@ -282,6 +348,7 @@ function accountingReportLineBackedDrawerLedgerEntry(ChartAccount $merchant, Bra
         'is_active' => true,
     ]);
     $transaction = Transaction::create([
+        'organization_id' => $branch->organization_id,
         'transaction_type_id' => $type->id,
         'drawer_session_id' => $session->id,
         'branch_id' => $branch->id,
@@ -293,6 +360,7 @@ function accountingReportLineBackedDrawerLedgerEntry(ChartAccount $merchant, Bra
         'posted_at' => $date.' 12:00:00',
     ]);
     $journal = JournalEntry::create([
+        'organization_id' => $branch->organization_id,
         'branch_id' => $branch->id,
         'chart_account_id' => $cash->id,
         'journal_date' => $date,
@@ -313,6 +381,7 @@ function accountingReportLineBackedDrawerLedgerEntry(ChartAccount $merchant, Bra
 function accountingReportDrawer(Branch $branch, User $user, string $code, int $balance): TellerDrawer
 {
     return TellerDrawer::create([
+        'organization_id' => $branch->organization_id,
         'branch_id' => $branch->id,
         'assigned_user_id' => $user->id,
         'name' => $code.' Drawer',
@@ -326,6 +395,7 @@ function accountingReportDrawer(Branch $branch, User $user, string $code, int $b
 function accountingReportDrawerSession(TellerDrawer $drawer, User $user, int $openingBalance): DrawerSession
 {
     return DrawerSession::create([
+        'organization_id' => $drawer->organization_id,
         'teller_drawer_id' => $drawer->id,
         'user_id' => $user->id,
         'opening_balance' => $openingBalance,

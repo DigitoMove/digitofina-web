@@ -25,7 +25,7 @@
     $canOpenAccounts = auth()->user()->can('create', \App\Models\Account::class);
     $canGenerateSavingsAccount = auth()->user()->canPerform('manage-accounts') || auth()->user()->canPerform('manage-loans');
     $canViewAuditLogs = auth()->user()->canPerform('view-audit-logs');
-    $canViewReports = auth()->user()->canPerform('view-reports');
+    $canViewGeneralReports = auth()->user()->canPerform('view-reports') && ! auth()->user()->hasRestrictedReportsAccess();
     $savingsEnabled = auth()->user()->canAccessModule('savings');
     $sharesEnabled = auth()->user()->canAccessModule('shares');
     $fixedDepositsEnabled = auth()->user()->canAccessModule('fixed-deposits');
@@ -100,7 +100,7 @@
         $canViewAuditLogs ? ['Transaction Authorisation Details', route('audit-logs.index', ['search' => $loanAccountNumber]), 'TA', 0] : null,
         auth()->user()->canPerform('disburse-loans') ? ['Disburse Loan', route('loans.show', $loan), 'DL', $loan->status === 'approved' ? 1 : 0] : null,
         $canAssignOfficer ? ['Assign Officer', route('loans.show', $loan), 'AO', 1] : null,
-        $canViewReports ? ['Loan Account Reports', route('reports.show', 'loan-book'), 'LR', null] : null,
+        $canViewGeneralReports ? ['Loan Account Reports', route('reports.show', 'loan-book'), 'LR', null] : null,
         ['Account Notes', route('loans.show', $loan), 'AN', 0],
         ['Account Notifications', route('loans.show', $loan), 'NO', 0],
     ]);
@@ -108,8 +108,8 @@
         $savingsEnabled ? ['Savings Accounts', array_filter([(! $hasSavingsAccount && $canGenerateSavingsAccount) ? ['Generate savings account', route('clients.savings-accounts.generate', $client), 'post'] : null, ['View accounts', route('clients.savings-accounts', $client), 'get']])] : null,
         ['Loan Accounts', array_filter([$canCreateLoan ? ['New application', route('loans.create', ['client_id' => $client->id])] : null, ['View loans', route('clients.loans', $client)]])],
         ['Current Accounts', array_filter([$canOpenAccounts ? ['Open current account', route('accounts.create', ['client_id' => $client->id])] : null, ['View accounts', route('clients.accounts', $client)]])],
-        ($sharesEnabled && $canViewReports) ? ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]] : null,
-        ($fixedDepositsEnabled && $canViewReports) ? ['Term Deposits', [['Maturity report', route('reports.show', 'term-deposits-maturity-report')], ['Funded term deposits', route('reports.show', 'funded-term-deposit-accounts')]]] : null,
+        ($sharesEnabled && $canViewGeneralReports) ? ['Shares Accounts', [['Shares report', route('reports.show', 'share-accounts')], ['Share balances', route('reports.show', 'share-balances')]]] : null,
+        ($fixedDepositsEnabled && $canViewGeneralReports) ? ['Term Deposits', [['Maturity report', route('reports.show', 'term-deposits-maturity-report')], ['Funded term deposits', route('reports.show', 'funded-term-deposit-accounts')]]] : null,
     ];
     $accountMenus = array_values(array_filter($accountMenus));
 @endphp
