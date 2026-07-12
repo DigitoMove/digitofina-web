@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Services\ReportCatalogService;
 use App\Support\ApiSecurity;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\Request;
@@ -15,8 +16,7 @@ class ReportController extends Controller
 {
     public function index(Request $request, ReportCatalogService $reports): View
     {
-        abort_if($request->user()->isMember() || $request->user()->hasRestrictedReportsAccess(), 403);
-        abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->authorizeReportCatalogAccess($request->user());
 
         return view('reports.index', [
             'groups' => $reports->grouped($request->user()),
@@ -31,8 +31,7 @@ class ReportController extends Controller
 
     public function show(Request $request, string $report, ReportCatalogService $reports): View
     {
-        abort_if($request->user()->isMember() || $request->user()->hasRestrictedReportsAccess(), 403);
-        abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->authorizeReportCatalogAccess($request->user());
 
         $data = $request->validate([
             'from' => ['nullable', 'date'],
@@ -73,5 +72,11 @@ class ReportController extends Controller
             })
             ->orderBy('code')
             ->get();
+    }
+
+    private function authorizeReportCatalogAccess(User $user): void
+    {
+        abort_if($user->isMember() || $user->isLoanOfficer() || $user->isLoanRecoveryOfficer(), 403);
+        abort_unless($user->canPerform('view-reports'), 403);
     }
 }

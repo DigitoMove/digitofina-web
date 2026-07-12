@@ -35,6 +35,21 @@ use Illuminate\Support\Str;
 
 class ReportCatalogService
 {
+    /**
+     * @var array<int, string>
+     */
+    private const CASHIER_LEDGER_REPORT_SLUGS = [
+        'chart-of-accounts',
+        'gl-account-transactions',
+        'gl-daily-account-summary',
+        'gl-transaction-analysis',
+        'income-accounts',
+        'expense-accounts',
+        'asset-accounts',
+        'liability-accounts',
+        'equity-accounts',
+    ];
+
     public function __construct(private BusinessCalendarService $calendar) {}
 
     /**
@@ -169,7 +184,7 @@ class ReportCatalogService
         $definitions = array_map(fn (array $definition): array => $this->decorateReport($definition), $definitions);
 
         if (! $user || $user->hasRole('super-admin') || ! $user->organization) {
-            return $this->filterCashierLoanReports($definitions, $user);
+            return $this->filterCashierLedgerReports($definitions, $user);
         }
 
         $enabledModules = app(ModuleService::class)->enabledSlugs($user->organization);
@@ -179,7 +194,7 @@ class ReportCatalogService
             fn (array $definition): bool => in_array($this->moduleForReport($definition), $enabledModules, true)
         ));
 
-        return $this->filterCashierLoanReports($definitions, $user);
+        return $this->filterCashierLedgerReports($definitions, $user);
     }
 
     /**
@@ -292,21 +307,32 @@ class ReportCatalogService
      * @param  array<int, array<string, mixed>>  $definitions
      * @return array<int, array<string, mixed>>
      */
-    private function filterCashierLoanReports(array $definitions, ?User $user): array
+    private function filterCashierLedgerReports(array $definitions, ?User $user): array
     {
         if (! $user?->isTellerCashier()) {
             return $definitions;
         }
 
-        return array_values(array_filter(
-            $definitions,
-            fn (array $definition): bool => ! in_array($definition['slug'], [
-                'loan-accounts-in-arrears',
-                'loan-aging-report',
-                'portfolio-at-risk',
-                'expected-loan-payments',
-            ], true)
+        return array_values(array_map(
+            fn (array $definition): array => $this->cashierLedgerReport($definition),
+            array_filter(
+                $definitions,
+                fn (array $definition): bool => in_array($definition['slug'], self::CASHIER_LEDGER_REPORT_SLUGS, true)
+            )
         ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     * @return array<string, mixed>
+     */
+    private function cashierLedgerReport(array $definition): array
+    {
+        return array_replace($definition, [
+            'category' => 'Ledger Accounts',
+            'category_order' => 40,
+            'is_priority' => in_array($definition['slug'], ['gl-account-transactions', 'gl-daily-account-summary'], true),
+        ]);
     }
 
     /**

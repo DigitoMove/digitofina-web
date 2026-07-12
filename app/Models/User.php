@@ -240,7 +240,7 @@ class User extends Authenticatable
         }
 
         if ($this->isTellerCashier()) {
-            return in_array($permission, ['post-transactions', 'post-repayments', 'request-reversals', 'manage-loans'], true);
+            return in_array($permission, ['post-transactions', 'post-repayments', 'request-reversals', 'manage-loans', 'view-reports'], true);
         }
 
         return true;

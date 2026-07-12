@@ -196,7 +196,7 @@
     </section>
     @endif
 
-    @if($session)
+    {{-- @if($session)
         <section class="df-panel p-5 xl:col-span-2">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -261,7 +261,7 @@
                 </div>
             @endif
         </section>
-    @endif
+    @endif --}}
 
     @if($canOpenForTellers)
         <section class="df-panel p-5 xl:col-span-3">
