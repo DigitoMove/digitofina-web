@@ -45,7 +45,7 @@ function loanWorkflowUser(): User
 {
     $branch = Branch::create(['code' => '1001', 'name' => 'Luweero', 'is_active' => true, 'status' => 'active']);
     $permissions = collect(['manage-loans', 'approve-loans', 'disburse-loans', 'post-repayments', 'view-reports'])
-        ->map(fn (string $slug) => Permission::create(['name' => str($slug)->headline(), 'slug' => $slug]));
+        ->map(fn (string $slug) => Permission::firstOrCreate(['slug' => $slug], ['name' => str($slug)->headline()]));
     $role = Role::create(['name' => 'Branch Manager', 'slug' => 'branch-manager']);
     $role->permissions()->sync($permissions->pluck('id')->all());
 

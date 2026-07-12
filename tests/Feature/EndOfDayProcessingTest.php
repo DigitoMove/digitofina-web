@@ -26,7 +26,7 @@ function endOfDayUser(array $permissions = ['manage-end-of-day', 'view-reports',
 {
     $branch = Branch::create(['code' => '1001', 'name' => 'Luweero', 'is_active' => true, 'status' => 'active']);
     $permissionIds = collect($permissions)
-        ->map(fn (string $slug) => Permission::create(['name' => str($slug)->headline(), 'slug' => $slug])->id)
+        ->map(fn (string $slug) => Permission::firstOrCreate(['slug' => $slug], ['name' => str($slug)->headline()])->id)
         ->all();
     $role = Role::create(['name' => 'Branch Manager', 'slug' => fake()->unique()->slug(2)]);
     $role->permissions()->sync($permissionIds);
