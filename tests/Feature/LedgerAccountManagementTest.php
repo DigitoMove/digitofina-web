@@ -323,6 +323,44 @@ it('uses journal lines for ledger account index current balances', function () {
         ->assertSee('UGX -100,000.00');
 });
 
+it('posts standalone charges against a ledger account balance', function () {
+    [$organization, $branch, , $user] = ledgerManagementContext();
+    ledgerManagementEnableAccounting($organization, $user);
+    $merchant = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => null,
+        'code' => 'MTN-CHARGES',
+        'name' => 'MTN Merchant Charges',
+        'type' => 'asset',
+        'normal_balance' => 'debit',
+        'drawer_direction' => 'both',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('ledger-accounts.show', $merchant))
+        ->post(route('ledger-accounts.charges', $merchant), [
+            'branch_id' => $branch->id,
+            'amount' => 1_500,
+            'charge_date' => '2026-01-20',
+            'description' => 'Aggregated MTN provider charges',
+        ])
+        ->assertRedirect(route('ledger-accounts.show', $merchant))
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('status');
+
+    $statement = app(LedgerAccountStatementService::class)->build(
+        $merchant,
+        CarbonImmutable::parse('2026-01-01'),
+        CarbonImmutable::parse('2026-01-31'),
+    );
+    $chargeAccount = ChartAccount::query()->where('code', $branch->code.'-5295')->firstOrFail();
+
+    expect($statement['period_credits'])->toBe(1500.0)
+        ->and($statement['closing_balance'])->toBe(-1500.0)
+        ->and((float) $chargeAccount->journalLines()->sum('debit'))->toBe(1500.0);
+});
+
 it('merges branch ledgers into a global ledger without losing transaction branches', function () {
     [$organization, $branchOne, $branchTwo, $user] = ledgerManagementContext();
     $target = ChartAccount::create([

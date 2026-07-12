@@ -13,6 +13,9 @@
 @if($errors->has('ledger_merge'))
     <div class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ $errors->first('ledger_merge') }}</div>
 @endif
+@if($errors->has('ledger_charges'))
+    <div class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ $errors->first('ledger_charges') }}</div>
+@endif
 
 @if($chartAccount->mergedInto)
     <div class="mb-4 rounded border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -72,6 +75,43 @@
 
 @if($statement['closing_balance'] < 0)
     <div class="mb-5 rounded border border-red-200 bg-red-50 p-4 text-sm text-red-800">The ledger closes negative for this selection. Compare client payments of UGX {{ number_format($statement['client_payments'], 2) }} against drawer funding of UGX {{ number_format($statement['drawer_funding_out'], 2) }}, then review opening and other entries below.</div>
+@endif
+
+@if($chartAccount->is_active && ! $chartAccount->merged_into_id)
+    <section class="df-panel mb-5 p-5">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h2 class="font-semibold text-slate-950">Post ledger charges</h2>
+                <p class="text-sm text-slate-500">Record missed or grouped provider charges against this ledger. The charge is posted to transaction-charge expense and reduces this ledger balance.</p>
+            </div>
+            <span class="df-badge">Manual charge entry</span>
+        </div>
+        <form method="POST" action="{{ route('ledger-accounts.charges', $chartAccount) }}" class="mt-4 grid gap-3 md:grid-cols-4" data-confirm-title="Post ledger charges" data-confirm-message="This will reduce the selected ledger balance and record the amount as transaction-charge expense." data-confirm-label="Post charges" data-confirm-tone="neutral">
+            @csrf
+            @if(! $chartAccount->branch_id)
+                <label class="text-sm font-semibold text-slate-700">Branch <x-required-badge />
+                    <select name="branch_id" class="mt-1" required>
+                        <option value="">Select branch</option>
+                        @foreach($branches as $branch)
+                            <option value="{{ $branch->id }}" @selected((int) old('branch_id', $branchId) === $branch->id)>{{ $branch->name }}</option>
+                        @endforeach
+                    </select>
+                </label>
+            @endif
+            <label class="text-sm font-semibold text-slate-700">Charge amount <x-required-badge />
+                <input name="amount" type="number" min="100" step="100" value="{{ old('amount') }}" class="mt-1" required>
+            </label>
+            <label class="text-sm font-semibold text-slate-700">Charge date <x-required-badge />
+                <input name="charge_date" type="date" max="{{ today()->toDateString() }}" value="{{ old('charge_date', today()->toDateString()) }}" class="mt-1" required>
+            </label>
+            <label class="text-sm font-semibold text-slate-700 {{ $chartAccount->branch_id ? 'md:col-span-2' : '' }}">Narration
+                <input name="description" value="{{ old('description') }}" class="mt-1" placeholder="Provider charges, missed clearing fee...">
+            </label>
+            <div class="flex items-end">
+                <button class="df-action-primary w-full justify-center">Post Charges</button>
+            </div>
+        </form>
+    </section>
 @endif
 
 <div class="mb-5 grid gap-3 sm:grid-cols-3">

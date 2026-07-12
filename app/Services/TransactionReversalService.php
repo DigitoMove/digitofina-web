@@ -22,6 +22,7 @@ class TransactionReversalService
     public function __construct(
         private AuditLogger $auditLogger,
         private BusinessCalendarService $calendar,
+        private LedgerReversalRepairService $ledgerReversalRepair,
     ) {}
 
     public function approve(MakerCheckerRequest $request, User $checker): Transaction
@@ -71,6 +72,7 @@ class TransactionReversalService
                 'cheque_number' => $original->cheque_number,
                 'amount' => $original->amount,
                 'charges' => $original->charges,
+                'charge_mode' => $original->charge_mode ?? LedgerChargeService::MODE_DEDUCT_FROM_AMOUNT,
                 'balance_after' => $account?->fresh()?->balance,
                 'currency' => $original->currency,
                 'description' => 'Reversal of '.$original->reference.($request->reason ? ': '.$request->reason : ''),
@@ -348,9 +350,10 @@ class TransactionReversalService
             }
 
             $reversalJournal = JournalEntry::create($payload);
+            $this->ledgerReversalRepair->repairJournal($journal, $reversal, $checker);
 
             if (Schema::hasColumn('journal_entries', 'reversed_entry_id')) {
-                $journal->update(['status' => 'reversed', 'reversed_entry_id' => $reversalJournal->id]);
+                $journal->update(['reversed_entry_id' => $reversalJournal->id]);
             }
         }
     }

@@ -21,6 +21,7 @@ use App\Services\DrawerTransferService;
 use App\Services\DueRepaymentDemandService;
 use App\Services\FinancialControlService;
 use App\Services\LedgerAccountStatementService;
+use App\Services\LedgerChargeService;
 use App\Services\TellerService;
 use App\Services\TenantContext;
 use App\Services\TransactionPostingService;
@@ -218,6 +219,7 @@ class TellerDrawerController extends Controller
                 ->limit(25)
                 ->get(),
             'transactionTypes' => TransactionType::where('is_active', true)->get(),
+            'chargeModes' => LedgerChargeService::modes(),
             'account' => $account,
             'accountResults' => $accountResults,
             'selectedChartAccount' => $selectedChartAccount,
@@ -287,6 +289,7 @@ class TellerDrawerController extends Controller
             'drawer_direction' => ['required', Rule::in(['cash_in', 'cash_out'])],
             'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'charges' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
+            'charge_mode' => ['nullable', Rule::in(array_keys(LedgerChargeService::modes()))],
             'transaction_date' => ['required', 'date', 'before_or_equal:today'],
             'description' => ['nullable', 'string', 'max:1000'],
         ]);
@@ -308,7 +311,7 @@ class TellerDrawerController extends Controller
                 throw new InvalidArgumentException('Select whether this posting adds to or takes from the drawer.');
             }
 
-            $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], $request->user(), $data['description'] ?? null, CarbonImmutable::parse($data['transaction_date']), (float) ($data['charges'] ?? 0));
+            $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], $request->user(), $data['description'] ?? null, CarbonImmutable::parse($data['transaction_date']), (float) ($data['charges'] ?? 0), LedgerChargeService::normalizeMode($data['charge_mode'] ?? null));
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['managed_drawer_posting' => $exception->getMessage()])->withInput();
         }
@@ -440,6 +443,7 @@ class TellerDrawerController extends Controller
             'transaction_type_id' => ['nullable', 'required_if:account_scope,client_account', 'exists:transaction_types,id'],
             'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'charges' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
+            'charge_mode' => ['nullable', Rule::in(array_keys(LedgerChargeService::modes()))],
             'transaction_date' => ['required', 'date', 'before_or_equal:today'],
             'cheque_number' => ['nullable', 'string', 'max:191'],
             'description' => ['nullable', 'string'],
@@ -489,11 +493,12 @@ class TellerDrawerController extends Controller
                     'entry_type' => $entryType,
                     'amount' => (float) $data['amount'],
                     'charges' => (float) ($data['charges'] ?? 0),
+                    'charge_mode' => LedgerChargeService::normalizeMode($data['charge_mode'] ?? null),
                     'transaction_date' => $postedAt->toDateString(),
                     'description' => $data['description'] ?? null,
                 ]);
 
-                $journal = $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $postedAt, (float) ($data['charges'] ?? 0));
+                $journal = $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $postedAt, (float) ($data['charges'] ?? 0), LedgerChargeService::normalizeMode($data['charge_mode'] ?? null));
 
                 return redirect()
                     ->route('teller.index', [

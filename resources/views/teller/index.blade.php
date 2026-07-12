@@ -577,10 +577,25 @@
             <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge />
                 <input name="amount" type="number" min="100" step="100" class="mt-1" required data-confirm-summary-label="Amount">
             </label>
-            <label class="text-sm font-semibold text-slate-700">Drawer Charges
+            <label class="text-sm font-semibold text-slate-700">{{ $isLedgerPosting ? 'Ledger Charges' : 'Drawer Charges' }}
                 <input name="charges" type="number" min="0" step="100" value="{{ old('charges', 0) }}" class="mt-1" data-confirm-summary-label="Charges">
-                <span class="mt-1 block text-xs font-normal text-slate-500">Optional charges paid from the drawer. Money-in is added net of charges; money-out includes charges.</span>
+                <span class="mt-1 block text-xs font-normal text-slate-500">
+                    @if($isLedgerPosting)
+                        Deduct from transaction amount by default, or add the charge on top of the ledger posting.
+                    @else
+                        Optional charges paid from the drawer. Money-in is added net of charges; money-out includes charges.
+                    @endif
+                </span>
             </label>
+            @if($isLedgerPosting)
+                <label class="text-sm font-semibold text-slate-700">Charge Handling
+                    <select name="charge_mode" class="mt-1" data-confirm-summary-label="Charge handling">
+                        @foreach($chargeModes as $mode => $label)
+                            <option value="{{ $mode }}" @selected(old('charge_mode', 'deduct_from_amount') === $mode)>{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </label>
+            @endif
             <label class="text-sm font-semibold text-slate-700">Transaction Date <x-required-badge />
                 <input name="transaction_date" type="date" max="{{ today()->toDateString() }}" value="{{ old('transaction_date', today()->toDateString()) }}" class="mt-1" required data-confirm-summary-label="Date">
             </label>

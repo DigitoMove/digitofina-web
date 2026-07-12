@@ -1118,11 +1118,11 @@ class LoanService
         return '4200';
     }
 
-    public function repay(Loan $loan, float $amount, User $user, ?int $transactionId = null, string $paymentMethod = 'cash', ?string $reference = null, ?CarbonInterface $paidAt = null, string $counterAccountCode = '1000', string $journalMemo = 'Loan repayment allocation'): LoanRepayment
+    public function repay(Loan $loan, float $amount, User $user, ?int $transactionId = null, string $paymentMethod = 'cash', ?string $reference = null, ?CarbonInterface $paidAt = null, string $counterAccountCode = '1000', string $journalMemo = 'Loan repayment allocation', ?float $counterEntryAmount = null): LoanRepayment
     {
         CurrencyDenomination::assertValid($amount);
 
-        return DB::transaction(function () use ($loan, $amount, $user, $transactionId, $paymentMethod, $reference, $paidAt, $counterAccountCode, $journalMemo) {
+        return DB::transaction(function () use ($loan, $amount, $user, $transactionId, $paymentMethod, $reference, $paidAt, $counterAccountCode, $journalMemo, $counterEntryAmount) {
             $loan = Loan::query()->whereKey($loan->id)->lockForUpdate()->firstOrFail();
 
             if (! in_array($loan->status, ['active', 'in_arrears'], true)) {
@@ -1189,9 +1189,10 @@ class LoanService
 
             $journalNumber = 'LR'.now()->format('ymdHis').Str::upper(Str::random(4));
             $journalSequence = 0;
+            $counterAmount = $counterEntryAmount ?? $penaltyPaid + $feesPaid + $interestPaid + $principalPaid;
 
             foreach ([
-                [$counterAccountCode, 'debit', $penaltyPaid + $feesPaid + $interestPaid + $principalPaid],
+                [$counterAccountCode, 'debit', $counterAmount],
                 ['4100', 'credit', $interestPaid],
                 ['4200', 'credit', $feesPaid + $penaltyPaid],
                 ['1200', 'credit', $principalPaid],

@@ -41,6 +41,11 @@ class Transaction extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
     public function drawerSession(): BelongsTo
     {
         return $this->belongsTo(DrawerSession::class);

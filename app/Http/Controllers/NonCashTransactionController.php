@@ -9,6 +9,7 @@ use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\Transaction;
 use App\Models\TransactionType;
+use App\Services\LedgerChargeService;
 use App\Services\TransactionPostingService;
 use App\Support\ApiSecurity;
 use Carbon\CarbonImmutable;
@@ -61,6 +62,7 @@ class NonCashTransactionController extends Controller
             'branchId' => $branchId,
             'accountTypes' => AccountType::query()->where('is_active', true)->orderBy('name')->get(),
             'transactionTypes' => TransactionType::query()->where('is_active', true)->orderBy('name')->get(),
+            'chargeModes' => LedgerChargeService::modes(),
             'selectedAccountTypeId' => $selectedAccountTypeId,
             'selectedAccount' => $selectedAccount,
             'selectedLedger' => $selectedLedger,
@@ -143,6 +145,8 @@ class NonCashTransactionController extends Controller
                 $request->user(),
                 $data['description'],
                 CarbonImmutable::parse($data['transaction_date']),
+                (float) ($data['charges'] ?? 0),
+                LedgerChargeService::normalizeMode($data['charge_mode'] ?? null),
             );
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['amount' => $exception->getMessage()])->withInput();

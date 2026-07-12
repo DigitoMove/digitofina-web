@@ -277,12 +277,14 @@ class TransactionPostingService
         });
     }
 
-    public function postNonCash(Account $account, TransactionType $type, ChartAccount $offsetAccount, float $amount, User $user, string $description, ?CarbonInterface $postedAt = null): Transaction
+    public function postNonCash(Account $account, TransactionType $type, ChartAccount $offsetAccount, float $amount, User $user, string $description, ?CarbonInterface $postedAt = null, float $charges = 0, string $chargeMode = LedgerChargeService::MODE_DEDUCT_FROM_AMOUNT): Transaction
     {
         $postedAt = TransactionTimestamp::forBusinessDate($postedAt);
+        $chargeMode = LedgerChargeService::normalizeMode($chargeMode);
         CurrencyDenomination::assertValid($amount);
+        $this->assertCharges($charges);
 
-        return DB::transaction(function () use ($account, $type, $offsetAccount, $amount, $user, $description, $postedAt): Transaction {
+        return DB::transaction(function () use ($account, $type, $offsetAccount, $amount, $user, $description, $postedAt, $charges, $chargeMode): Transaction {
             $account = Account::query()->with(['accountType', 'client.loans'])->whereKey($account->id)->lockForUpdate()->firstOrFail();
             $offsetAccount = ChartAccount::query()->whereKey($offsetAccount->id)->lockForUpdate()->firstOrFail();
 
@@ -310,7 +312,7 @@ class TransactionPostingService
                     throw new InvalidArgumentException('Use a debit-normal asset ledger, such as Merchant Code or Mobile Money Clearing, for non-cash loan repayments.');
                 }
 
-                return $this->postNonCashLoanRepayment($account, $type, $offsetAccount, $amount, $user, $description, $postedAt);
+                return $this->postNonCashLoanRepayment($account, $type, $offsetAccount, $amount, $user, $description, $postedAt, $charges, $chargeMode);
             }
 
             $direction = $type->direction;
@@ -327,6 +329,8 @@ class TransactionPostingService
                 $offsetEntryType = 'debit';
             }
 
+            $ledgerAmount = $this->nonCashLedgerAmount($offsetEntryType, $amount, $charges, $chargeMode);
+            $this->assertPositiveLedgerAmount($ledgerAmount);
             $account->refresh();
 
             $transaction = Transaction::create([
@@ -337,6 +341,8 @@ class TransactionPostingService
                 'user_id' => $user->id,
                 'reference' => $this->reference(),
                 'amount' => $amount,
+                'charges' => $charges,
+                'charge_mode' => $chargeMode,
                 'balance_after' => $account->balance,
                 'description' => $description,
                 'posted_at' => $postedAt,
@@ -357,14 +363,20 @@ class TransactionPostingService
                 'reference' => $transaction->reference,
                 'account_name' => $offsetAccount->name,
                 'entry_type' => $offsetEntryType,
-                'amount' => $amount,
+                'amount' => $ledgerAmount,
                 'memo' => $description,
             ]);
+
+            if ($charges > 0) {
+                $this->postNonCashChargeJournal($transaction, $offsetAccount, $charges, $user, $postedAt, $description);
+            }
 
             $this->auditLogger->record('transaction.non_cash_posted', $transaction, [
                 'account_number' => $account->account_number,
                 'offset_account' => $offsetAccount->code,
                 'amount' => $amount,
+                'charges' => $charges,
+                'charge_mode' => $chargeMode,
                 'type' => $type->code,
             ]);
             $this->notifications->notifyAccountClient(
@@ -381,7 +393,7 @@ class TransactionPostingService
         });
     }
 
-    private function postNonCashLoanRepayment(Account $account, TransactionType $type, ChartAccount $offsetAccount, float $amount, User $user, string $description, CarbonInterface $postedAt): Transaction
+    private function postNonCashLoanRepayment(Account $account, TransactionType $type, ChartAccount $offsetAccount, float $amount, User $user, string $description, CarbonInterface $postedAt, float $charges, string $chargeMode): Transaction
     {
         $loan = $account->client->loans()
             ->where('loan_account_id', $account->id)
@@ -392,6 +404,9 @@ class TransactionPostingService
             throw new InvalidArgumentException('No active loan is linked to this loan account.');
         }
 
+        $ledgerAmount = $this->nonCashLedgerAmount('debit', $amount, $charges, $chargeMode);
+        $this->assertPositiveLedgerAmount($ledgerAmount);
+
         $transaction = Transaction::create([
             'organization_id' => $account->organization_id,
             'account_id' => $account->id,
@@ -400,20 +415,28 @@ class TransactionPostingService
             'user_id' => $user->id,
             'reference' => $this->reference(),
             'amount' => $amount,
+            'charges' => $charges,
+            'charge_mode' => $chargeMode,
             'balance_after' => max(0, (float) $account->balance - $amount),
             'description' => $description,
             'posted_at' => $postedAt,
         ]);
 
-        app(LoanService::class)->repay($loan, $amount, $user, $transaction->id, 'non_cash', $transaction->reference, $postedAt, $offsetAccount->code, $description);
+        app(LoanService::class)->repay($loan, $amount, $user, $transaction->id, 'non_cash', $transaction->reference, $postedAt, $offsetAccount->code, $description, $ledgerAmount);
 
         $loan->refresh();
         $account->update(['balance' => max(0, (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance)]);
         $transaction->update(['balance_after' => $account->balance]);
 
+        if ($charges > 0) {
+            $this->postNonCashChargeJournal($transaction, $offsetAccount, $charges, $user, $postedAt, $description);
+        }
+
         $this->auditLogger->record('transaction.non_cash_loan_repayment_posted', $transaction, [
             'account_number' => $account->account_number,
             'amount' => $amount,
+            'charges' => $charges,
+            'charge_mode' => $chargeMode,
             'loan_number' => $loan->loan_number,
             'offset_account' => $offsetAccount->code,
         ]);
@@ -421,9 +444,10 @@ class TransactionPostingService
         return $transaction->refresh();
     }
 
-    public function postGeneralLedgerCash(ChartAccount $chartAccount, DrawerSession $session, string $entryType, float $amount, User $user, ?string $description = null, ?CarbonInterface $postedAt = null, float $charges = 0): JournalEntry
+    public function postGeneralLedgerCash(ChartAccount $chartAccount, DrawerSession $session, string $entryType, float $amount, User $user, ?string $description = null, ?CarbonInterface $postedAt = null, float $charges = 0, string $chargeMode = LedgerChargeService::MODE_DEDUCT_FROM_AMOUNT): JournalEntry
     {
         $postedAt = TransactionTimestamp::forBusinessDate($postedAt);
+        $chargeMode = LedgerChargeService::normalizeMode($chargeMode);
 
         if (! in_array($entryType, ['debit', 'credit'], true)) {
             throw new InvalidArgumentException('General ledger posting must be debit or credit.');
@@ -432,7 +456,7 @@ class TransactionPostingService
         CurrencyDenomination::assertValid($amount);
         $this->assertCharges($charges);
 
-        return DB::transaction(function () use ($chartAccount, $session, $entryType, $amount, $user, $description, $postedAt, $charges): JournalEntry {
+        return DB::transaction(function () use ($chartAccount, $session, $entryType, $amount, $user, $description, $postedAt, $charges, $chargeMode): JournalEntry {
             $chartAccount = ChartAccount::query()->whereKey($chartAccount->id)->lockForUpdate()->firstOrFail();
             $session = DrawerSession::query()->with('drawer')->whereKey($session->id)->lockForUpdate()->firstOrFail();
             $drawer = $session->drawer()->with('branch')->lockForUpdate()->firstOrFail();
@@ -470,11 +494,12 @@ class TransactionPostingService
             $businessDate = $financialControls->ensureFinancialDayOpen($user, (int) $drawer->branch_id, $postedAt);
             $financialControls->enforceTransactionLimit($user, $amount + $charges, $businessDate);
 
-            if ($entryType === 'credit' && $charges > $amount) {
-                throw new InvalidArgumentException('Charges cannot exceed money received into the drawer.');
+            if ($chargeMode === LedgerChargeService::MODE_DEDUCT_FROM_AMOUNT && $charges > $amount) {
+                throw new InvalidArgumentException('Charges cannot exceed the transaction amount when they are deducted from it.');
             }
 
-            $cashImpact = $entryType === 'debit' ? $amount + $charges : $amount - $charges;
+            $ledgerAmount = $this->ledgerAmount($entryType, $amount, $charges, $chargeMode);
+            $cashImpact = $this->cashImpact($entryType, $amount, $charges, $chargeMode);
 
             if ($entryType === 'debit' && (float) $drawer->current_balance < $cashImpact) {
                 throw new InvalidArgumentException('Insufficient drawer cash.');
@@ -504,6 +529,7 @@ class TransactionPostingService
                 'reference' => $this->reference(),
                 'amount' => $amount,
                 'charges' => $charges,
+                'charge_mode' => $chargeMode,
                 'balance_after' => $drawer->current_balance,
                 'currency' => $drawer->currency,
                 'description' => $description ?: 'Teller general ledger cash posting for '.$chartAccount->name,
@@ -526,7 +552,7 @@ class TransactionPostingService
                 'reference' => $transaction->reference,
                 'account_name' => $chartAccount->name,
                 'entry_type' => $entryType,
-                'amount' => $amount,
+                'amount' => $ledgerAmount,
                 'memo' => $description,
             ]);
 
@@ -534,17 +560,16 @@ class TransactionPostingService
             $chargeAccount = $charges > 0 ? $this->generalLedger->transactionChargesExpense($drawer->branch) : null;
             $lines = $entryType === 'debit'
                 ? [
-                    [$chartAccount->id, $amount, 0, $description ?: $chartAccount->name],
-                    [$cashAccount->id, 0, $amount, 'Cash paid from teller drawer'],
+                    [$chartAccount->id, $ledgerAmount, 0, $description ?: $chartAccount->name],
+                    [$cashAccount->id, 0, $cashImpact, 'Cash paid from teller drawer'],
                 ]
                 : [
-                    [$cashAccount->id, $amount, 0, 'Cash received into teller drawer'],
-                    [$chartAccount->id, 0, $amount, $description ?: $chartAccount->name],
+                    [$cashAccount->id, $cashImpact, 0, 'Cash received into teller drawer'],
+                    [$chartAccount->id, 0, $ledgerAmount, $description ?: $chartAccount->name],
                 ];
 
             if ($chargeAccount) {
                 $lines[] = [$chargeAccount->id, $charges, 0, 'Transaction charges'];
-                $lines[] = [$cashAccount->id, 0, $charges, 'Charges paid from teller drawer'];
             }
 
             foreach ($lines as [$chartAccountId, $debit, $credit, $narration]) {
@@ -575,6 +600,7 @@ class TransactionPostingService
                 'entry_type' => $entryType,
                 'amount' => $amount,
                 'charges' => $charges,
+                'charge_mode' => $chargeMode,
             ]);
             $this->notifications->notifyStaffByPermission(
                 ['manage-drawers', 'approve-reversals', 'view-reports'],
@@ -628,6 +654,43 @@ class TransactionPostingService
         }
     }
 
+    private function postNonCashChargeJournal(Transaction $transaction, ChartAccount $offsetAccount, float $charges, User $user, CarbonInterface $postedAt, ?string $description): void
+    {
+        $branch = $transaction->branch ?: $offsetAccount->branch;
+
+        if (! $branch) {
+            throw new InvalidArgumentException('Select a branch before posting non-cash ledger charges.');
+        }
+
+        $chargeAccount = $this->generalLedger->transactionChargesExpense($branch);
+        $journal = JournalEntry::create([
+            'organization_id' => $transaction->organization_id,
+            'branch_id' => $branch->id,
+            'created_by' => $user->id,
+            'posted_by' => $user->id,
+            'journal_number' => 'NCF'.now()->format('ymdHis').Str::upper(Str::random(4)),
+            'journal_date' => $postedAt->toDateString(),
+            'description' => 'Non-cash transaction charges for '.$transaction->reference,
+            'status' => 'posted',
+            'posted_at' => $postedAt,
+            'transaction_id' => $transaction->id,
+            'reference' => $transaction->reference,
+            'chart_account_id' => $chargeAccount->id,
+            'account_name' => $chargeAccount->name,
+            'entry_type' => 'debit',
+            'amount' => $charges,
+            'memo' => $description,
+        ]);
+
+        JournalLine::create([
+            'journal_entry_id' => $journal->id,
+            'chart_account_id' => $chargeAccount->id,
+            'debit' => $charges,
+            'credit' => 0,
+            'narration' => 'Non-cash transaction charges',
+        ]);
+    }
+
     private function cashAccount(TellerDrawer $drawer): ChartAccount
     {
         $cashAccount = ChartAccount::query()
@@ -656,6 +719,64 @@ class TransactionPostingService
         if ($charges > 0) {
             CurrencyDenomination::assertValid($charges, 'Charges');
         }
+    }
+
+    private function nonCashLedgerAmount(string $entryType, float $amount, float $charges, string $chargeMode): float
+    {
+        if ($charges <= 0) {
+            return $amount;
+        }
+
+        if ($entryType === 'debit') {
+            return $chargeMode === LedgerChargeService::MODE_ADD_TO_AMOUNT
+                ? $amount
+                : $amount - $charges;
+        }
+
+        return $chargeMode === LedgerChargeService::MODE_ADD_TO_AMOUNT
+            ? $amount + $charges
+            : $amount;
+    }
+
+    private function assertPositiveLedgerAmount(float $ledgerAmount): void
+    {
+        if ($ledgerAmount <= 0) {
+            throw new InvalidArgumentException('Charges cannot equal or exceed the transaction amount for this ledger posting.');
+        }
+    }
+
+    private function ledgerAmount(string $entryType, float $amount, float $charges, string $chargeMode): float
+    {
+        if ($charges <= 0) {
+            return $amount;
+        }
+
+        if ($entryType === 'credit') {
+            return $chargeMode === LedgerChargeService::MODE_ADD_TO_AMOUNT
+                ? $amount + $charges
+                : $amount;
+        }
+
+        return $chargeMode === LedgerChargeService::MODE_ADD_TO_AMOUNT
+            ? $amount
+            : $amount - $charges;
+    }
+
+    private function cashImpact(string $entryType, float $amount, float $charges, string $chargeMode): float
+    {
+        if ($charges <= 0) {
+            return $amount;
+        }
+
+        if ($entryType === 'credit') {
+            return $chargeMode === LedgerChargeService::MODE_ADD_TO_AMOUNT
+                ? $amount
+                : $amount - $charges;
+        }
+
+        return $chargeMode === LedgerChargeService::MODE_ADD_TO_AMOUNT
+            ? $amount + $charges
+            : $amount;
     }
 
     private function reference(): string

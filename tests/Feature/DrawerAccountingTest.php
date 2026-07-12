@@ -17,6 +17,7 @@ use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\DrawerTransferService;
+use App\Services\LedgerChargeService;
 use App\Services\LedgerOpeningBalanceService;
 use App\Services\ModuleService;
 use App\Services\TransactionPostingService;
@@ -167,10 +168,47 @@ it('adds ledger cash to a drawer net of charges and keeps the journal balanced',
 
     expect((float) $drawer->fresh()->current_balance)->toBe(299000.0)
         ->and((float) $journal->transaction->charges)->toBe(1000.0)
-        ->and((float) $journal->lines()->sum('debit'))->toBe(101000.0)
-        ->and((float) $journal->lines()->sum('credit'))->toBe(101000.0)
+        ->and($journal->transaction->charge_mode)->toBe(LedgerChargeService::MODE_DEDUCT_FROM_AMOUNT)
+        ->and((float) $journal->lines()->sum('debit'))->toBe(100000.0)
+        ->and((float) $journal->lines()->sum('credit'))->toBe(100000.0)
+        ->and((float) $journal->lines()->where('chart_account_id', $merchantCode->id)->sum('credit'))->toBe(100000.0)
         ->and($journal->branch_id)->toBe($branch->id)
         ->and((float) DrawerMovement::where('reference', $journal->reference)->value('amount'))->toBe(99000.0);
+});
+
+it('adds ledger cash to a drawer with charges on top when selected', function () {
+    [$organization, $branch, $user] = drawerAccountingContext();
+    [$drawer, $session] = openAccountingDrawer($organization, $branch, $user, 'MAIN-02', 200_000);
+    $merchantCode = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => null,
+        'code' => 'AIRTEL-MERCHANT',
+        'name' => 'Airtel Merchant Code Clearing',
+        'type' => 'asset',
+        'normal_balance' => 'debit',
+        'drawer_direction' => 'cash_in',
+        'is_active' => true,
+    ]);
+
+    $journal = app(TransactionPostingService::class)->postGeneralLedgerCash(
+        $merchantCode,
+        $session,
+        'credit',
+        100_000,
+        $user,
+        'Withdraw merchant float into drawer',
+        today(),
+        1_000,
+        LedgerChargeService::MODE_ADD_TO_AMOUNT,
+    );
+
+    expect((float) $drawer->fresh()->current_balance)->toBe(300000.0)
+        ->and((float) $journal->transaction->charges)->toBe(1000.0)
+        ->and($journal->transaction->charge_mode)->toBe(LedgerChargeService::MODE_ADD_TO_AMOUNT)
+        ->and((float) $journal->lines()->sum('debit'))->toBe(101000.0)
+        ->and((float) $journal->lines()->sum('credit'))->toBe(101000.0)
+        ->and((float) $journal->lines()->where('chart_account_id', $merchantCode->id)->sum('credit'))->toBe(101000.0)
+        ->and((float) DrawerMovement::where('reference', $journal->reference)->value('amount'))->toBe(100000.0);
 });
 
 it('blocks accidental duplicate teller posts for the same cashier request', function () {

@@ -9,6 +9,7 @@ use App\Models\ChartAccount;
 use App\Services\AuditLogger;
 use App\Services\LedgerAccountMergeService;
 use App\Services\LedgerAccountStatementService;
+use App\Services\LedgerChargeService;
 use App\Services\LedgerOpeningBalanceService;
 use App\Services\TenantContext;
 use App\Support\ApiSecurity;
@@ -251,6 +252,40 @@ class LedgerAccountController extends Controller
         }
 
         return back()->with('status', 'Opening balance posted as '.$journal->reference.'.');
+    }
+
+    public function postCharges(Request $request, ChartAccount $chartAccount, LedgerChargeService $charges): RedirectResponse
+    {
+        abort_unless($this->canManageLedgerAccounts($request), 403);
+        $this->authorizeLedgerAccountAccess($request, $chartAccount);
+
+        $data = $request->validate([
+            'branch_id' => [$chartAccount->branch_id ? 'nullable' : 'required', 'integer', 'exists:branches,id'],
+            'amount' => ['required', 'numeric', 'min:100'],
+            'charge_date' => ['required', 'date', 'before_or_equal:today'],
+            'description' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $branch = $chartAccount->branch_id
+            ? Branch::query()->findOrFail($chartAccount->branch_id)
+            : Branch::query()->findOrFail($data['branch_id']);
+
+        try {
+            $this->authorizeLedgerBranch($request, $branch);
+
+            $journal = $charges->postStandaloneCharge(
+                $chartAccount,
+                (float) $data['amount'],
+                CarbonImmutable::parse($data['charge_date']),
+                $request->user(),
+                $branch,
+                $data['description'] ?? null,
+            );
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['ledger_charges' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Ledger charges posted as '.$journal->reference.'.');
     }
 
     public function show(Request $request, ChartAccount $chartAccount, LedgerAccountStatementService $statements): View

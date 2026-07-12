@@ -25,7 +25,9 @@ use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
+use App\Services\LedgerAccountStatementService;
 use App\Services\TransactionReversalService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -1142,6 +1144,210 @@ it('allows an organization admin to repair disbursed loan terms and regenerate t
         ->and($loanAccount->fresh()->status)->toBe('active')
         ->and((float) $loanAccount->fresh()->balance)->toBe((float) $loan->principal_balance + (float) $loan->interest_balance);
 });
+
+it('reverses line-backed ledger journals so merchant ledger balances net to zero', function () {
+    [$organization, $branch, $admin, $merchant, $cashAccount, $type] = ledgerReversalLineContext();
+    $transaction = Transaction::create([
+        'organization_id' => $organization->id,
+        'transaction_type_id' => $type->id,
+        'branch_id' => $branch->id,
+        'user_id' => $admin->id,
+        'reference' => 'LEDGER-RV-001',
+        'amount' => 100_000,
+        'balance_after' => 0,
+        'currency' => 'UGX',
+        'description' => 'Merchant code drawer posting',
+        'status' => 'posted',
+        'posted_at' => now(),
+    ]);
+    $journal = JournalEntry::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'created_by' => $admin->id,
+        'posted_by' => $admin->id,
+        'journal_number' => 'LEDGER-RV-JE001',
+        'journal_date' => today()->toDateString(),
+        'description' => 'Merchant code drawer posting',
+        'status' => 'posted',
+        'posted_at' => now(),
+        'chart_account_id' => $cashAccount->id,
+        'transaction_id' => $transaction->id,
+        'reference' => $transaction->reference,
+        'account_name' => $cashAccount->name,
+        'entry_type' => 'debit',
+        'amount' => 100_000,
+    ]);
+    JournalLine::create(['journal_entry_id' => $journal->id, 'chart_account_id' => $cashAccount->id, 'debit' => 100_000, 'credit' => 0]);
+    JournalLine::create(['journal_entry_id' => $journal->id, 'chart_account_id' => $merchant->id, 'debit' => 0, 'credit' => 100_000]);
+    $request = MakerCheckerRequest::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'subject_type' => $transaction->getMorphClass(),
+        'subject_id' => $transaction->id,
+        'requested_by' => $admin->id,
+        'action' => 'transaction_reversal',
+        'required_permission' => 'approve-reversals',
+        'amount' => 100_000,
+        'status' => 'pending',
+        'reason' => 'Wrong ledger posting',
+    ]);
+
+    $reversal = app(TransactionReversalService::class)->approve($request, $admin);
+    $reversalJournal = JournalEntry::query()->where('transaction_id', $reversal->id)->firstOrFail();
+    $statement = app(LedgerAccountStatementService::class)->build($merchant, CarbonImmutable::parse(today()->toDateString()), CarbonImmutable::parse(today()->toDateString()));
+
+    expect((float) $reversalJournal->lines()->where('chart_account_id', $merchant->id)->sum('debit'))->toBe(100000.0)
+        ->and((float) $reversalJournal->lines()->where('chart_account_id', $cashAccount->id)->sum('credit'))->toBe(100000.0)
+        ->and($journal->fresh()->status)->toBe('posted')
+        ->and($statement['period_debits'])->toBe(100000.0)
+        ->and($statement['period_credits'])->toBe(100000.0)
+        ->and($statement['closing_balance'])->toBe(0.0);
+});
+
+it('repairs old reversed ledger journals that are missing reversal lines', function () {
+    [$organization, $branch, $admin, $merchant, $cashAccount, $type] = ledgerReversalLineContext();
+    $original = Transaction::create([
+        'organization_id' => $organization->id,
+        'transaction_type_id' => $type->id,
+        'branch_id' => $branch->id,
+        'user_id' => $admin->id,
+        'reference' => 'OLD-LEDGER-RV-001',
+        'amount' => 80_000,
+        'balance_after' => 0,
+        'currency' => 'UGX',
+        'description' => 'Old merchant code drawer posting',
+        'status' => 'reversed',
+        'posted_at' => now(),
+        'reversed_at' => now(),
+    ]);
+    $reversal = Transaction::create([
+        'organization_id' => $organization->id,
+        'transaction_type_id' => $type->id,
+        'branch_id' => $branch->id,
+        'user_id' => $admin->id,
+        'reversal_of_id' => $original->id,
+        'reference' => 'RV-OLD-LEDGER-RV-001',
+        'amount' => 80_000,
+        'balance_after' => 0,
+        'currency' => 'UGX',
+        'description' => 'Reversal of OLD-LEDGER-RV-001',
+        'status' => 'posted',
+        'posted_at' => now(),
+    ]);
+    $original->update(['reversed_by' => $reversal->id]);
+    $journal = JournalEntry::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'created_by' => $admin->id,
+        'posted_by' => $admin->id,
+        'journal_number' => 'OLD-LEDGER-RV-JE001',
+        'journal_date' => today()->toDateString(),
+        'description' => 'Old merchant code drawer posting',
+        'status' => 'reversed',
+        'posted_at' => now(),
+        'chart_account_id' => $cashAccount->id,
+        'transaction_id' => $original->id,
+        'reference' => $original->reference,
+        'account_name' => $cashAccount->name,
+        'entry_type' => 'debit',
+        'amount' => 80_000,
+    ]);
+    JournalLine::create(['journal_entry_id' => $journal->id, 'chart_account_id' => $cashAccount->id, 'debit' => 80_000, 'credit' => 0]);
+    JournalLine::create(['journal_entry_id' => $journal->id, 'chart_account_id' => $merchant->id, 'debit' => 0, 'credit' => 80_000]);
+    $reversalJournal = JournalEntry::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'created_by' => $admin->id,
+        'posted_by' => $admin->id,
+        'journal_number' => 'RJ-OLD-LEDGER-RV-JE001',
+        'journal_date' => today()->toDateString(),
+        'description' => 'Reversal of '.$journal->reference,
+        'status' => 'posted',
+        'posted_at' => now(),
+        'chart_account_id' => $cashAccount->id,
+        'transaction_id' => $reversal->id,
+        'reference' => $reversal->reference,
+        'account_name' => $cashAccount->name,
+        'entry_type' => 'credit',
+        'amount' => 80_000,
+    ]);
+
+    $this->artisan('ledger:repair-reversal-lines')
+        ->assertExitCode(0);
+
+    expect($reversalJournal->lines()->count())->toBe(0);
+
+    $this->artisan('ledger:repair-reversal-lines', ['--apply' => true])
+        ->assertExitCode(0);
+
+    $statement = app(LedgerAccountStatementService::class)->build($merchant, CarbonImmutable::parse(today()->toDateString()), CarbonImmutable::parse(today()->toDateString()));
+
+    expect($journal->fresh()->status)->toBe('posted')
+        ->and((float) $reversalJournal->fresh()->lines()->where('chart_account_id', $merchant->id)->sum('debit'))->toBe(80000.0)
+        ->and((float) $reversalJournal->fresh()->lines()->where('chart_account_id', $cashAccount->id)->sum('credit'))->toBe(80000.0)
+        ->and($statement['period_debits'])->toBe(80000.0)
+        ->and($statement['period_credits'])->toBe(80000.0)
+        ->and($statement['closing_balance'])->toBe(0.0);
+});
+
+function ledgerReversalLineContext(): array
+{
+    $organization = Organization::create([
+        'name' => 'Ledger Reversal SACCO',
+        'slug' => fake()->unique()->slug(),
+        'status' => 'active',
+    ]);
+    $branch = Branch::create([
+        'organization_id' => $organization->id,
+        'code' => 'LRB',
+        'name' => 'Ledger Reversal Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $role = Role::create([
+        'organization_id' => $organization->id,
+        'name' => 'Super Admin',
+        'slug' => 'super-admin',
+    ]);
+    $admin = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'role_id' => $role->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $merchant = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => null,
+        'code' => 'LR-MERCHANT',
+        'name' => 'Ledger Reversal Merchant',
+        'type' => 'asset',
+        'normal_balance' => 'debit',
+        'drawer_direction' => 'cash_in',
+        'is_active' => true,
+    ]);
+    $cashAccount = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'code' => 'LR-CASH',
+        'name' => 'Ledger Reversal Cash',
+        'type' => 'asset',
+        'normal_balance' => 'debit',
+        'is_cash_account' => true,
+        'is_system' => true,
+        'is_active' => true,
+    ]);
+    $type = TransactionType::create([
+        'organization_id' => $organization->id,
+        'name' => 'Drawer GL Cash In',
+        'code' => fake()->unique()->bothify('drawer-gl-cash-in-??'),
+        'direction' => 'credit',
+        'affects_cash_drawer' => true,
+        'is_active' => true,
+    ]);
+
+    return [$organization, $branch, $admin, $merchant, $cashAccount, $type];
+}
 
 function transactionDeletionContext(): array
 {

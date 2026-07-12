@@ -80,6 +80,18 @@
                 <input type="number" name="amount" value="{{ old('amount') }}" min="100" step="100" required class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100" placeholder="100" data-confirm-summary-label="Amount">
             </label>
             <label class="grid gap-1 text-sm">
+                <span class="font-medium text-slate-700">Ledger charges</span>
+                <input type="number" name="charges" value="{{ old('charges', 0) }}" min="0" step="100" class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100" data-confirm-summary-label="Charges">
+            </label>
+            <label class="grid gap-1 text-sm">
+                <span class="font-medium text-slate-700">Charge handling</span>
+                <select name="charge_mode" class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100" data-confirm-summary-label="Charge handling">
+                    @foreach($chargeModes as $mode => $label)
+                        <option value="{{ $mode }}" @selected(old('charge_mode', 'deduct_from_amount') === $mode)>{{ $label }}</option>
+                    @endforeach
+                </select>
+            </label>
+            <label class="grid gap-1 text-sm">
                 <span class="font-medium text-slate-700">Reason / narration</span>
                 <input name="description" value="{{ old('description') }}" required class="rounded-lg border-slate-200 focus:border-brand-500 focus:ring-brand-100" placeholder="Merchant code repayment, bank transfer..." data-confirm-summary-label="Reason">
             </label>
@@ -136,7 +148,12 @@
                                 <div class="text-xs text-slate-500">{{ $paymentLedger?->code }}</div>
                             </td>
                             <td class="px-4 py-3">{{ $transaction->type?->name ?? 'N/A' }}</td>
-                            <td class="whitespace-nowrap px-4 py-3 font-semibold text-slate-950">UGX {{ number_format((float) $transaction->amount, 2) }}</td>
+                            <td class="whitespace-nowrap px-4 py-3 font-semibold text-slate-950">
+                                <div>UGX {{ number_format((float) $transaction->amount, 2) }}</div>
+                                @if((float) $transaction->charges > 0)
+                                    <div class="text-xs font-medium text-amber-700">Charges UGX {{ number_format((float) $transaction->charges, 2) }}</div>
+                                @endif
+                            </td>
                             <td class="px-4 py-3">{{ $transaction->user?->name ?? 'System' }}</td>
                             <td class="px-4 py-3"><a href="{{ route('receipts.show', $transaction) }}" class="font-semibold text-brand-700 hover:underline">{{ $transaction->reference }}</a></td>
                             <td class="px-4 py-3 text-right">
