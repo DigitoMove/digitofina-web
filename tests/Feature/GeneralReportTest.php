@@ -7,6 +7,7 @@ use App\Models\JournalEntry;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\LoanRepayment;
+use App\Models\LoanSchedule;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\ReportCatalogService;
@@ -77,6 +78,39 @@ it('generates a branch and period filtered simplified income statement', functio
         ->assertDontSee('Other Branch Expense');
 });
 
+it('generates the projected simplified income statement from scheduled interest', function () {
+    $user = generalReportUser();
+    $branch = Branch::create(['code' => '1001', 'name' => 'Main Branch', 'is_active' => true, 'status' => 'active']);
+    $product = generalReportLoanProduct('Projected Loan', 'PROJECTED');
+    $loan = generalReportRepayment($branch, $product, 40, 10);
+
+    LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today(),
+        'principal_due' => 1000,
+        'interest_due' => 200,
+        'total_due' => 1200,
+        'outstanding_amount' => 1160,
+        'balance_due' => 1160,
+        'interest_paid' => 40,
+        'status' => 'partial',
+    ]);
+
+    $report = app(ReportCatalogService::class)->generate('projected-general-income-statement', [
+        'from' => today()->startOfMonth()->toDateString(),
+        'to' => today()->endOfMonth()->toDateString(),
+        'branch_id' => $branch->id,
+    ], $user);
+    $rows = $report['rows']->keyBy('Source');
+
+    expect($report['definition']['title'])->toBe('Simplified Income Statement - Projected')
+        ->and($rows['Interest - Projected Loan']['Amount'])->toBe('UGX 200.00')
+        ->and($rows['Interest - Projected Loan']['Explanation'])->toContain('projected')
+        ->and($rows['Total Income / Money In']['Amount'])->toBe('UGX 210.00')
+        ->and($report['summary']['Income'])->toBe('UGX 210.00');
+});
+
 function generalReportUser(): User
 {
     $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
@@ -103,7 +137,7 @@ function generalReportLoanProduct(string $name, string $code): LoanProduct
     ]);
 }
 
-function generalReportRepayment(Branch $branch, LoanProduct $product, int $interest, int $penalty): void
+function generalReportRepayment(Branch $branch, LoanProduct $product, int $interest, int $penalty): Loan
 {
     $client = Client::create([
         'branch_id' => $branch->id,
@@ -139,6 +173,8 @@ function generalReportRepayment(Branch $branch, LoanProduct $product, int $inter
         'paid_at' => today(),
         'status' => 'successful',
     ]);
+
+    return $loan;
 }
 
 function generalReportLedger(Branch $branch, string $code, string $name, string $type, string $entryType, int $amount): void

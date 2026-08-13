@@ -32,9 +32,9 @@ class SavingsTransactionController extends Controller
         return ApiResponse::resource(new SavingsTransactionResource($transaction->load(['account', 'teller'])), 'Deposit posted successfully.', 201);
     }
 
-    public function withdraw(StoreSavingsTransactionRequest $request, SavingsAccount $savingsAccount, SavingsTransactionService $transactions, FinancialControlService $controls): JsonResponse
+    public function withdraw(StoreSavingsTransactionRequest $request, int $savingsAccountId, SavingsTransactionService $transactions, FinancialControlService $controls): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $savingsAccount);
+        $savingsAccount = $transactions->resolveWithdrawalAccount($savingsAccountId, $request->user());
         $amount = (float) $request->validated('amount');
 
         if ($controls->requiresMakerChecker($request->user(), 'savings_withdrawal', $amount)) {

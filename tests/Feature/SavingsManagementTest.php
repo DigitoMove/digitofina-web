@@ -4,16 +4,20 @@ use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\Client;
 use App\Models\GroupSavingsAccount;
+use App\Models\Module;
 use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\SavingsAccount;
 use App\Models\SavingsGoal;
 use App\Models\SavingsProduct;
+use App\Models\SavingsTransaction;
 use App\Models\User;
 use App\Services\GroupSavingsService;
+use App\Services\ModuleService;
 use App\Services\SavingsGoalService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
 
@@ -180,6 +184,81 @@ it('prevents withdrawals below minimum balance', function () {
 
     $response->assertSessionHasErrors('amount');
     expect($account->fresh()->current_balance)->toBe('20000.00');
+});
+
+it('allows staff to withdraw from a savings account at another branch in their organization', function () {
+    $admin = savingsAdmin();
+    $organization = $admin->organization;
+    $staffRole = Role::create([
+        'organization_id' => $organization->id,
+        'name' => 'Branch Agent',
+        'slug' => 'branch-agent',
+    ]);
+    $staff = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => $admin->branch_id,
+        'role_id' => $staffRole->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $otherBranch = Branch::create([
+        'organization_id' => $organization->id,
+        'code' => '2002',
+        'name' => 'Other Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $client = Client::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $otherBranch->id,
+        'client_number' => '2002-C000001',
+        'client_type' => 'individual',
+        'first_name' => 'Cross',
+        'last_name' => 'Branch',
+        'phone' => '+256700000099',
+        'status' => 'active',
+    ]);
+    $account = SavingsAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $otherBranch->id,
+        'client_id' => $client->id,
+        'savings_product_id' => savingsProduct()->id,
+        'account_number' => '2002-SAV-0000001',
+        'opening_date' => today(),
+        'current_balance' => 100_000,
+        'available_balance' => 100_000,
+        'status' => 'active',
+    ]);
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($organization);
+    $modules->enable($organization, Module::where('slug', 'savings')->firstOrFail(), $admin);
+
+    $this->actingAs($staff)
+        ->get(route('savings-transactions.withdrawal.create', $account))
+        ->assertSuccessful()
+        ->assertSee($account->account_number);
+
+    $this->actingAs($staff)
+        ->post(route('savings-transactions.withdrawal.store', $account), [
+            'amount' => 10_000,
+            'payment_method' => 'cash',
+        ])
+        ->assertRedirect();
+
+    Sanctum::actingAs($staff, ['*']);
+
+    $this->postJson("/api/v1/savings/accounts/{$account->id}/withdraw", [
+        'amount' => 10_000,
+        'payment_method' => 'cash',
+    ])->assertCreated();
+
+    $transactions = SavingsTransaction::query()->withoutGlobalScope('tenant')->latest('id')->limit(2)->get();
+
+    expect($account->fresh()->current_balance)->toBe('78000.00')
+        ->and($transactions)->toHaveCount(2)
+        ->and($transactions->every(fn (SavingsTransaction $transaction): bool => $transaction->branch_id === $otherBranch->id))->toBeTrue()
+        ->and($transactions->every(fn (SavingsTransaction $transaction): bool => $transaction->teller_id === $staff->id))->toBeTrue();
 });
 
 it('transfers funds between savings accounts', function () {

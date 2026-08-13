@@ -2148,7 +2148,7 @@ it('shows arrears only for active branch loans', function () {
         ->assertDontSee('2002-LN-ACTIVE-OTHER');
 });
 
-it('scopes arrears and due repayment views to the assigned loan officer', function () {
+it('lets loan officers work with loans assigned to other officers in their branch', function () {
     $admin = loanWorkflowUser();
     $organization = loanWorkflowOrganizationWithModules($admin, ['clients', 'loans', 'reports']);
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
@@ -2213,7 +2213,7 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->get(route('arrears.index'))
         ->assertSuccessful()
         ->assertSee('1001-LN-OFFICER-ARREARS')
-        ->assertDontSee('1001-LN-OTHER-ARREARS')
+        ->assertSee('1001-LN-OTHER-ARREARS')
         ->assertDontSee('Run Penalties');
 
     $this->actingAs($officer)
@@ -2287,7 +2287,7 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->get(route('due-repayments.index'))
         ->assertSuccessful()
         ->assertSee('1001-LN-OFFICER-DUE')
-        ->assertDontSee('1001-LN-OTHER-DUE')
+        ->assertSee('1001-LN-OTHER-DUE')
         ->assertDontSee('1001-LN-OFFICER-FUTURE');
 
     $this->actingAs($officer)
@@ -2299,7 +2299,7 @@ it('scopes arrears and due repayment views to the assigned loan officer', functi
         ->assertDontSee('Recent Loan Payments')
         ->assertDontSee('>Operations<', false)
         ->assertDontSee('Reports')
-        ->assertDontSee('1001-LN-OTHER-DUE')
+        ->assertSee('1001-LN-OTHER-DUE')
         ->assertDontSee('1001-LN-OFFICER-FUTURE');
 
     $recoveryRole = Role::firstOrCreate(['slug' => 'loan-recovery-officer'], ['name' => 'Loan Recovery Officer']);

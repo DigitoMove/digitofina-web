@@ -131,8 +131,8 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::get('/savings-accounts/{savingsAccount}/statement', [SavingsAccountController::class, 'statement'])->middleware('module:savings')->name('savings-accounts.statement');
     Route::get('/savings-accounts/{savingsAccount}/deposit', [SavingsTransactionController::class, 'depositForm'])->middleware('module:savings')->name('savings-transactions.deposit.create');
     Route::post('/savings-accounts/{savingsAccount}/deposit', [SavingsTransactionController::class, 'deposit'])->middleware('module:savings')->name('savings-transactions.deposit.store');
-    Route::get('/savings-accounts/{savingsAccount}/withdrawal', [SavingsTransactionController::class, 'withdrawalForm'])->middleware('module:savings')->name('savings-transactions.withdrawal.create');
-    Route::post('/savings-accounts/{savingsAccount}/withdrawal', [SavingsTransactionController::class, 'withdrawal'])->middleware('module:savings')->name('savings-transactions.withdrawal.store');
+    Route::get('/savings-accounts/{savingsAccountId}/withdrawal', [SavingsTransactionController::class, 'withdrawalForm'])->middleware('module:savings')->name('savings-transactions.withdrawal.create');
+    Route::post('/savings-accounts/{savingsAccountId}/withdrawal', [SavingsTransactionController::class, 'withdrawal'])->middleware('module:savings')->name('savings-transactions.withdrawal.store');
     Route::get('/savings-transfers/create', [SavingsTransactionController::class, 'transferForm'])->middleware('module:savings')->name('savings-transfers.create');
     Route::post('/savings-transfers', [SavingsTransactionController::class, 'transfer'])->middleware('module:savings')->name('savings-transfers.store');
     Route::get('/savings-transactions/{savingsTransaction}/receipt', [SavingsTransactionController::class, 'receipt'])->middleware('module:savings')->name('savings-transactions.receipt');

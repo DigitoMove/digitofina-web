@@ -30,13 +30,17 @@ class SavingsTransactionController extends Controller
         return redirect()->route('savings-transactions.receipt', $transaction)->with('status', 'Savings deposit posted.');
     }
 
-    public function withdrawalForm(SavingsAccount $savingsAccount): View
+    public function withdrawalForm(Request $request, int $savingsAccountId, SavingsTransactionService $service): View
     {
-        return view('savings-transactions.withdrawal', ['account' => $savingsAccount->load(['client', 'product'])]);
+        $savingsAccount = $service->resolveWithdrawalAccount($savingsAccountId, $request->user());
+
+        return view('savings-transactions.withdrawal', ['account' => $savingsAccount]);
     }
 
-    public function withdrawal(StoreSavingsTransactionRequest $request, SavingsAccount $savingsAccount, SavingsTransactionService $service): RedirectResponse
+    public function withdrawal(StoreSavingsTransactionRequest $request, int $savingsAccountId, SavingsTransactionService $service): RedirectResponse
     {
+        $savingsAccount = $service->resolveWithdrawalAccount($savingsAccountId, $request->user());
+
         try {
             $transaction = $service->withdraw($savingsAccount, (float) $request->validated('amount'), $request->user(), $request->validated('payment_method'), $request->validated('narration'));
         } catch (InvalidArgumentException $exception) {

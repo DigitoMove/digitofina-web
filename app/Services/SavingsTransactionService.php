@@ -6,6 +6,8 @@ use App\Models\SavingsAccount;
 use App\Models\SavingsTransaction;
 use App\Models\User;
 use App\Support\CurrencyDenomination;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -26,6 +28,18 @@ class SavingsTransactionService
     public function withdraw(SavingsAccount $account, float $amount, User $teller, string $paymentMethod = 'cash', ?string $narration = null): SavingsTransaction
     {
         return $this->post($account, $amount, $teller, 'withdrawal', $paymentMethod, $narration);
+    }
+
+    public function resolveWithdrawalAccount(int $accountId, User $staff): SavingsAccount
+    {
+        abort_if($staff->isMember(), 403);
+
+        return $this->withdrawalAccountQuery($staff)
+            ->with([
+                'client' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant'),
+                'product' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant'),
+            ])
+            ->findOrFail($accountId);
     }
 
     public function reverse(SavingsTransaction $transaction, User $user, string $reason): SavingsTransaction
@@ -140,7 +154,13 @@ class SavingsTransactionService
         CurrencyDenomination::assertValid($amount);
 
         return DB::transaction(function () use ($account, $amount, $teller, $type, $paymentMethod, $narration): SavingsTransaction {
-            $account = SavingsAccount::query()->with('product')->whereKey($account->id)->lockForUpdate()->firstOrFail();
+            $isCrossBranchWithdrawal = $type === 'withdrawal'
+                && $teller->branch_id !== null
+                && (int) $account->branch_id !== (int) $teller->branch_id;
+            $accountQuery = $isCrossBranchWithdrawal
+                ? $this->withdrawalAccountQuery($teller)
+                : SavingsAccount::query();
+            $account = $accountQuery->with('product')->whereKey($account->id)->lockForUpdate()->firstOrFail();
             $businessDate = $this->financialControls->ensureFinancialDayOpen($teller, (int) $account->branch_id);
             $this->financialControls->enforceTransactionLimit($teller, $amount, $businessDate);
 
@@ -204,6 +224,20 @@ class SavingsTransactionService
 
             return $transaction;
         });
+    }
+
+    /**
+     * @return Builder<SavingsAccount>
+     */
+    private function withdrawalAccountQuery(User $staff): Builder
+    {
+        $tenantOrganizationId = app(TenantContext::class)->id();
+        $organizationId = $tenantOrganizationId ?: ($staff->hasGlobalOrganizationAccess() ? null : $staff->organization_id);
+        abort_unless($organizationId || $staff->hasGlobalOrganizationAccess(), 403);
+
+        return SavingsAccount::query()
+            ->withoutGlobalScope('tenant')
+            ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId));
     }
 
     private function createTransaction(SavingsAccount $account, User $teller, string $reference, string $type, float $amount, float $charges, float $balanceBefore, float $balanceAfter, string $paymentMethod, ?string $narration): SavingsTransaction

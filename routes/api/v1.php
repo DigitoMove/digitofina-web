@@ -67,7 +67,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'throttle:api', 'module:auto'])->gr
     Route::get('/savings/accounts/{savingsAccount}/statement/download', [SavingsAccountController::class, 'statement'])->name('savings.accounts.statement.download');
     Route::post('/savings/accounts/{savingsAccount}/statement/generate', [SavingsAccountController::class, 'generateStatement'])->middleware('throttle:api-sensitive')->name('savings.accounts.statement.generate');
     Route::post('/savings/accounts/{savingsAccount}/deposit', [SavingsTransactionController::class, 'deposit'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings.accounts.deposit');
-    Route::post('/savings/accounts/{savingsAccount}/withdraw', [SavingsTransactionController::class, 'withdraw'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings.accounts.withdraw');
+    Route::post('/savings/accounts/{savingsAccountId}/withdraw', [SavingsTransactionController::class, 'withdraw'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings.accounts.withdraw');
     Route::post('/savings/transfers', [SavingsTransactionController::class, 'transfer'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings.transfers.store');
     Route::post('/savings/transactions/{savingsTransaction}/reverse', [SavingsTransactionController::class, 'reverse'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings.transactions.reverse');
 
@@ -77,7 +77,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'throttle:api', 'module:auto'])->gr
     Route::get('/savings-accounts/{savingsAccount}/statement', [SavingsAccountController::class, 'statement'])->name('savings-accounts.statement');
     Route::get('/savings-accounts/{savingsAccount}/statement/download', [SavingsAccountController::class, 'statement'])->name('savings-accounts.statement.download');
     Route::post('/savings-accounts/{savingsAccount}/deposit', [SavingsTransactionController::class, 'deposit'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings-accounts.deposit');
-    Route::post('/savings-accounts/{savingsAccount}/withdraw', [SavingsTransactionController::class, 'withdraw'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings-accounts.withdraw');
+    Route::post('/savings-accounts/{savingsAccountId}/withdraw', [SavingsTransactionController::class, 'withdraw'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings-accounts.withdraw');
     Route::post('/savings-transfers', [SavingsTransactionController::class, 'transfer'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings-transfers.store');
     Route::post('/savings-transactions/{savingsTransaction}/reverse', [SavingsTransactionController::class, 'reverse'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('savings-transactions.reverse');
     Route::apiResource('savings-goals', SavingsGoalController::class)->only(['index', 'store', 'show']);

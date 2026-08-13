@@ -9,6 +9,10 @@ class StoreSavingsTransactionRequest extends FormRequest
 {
     public function authorize(): bool
     {
+        if ($this->routeIs('savings-transactions.withdrawal.store', 'api.v1.savings.accounts.withdraw', 'api.v1.savings-accounts.withdraw')) {
+            return $this->user() !== null && ! $this->user()->isMember();
+        }
+
         return $this->user()?->canPerform('post-transactions') ?? false;
     }
 
