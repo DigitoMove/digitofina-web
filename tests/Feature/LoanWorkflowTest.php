@@ -38,6 +38,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
 
@@ -2148,7 +2149,7 @@ it('shows arrears only for active branch loans', function () {
         ->assertDontSee('2002-LN-ACTIVE-OTHER');
 });
 
-it('lets loan officers work with loans assigned to other officers in their branch', function () {
+it('lets loan officers take over same-branch clients without exposing another officers loans', function () {
     $admin = loanWorkflowUser();
     $organization = loanWorkflowOrganizationWithModules($admin, ['clients', 'loans', 'reports']);
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
@@ -2168,7 +2169,7 @@ it('lets loan officers work with loans assigned to other officers in their branc
         )->id,
     ]);
     $adminRole = Role::firstOrCreate(['slug' => 'organization-admin'], ['name' => 'Organization Admin']);
-    Permission::whereIn('slug', ['manage-loans', 'view-reports'])->pluck('id')->each(fn (int $permissionId) => $adminRole->permissions()->syncWithoutDetaching([$permissionId]));
+    Permission::whereIn('slug', ['manage-loans', 'view-reports', 'disburse-loans'])->pluck('id')->each(fn (int $permissionId) => $adminRole->permissions()->syncWithoutDetaching([$permissionId]));
     $admin->update(['role_id' => $adminRole->id]);
     $officer = User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $admin->branch_id, 'role_id' => $officerRole->id, 'status' => 'active', 'is_active' => true]);
     $otherOfficer = User::factory()->create(['organization_id' => $organization->id, 'branch_id' => $admin->branch_id, 'role_id' => $officerRole->id, 'status' => 'active', 'is_active' => true]);
@@ -2213,7 +2214,7 @@ it('lets loan officers work with loans assigned to other officers in their branc
         ->get(route('arrears.index'))
         ->assertSuccessful()
         ->assertSee('1001-LN-OFFICER-ARREARS')
-        ->assertSee('1001-LN-OTHER-ARREARS')
+        ->assertDontSee('1001-LN-OTHER-ARREARS')
         ->assertDontSee('Run Penalties');
 
     $this->actingAs($officer)
@@ -2233,7 +2234,7 @@ it('lets loan officers work with loans assigned to other officers in their branc
         ->get(route('loans.index', ['search' => '1001-LN']))
         ->assertSuccessful()
         ->assertSee('1001-LN-OFFICER-ARREARS')
-        ->assertSee('1001-LN-OTHER-ARREARS');
+        ->assertDontSee('1001-LN-OTHER-ARREARS');
 
     $this->actingAs($officer)
         ->get(route('clients.index'))
@@ -2267,10 +2268,50 @@ it('lets loan officers work with loans assigned to other officers in their branc
     expect($officerCreateProductResponse->isForbidden() || $officerCreateProductResponse->isRedirect())->toBeTrue()
         ->and($officerEditProductResponse->isForbidden() || $officerEditProductResponse->isRedirect())->toBeTrue();
 
+    $otherLoanResponse = $this->actingAs($officer)->get(route('loans.show', $otherArrears));
+    expect($otherLoanResponse->isForbidden() || $otherLoanResponse->isRedirect())->toBeTrue();
+
+    Sanctum::actingAs($officer, ['*']);
+    $this->postJson("/api/v1/loans/{$otherArrears->id}/submit-appraisal")
+        ->assertForbidden();
+
     $this->actingAs($officer)
-        ->get(route('loans.show', $otherArrears))
+        ->get(route('loans.create'))
         ->assertSuccessful()
-        ->assertSee('1001-LN-OTHER-ARREARS');
+        ->assertSee($otherClient->client_number);
+
+    $this->actingAs($officer)
+        ->post(route('loans.store'), [
+            'client_id' => $otherClient->id,
+            'loan_product_id' => $product->id,
+            'requested_amount' => 300000,
+            'term_periods' => 1,
+            'repayment_frequency' => 'monthly',
+            'purpose' => 'Take over client with a new loan',
+        ])
+        ->assertRedirect();
+
+    $takenOverLoan = Loan::query()
+        ->where('client_id', $otherClient->id)
+        ->where('created_by', $officer->id)
+        ->latest('id')
+        ->firstOrFail();
+
+    expect($takenOverLoan->officer_id)->toBe($officer->id)
+        ->and($otherClient->fresh()->officer_id)->toBe($officer->id);
+
+    $this->actingAs($officer)
+        ->get(route('loans.show', $takenOverLoan))
+        ->assertSuccessful()
+        ->assertSee($takenOverLoan->loan_number);
+
+    $reassignedLoan = app(LoanService::class)->assignOfficer($takenOverLoan, $admin->fresh(), $otherOfficer->id);
+
+    expect($reassignedLoan->officer_id)->toBe($otherOfficer->id)
+        ->and($otherClient->fresh()->officer_id)->toBe($otherOfficer->id);
+
+    $reassignedLoanResponse = $this->actingAs($officer)->get(route('loans.show', $reassignedLoan));
+    expect($reassignedLoanResponse->isForbidden() || $reassignedLoanResponse->isRedirect())->toBeTrue();
 
     $this->actingAs($officer)
         ->get(route('clients.show', $otherClient))
@@ -2287,7 +2328,7 @@ it('lets loan officers work with loans assigned to other officers in their branc
         ->get(route('due-repayments.index'))
         ->assertSuccessful()
         ->assertSee('1001-LN-OFFICER-DUE')
-        ->assertSee('1001-LN-OTHER-DUE')
+        ->assertDontSee('1001-LN-OTHER-DUE')
         ->assertDontSee('1001-LN-OFFICER-FUTURE');
 
     $this->actingAs($officer)
@@ -2299,7 +2340,7 @@ it('lets loan officers work with loans assigned to other officers in their branc
         ->assertDontSee('Recent Loan Payments')
         ->assertDontSee('>Operations<', false)
         ->assertDontSee('Reports')
-        ->assertSee('1001-LN-OTHER-DUE')
+        ->assertDontSee('1001-LN-OTHER-DUE')
         ->assertDontSee('1001-LN-OFFICER-FUTURE');
 
     $recoveryRole = Role::firstOrCreate(['slug' => 'loan-recovery-officer'], ['name' => 'Loan Recovery Officer']);
@@ -2526,7 +2567,7 @@ it('shows one due repayment demand per client with missed arrears included', fun
     expect(substr_count($response->getContent(), 'Grace Demand'))->toBe(1);
 });
 
-it('backfills and falls back to recent loan officers for legacy client ownership', function () {
+it('backfills legacy client ownership and allows same-branch loan officer takeover', function () {
     $admin = loanWorkflowUser();
     $organization = loanWorkflowOrganizationWithModules($admin, ['clients', 'loans', 'reports']);
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
@@ -2555,7 +2596,7 @@ it('backfills and falls back to recent loan officers for legacy client ownership
         ->assertSee('Assigned Client')
         ->assertSee('Fallback Client')
         ->assertSee('Other Recent')
-        ->assertDontSee('Unowned Client');
+        ->assertSee('Unowned Client');
 
     $clientPolicy = app(ClientPolicy::class);
 
@@ -2569,14 +2610,23 @@ it('backfills and falls back to recent loan officers for legacy client ownership
             'requested_amount' => 300000,
             'term_periods' => 1,
             'repayment_frequency' => 'monthly',
-            'purpose' => 'Unauthorized client check',
+            'purpose' => 'Same branch client takeover',
         ])
-        ->assertSessionHasErrors('client_id');
+        ->assertRedirect();
+
+    $newLoan = Loan::query()
+        ->where('client_id', $unownedClient->id)
+        ->where('created_by', $firstOfficer->id)
+        ->latest('id')
+        ->firstOrFail();
+
+    expect($newLoan->officer_id)->toBe($firstOfficer->id)
+        ->and($unownedClient->fresh()->officer_id)->toBe($firstOfficer->id);
 
     $migration = include database_path('migrations/2026_06_24_113711_backfill_client_officers_from_recent_loans.php');
     $migration->up();
 
     expect($fallbackClient->fresh()->officer_id)->toBe($firstOfficer->id)
         ->and($otherRecentClient->fresh()->officer_id)->toBe($secondOfficer->id)
-        ->and($unownedClient->fresh()->officer_id)->toBeNull();
+        ->and($unownedClient->fresh()->officer_id)->toBe($firstOfficer->id);
 });

@@ -6,6 +6,7 @@ use App\Http\Requests\StoreLoanGuarantorRequest;
 use App\Models\Loan;
 use App\Services\AuditLogger;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Gate;
 
 class LoanGuarantorController extends Controller
 {
@@ -26,6 +27,7 @@ class LoanGuarantorController extends Controller
 
     public function updateStatus(Loan $loan, int $guarantor, AuditLogger $auditLogger): RedirectResponse
     {
+        Gate::authorize('view', $loan);
         abort_unless(auth()->user()->canPerform('manage-loans'), 403);
 
         $data = request()->validate(['status' => ['required', 'in:pending,accepted,rejected,released']]);

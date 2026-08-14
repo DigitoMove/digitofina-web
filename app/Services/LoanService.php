@@ -365,6 +365,7 @@ class LoanService
 
             $oldOfficerId = $loan->officer_id;
             $loan->update(['officer_id' => $assignedOfficer->id]);
+            $loan->client?->update(['officer_id' => $assignedOfficer->id]);
 
             $this->auditLogger->record('loan.officer_assigned', $loan, [
                 'old_officer_id' => $oldOfficerId,

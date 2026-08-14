@@ -57,6 +57,16 @@ class LoanApplicationService
             'status' => 'draft',
         ]);
 
+        if ($officer->isLoanOfficer() && (int) $client->officer_id !== (int) $officer->id) {
+            $previousOfficerId = $client->officer_id;
+            $client->update(['officer_id' => $officer->id]);
+            $this->auditLogger->record('client.officer_transferred_by_loan', $client, [
+                'old_officer_id' => $previousOfficerId,
+                'new_officer_id' => $officer->id,
+                'loan_id' => $loan->id,
+            ]);
+        }
+
         $this->writePreviewSchedule($loan->refresh()->load('product'), $requestedAmount);
         $copiedGuarantors = $this->copyRecentGuarantors($loan);
         $this->auditLogger->record('loan.created', $loan, $loan->toArray());

@@ -73,7 +73,7 @@ class StoreLoanApplicationRequest extends FormRequest
                 $client = Client::query()->find($this->integer('client_id'));
 
                 if ($client && $this->user()?->isLoanOfficer() && ! $this->loanOfficerCanUseClient($client, $this->user())) {
-                    $validator->errors()->add('client_id', 'You can only create loans for clients assigned to you.');
+                    $validator->errors()->add('client_id', 'You can only create loans for clients in your branch.');
                 }
 
                 if ($client && $client->client_type === 'individual') {
@@ -117,17 +117,7 @@ class StoreLoanApplicationRequest extends FormRequest
 
     private function loanOfficerCanUseClient(Client $client, User $user): bool
     {
-        if ((int) $client->officer_id === (int) $user->id) {
-            return $user->branch_id === null || (int) $client->branch_id === (int) $user->branch_id;
-        }
-
-        return $client->loans()
-            ->where('officer_id', $user->id)
-            ->where(function ($query) use ($user): void {
-                $query->whereNull('organization_id')
-                    ->orWhere('organization_id', $user->organization_id);
-            })
-            ->when($user->branch_id, fn ($query, int $branchId) => $query->where('branch_id', $branchId))
-            ->exists();
+        return $user->canAccessOrganization($client->organization_id)
+            && ($user->branch_id === null || (int) $client->branch_id === (int) $user->branch_id);
     }
 }

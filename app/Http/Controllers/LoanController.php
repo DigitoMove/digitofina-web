@@ -178,26 +178,13 @@ class LoanController extends Controller
     private function visibleClients(Request $request): Builder
     {
         return Client::query()
-            ->when($request->user()->isLoanOfficer(), fn ($query) => $query
-                ->where(function (Builder $query) use ($request): void {
-                    $query->where(function (Builder $query) use ($request): void {
-                        $query->where('officer_id', $request->user()->id)
-                            ->when($request->user()->branch_id, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
-                    })->orWhereHas('loans', function (Builder $query) use ($request): void {
-                        $query->where('officer_id', $request->user()->id)
-                            ->when($request->user()->organization_id, function (Builder $query, int $organizationId): Builder {
-                                return $query->where(function (Builder $query) use ($organizationId): void {
-                                    $query->whereNull('organization_id')
-                                        ->orWhere('organization_id', $organizationId);
-                                });
-                            })
-                            ->when($request->user()->branch_id, fn (Builder $query, int $branchId): Builder => $query->where('branch_id', $branchId));
-                    });
-                }));
+            ->when($request->user()->isLoanOfficer() && $request->user()->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id));
     }
 
     public function updateDraftTerms(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         abort_unless(
             $request->user()->hasRole('super-admin')
                 || $request->user()->canPerform('manage-users')
@@ -224,6 +211,8 @@ class LoanController extends Controller
 
     public function repairTerms(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         abort_unless($request->user()->canAdministerLoanRepairs(), 403);
 
         $data = $request->validate([
@@ -246,6 +235,8 @@ class LoanController extends Controller
 
     public function generateSavingsAccount(Loan $loan, LoanService $service): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         $service->generateSavingsAccount($loan, auth()->user());
 
         return back()->with('status', 'Savings account generated.');
@@ -253,6 +244,8 @@ class LoanController extends Controller
 
     public function generateLoanAccount(Loan $loan, LoanService $service): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         $service->generateLoanAccount($loan, auth()->user());
 
         return back()->with('status', 'Loan account generated.');
@@ -260,6 +253,8 @@ class LoanController extends Controller
 
     public function submitForAppraisal(Loan $loan, LoanService $service): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         try {
             $service->submitForAppraisal($loan, auth()->user());
         } catch (InvalidArgumentException $exception) {
@@ -271,6 +266,8 @@ class LoanController extends Controller
 
     public function submitForApproval(Loan $loan, LoanService $service): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         try {
             $service->submitForApproval($loan, auth()->user());
         } catch (InvalidArgumentException $exception) {
@@ -282,6 +279,8 @@ class LoanController extends Controller
 
     public function approve(ApproveLoanRequest $request, Loan $loan, LoanApprovalService $approvals): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         $data = $request->validated();
 
         try {
@@ -295,6 +294,8 @@ class LoanController extends Controller
 
     public function fastTrackDisbursement(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         abort_unless(
             $request->user()->canPerform('manage-loans')
             && $request->user()->canPerform('approve-loans')
@@ -319,6 +320,8 @@ class LoanController extends Controller
 
     public function reject(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         abort_unless(auth()->user()->canPerform('approve-loans'), 403);
 
         $data = $request->validate(['reason' => ['required', 'string']]);
@@ -333,6 +336,8 @@ class LoanController extends Controller
 
     public function cancel(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         abort_unless($request->user()->hasRole('super-admin') || $request->user()->canPerform('manage-users') || $request->user()->canPerform('disburse-loans'), 403);
 
         $data = $request->validate(['reason' => ['required', 'string', 'max:1000']]);
@@ -348,6 +353,8 @@ class LoanController extends Controller
 
     public function closePaid(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         abort_unless($request->user()->canAdministerLoanRepairs(), 403);
 
         $data = $request->validate([
@@ -365,6 +372,8 @@ class LoanController extends Controller
 
     public function closeWithCoverage(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         abort_unless($request->user()->canAdministerLoanRepairs(), 403);
 
         $data = $request->validate([
@@ -391,6 +400,8 @@ class LoanController extends Controller
 
     public function reopen(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         abort_unless($request->user()->canAdministerLoanRepairs(), 403);
 
         $data = $request->validate([
@@ -412,6 +423,8 @@ class LoanController extends Controller
 
     public function assignOfficer(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         abort_unless($request->user()->hasRole('super-admin') || $request->user()->canPerform('manage-users') || $request->user()->canPerform('disburse-loans'), 403);
 
         $data = $request->validate([
@@ -429,6 +442,8 @@ class LoanController extends Controller
 
     public function disburse(Request $request, Loan $loan, LoanDisbursementService $disbursements): RedirectResponse
     {
+        Gate::authorize('view', $loan);
+
         abort_unless(auth()->user()->canPerform('disburse-loans'), 403);
 
         $data = $request->validate([

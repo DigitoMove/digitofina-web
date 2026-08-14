@@ -6,6 +6,7 @@ use App\Http\Requests\StoreLoanCollateralRequest;
 use App\Models\Loan;
 use App\Services\AuditLogger;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Gate;
 
 class LoanCollateralController extends Controller
 {
@@ -30,6 +31,7 @@ class LoanCollateralController extends Controller
 
     public function updateStatus(Loan $loan, int $collateral, AuditLogger $auditLogger): RedirectResponse
     {
+        Gate::authorize('view', $loan);
         abort_unless(auth()->user()->canPerform('manage-loans'), 403);
 
         $data = request()->validate(['status' => ['required', 'in:pending_verification,verified,rejected,released,seized']]);

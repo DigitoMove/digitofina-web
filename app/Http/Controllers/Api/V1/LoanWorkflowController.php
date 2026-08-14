@@ -30,7 +30,7 @@ class LoanWorkflowController extends Controller
 {
     public function submit(Request $request, Loan $loan, LoanService $loans): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
 
         try {
             $loan = $loans->submitForApproval($loan, $request->user());
@@ -43,7 +43,7 @@ class LoanWorkflowController extends Controller
 
     public function generateSavingsAccount(Request $request, Loan $loan, LoanService $loans): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
 
         $loans->generateSavingsAccount($loan, $request->user());
 
@@ -52,7 +52,7 @@ class LoanWorkflowController extends Controller
 
     public function generateLoanAccount(Request $request, Loan $loan, LoanService $loans): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
 
         $loans->generateLoanAccount($loan, $request->user());
 
@@ -61,7 +61,7 @@ class LoanWorkflowController extends Controller
 
     public function submitForAppraisal(Request $request, Loan $loan, LoanService $loans): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
 
         try {
             $appraisedLoan = $loans->submitForAppraisal($loan, $request->user());
@@ -74,7 +74,7 @@ class LoanWorkflowController extends Controller
 
     public function addGuarantor(StoreLoanGuarantorRequest $request, Loan $loan): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
         $loan->loanGuarantors()->create($request->validated() + ['organization_id' => $loan->organization_id]);
 
         return ApiResponse::resource(new LoanResource($loan->fresh()->load(['client', 'product'])), 'Loan guarantor added successfully.', 201);
@@ -82,7 +82,7 @@ class LoanWorkflowController extends Controller
 
     public function addCollateral(StoreLoanCollateralRequest $request, Loan $loan): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
         $data = $request->validated();
         $loan->collaterals()->create($data + [
             'organization_id' => $loan->organization_id,
@@ -132,7 +132,7 @@ class LoanWorkflowController extends Controller
 
     public function approve(ApproveLoanRequest $request, Loan $loan, LoanApprovalService $approvals, FinancialControlService $controls): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
         $amount = (float) $request->validated('approved_amount');
 
         if ($controls->requiresMakerChecker($request->user(), 'loan_approval', $amount)) {
@@ -167,7 +167,7 @@ class LoanWorkflowController extends Controller
 
     public function reject(Request $request, Loan $loan, LoanService $loans): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
         abort_unless($request->user()->canPerform('approve-loans'), 403);
 
         $data = $request->validate(['reason' => ['required', 'string']]);
@@ -183,7 +183,7 @@ class LoanWorkflowController extends Controller
 
     public function cancel(Request $request, Loan $loan, LoanService $loans): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
         abort_unless($request->user()->hasRole('super-admin') || $request->user()->canPerform('manage-users') || $request->user()->canPerform('disburse-loans'), 403);
 
         $data = $request->validate(['reason' => ['required', 'string', 'max:1000']]);
@@ -199,7 +199,7 @@ class LoanWorkflowController extends Controller
 
     public function assignOfficer(Request $request, Loan $loan, LoanService $loans): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
         abort_unless($request->user()->hasRole('super-admin') || $request->user()->canPerform('manage-users') || $request->user()->canPerform('disburse-loans'), 403);
 
         $data = $request->validate([
@@ -217,7 +217,7 @@ class LoanWorkflowController extends Controller
 
     public function disburse(Request $request, Loan $loan, LoanDisbursementService $disbursements, FinancialControlService $controls): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
         abort_unless($request->user()->canPerform('disburse-loans'), 403);
 
         $data = $request->validate([
@@ -277,7 +277,7 @@ class LoanWorkflowController extends Controller
 
     public function close(Request $request, Loan $loan): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
         abort_unless($request->user()->canPerform('manage-loans'), 403);
         abort_unless(((float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance) <= 0, 422);
 
@@ -288,7 +288,7 @@ class LoanWorkflowController extends Controller
 
     public function writeOff(Request $request, Loan $loan, AuditLogger $auditLogger, FinancialControlService $controls): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
         ApiSecurity::assertPermission($request->user(), 'write-off-loans');
 
         $data = $request->validate([
@@ -326,7 +326,7 @@ class LoanWorkflowController extends Controller
 
     public function waivePenalty(Request $request, Loan $loan, FinancialControlService $controls): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $loan);
+        $this->assertLoanAccess($request, $loan);
         ApiSecurity::assertPermission($request->user(), 'waive-penalties');
 
         $data = $request->validate([
@@ -348,5 +348,14 @@ class LoanWorkflowController extends Controller
         );
 
         return ApiResponse::resource(new MakerCheckerRequestResource($approval->load(['requestedBy', 'branch'])), 'Penalty waiver submitted for maker-checker review.', 202);
+    }
+
+    private function assertLoanAccess(Request $request, Loan $loan): void
+    {
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
+
+        if ($request->user()->isLoanOfficer()) {
+            abort_unless((int) $loan->officer_id === (int) $request->user()->id, 403);
+        }
     }
 }

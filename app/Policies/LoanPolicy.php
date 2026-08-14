@@ -18,6 +18,11 @@ class LoanPolicy
             return (int) $loan->client_id === (int) $user->client?->id;
         }
 
+        if ($user->isLoanOfficer()) {
+            return (int) $loan->officer_id === (int) $user->id
+                && $user->canAccessBranch($loan->branch_id, $loan->organization_id);
+        }
+
         return $user->canAccessBranch($loan->branch_id, $loan->organization_id);
     }
 

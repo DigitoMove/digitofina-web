@@ -15,6 +15,7 @@ class StoreLoanCollateralRequest extends FormRequest
         $loan = $this->route('loan');
 
         return $loan instanceof Loan
+            && (! $this->user()?->isLoanOfficer() || (int) $loan->officer_id === (int) $this->user()->id)
             && ($this->user()?->canPerform('manage-loans')
                 || $this->user()?->canManageCreatedLoanApplication($loan));
     }
