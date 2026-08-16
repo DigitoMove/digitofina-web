@@ -19,9 +19,9 @@ use InvalidArgumentException;
 
 class SavingsTransactionController extends Controller
 {
-    public function deposit(StoreSavingsTransactionRequest $request, SavingsAccount $savingsAccount, SavingsTransactionService $transactions): JsonResponse
+    public function deposit(StoreSavingsTransactionRequest $request, int $savingsAccountId, SavingsTransactionService $transactions): JsonResponse
     {
-        ApiSecurity::assertTenantAccess($request->user(), $savingsAccount);
+        $savingsAccount = $transactions->resolveTransactionAccount($savingsAccountId, $request->user());
 
         try {
             $transaction = $transactions->deposit($savingsAccount, (float) $request->validated('amount'), $request->user(), $request->validated('payment_method'), $request->validated('narration'));

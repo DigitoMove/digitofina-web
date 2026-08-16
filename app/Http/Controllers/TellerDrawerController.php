@@ -66,16 +66,15 @@ class TellerDrawerController extends Controller
         $shouldSearchClientAccounts = $accountSearch !== '' && ! $isGeneralLedgerLookup;
         $shouldSearchGeneralLedger = $accountSearch !== '' && $isGeneralLedgerLookup;
         $account = $request->account_number
-            ? Account::with(['client', 'accountType', 'loan'])
+            ? $this->clientAccountQuery($request, $branchId, $organizationId)
+                ->with(['client', 'accountType', 'branch', 'loan'])
                 ->where('account_number', $request->account_number)
-                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
                 ->when($selectedAccountTypeId, fn ($query, int $typeId) => $query->where('account_type_id', $typeId))
                 ->where(fn (Builder $query): Builder => $this->availableClientAccount($query))
                 ->first()
             : null;
-        $accountResults = Account::query()
-            ->with(['client', 'accountType', 'loan'])
-            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+        $accountResults = $this->clientAccountQuery($request, $branchId, $organizationId)
+            ->with(['client', 'accountType', 'branch', 'loan'])
             ->when($selectedAccountTypeId, fn (Builder $query, int $typeId): Builder => $query->where('account_type_id', $typeId))
             ->where(fn (Builder $query): Builder => $this->availableClientAccount($query))
             ->when($accountSearch, function (Builder $query, string $search): void {
@@ -138,7 +137,7 @@ class TellerDrawerController extends Controller
                 ->get()
             : collect();
         $recentMovementReferences = $recentMovements->pluck('reference')->filter()->unique()->values();
-        $recentTransactions = Transaction::query()
+        $recentTransactions = $this->transactionHistoryQuery($request)
             ->with([
                 'account.client',
                 'drawerSession.drawer',
@@ -509,14 +508,18 @@ class TellerDrawerController extends Controller
                     ->with('receipt_transaction_id', $journal->transaction_id);
             }
 
-            $account = Account::query()->with('accountType')->where('account_number', $data['account_number'])->first();
+            $account = $this->clientAccountQuery($request, (int) $session->drawer->branch_id, (int) $session->drawer->organization_id)
+                ->with('accountType')
+                ->where('account_number', $data['account_number'])
+                ->first();
             $type = TransactionType::query()->find($data['transaction_type_id']);
 
             if (! $account) {
                 throw new InvalidArgumentException('The selected account was not found.');
             }
 
-            if ((int) $account->branch_id !== (int) $session->drawer->branch_id) {
+            if ((int) $account->branch_id !== (int) $session->drawer->branch_id
+                && ($account->accountType?->category !== 'savings' || ! $request->user()->canPerform('transact-savings-across-branches'))) {
                 throw new InvalidArgumentException('This account belongs to a different branch from your open drawer.');
             }
 
@@ -927,6 +930,32 @@ class TellerDrawerController extends Controller
             || ($request->user()->canPerform('manage-drawers') && $request->user()->canPerform('manage-users'));
     }
 
+    /**
+     * @return Builder<Account>
+     */
+    private function clientAccountQuery(Request $request, ?int $branchId, ?int $organizationId): Builder
+    {
+        $canTransactAcrossBranches = $request->user()->canPerform('transact-savings-across-branches');
+        $query = $canTransactAcrossBranches
+            ? Account::query()->withoutGlobalScope('tenant')
+            : Account::query();
+
+        return $query
+            ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
+            ->when($branchId, function (Builder $query, int $branchId) use ($canTransactAcrossBranches): void {
+                $query->where(function (Builder $query) use ($branchId, $canTransactAcrossBranches): void {
+                    $query->where('branch_id', $branchId);
+
+                    if ($canTransactAcrossBranches) {
+                        $query->orWhereIn('account_type_id', AccountType::query()
+                            ->withoutGlobalScope('tenant')
+                            ->where('category', 'savings')
+                            ->select('id'));
+                    }
+                });
+            });
+    }
+
     private function availableClientAccount(Builder $query): Builder
     {
         return $query->where(function (Builder $query): void {
@@ -943,11 +972,24 @@ class TellerDrawerController extends Controller
             return null;
         }
 
-        return Transaction::query()
+        return $this->transactionHistoryQuery($request)
             ->with(['account.client', 'journalEntries.chartAccount', 'type', 'user'])
             ->whereKey($transactionId)
-            ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn (Builder $query): Builder => $query->where('branch_id', $request->user()->branch_id))
             ->first();
+    }
+
+    /**
+     * @return Builder<Transaction>
+     */
+    private function transactionHistoryQuery(Request $request): Builder
+    {
+        if (! $request->user()->canPerform('transact-savings-across-branches')) {
+            return Transaction::query();
+        }
+
+        return Transaction::query()
+            ->withoutGlobalScope('tenant')
+            ->when($this->activeOrganizationId($request), fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId));
     }
 
     private function ledgerEntryType(ChartAccount $chartAccount, ?string $requestedDirection): ?string

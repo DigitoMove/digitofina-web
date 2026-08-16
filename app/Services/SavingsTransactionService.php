@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\SavingsAccount;
 use App\Models\SavingsTransaction;
 use App\Models\User;
+use App\Support\ApiSecurity;
 use App\Support\CurrencyDenomination;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -30,16 +31,64 @@ class SavingsTransactionService
         return $this->post($account, $amount, $teller, 'withdrawal', $paymentMethod, $narration);
     }
 
-    public function resolveWithdrawalAccount(int $accountId, User $staff): SavingsAccount
+    public function resolveTransactionAccount(int $accountId, User $staff): SavingsAccount
     {
-        abort_if($staff->isMember(), 403);
+        abort_unless(! $staff->isMember() && $staff->canPerform('post-transactions'), 403);
 
-        return $this->withdrawalAccountQuery($staff)
+        return $this->transactionAccountQuery($staff)
             ->with([
                 'client' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant'),
                 'product' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant'),
             ])
             ->findOrFail($accountId);
+    }
+
+    public function resolveWithdrawalAccount(int $accountId, User $staff): SavingsAccount
+    {
+        return $this->resolveTransactionAccount($accountId, $staff);
+    }
+
+    public function resolveTransaction(int $transactionId, User $staff): SavingsTransaction
+    {
+        abort_unless(! $staff->isMember() && $staff->canPerform('post-transactions'), 403);
+
+        $tenantOrganizationId = app(TenantContext::class)->id();
+        $organizationId = $tenantOrganizationId ?: ($staff->hasGlobalOrganizationAccess() ? null : $staff->organization_id);
+        abort_unless($organizationId || $staff->hasGlobalOrganizationAccess(), 403);
+
+        return SavingsTransaction::query()
+            ->withoutGlobalScope('tenant')
+            ->with([
+                'account' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant'),
+                'account.client' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant'),
+                'account.product' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant'),
+                'branch' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant'),
+                'teller',
+            ])
+            ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
+            ->when(
+                ! ApiSecurity::hasGlobalBranchAccess($staff) && ! $staff->canPerform('transact-savings-across-branches'),
+                fn (Builder $query): Builder => $query->where('branch_id', $staff->branch_id),
+            )
+            ->findOrFail($transactionId);
+    }
+
+    /**
+     * @return Builder<SavingsAccount>
+     */
+    public function transactionAccountQuery(User $staff): Builder
+    {
+        $tenantOrganizationId = app(TenantContext::class)->id();
+        $organizationId = $tenantOrganizationId ?: ($staff->hasGlobalOrganizationAccess() ? null : $staff->organization_id);
+        abort_unless($organizationId || $staff->hasGlobalOrganizationAccess(), 403);
+
+        return SavingsAccount::query()
+            ->withoutGlobalScope('tenant')
+            ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
+            ->when(
+                ! ApiSecurity::hasGlobalBranchAccess($staff) && ! $staff->canPerform('transact-savings-across-branches'),
+                fn (Builder $query): Builder => $query->where('branch_id', $staff->branch_id),
+            );
     }
 
     public function reverse(SavingsTransaction $transaction, User $user, string $reason): SavingsTransaction
@@ -154,13 +203,7 @@ class SavingsTransactionService
         CurrencyDenomination::assertValid($amount);
 
         return DB::transaction(function () use ($account, $amount, $teller, $type, $paymentMethod, $narration): SavingsTransaction {
-            $isCrossBranchWithdrawal = $type === 'withdrawal'
-                && $teller->branch_id !== null
-                && (int) $account->branch_id !== (int) $teller->branch_id;
-            $accountQuery = $isCrossBranchWithdrawal
-                ? $this->withdrawalAccountQuery($teller)
-                : SavingsAccount::query();
-            $account = $accountQuery->with('product')->whereKey($account->id)->lockForUpdate()->firstOrFail();
+            $account = $this->transactionAccountQuery($teller)->with('product')->whereKey($account->id)->lockForUpdate()->firstOrFail();
             $businessDate = $this->financialControls->ensureFinancialDayOpen($teller, (int) $account->branch_id);
             $this->financialControls->enforceTransactionLimit($teller, $amount, $businessDate);
 
@@ -224,20 +267,6 @@ class SavingsTransactionService
 
             return $transaction;
         });
-    }
-
-    /**
-     * @return Builder<SavingsAccount>
-     */
-    private function withdrawalAccountQuery(User $staff): Builder
-    {
-        $tenantOrganizationId = app(TenantContext::class)->id();
-        $organizationId = $tenantOrganizationId ?: ($staff->hasGlobalOrganizationAccess() ? null : $staff->organization_id);
-        abort_unless($organizationId || $staff->hasGlobalOrganizationAccess(), 403);
-
-        return SavingsAccount::query()
-            ->withoutGlobalScope('tenant')
-            ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId));
     }
 
     private function createTransaction(SavingsAccount $account, User $teller, string $reference, string $type, float $amount, float $charges, float $balanceBefore, float $balanceAfter, string $paymentMethod, ?string $narration): SavingsTransaction

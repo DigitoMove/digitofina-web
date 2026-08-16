@@ -62,6 +62,7 @@ class DatabaseSeeder extends Seeder
             'manage-accounts',
             'manage-investments',
             'post-transactions',
+            'transact-savings-across-branches',
             'approve-transactions',
             'request-reversals',
             'approve-reversals',

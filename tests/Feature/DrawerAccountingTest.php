@@ -260,6 +260,103 @@ it('blocks accidental duplicate teller posts for the same cashier request', func
         ->and((float) $account->fresh()->balance)->toBe(10000.0);
 });
 
+it('allows permitted cashiers to find and transact on savings accounts from another branch', function () {
+    [$organization, $homeBranch] = drawerAccountingContext();
+    drawerAccountingEnableTellerModule($organization);
+    $cashier = drawerAccountingCashier($organization, $homeBranch, 'cross-branch');
+    [$drawer] = openAccountingDrawer($organization, $homeBranch, $cashier, 'CROSS-01', 100_000);
+    $otherBranch = Branch::create([
+        'organization_id' => $organization->id,
+        'code' => 'BR02',
+        'name' => 'Other Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $client = drawerAccountingClient($organization, $otherBranch, $cashier);
+    $accountType = AccountType::create([
+        'organization_id' => $organization->id,
+        'name' => 'Cross Branch Savings',
+        'code' => 'SAV-CROSS',
+        'category' => 'savings',
+        'is_active' => true,
+    ]);
+    $account = Account::create([
+        'organization_id' => $organization->id,
+        'client_id' => $client->id,
+        'branch_id' => $otherBranch->id,
+        'account_type_id' => $accountType->id,
+        'account_number' => 'BR02-SAV-0001',
+        'account_name' => $client->full_name.' Savings',
+        'status' => 'active',
+        'balance' => 50_000,
+        'opened_at' => today(),
+    ]);
+    $depositType = TransactionType::create([
+        'organization_id' => $organization->id,
+        'name' => 'Cross Branch Deposit',
+        'code' => 'cross_branch_deposit',
+        'direction' => 'credit',
+        'is_active' => true,
+    ]);
+    $withdrawalType = TransactionType::create([
+        'organization_id' => $organization->id,
+        'name' => 'Cross Branch Withdrawal',
+        'code' => 'cross_branch_withdrawal',
+        'direction' => 'withdrawal',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($cashier)
+        ->get(route('teller.index', ['lookup_scope' => 'account_type:'.$accountType->id, 'account_search' => $account->account_number]))
+        ->assertSuccessful()
+        ->assertViewHas('accountResults', fn ($accounts): bool => ! $accounts->contains('id', $account->id));
+
+    $this->actingAs($cashier)->post(route('teller.post'), [
+        'account_scope' => 'client_account',
+        'account_number' => $account->account_number,
+        'transaction_type_id' => $depositType->id,
+        'amount' => 10_000,
+        'charges' => 0,
+        'transaction_date' => today()->toDateString(),
+    ])->assertSessionHasErrors('amount');
+
+    $crossBranchPermission = Permission::firstOrCreate(
+        ['slug' => 'transact-savings-across-branches'],
+        ['organization_id' => $organization->id, 'name' => 'Transact Savings Across Branches'],
+    );
+    $cashier->role->permissions()->syncWithoutDetaching([$crossBranchPermission->id]);
+    $cashier->unsetRelation('role');
+
+    expect($cashier->canPerform('transact-savings-across-branches'))->toBeTrue();
+
+    $this->actingAs($cashier)
+        ->get(route('teller.index', ['lookup_scope' => 'account_type:'.$accountType->id, 'account_search' => $account->account_number]))
+        ->assertSuccessful()
+        ->assertViewHas('accountResults', fn ($accounts): bool => $accounts->contains('id', $account->id))
+        ->assertSee($account->account_number)
+        ->assertSee($otherBranch->name);
+
+    foreach ([[$depositType, 10_000], [$withdrawalType, 5_000]] as [$type, $amount]) {
+        $this->actingAs($cashier)->post(route('teller.post'), [
+            'account_scope' => 'client_account',
+            'account_number' => $account->account_number,
+            'transaction_type_id' => $type->id,
+            'amount' => $amount,
+            'charges' => 0,
+            'transaction_date' => today()->toDateString(),
+        ])->assertSessionHasNoErrors();
+    }
+
+    $this->actingAs($cashier)
+        ->get(route('teller.index'))
+        ->assertSuccessful()
+        ->assertViewHas('recentTransactions', fn ($transactions): bool => $transactions->where('account_id', $account->id)->count() === 2);
+
+    expect((float) $account->fresh()->balance)->toBe(55000.0)
+        ->and((float) $drawer->fresh()->current_balance)->toBe(105000.0)
+        ->and(Transaction::query()->withoutGlobalScope('tenant')->where('account_id', $account->id)->count())->toBe(2);
+});
+
 it('shows incoming drawer transfers in the destination cashier records', function () {
     [$organization, $branch, $sourceUser] = drawerAccountingContext();
     drawerAccountingEnableTellerModule($organization);
@@ -387,9 +484,12 @@ function drawerAccountingEnableTellerModule(Organization $organization): void
     $modules = app(ModuleService::class);
     $modules->syncCatalog();
     $modules->syncDefaults($organization);
-    $organization->modules()->syncWithoutDetaching([
-        Module::where('slug', 'teller')->firstOrFail()->id => ['is_enabled' => true, 'enabled_at' => now()],
-    ]);
+    Module::query()
+        ->whereIn('slug', ['savings', 'teller'])
+        ->get()
+        ->each(fn (Module $module) => $organization->modules()->syncWithoutDetaching([
+            $module->id => ['is_enabled' => true, 'enabled_at' => now()],
+        ]));
 }
 
 function drawerAccountingCashier(Organization $organization, Branch $branch, string $slugSuffix = 'cashier'): User

@@ -33,9 +33,20 @@ class TransactionPostingService
         $this->assertCharges($charges);
 
         return DB::transaction(function () use ($account, $session, $type, $amount, $user, $description, $chequeNumber, $postedAt, $charges) {
-            $account = Account::query()->with(['accountType', 'client.loans'])->whereKey($account->id)->lockForUpdate()->firstOrFail();
             $session = DrawerSession::query()->with('drawer')->whereKey($session->id)->lockForUpdate()->firstOrFail();
             $drawer = $session->drawer()->with('branch')->lockForUpdate()->firstOrFail();
+            $account = Account::query()
+                ->withoutGlobalScope('tenant')
+                ->with(['accountType', 'client.loans'])
+                ->where('organization_id', $drawer->branch->organization_id)
+                ->whereKey($account->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ((int) $account->branch_id !== (int) $drawer->branch_id
+                && ($account->accountType?->category !== 'savings' || ! $user->canPerform('transact-savings-across-branches'))) {
+                throw new InvalidArgumentException('This account belongs to a different branch from your open drawer.');
+            }
 
             if ($account->status !== 'active') {
                 throw new InvalidArgumentException('Account is not active.');

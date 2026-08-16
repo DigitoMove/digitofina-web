@@ -4,10 +4,12 @@
 @php($canRemoveSavingsPackage = auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-accounts'))
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div>
-        <h1 class="text-2xl font-semibold text-slate-950">Savings Product Packages</h1>
-        <p class="text-sm text-slate-500">Optional investment-style savings products, separate from loan disbursement savings accounts.</p>
+        <h1 class="text-2xl font-semibold text-slate-950">Savings Accounts</h1>
+        <p class="text-sm text-slate-500">Search savings product accounts and process permitted deposits or withdrawals.</p>
     </div>
-    <a href="{{ route('savings-accounts.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Open Account</a>
+    @if($canManageAccounts)
+        <a href="{{ route('savings-accounts.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Open Account</a>
+    @endif
 </div>
 <form class="mb-4 grid gap-3 lg:grid-cols-[1fr_12rem_14rem_12rem_auto]">
     <input name="search" value="{{ request('search') }}" class="rounded border-slate-300" placeholder="Search account, client, phone">
@@ -27,7 +29,13 @@
                 <td>{{ str($account->status)->headline() }}</td>
                 <td>
                     <div class="flex items-center gap-3">
-                        <a href="{{ route('savings-accounts.show', $account) }}" class="font-medium text-blue-700">View</a>
+                        @if(auth()->user()->canAccessBranch($account->branch_id, $account->organization_id))
+                            <a href="{{ route('savings-accounts.show', $account) }}" class="font-medium text-blue-700">View</a>
+                        @endif
+                        @if($canPostTransactions)
+                            <a href="{{ route('savings-transactions.deposit.create', $account) }}" class="font-medium text-emerald-700">Deposit</a>
+                            <a href="{{ route('savings-transactions.withdrawal.create', $account) }}" class="font-medium text-amber-700">Withdraw</a>
+                        @endif
                         @if($canRemoveSavingsPackage)
                             <form method="POST" action="{{ route('savings-accounts.destroy', $account) }}" data-confirm-title="Remove savings package" data-confirm-message="Remove this savings product package?" data-confirm-label="Remove package" data-confirm-tone="warning">
                                 @csrf

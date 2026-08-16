@@ -194,6 +194,16 @@ it('allows staff to withdraw from a savings account at another branch in their o
         'name' => 'Branch Agent',
         'slug' => 'branch-agent',
     ]);
+    Permission::firstOrCreate(
+        ['slug' => 'transact-savings-across-branches'],
+        ['organization_id' => $organization->id, 'name' => 'Transact Savings Across Branches'],
+    );
+    $staffRole->permissions()->sync(
+        Permission::query()
+            ->whereIn('slug', ['post-transactions', 'transact-savings-across-branches'])
+            ->pluck('id')
+            ->all(),
+    );
     $staff = User::factory()->create([
         'organization_id' => $organization->id,
         'branch_id' => $admin->branch_id,
@@ -245,6 +255,13 @@ it('allows staff to withdraw from a savings account at another branch in their o
             'payment_method' => 'cash',
         ])
         ->assertRedirect();
+
+    $webTransaction = SavingsTransaction::query()->withoutGlobalScope('tenant')->latest('id')->firstOrFail();
+
+    $this->actingAs($staff)
+        ->get(route('savings-transactions.receipt', $webTransaction))
+        ->assertSuccessful()
+        ->assertSee($account->account_number);
 
     Sanctum::actingAs($staff, ['*']);
 

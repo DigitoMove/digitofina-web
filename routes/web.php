@@ -129,13 +129,13 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::resource('savings-products', SavingsProductController::class)->except(['show', 'destroy'])->middleware('module:savings');
     Route::resource('savings-accounts', SavingsAccountController::class)->only(['index', 'create', 'store', 'show', 'destroy'])->middleware('module:savings');
     Route::get('/savings-accounts/{savingsAccount}/statement', [SavingsAccountController::class, 'statement'])->middleware('module:savings')->name('savings-accounts.statement');
-    Route::get('/savings-accounts/{savingsAccount}/deposit', [SavingsTransactionController::class, 'depositForm'])->middleware('module:savings')->name('savings-transactions.deposit.create');
-    Route::post('/savings-accounts/{savingsAccount}/deposit', [SavingsTransactionController::class, 'deposit'])->middleware('module:savings')->name('savings-transactions.deposit.store');
+    Route::get('/savings-accounts/{savingsAccountId}/deposit', [SavingsTransactionController::class, 'depositForm'])->middleware('module:savings')->name('savings-transactions.deposit.create');
+    Route::post('/savings-accounts/{savingsAccountId}/deposit', [SavingsTransactionController::class, 'deposit'])->middleware('module:savings')->name('savings-transactions.deposit.store');
     Route::get('/savings-accounts/{savingsAccountId}/withdrawal', [SavingsTransactionController::class, 'withdrawalForm'])->middleware('module:savings')->name('savings-transactions.withdrawal.create');
     Route::post('/savings-accounts/{savingsAccountId}/withdrawal', [SavingsTransactionController::class, 'withdrawal'])->middleware('module:savings')->name('savings-transactions.withdrawal.store');
     Route::get('/savings-transfers/create', [SavingsTransactionController::class, 'transferForm'])->middleware('module:savings')->name('savings-transfers.create');
     Route::post('/savings-transfers', [SavingsTransactionController::class, 'transfer'])->middleware('module:savings')->name('savings-transfers.store');
-    Route::get('/savings-transactions/{savingsTransaction}/receipt', [SavingsTransactionController::class, 'receipt'])->middleware('module:savings')->name('savings-transactions.receipt');
+    Route::get('/savings-transactions/{savingsTransactionId}/receipt', [SavingsTransactionController::class, 'receipt'])->middleware('module:savings')->name('savings-transactions.receipt');
     Route::resource('loan-products', LoanProductController::class)->except(['show', 'destroy'])->middleware('module:loans');
     Route::post('/loans/schedule-preview', [LoanController::class, 'schedulePreview'])->middleware('module:loans')->name('loans.schedule-preview');
     Route::resource('loans', LoanController::class)->only(['index', 'create', 'store', 'show'])->middleware('module:loans');

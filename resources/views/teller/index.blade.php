@@ -883,7 +883,7 @@
                                     <div>
                                         <div class="font-semibold text-slate-950">{{ $resultAccount->account_number }} · {{ $resultAccount->account_name }}</div>
                                         <div class="text-sm text-slate-500">{{ $resultAccount->client?->full_name ?: $resultAccount->client?->business_name ?: 'No client' }} · {{ $resultAccount->client?->client_number }} · {{ $resultAccount->client?->phone }}</div>
-                                        <div class="mt-1 text-xs text-slate-500">{{ $resultAccount->accountType?->name }} · {{ str($resultAccount->status)->headline() }} · Balance UGX {{ number_format((float) $resultAccount->balance, 2) }}</div>
+                                        <div class="mt-1 text-xs text-slate-500">{{ $resultAccount->accountType?->name }} · {{ $resultAccount->branch?->name }} · {{ str($resultAccount->status)->headline() }} · Balance UGX {{ number_format((float) $resultAccount->balance, 2) }}</div>
                                         @if($resultLoanRepayable !== null)
                                             <div class="mt-2 inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-brand-200 bg-brand-50 px-2 py-1 text-xs text-brand-900">
                                                 <span class="font-semibold">Total to repay UGX {{ number_format($resultLoanRepayable, 2) }}</span>

@@ -69,6 +69,7 @@ class ModuleCatalog
     public static function moduleForPermission(string $permission): ?string
     {
         return match (true) {
+            str_contains($permission, 'savings') => 'savings',
             str_contains($permission, 'loan'), str_contains($permission, 'repayment'), str_contains($permission, 'penalt'), str_contains($permission, 'arrears') => 'loans',
             str_contains($permission, 'investment') => 'investments',
             str_contains($permission, 'accounting'), str_contains($permission, 'journal') => 'accounting',

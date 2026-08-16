@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreSavingsTransactionRequest;
 use App\Http\Requests\StoreSavingsTransferRequest;
 use App\Models\SavingsAccount;
-use App\Models\SavingsTransaction;
 use App\Services\SavingsTransactionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -14,13 +13,17 @@ use InvalidArgumentException;
 
 class SavingsTransactionController extends Controller
 {
-    public function depositForm(SavingsAccount $savingsAccount): View
+    public function depositForm(Request $request, int $savingsAccountId, SavingsTransactionService $service): View
     {
+        $savingsAccount = $service->resolveTransactionAccount($savingsAccountId, $request->user());
+
         return view('savings-transactions.deposit', ['account' => $savingsAccount->load(['client', 'product'])]);
     }
 
-    public function deposit(StoreSavingsTransactionRequest $request, SavingsAccount $savingsAccount, SavingsTransactionService $service): RedirectResponse
+    public function deposit(StoreSavingsTransactionRequest $request, int $savingsAccountId, SavingsTransactionService $service): RedirectResponse
     {
+        $savingsAccount = $service->resolveTransactionAccount($savingsAccountId, $request->user());
+
         try {
             $transaction = $service->deposit($savingsAccount, (float) $request->validated('amount'), $request->user(), $request->validated('payment_method'), $request->validated('narration'));
         } catch (InvalidArgumentException $exception) {
@@ -75,10 +78,10 @@ class SavingsTransactionController extends Controller
         return redirect()->route('savings-transactions.receipt', $transactions['out'])->with('status', 'Savings transfer posted.');
     }
 
-    public function receipt(SavingsTransaction $savingsTransaction): View
+    public function receipt(Request $request, int $savingsTransactionId, SavingsTransactionService $service): View
     {
         return view('savings-transactions.receipt', [
-            'transaction' => $savingsTransaction->load(['account.client', 'account.product', 'branch', 'teller']),
+            'transaction' => $service->resolveTransaction($savingsTransactionId, $request->user()),
         ]);
     }
 }

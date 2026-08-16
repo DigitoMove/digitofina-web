@@ -9,6 +9,7 @@ use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
 use App\Services\ClientService;
 use App\Services\SavingsAccountService;
+use App\Services\SavingsTransactionService;
 use App\Support\ApiSecurity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,9 +17,20 @@ use Illuminate\View\View;
 
 class SavingsAccountController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, SavingsTransactionService $transactions): View
     {
-        $accounts = SavingsAccount::query()
+        abort_unless($request->user()->canPerform('manage-accounts') || $request->user()->canPerform('post-transactions'), 403);
+
+        $canTransactAcrossBranches = $request->user()->canPerform('transact-savings-across-branches');
+        $accountsQuery = $request->user()->canPerform('post-transactions')
+            ? $transactions->transactionAccountQuery($request->user())
+            : SavingsAccount::query();
+        $branchesQuery = $canTransactAcrossBranches
+            ? Branch::query()->withoutGlobalScope('tenant')
+                ->when($request->user()->organization_id, fn ($query, int $organizationId) => $query->where('organization_id', $organizationId))
+            : Branch::query();
+
+        $accounts = $accountsQuery
             ->with(['client', 'branch', 'product'])
             ->when($request->search, function ($query, string $search) {
                 $query->where(function ($query) use ($search): void {
@@ -35,11 +47,13 @@ class SavingsAccountController extends Controller
 
         return view('savings-accounts.index', [
             'accounts' => $accounts,
-            'branches' => Branch::query()
-                ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn ($query) => $query->whereKey($request->user()->branch_id))
+            'branches' => $branchesQuery
+                ->when(! $canTransactAcrossBranches && ! ApiSecurity::hasGlobalBranchAccess($request->user()), fn ($query) => $query->whereKey($request->user()->branch_id))
                 ->orderBy('name')
                 ->get(),
             'products' => SavingsProduct::orderBy('name')->get(),
+            'canManageAccounts' => $request->user()->canPerform('manage-accounts'),
+            'canPostTransactions' => $request->user()->canPerform('post-transactions'),
         ]);
     }
 
