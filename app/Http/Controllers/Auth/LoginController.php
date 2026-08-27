@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Services\AuditLogger;
+use App\Services\DemoAccessService;
 use App\Services\TenantContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,9 +14,11 @@ use Illuminate\View\View;
 
 class LoginController extends Controller
 {
-    public function create(): View
+    public function create(Request $request, DemoAccessService $demoAccess): View
     {
-        return view('auth.login');
+        return view('auth.login', [
+            'demoAvailable' => $demoAccess->isAvailableFor($request),
+        ]);
     }
 
     public function store(Request $request, AuditLogger $auditLogger, TenantContext $tenant): RedirectResponse
@@ -54,6 +57,15 @@ class LoginController extends Controller
 
             throw ValidationException::withMessages([
                 'login' => 'This staff or organization account is not active. Contact your system administrator.',
+            ]);
+        }
+
+        if (Auth::user()->organization?->isDemoExpired()) {
+            $auditLogger->record('auth.expired_demo_login_blocked', Auth::user());
+            Auth::logout();
+
+            throw ValidationException::withMessages([
+                'login' => 'This 14-day demo has expired. Contact DigitoFina to continue with a full account.',
             ]);
         }
 

@@ -74,6 +74,7 @@ class SystemSetting extends Model
         static::ensurePlatformDefaults();
 
         static::forPlatform()
+            ->where('key', '!=', 'demo_hidden_hosts')
             ->orderBy('group')
             ->orderBy('key')
             ->get()

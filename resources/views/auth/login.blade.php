@@ -63,6 +63,10 @@
                     <div class="mb-4 rounded-2xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">{{ $errors->first() }}</div>
                 @endif
 
+                @if (session('warning'))
+                    <div class="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{{ session('warning') }}</div>
+                @endif
+
                 <label class="block text-sm font-semibold text-slate-700">Email or phone <x-required-badge /></label>
                 <input name="login" value="{{ old('login') }}" class="mt-1 h-12 w-full rounded-2xl border border-brand-100 bg-brand-50/60 px-4 focus:border-brand-500 focus:bg-white focus:ring-brand-100" required autofocus autocomplete="username">
 
@@ -79,9 +83,13 @@
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
                 </button>
 
-                {{-- <div class="mt-6 rounded-2xl border border-brand-100 bg-brand-50 p-3 text-center text-xs text-brand-800">
-                    Demo access: admin@digitofina.test / password
-                </div> --}}
+                @if ($demoAvailable)
+                    <div class="mt-6 flex items-center justify-center gap-3 text-sm">
+                        <a href="{{ route('landing') }}" class="font-semibold text-slate-500 hover:text-brand-900">About DigitoFina</a>
+                        <span class="text-slate-300">•</span>
+                        <a href="{{ route('demo.create') }}" class="font-semibold text-violet-700 hover:text-violet-950">Create a 14-day demo</a>
+                    </div>
+                @endif
             </form>
         </section>
     </main>

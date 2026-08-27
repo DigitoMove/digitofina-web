@@ -303,6 +303,15 @@
             </header>
 
             <main class="df-page flex-1 p-4 sm:p-6">
+                @if ($layoutOrganization?->is_demo)
+                    <div class="mb-4 flex flex-col justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-sm sm:flex-row sm:items-center">
+                        <div>
+                            <span class="font-bold">Demo organization</span>
+                            <span class="ml-1">All modules are available with usage limits. {{ $layoutOrganization->demoDaysRemaining() }} day(s) remaining.</span>
+                        </div>
+                        <span class="shrink-0 font-semibold">Expires {{ $layoutOrganization->demo_expires_at?->format('d M Y') }}</span>
+                    </div>
+                @endif
                 <div class="fixed right-4 top-20 z-50 grid w-[min(24rem,calc(100vw-2rem))] gap-3">
                     @if (session('status'))
                         <div class="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-lg" data-flash-toast>

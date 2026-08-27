@@ -36,7 +36,7 @@ Route::get('/docs/openapi.json', [ApiDocumentationController::class, 'openapi'])
 Route::post('/payments/mobile-money/callback', [PaymentController::class, 'callback'])->middleware(['throttle:api', 'idempotent.financial'])->name('payments.callback');
 Route::post('/webhooks/{source}/{provider}', [WebhookController::class, 'store'])->middleware('throttle:api')->name('webhooks.store');
 
-Route::middleware(['auth:sanctum', 'tenant', 'throttle:api', 'module:auto'])->group(function (): void {
+Route::middleware(['auth:sanctum', 'tenant', 'demo.active', 'throttle:api', 'module:auto'])->group(function (): void {
     Route::get('/auth/me', [AuthController::class, 'me'])->name('auth.me');
     Route::get('/auth/permissions', [AuthController::class, 'permissions'])->name('auth.permissions');
     Route::post('/auth/refresh', [AuthController::class, 'refresh'])->name('auth.refresh');
@@ -47,7 +47,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'throttle:api', 'module:auto'])->gr
     Route::get('/sync/clients', [OfflineSyncController::class, 'pullClients'])->name('sync.clients.pull');
     Route::post('/sync/clients', [OfflineSyncController::class, 'pushClients'])->middleware('throttle:api-sensitive')->name('sync.clients.push');
 
-    Route::apiResource('clients', ClientController::class)->except(['destroy']);
+    Route::apiResource('clients', ClientController::class)->except(['destroy'])->middleware('demo.capacity:clients');
     Route::get('/clients/{client}/documents', [ClientDocumentController::class, 'index'])->name('clients.documents.index');
     Route::post('/clients/{client}/documents', [ClientDocumentController::class, 'store'])->name('clients.documents.store');
     Route::get('/clients/{client}/documents/{document}/download', [ClientDocumentController::class, 'download'])->name('clients.documents.download');
@@ -88,7 +88,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'throttle:api', 'module:auto'])->gr
 
     Route::get('/loan-products', [LoanProductController::class, 'index'])->name('loan-products.index');
     Route::put('/loan-products/{loanProduct}', [LoanProductController::class, 'update'])->middleware('throttle:api-sensitive')->name('loan-products.update');
-    Route::apiResource('loans', LoanController::class)->only(['index', 'store', 'show']);
+    Route::apiResource('loans', LoanController::class)->only(['index', 'store', 'show'])->middleware('demo.capacity:loans');
     Route::post('/loans/{loan}/generate-savings-account', [LoanWorkflowController::class, 'generateSavingsAccount'])->name('loans.generate-savings-account');
     Route::post('/loans/{loan}/generate-loan-account', [LoanWorkflowController::class, 'generateLoanAccount'])->name('loans.generate-loan-account');
     Route::post('/loans/{loan}/submit-appraisal', [LoanWorkflowController::class, 'submitForAppraisal'])->name('loans.submit-appraisal');

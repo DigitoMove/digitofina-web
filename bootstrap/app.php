@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Middleware\AuditApiMutation;
+use App\Http\Middleware\EnsureDemoActive;
+use App\Http\Middleware\EnsureDemoAvailable;
+use App\Http\Middleware\EnsureDemoCapacity;
 use App\Http\Middleware\EnsureIdempotentFinancialRequest;
 use App\Http\Middleware\EnsureModuleEnabled;
 use App\Http\Middleware\ResolveTenant;
@@ -38,8 +41,12 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'audit.api' => AuditApiMutation::class,
+            'demo.active' => EnsureDemoActive::class,
+            'demo.available' => EnsureDemoAvailable::class,
+            'demo.capacity' => EnsureDemoCapacity::class,
             'idempotent.financial' => EnsureIdempotentFinancialRequest::class,
             'module' => EnsureModuleEnabled::class,
+            'marketing.available' => EnsureDemoAvailable::class,
             'tenant' => ResolveTenant::class,
         ]);
     })

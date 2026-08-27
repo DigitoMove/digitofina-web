@@ -7,6 +7,7 @@ use App\Models\Organization;
 use App\Models\SystemSetting;
 use App\Services\AuditLogger;
 use App\Services\BusinessCalendarService;
+use App\Services\DemoAccessService;
 use App\Services\LoanApplicationFeeService;
 use App\Services\ModuleService;
 use App\Services\TenantContext;
@@ -18,7 +19,7 @@ use Illuminate\View\View;
 
 class SystemSettingController extends Controller
 {
-    public function index(ModuleService $modules, TenantContext $tenant): View
+    public function index(ModuleService $modules, TenantContext $tenant, DemoAccessService $demoAccess): View
     {
         Gate::authorize('viewAny', SystemSetting::class);
 
@@ -30,6 +31,7 @@ class SystemSettingController extends Controller
             SystemSetting::ensureForOrganization($selectedOrganization);
         } else {
             SystemSetting::ensurePlatformDefaults();
+            $demoAccess->ensurePlatformSetting();
         }
 
         $enabledModules = $user?->hasRole('super-admin') || ! $selectedOrganization
@@ -71,7 +73,7 @@ class SystemSettingController extends Controller
         };
     }
 
-    public function update(UpdateSystemSettingsRequest $request, AuditLogger $auditLogger, LoanApplicationFeeService $applicationFees, BusinessCalendarService $calendar): RedirectResponse
+    public function update(UpdateSystemSettingsRequest $request, AuditLogger $auditLogger, LoanApplicationFeeService $applicationFees, BusinessCalendarService $calendar, DemoAccessService $demoAccess): RedirectResponse
     {
         Gate::authorize('update', SystemSetting::class);
         $organizationId = SystemSetting::resolvedOrganizationId();
@@ -101,6 +103,10 @@ class SystemSettingController extends Controller
 
                 if ($setting->key === 'repayment_public_holidays') {
                     $calendar->assertValidHolidayJson($value);
+                }
+
+                if ($setting->key === 'demo_hidden_hosts') {
+                    $demoAccess->assertValidHiddenHosts($value);
                 }
             } catch (\InvalidArgumentException $exception) {
                 throw ValidationException::withMessages(["settings.{$key}" => $exception->getMessage()]);

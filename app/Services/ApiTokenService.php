@@ -39,6 +39,10 @@ class ApiTokenService
             throw ValidationException::withMessages(['login' => 'This organization account is not active.']);
         }
 
+        if ($user->organization?->isDemoExpired()) {
+            throw ValidationException::withMessages(['login' => 'This 14-day demo has expired. Contact DigitoFina to continue with a full account.']);
+        }
+
         $abilities = $user->role?->permissions->pluck('slug')->values()->all() ?: ['view-own-accounts'];
         $newToken = $user->createToken($deviceName, $abilities, now()->addDays(30));
 

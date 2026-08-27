@@ -17,9 +17,11 @@ use App\Http\Controllers\ClientNoteController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DataImportController;
 use App\Http\Controllers\DataWipeController;
+use App\Http\Controllers\DemoRegistrationController;
 use App\Http\Controllers\DueRepaymentController;
 use App\Http\Controllers\EndOfDayController;
 use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\LandingPageController;
 use App\Http\Controllers\LedgerAccountController;
 use App\Http\Controllers\LinkPreviewController;
 use App\Http\Controllers\LoanCollateralController;
@@ -33,6 +35,7 @@ use App\Http\Controllers\ModuleManagementController;
 use App\Http\Controllers\NonCashTransactionController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrganizationController;
+use App\Http\Controllers\PricingController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReceiptController;
 use App\Http\Controllers\ReportController;
@@ -47,9 +50,14 @@ use App\Http\Controllers\TransactionReversalController;
 use App\Http\Controllers\UserManagementController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return auth()->check() ? redirect()->route('dashboard') : redirect()->route('login');
+Route::get('/', LandingPageController::class)->middleware('tenant')->name('landing');
+Route::get('/pricing', PricingController::class)->middleware(['tenant', 'marketing.available'])->name('pricing');
+
+Route::middleware(['tenant', 'guest', 'demo.available'])->group(function (): void {
+    Route::get('/demo', [DemoRegistrationController::class, 'create'])->name('demo.create');
+    Route::post('/demo', [DemoRegistrationController::class, 'store'])->middleware('throttle:demo-registration')->name('demo.store');
 });
+Route::get('/demo/expired', [DemoRegistrationController::class, 'expired'])->name('demo.expired');
 
 Route::get('/health', fn () => response()->json([
     'status' => 'ok',
@@ -68,7 +76,7 @@ Route::middleware(['tenant', 'guest'])->group(function () {
     Route::post('/reset-password', [NewPasswordController::class, 'store'])->name('password.store');
 });
 
-Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
+Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(function () {
     Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::get('/client-directory', [ClientDirectoryController::class, 'index'])->name('client-directory.index');
@@ -89,8 +97,8 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::post('/member/loans/{loan}/repayments', [MemberPaymentController::class, 'repayLoan'])->middleware('module:loans')->name('member.loans.repayments.store');
     Route::post('/member/savings-accounts/{savingsAccount}/deposits', [MemberPaymentController::class, 'depositSavings'])->middleware('module:savings')->name('member.savings.deposits.store');
     Route::post('/member/investment-accounts/{investmentAccount}/top-ups', [MemberPaymentController::class, 'topUpInvestment'])->middleware('module:investments')->name('member.investments.top-ups.store');
-    Route::resource('branches', BranchController::class)->except(['show', 'destroy']);
-    Route::resource('users', UserManagementController::class)->except(['show', 'destroy']);
+    Route::resource('branches', BranchController::class)->except(['show', 'destroy'])->middleware('demo.capacity:branches');
+    Route::resource('users', UserManagementController::class)->except(['show', 'destroy'])->middleware('demo.capacity:users');
     Route::resource('roles', RoleController::class)->except(['show', 'destroy']);
     Route::get('/organizations', [OrganizationController::class, 'index'])->name('organizations.index');
     Route::get('/organizations/create', [OrganizationController::class, 'create'])->name('organizations.create');
@@ -113,7 +121,7 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::post('/data-wipe', [DataWipeController::class, 'store'])->name('data-wipe.store');
     Route::get('/audit-logs', [AuditLogController::class, 'index'])->name('audit-logs.index');
     Route::get('/audit-logs/{auditLog}', [AuditLogController::class, 'show'])->name('audit-logs.show');
-    Route::resource('clients', ClientController::class)->middleware('module:clients');
+    Route::resource('clients', ClientController::class)->middleware(['module:clients', 'demo.capacity:clients']);
     Route::get('/clients/{client}/accounts', [ClientController::class, 'accounts'])->middleware('module:clients')->name('clients.accounts');
     Route::get('/clients/{client}/savings-accounts', [ClientController::class, 'savingsAccounts'])->middleware('module:savings')->name('clients.savings-accounts');
     Route::post('/clients/{client}/savings-accounts/generate', [SavingsAccountController::class, 'generate'])->middleware('module:savings')->name('clients.savings-accounts.generate');
@@ -138,7 +146,7 @@ Route::middleware(['auth', 'tenant', 'module:auto'])->group(function () {
     Route::get('/savings-transactions/{savingsTransactionId}/receipt', [SavingsTransactionController::class, 'receipt'])->middleware('module:savings')->name('savings-transactions.receipt');
     Route::resource('loan-products', LoanProductController::class)->except(['show', 'destroy'])->middleware('module:loans');
     Route::post('/loans/schedule-preview', [LoanController::class, 'schedulePreview'])->middleware('module:loans')->name('loans.schedule-preview');
-    Route::resource('loans', LoanController::class)->only(['index', 'create', 'store', 'show'])->middleware('module:loans');
+    Route::resource('loans', LoanController::class)->only(['index', 'create', 'store', 'show'])->middleware(['module:loans', 'demo.capacity:loans']);
     Route::post('/loans/{loan}/draft-terms', [LoanController::class, 'updateDraftTerms'])->middleware('module:loans')->name('loans.update-draft-terms');
     Route::post('/loans/{loan}/repair-terms', [LoanController::class, 'repairTerms'])->middleware('module:loans')->name('loans.repair-terms');
     Route::post('/loans/{loan}/generate-savings-account', [LoanController::class, 'generateSavingsAccount'])->middleware('module:loans')->name('loans.generate-savings-account');

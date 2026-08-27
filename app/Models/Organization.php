@@ -7,12 +7,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
 class Organization extends Model
 {
     use SoftDeletes;
 
     protected $guarded = [];
+
+    protected $attributes = [
+        'is_demo' => false,
+    ];
 
     protected function casts(): array
     {
@@ -22,6 +27,9 @@ class Organization extends Model
             'sms_settings' => 'array',
             'mobile_money_settings' => 'array',
             'social_links' => 'array',
+            'is_demo' => 'boolean',
+            'demo_started_at' => 'datetime',
+            'demo_expires_at' => 'datetime',
         ];
     }
 
@@ -38,6 +46,11 @@ class Organization extends Model
     public function clients(): HasMany
     {
         return $this->hasMany(Client::class);
+    }
+
+    public function loans(): HasMany
+    {
+        return $this->hasMany(Loan::class);
     }
 
     public function package(): BelongsTo
@@ -60,5 +73,21 @@ class Organization extends Model
     public function domains(): HasMany
     {
         return $this->hasMany(OrganizationDomain::class);
+    }
+
+    public function isDemoExpired(?Carbon $at = null): bool
+    {
+        return $this->is_demo
+            && $this->demo_expires_at !== null
+            && $this->demo_expires_at->lessThanOrEqualTo($at ?? now());
+    }
+
+    public function demoDaysRemaining(): int
+    {
+        if (! $this->is_demo || $this->demo_expires_at === null || $this->isDemoExpired()) {
+            return 0;
+        }
+
+        return max(1, (int) ceil(now()->diffInSeconds($this->demo_expires_at, true) / 86400));
     }
 }

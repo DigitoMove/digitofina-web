@@ -44,6 +44,18 @@ final readonly class SeoMetadata
     private static function defaultsFor(?string $routeName): array
     {
         return match (true) {
+            $routeName === 'landing' => [
+                'title' => 'Microfinance Management System',
+                'description' => 'Manage clients, loans, branches, staff, expenses, merchant payments, and automatic reports from your phone or computer with DigitoFina.',
+            ],
+            Str::is('demo.*', (string) $routeName) => [
+                'title' => 'Free 14-Day Demo',
+                'description' => 'Create an isolated DigitoFina demo organization and explore every microfinance management module for 14 days.',
+            ],
+            $routeName === 'pricing' => [
+                'title' => 'Pricing',
+                'description' => 'Compare DigitoFina monthly SaaS subscriptions and one-time microfinance system licence options in Uganda shillings.',
+            ],
             $routeName === 'login' => [
                 'title' => 'Secure Login',
                 'description' => 'Sign in to DigitoFina for secure financial operations, member services, loans, accounts, teller drawers, and reporting.',
@@ -112,7 +124,7 @@ final readonly class SeoMetadata
 
     private static function robotsFor(?string $routeName): string
     {
-        return $routeName === 'login' ? 'index, follow' : 'noindex, nofollow';
+        return in_array($routeName, ['landing', 'pricing', 'login'], true) ? 'index, follow' : 'noindex, nofollow';
     }
 
     private static function siteName(): string
