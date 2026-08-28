@@ -31,10 +31,12 @@ class BranchGeneralLedgerService
     {
         foreach ($this->defaults() as $account) {
             ChartAccount::query()->updateOrCreate(
-                ['code' => $branch->code.'-'.$account['suffix']],
                 [
                     'organization_id' => $branch->organization_id,
                     'branch_id' => $branch->id,
+                    'code' => $branch->code.'-'.$account['suffix'],
+                ],
+                [
                     'name' => $account['name'],
                     'type' => $account['type'],
                     'normal_balance' => $account['normal_balance'],
@@ -62,10 +64,12 @@ class BranchGeneralLedgerService
         $definition = collect($this->defaults())->firstWhere('suffix', $suffix);
 
         return ChartAccount::query()->updateOrCreate(
-            ['code' => $branch->code.'-'.$suffix],
             [
                 'organization_id' => $branch->organization_id,
                 'branch_id' => $branch->id,
+                'code' => $branch->code.'-'.$suffix,
+            ],
+            [
                 'name' => $definition['name'],
                 'type' => $definition['type'],
                 'normal_balance' => $definition['normal_balance'],

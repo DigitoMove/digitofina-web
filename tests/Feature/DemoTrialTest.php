@@ -1,7 +1,9 @@
 <?php
 
 use App\Models\Branch;
+use App\Models\ChartAccount;
 use App\Models\Client;
+use App\Models\LoanProduct;
 use App\Models\Module;
 use App\Models\Organization;
 use App\Models\OrganizationDomain;
@@ -87,6 +89,9 @@ it('creates an isolated organization with all modules and a fourteen day expiry'
         ->and($organization->demo_expires_at->equalTo(now()->addDays(14)))->toBeTrue()
         ->and($organization->branches()->count())->toBe(1)
         ->and($organization->users()->count())->toBe(1)
+        ->and(LoanProduct::withoutGlobalScope('tenant')->where('organization_id', $organization->id)->count())->toBe(5)
+        ->and(ChartAccount::withoutGlobalScope('tenant')->where('organization_id', $organization->id)->whereNull('branch_id')->count())->toBe(15)
+        ->and(ChartAccount::withoutGlobalScope('tenant')->where('branch_id', $user->branch_id)->count())->toBe(11)
         ->and($organization->modules()->wherePivot('is_enabled', true)->count())->toBe(Module::query()->count())
         ->and(SystemSetting::forOrganization($organization->id)->where('key', 'demo_hidden_hosts')->doesntExist())->toBeTrue()
         ->and($user->role?->slug)->toBe('organization-admin');

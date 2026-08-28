@@ -9,10 +9,12 @@ use App\Models\Package;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\FinancialDefaultsService;
 use App\Services\ModuleService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -53,7 +55,7 @@ class OrganizationController extends Controller
         ]);
     }
 
-    public function store(Request $request, AuditLogger $auditLogger, ModuleService $modules): RedirectResponse
+    public function store(Request $request, AuditLogger $auditLogger, ModuleService $modules, FinancialDefaultsService $financialDefaults): RedirectResponse
     {
         abort_unless($request->user()->hasRole('super-admin'), 403);
 
@@ -63,7 +65,12 @@ class OrganizationController extends Controller
         }
         unset($data['logo_file']);
 
-        $organization = Organization::create($data);
+        $organization = DB::transaction(function () use ($data, $financialDefaults): Organization {
+            $organization = Organization::create($data);
+            $financialDefaults->provisionOrganization($organization);
+
+            return $organization;
+        });
         $modules->syncCatalog();
         $modules->syncDefaults($organization);
         SystemSetting::ensureForOrganization($organization);

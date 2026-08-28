@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class LoanProduct extends Model
@@ -37,5 +38,10 @@ class LoanProduct extends Model
     public function loans(): HasMany
     {
         return $this->hasMany(Loan::class);
+    }
+
+    public function template(): BelongsTo
+    {
+        return $this->belongsTo(LoanProductTemplate::class, 'loan_product_template_id');
     }
 }

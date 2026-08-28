@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Models\Branch;
+use App\Observers\BranchObserver;
 use App\Services\TenantContext;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -26,6 +28,8 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Schema::defaultStringLength(191);
+
+        Branch::observe(BranchObserver::class);
 
         Gate::before(fn ($user): ?bool => $user->hasRole('super-admin') ? true : null);
 

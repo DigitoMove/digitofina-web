@@ -51,6 +51,7 @@
                                 <a href="{{ route('organization.edit', $organization) }}" class="font-semibold text-brand-700">Edit</a>
                                 <a href="{{ route('organizations.users', $organization) }}" class="font-semibold text-brand-700">Users</a>
                                 <a href="{{ route('modules.index', ['organization_id' => $organization->id]) }}" class="font-semibold text-brand-700">Modules</a>
+                                <a href="{{ route('organizations.financial-defaults.index', $organization) }}" class="font-semibold text-brand-700">Defaults</a>
                                 <form method="POST" action="{{ route('organizations.switch', $organization) }}">@csrf<button class="font-semibold text-brand-700">Switch</button></form>
                             </div>
                         </td>

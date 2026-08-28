@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        $this->call(FinancialTemplateSeeder::class);
         $this->call(ModuleSeeder::class);
 
         $organization = Organization::firstOrCreate(['slug' => 'digitofina-demo'], [

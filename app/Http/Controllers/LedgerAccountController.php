@@ -98,14 +98,15 @@ class LedgerAccountController extends Controller
             abort_unless($this->canMergeLedgerAccounts($request), 403);
         }
 
+        $organizationId = $branch?->organization_id ?? $this->activeOrganizationId($request);
         $code = Str::upper($branch ? $branch->code.'-'.$data['suffix'] : $data['suffix']);
 
-        if (ChartAccount::query()->where('code', $code)->exists()) {
+        if (ChartAccount::withoutGlobalScope('tenant')->where('organization_id', $organizationId)->where('code', $code)->exists()) {
             return back()->withErrors(['ledger_account' => 'A ledger account with code '.$code.' already exists.'])->withInput();
         }
 
         $attributes = [
-            'organization_id' => $branch?->organization_id ?? $this->activeOrganizationId($request),
+            'organization_id' => $organizationId,
             'branch_id' => $branch?->id,
             'code' => $code,
             'name' => $data['name'],
@@ -138,7 +139,7 @@ class LedgerAccountController extends Controller
         $data = $request->validate([
             'branch_id' => ['nullable', 'exists:branches,id'],
             'parent_id' => ['nullable', 'exists:chart_accounts,id'],
-            'code' => ['required', 'string', 'max:30', 'regex:/^[A-Za-z0-9_-]+$/', Rule::unique('chart_accounts', 'code')->ignore($chartAccount->id)],
+            'code' => ['required', 'string', 'max:30', 'regex:/^[A-Za-z0-9_-]+$/'],
             'name' => ['required', 'string', 'max:191'],
             'type' => ['required', Rule::in(['asset', 'liability', 'equity', 'income', 'expense'])],
             'normal_balance' => ['required', Rule::in(['debit', 'credit'])],
@@ -156,6 +157,16 @@ class LedgerAccountController extends Controller
             $this->authorizeLedgerBranch($request, $branch);
         } elseif (! ApiSecurity::hasGlobalBranchAccess($request->user()) && $request->user()->branch_id) {
             abort(403);
+        }
+
+        $organizationId = $branch?->organization_id ?? $this->activeOrganizationId($request);
+
+        if (ChartAccount::withoutGlobalScope('tenant')
+            ->where('organization_id', $organizationId)
+            ->where('code', $data['code'])
+            ->whereKeyNot($chartAccount->id)
+            ->exists()) {
+            return back()->withErrors(['code' => 'A ledger account with this code already exists.'])->withInput();
         }
 
         if (filled($data['parent_id'] ?? null)) {
@@ -182,7 +193,7 @@ class LedgerAccountController extends Controller
         ]);
 
         $chartAccount->update([
-            'organization_id' => $branch?->organization_id ?? $this->activeOrganizationId($request),
+            'organization_id' => $organizationId,
             'branch_id' => $branch?->id,
             'parent_id' => $data['parent_id'] ?? null,
             'code' => $data['code'],

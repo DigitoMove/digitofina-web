@@ -33,6 +33,11 @@ class ChartAccount extends Model
         return $this->belongsTo(Branch::class);
     }
 
+    public function template(): BelongsTo
+    {
+        return $this->belongsTo(ChartAccountTemplate::class, 'chart_account_template_id');
+    }
+
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id');
@@ -61,6 +66,11 @@ class ChartAccount extends Model
     public function journalLines(): HasMany
     {
         return $this->hasMany(JournalLine::class);
+    }
+
+    public function dailyAccountingSummaries(): HasMany
+    {
+        return $this->hasMany(DailyAccountingSummary::class);
     }
 
     public function drawerEntryType(string $drawerDirection): ?string

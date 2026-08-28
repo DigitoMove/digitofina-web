@@ -53,6 +53,16 @@ class Organization extends Model
         return $this->hasMany(Loan::class);
     }
 
+    public function loanProducts(): HasMany
+    {
+        return $this->hasMany(LoanProduct::class);
+    }
+
+    public function chartAccounts(): HasMany
+    {
+        return $this->hasMany(ChartAccount::class);
+    }
+
     public function package(): BelongsTo
     {
         return $this->belongsTo(Package::class);

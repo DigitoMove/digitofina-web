@@ -43,7 +43,14 @@ class LoanProductController extends Controller
 
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
-            'code' => ['sometimes', 'string', 'max:30', Rule::unique('loan_products', 'code')->ignore($loanProduct)],
+            'code' => [
+                'sometimes',
+                'string',
+                'max:30',
+                Rule::unique('loan_products', 'code')
+                    ->where('organization_id', $loanProduct->organization_id)
+                    ->ignore($loanProduct),
+            ],
             'annual_interest_rate' => ['sometimes', 'numeric', 'min:0'],
             'penalty_rate' => ['sometimes', 'numeric', 'min:0'],
             'processing_fee' => ['sometimes', 'numeric', 'min:0'],

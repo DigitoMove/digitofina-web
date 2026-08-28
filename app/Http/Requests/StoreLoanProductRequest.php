@@ -35,7 +35,12 @@ class StoreLoanProductRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'code' => ['required', 'string', 'max:30', Rule::unique('loan_products', 'code')],
+            'code' => [
+                'required',
+                'string',
+                'max:30',
+                Rule::unique('loan_products', 'code')->where('organization_id', $this->user()?->organization_id),
+            ],
             'description' => ['nullable', 'string'],
             'min_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'max_amount' => ['required', 'numeric', 'gt:min_amount', CurrencyDenomination::validationRule()],

@@ -35,6 +35,7 @@ use App\Http\Controllers\ModuleManagementController;
 use App\Http\Controllers\NonCashTransactionController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrganizationController;
+use App\Http\Controllers\OrganizationFinancialDefaultsController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReceiptController;
@@ -107,6 +108,9 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::post('/organizations/{organization}/switch', [OrganizationController::class, 'switch'])->name('organizations.switch');
     Route::get('/organizations/{organization}/users', [OrganizationController::class, 'users'])->name('organizations.users');
     Route::post('/organizations/{organization}/users', [OrganizationController::class, 'assignUser'])->name('organizations.users.assign');
+    Route::get('/organizations/{organization}/financial-defaults', [OrganizationFinancialDefaultsController::class, 'index'])->name('organizations.financial-defaults.index');
+    Route::post('/organizations/{organization}/financial-defaults', [OrganizationFinancialDefaultsController::class, 'store'])->name('organizations.financial-defaults.store');
+    Route::delete('/organizations/{organization}/financial-defaults', [OrganizationFinancialDefaultsController::class, 'destroy'])->name('organizations.financial-defaults.destroy');
     Route::get('/organization', [OrganizationController::class, 'editCurrent'])->name('organization.current');
     Route::put('/organization', [OrganizationController::class, 'updateCurrent'])->name('organization.current.update');
     Route::get('/organization/{organization}/edit', [OrganizationController::class, 'edit'])->name('organization.edit');

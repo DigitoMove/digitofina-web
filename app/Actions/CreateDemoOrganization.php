@@ -9,7 +9,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\SystemSetting;
 use App\Models\User;
-use App\Services\BranchGeneralLedgerService;
+use App\Services\FinancialDefaultsService;
 use App\Services\ModuleService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -18,7 +18,7 @@ class CreateDemoOrganization
 {
     public function __construct(
         private ModuleService $modules,
-        private BranchGeneralLedgerService $generalLedger,
+        private FinancialDefaultsService $financialDefaults,
     ) {}
 
     /**
@@ -29,6 +29,7 @@ class CreateDemoOrganization
     {
         return DB::transaction(function () use ($data): array {
             $organization = $this->createOrganization($data);
+            $this->financialDefaults->provisionOrganization($organization);
             $branch = $this->createBranch($organization);
             $role = $this->organizationAdminRole($organization);
             $user = User::create([
@@ -46,7 +47,6 @@ class CreateDemoOrganization
 
             $this->enableAllModules($organization, $user);
             SystemSetting::ensureForOrganization($organization);
-            $this->generalLedger->ensureDefaults($branch);
 
             return ['organization' => $organization, 'user' => $user];
         });

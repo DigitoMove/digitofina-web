@@ -8,9 +8,9 @@ use App\Models\Branch;
 use App\Models\Organization;
 use App\Models\User;
 use App\Services\AuditLogger;
-use App\Services\BranchGeneralLedgerService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Exists;
@@ -54,19 +54,18 @@ class BranchController extends Controller
         return view('branches.create', ['branch' => new Branch, 'managers' => $this->managerOptions(), 'organizations' => $this->organizationOptions()]);
     }
 
-    public function store(StoreBranchRequest $request, AuditLogger $auditLogger, BranchGeneralLedgerService $generalLedger): RedirectResponse
+    public function store(StoreBranchRequest $request, AuditLogger $auditLogger): RedirectResponse
     {
         Gate::authorize('create', Branch::class);
 
-        $branch = Branch::create($request->validated() + [
+        $branch = DB::transaction(fn (): Branch => Branch::create($request->validated() + [
             'organization_id' => $request->integer('organization_id') ?: $request->user()->organization_id,
             'is_active' => $request->string('status')->toString() === 'active',
             'created_by' => $request->user()->id,
             'updated_by' => $request->user()->id,
-        ]);
+        ]));
 
         $auditLogger->record('branch.created', $branch, $branch->toArray());
-        $generalLedger->ensureDefaults($branch);
 
         return redirect()->route('branches.index')->with('status', 'Branch created.');
     }
