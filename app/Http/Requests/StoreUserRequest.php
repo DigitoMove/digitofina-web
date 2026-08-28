@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Branch;
 use App\Models\Role;
+use App\Support\RoleCatalog;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\Password;
 
@@ -45,29 +47,46 @@ class StoreUserRequest extends FormRequest
             $role = Role::query()->find($this->integer('role_id'));
             $roleSlug = $role?->slug;
             $user = $this->user();
-            $organizationId = $this->integer('organization_id') ?: $user?->organization_id;
+            $submittedOrganizationId = $this->integer('organization_id') ?: null;
+            $organizationId = $user?->hasGlobalOrganizationAccess()
+                ? $submittedOrganizationId
+                : ($user?->organization_id ? (int) $user->organization_id : null);
 
-            if ($organizationId && ! $user?->canAccessOrganization($organizationId)) {
+            if ($submittedOrganizationId && ! $user?->canAccessOrganization($submittedOrganizationId)) {
                 $validator->errors()->add('organization_id', 'You cannot create users for this organization.');
             }
 
-            if ($roleSlug === 'super-admin' && ! $user?->hasRole('super-admin')) {
-                $validator->errors()->add('role_id', 'Only a super admin can assign the Super Admin role.');
+            if ($roleSlug === RoleCatalog::SUPER_ADMIN_SLUG) {
+                $validator->errors()->add('role_id', 'The Super Admin role cannot be assigned through staff management.');
 
                 return;
             }
 
-            if ($roleSlug === 'super-admin') {
-                return;
-            }
-
-            if ($role?->organization_id !== null && (int) $role->organization_id !== (int) $organizationId) {
+            if ($role && ! $role->isAssignableToOrganization($organizationId)) {
                 $validator->errors()->add('role_id', 'Select a role belonging to the selected organization.');
             }
 
             if ($roleSlug === 'organization-admin' && ! $organizationId) {
                 $validator->errors()->add('organization_id', 'Organization admins must belong to an organization.');
             }
+
+            $this->validateBranchScope($validator, $organizationId);
         });
+    }
+
+    private function validateBranchScope($validator, ?int $organizationId): void
+    {
+        $branchId = $this->integer('branch_id') ?: null;
+
+        if ($branchId === null) {
+            return;
+        }
+
+        $branchBelongsToOrganization = $organizationId !== null
+            && Branch::query()->whereKey($branchId)->where('organization_id', $organizationId)->exists();
+
+        if (! $branchBelongsToOrganization || ! $this->user()?->canAccessBranch($branchId, $organizationId)) {
+            $validator->errors()->add('branch_id', 'Select a branch belonging to the selected organization.');
+        }
     }
 }

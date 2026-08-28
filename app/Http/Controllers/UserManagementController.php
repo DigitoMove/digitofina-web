@@ -141,20 +141,21 @@ class UserManagementController extends Controller
     private function formData(User $user): array
     {
         $currentUser = request()->user();
+        $targetOrganizationId = $currentUser->hasGlobalOrganizationAccess()
+            ? ($user->organization_id ? (int) $user->organization_id : null)
+            : ($currentUser->organization_id ? (int) $currentUser->organization_id : null);
 
         return [
             'user' => $user,
             'roles' => Role::query()
-                ->when(! $currentUser->hasRole('super-admin'), fn ($query) => $query->where('slug', '!=', 'super-admin'))
-                ->when(! $currentUser->hasGlobalOrganizationAccess() && $currentUser->organization_id, fn ($query) => $query->where(function ($query) use ($currentUser): void {
-                    $query->where('organization_id', $currentUser->organization_id)->orWhereNull('organization_id');
-                }))
+                ->assignableToOrganization($targetOrganizationId)
                 ->orderBy('name')
                 ->get(),
             'branches' => Branch::query()
                 ->with('organization')
                 ->where('status', 'active')
-                ->when(! $currentUser->hasGlobalOrganizationAccess() && $currentUser->organization_id, fn ($query) => $query->where('organization_id', $currentUser->organization_id))
+                ->when($targetOrganizationId !== null, fn ($query) => $query->where('organization_id', $targetOrganizationId))
+                ->when($targetOrganizationId === null, fn ($query) => $query->whereRaw('1 = 0'))
                 ->when(! ApiSecurity::hasGlobalBranchAccess($currentUser) && $currentUser->branch_id, fn ($query) => $query->whereKey($currentUser->branch_id))
                 ->orderBy('name')
                 ->get(),
@@ -170,13 +171,6 @@ class UserManagementController extends Controller
      */
     private function normalizeScope(array $data, Role $role, User $actor): array
     {
-        if ($role->slug === 'super-admin') {
-            $data['organization_id'] = null;
-            $data['branch_id'] = null;
-
-            return $data;
-        }
-
         $data['organization_id'] = $actor->hasGlobalOrganizationAccess()
             ? ($data['organization_id'] ?? null)
             : $actor->organization_id;

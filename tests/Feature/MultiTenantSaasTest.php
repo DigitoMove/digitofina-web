@@ -162,6 +162,120 @@ it('allows organization admins to create organization users without an assigned 
         ->and($cashier->role_id)->toBe($staffRole->id);
 });
 
+it('lets super admins and organization admins assign the system cashier role to a new organization', function () {
+    [$catalogOrganization] = tenantShell('Role Catalog Owner');
+    $cashierRole = Role::create([
+        'organization_id' => $catalogOrganization->id,
+        'name' => 'Teller Cashier',
+        'slug' => 'teller-cashier',
+    ]);
+    [$organization, $branch, $organizationAdmin] = tenantUser([]);
+    $organizationAdmin->role->update(['name' => 'Organization Admin', 'slug' => 'organization-admin']);
+
+    $this->actingAs($organizationAdmin)
+        ->get(route('users.create'))
+        ->assertSuccessful()
+        ->assertSee('<option value="'.$cashierRole->id.'"', false);
+
+    $this->actingAs($organizationAdmin)
+        ->post(route('users.store'), [
+            'role_id' => $cashierRole->id,
+            'branch_id' => $branch->id,
+            'name' => 'Organization Teller',
+            'email' => 'organization-teller@example.test',
+            'phone' => '+256700000904',
+            'status' => 'active',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])
+        ->assertRedirect(route('users.index'))
+        ->assertSessionHasNoErrors();
+
+    $superAdmin = superAdminUser();
+    $superAdminRole = $superAdmin->role;
+
+    $this->actingAs($superAdmin)
+        ->get(route('users.create', ['organization_id' => $organization->id]))
+        ->assertSuccessful()
+        ->assertSee('<option value="'.$cashierRole->id.'"', false)
+        ->assertDontSee('<option value="'.$superAdminRole->id.'"', false);
+
+    $this->actingAs($superAdmin)
+        ->post(route('users.store'), [
+            'organization_id' => $organization->id,
+            'role_id' => $cashierRole->id,
+            'branch_id' => $branch->id,
+            'name' => 'Super Admin Created Teller',
+            'email' => 'super-created-teller@example.test',
+            'phone' => '+256700000905',
+            'status' => 'active',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])
+        ->assertRedirect(route('users.index'))
+        ->assertSessionHasNoErrors();
+
+    $this->actingAs($superAdmin)
+        ->post(route('users.store'), [
+            'role_id' => $superAdminRole->id,
+            'name' => 'Second Super Admin',
+            'email' => 'second-super@example.test',
+            'phone' => '+256700000906',
+            'status' => 'active',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])
+        ->assertSessionHasErrors('role_id');
+
+    expect(User::query()->where('email', 'organization-teller@example.test')->firstOrFail())
+        ->organization_id->toBe($organization->id)
+        ->role_id->toBe($cashierRole->id)
+        ->and(User::query()->where('email', 'super-created-teller@example.test')->firstOrFail())
+        ->organization_id->toBe($organization->id)
+        ->branch_id->toBe($branch->id)
+        ->role_id->toBe($cashierRole->id)
+        ->and(User::query()->where('email', 'second-super@example.test')->exists())->toBeFalse();
+});
+
+it('rejects custom roles and branches from another organization when creating users', function () {
+    [$organization, $branch, $organizationAdmin] = tenantUser([]);
+    $organizationAdmin->role->update(['name' => 'Organization Admin', 'slug' => 'organization-admin']);
+    [$otherOrganization, $otherBranch] = tenantShell('Other Tenant');
+    $otherRole = Role::create([
+        'organization_id' => $otherOrganization->id,
+        'name' => 'Other Tenant Custom Role',
+        'slug' => 'other-tenant-custom-role',
+    ]);
+    $ownRole = Role::create([
+        'organization_id' => $organization->id,
+        'name' => 'Own Tenant Custom Role',
+        'slug' => 'own-tenant-custom-role',
+    ]);
+
+    $payload = [
+        'branch_id' => $branch->id,
+        'name' => 'Scoped Staff',
+        'email' => 'scoped-staff@example.test',
+        'phone' => '+256700000907',
+        'status' => 'active',
+        'password' => 'Password123!',
+        'password_confirmation' => 'Password123!',
+    ];
+
+    $this->actingAs($organizationAdmin)
+        ->post(route('users.store'), $payload + ['role_id' => $otherRole->id])
+        ->assertSessionHasErrors('role_id');
+
+    $this->actingAs($organizationAdmin)
+        ->post(route('users.store'), array_merge($payload, [
+            'role_id' => $ownRole->id,
+            'branch_id' => $otherBranch->id,
+        ]))
+        ->assertSessionHasErrors('branch_id');
+
+    expect(User::query()->where('email', 'scoped-staff@example.test')->exists())->toBeFalse();
+});
+
 it('keeps organization clients separated in api responses', function () {
     [$organizationA, $branchA, $userA] = tenantUser(['manage-clients']);
     [$organizationB, $branchB] = tenantShell('Tenant B');
