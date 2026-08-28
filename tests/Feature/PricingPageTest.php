@@ -15,7 +15,11 @@ it('shows both public pricing models with server-defined amounts', function () {
         ->assertSee('UGX 350,000')
         ->assertSee('One-time licence')
         ->assertSee('UGX 1,500,000')
-        ->assertSee('UGX 3,000,000');
+        ->assertSee('UGX 3,000,000')
+        ->assertSee('Your return as the owner')
+        ->assertSee('Control from anywhere')
+        ->assertSee('Manage staff with facts')
+        ->assertSee('https://digitofina.digitomove.com', false);
 });
 
 it('hides pricing from registered organization domains', function () {

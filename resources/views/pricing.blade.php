@@ -22,8 +22,8 @@
         <main class="mx-auto max-w-7xl px-5 pb-20 pt-10 sm:px-8 lg:px-10 lg:pt-16">
             <section class="mx-auto max-w-4xl text-center">
                 <p class="text-sm font-bold uppercase tracking-[0.22em] text-amber-300">Flexible DigitoFina pricing</p>
-                <h1 class="mt-4 text-4xl font-bold tracking-tight sm:text-6xl">Choose monthly flexibility or permanent ownership.</h1>
-                <p class="mx-auto mt-5 max-w-3xl text-base leading-7 text-violet-100 sm:text-lg">Your final price is based on organization size, branches, users, onboarding and the level of operational support required.</p>
+                <h1 class="mt-4 text-4xl font-bold tracking-tight sm:text-6xl">Choose monthly flexibility or a one-time licence.</h1>
+                <p class="mx-auto mt-5 max-w-3xl text-base leading-7 text-violet-100 sm:text-lg">Start with the size that fits today and scale as your branches, users and portfolio grow. Your final price reflects onboarding, migration, support and customization.</p>
             </section>
 
             <section class="mt-12 grid gap-6 lg:grid-cols-2">
@@ -38,23 +38,23 @@
                     </div>
                     <p class="mt-3 text-sm leading-6 text-slate-600">Scales up to {{ $currency }} {{ number_format($offers['subscription']['up_to']) }} per month for larger operations.</p>
                     <ul class="mt-7 grid gap-3 text-sm font-semibold text-slate-700">
-                        <li class="flex gap-3"><span class="text-violet-700">✓</span><span>Lower starting cost</span></li>
-                        <li class="flex gap-3"><span class="text-violet-700">✓</span><span>Updates and ongoing system access</span></li>
-                        <li class="flex gap-3"><span class="text-violet-700">✓</span><span>Suitable for one branch or growing teams</span></li>
+                        <li class="flex gap-3"><span class="text-violet-700">✓</span><span>Preserve working capital with predictable monthly access</span></li>
+                        <li class="flex gap-3"><span class="text-violet-700">✓</span><span>Receive updates and ongoing system support</span></li>
+                        <li class="flex gap-3"><span class="text-violet-700">✓</span><span>Scale as your branches, staff and portfolio grow</span></li>
                     </ul>
                     <a href="{{ route('demo.create') }}" class="mt-8 inline-flex min-h-13 w-full items-center justify-center rounded-2xl bg-violet-700 px-6 font-bold text-white hover:bg-violet-800">Try it free for 14 days</a>
                 </article>
 
                 <article class="rounded-[2rem] border border-white/15 bg-white/10 p-7 shadow-2xl backdrop-blur sm:p-9">
                     <p class="text-sm font-bold uppercase tracking-[0.18em] text-amber-300">One-time licence</p>
-                    <h2 class="mt-5 text-3xl font-bold">Own your deployment</h2>
+                    <h2 class="mt-5 text-3xl font-bold">One agreed implementation</h2>
                     <div class="mt-6 flex flex-wrap items-end gap-2">
                         <span class="text-sm font-bold text-violet-200">From</span>
                         <span class="text-4xl font-bold">{{ $currency }} {{ number_format($offers['one_time']['starting_at']) }}</span>
                     </div>
                     <p class="mt-3 text-sm leading-6 text-violet-100">Typically ranges up to {{ $currency }} {{ number_format($offers['one_time']['up_to']) }}, depending on scale, setup and customization.</p>
                     <ul class="mt-7 grid gap-3 text-sm font-semibold text-violet-50">
-                        <li class="flex gap-3"><span class="text-amber-300">✓</span><span>One agreed implementation price</span></li>
+                        <li class="flex gap-3"><span class="text-amber-300">✓</span><span>Plan deployment and onboarding with one agreed budget</span></li>
                         <li class="flex gap-3"><span class="text-amber-300">✓</span><span>Designed for established or larger operations</span></li>
                         <li class="flex gap-3"><span class="text-amber-300">✓</span><span>Deployment and onboarding scope agreed upfront</span></li>
                     </ul>
@@ -62,10 +62,32 @@
                 </article>
             </section>
 
+            <section class="mt-8 rounded-[2rem] bg-white p-7 text-slate-950 shadow-2xl sm:p-9">
+                <div class="max-w-3xl">
+                    <p class="text-sm font-bold uppercase tracking-[0.18em] text-violet-700">Your return as the owner</p>
+                    <h2 class="mt-3 text-3xl font-bold">More control, clearer decisions and less record stress.</h2>
+                </div>
+                <div class="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    @foreach([
+                        ['Control from anywhere', 'Check loans, collections, expenses and branch performance from your phone or computer.'],
+                        ['Protect business money', 'Follow repayments and other cash movements with a documented trail.'],
+                        ['Manage staff with facts', 'See who recorded what and evaluate daily work without relying on verbal updates.'],
+                        ['Understand profit sooner', 'Use projected interest, income and expense reports to plan ahead.'],
+                        ['Spot discrepancies early', 'Find missing or inconsistent records before they grow into costly problems.'],
+                        ['Scale with confidence', 'Keep control as you add more clients, users and branches.'],
+                    ] as [$benefit, $description])
+                        <article class="rounded-2xl border border-violet-100 bg-violet-50/60 p-5">
+                            <h3 class="font-bold text-violet-950">{{ $benefit }}</h3>
+                            <p class="mt-2 text-sm leading-6 text-slate-600">{{ $description }}</p>
+                        </article>
+                    @endforeach
+                </div>
+            </section>
+
             <section class="mt-8 rounded-[2rem] border border-white/15 bg-white/10 p-7 text-center backdrop-blur sm:p-9">
                 <h2 class="text-2xl font-bold">Let us match the price to your operation.</h2>
                 <p class="mx-auto mt-3 max-w-3xl text-sm leading-6 text-violet-100">Branch count, staff users, migration, training and customization affect the final package. Text, WhatsApp or call 0701 822 382 / 0777 522 214.</p>
-                <p class="mt-4 text-sm font-bold text-amber-300">Create your demo at digitofina.digitomove.com</p>
+                <a href="https://digitofina.digitomove.com" class="mt-4 inline-flex text-sm font-bold text-amber-300 underline decoration-amber-300/40 underline-offset-4 hover:text-amber-200">Create your demo at digitofina.digitomove.com</a>
             </section>
         </main>
     </div>

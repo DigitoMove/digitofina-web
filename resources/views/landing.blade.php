@@ -26,8 +26,8 @@
                     <div class="inline-flex items-center gap-2 rounded-full border border-fuchsia-300/30 bg-fuchsia-300/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-fuchsia-100">
                         Microfinance management, simplified
                     </div>
-                    <h1 class="mt-6 max-w-3xl text-4xl font-bold leading-[1.06] tracking-tight sm:text-5xl lg:text-7xl">Every loan. Every branch. <span class="text-amber-300">One clear view.</span></h1>
-                    <p class="mt-6 max-w-2xl text-base leading-7 text-violet-100 sm:text-lg">DigitoFina gives SACCOs, investment groups and loan businesses a complete operating system for small or large loans—with or without collateral—from any phone or computer.</p>
+                    <h1 class="mt-6 max-w-3xl text-4xl font-bold leading-[1.06] tracking-tight sm:text-5xl lg:text-7xl">Run your loan business <span class="text-amber-300">without chasing records.</span></h1>
+                    <p class="mt-6 max-w-2xl text-base leading-7 text-violet-100 sm:text-lg">See every client, repayment, expense and staff action across every branch—from your phone or computer. DigitoFina keeps the records organized, helps you spot errors early, and shows projected interest and profit.</p>
                     <div class="mt-8 flex flex-col gap-3 sm:flex-row">
                         <a href="{{ route('demo.create') }}" class="inline-flex min-h-14 items-center justify-center rounded-2xl bg-amber-300 px-6 text-base font-bold text-violet-950 shadow-xl shadow-amber-400/20 hover:-translate-y-0.5 hover:bg-amber-200">Create your 14-day demo</a>
                         <a href="{{ route('login') }}" class="inline-flex min-h-14 items-center justify-center rounded-2xl border border-white/20 bg-white/10 px-6 text-base font-semibold text-white backdrop-blur hover:bg-white/20">I already have an account</a>
@@ -53,21 +53,22 @@
             <section class="bg-white px-5 py-20 text-slate-950 sm:px-8 lg:px-10">
                 <div class="mx-auto max-w-7xl">
                     <div class="max-w-3xl">
-                        <p class="text-sm font-bold uppercase tracking-[0.22em] text-violet-700">Operate without the record stress</p>
-                        <h2 class="mt-3 text-3xl font-bold tracking-tight sm:text-5xl">Your entire lending operation, documented as it happens.</h2>
+                        <p class="text-sm font-bold uppercase tracking-[0.22em] text-violet-700">What the owner gets</p>
+                        <h2 class="mt-3 text-3xl font-bold tracking-tight sm:text-5xl">Know what is happening—even when you are away.</h2>
+                        <p class="mt-4 max-w-2xl leading-7 text-slate-600">Spend less time collecting reports and correcting records. Use one reliable owner view to protect money, guide staff and make faster decisions.</p>
                     </div>
                     <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         @foreach([
-                            ['Client & loan records', 'Document every borrower, loan, collateral and repayment in one tenant-safe workspace.'],
-                            ['Automatic reports', 'Generate management reports and project interest and profit without rebuilding spreadsheets.'],
-                            ['Staff accountability', 'See work completed by each team member and evaluate daily activity.'],
-                            ['Income & expenses', 'Record operating expenses and other income alongside your core loan activity.'],
-                            ['Merchant payments', 'Monitor online merchant-code payments and reconcile activity.'],
-                            ['Independent dashboards', 'Give each authorized user the right dashboard while owners retain the full view.'],
-                        ] as [$feature, $summary])
+                            ['Protect every shilling', 'Trace repayments, expenses, other income and merchant-code payments from one place.'],
+                            ['See branch performance', 'Compare one branch or many without waiting for separate reports from every location.'],
+                            ['Hold staff accountable', 'Review the work recorded by each staff member and understand daily performance.'],
+                            ['Know expected profit', 'Project interest income and compare it with the costs of running the business.'],
+                            ['Find errors earlier', 'Use a documented trail to spot discrepancies before they become expensive problems.'],
+                            ['Grow without losing control', 'Add clients, staff and branches while keeping each user’s access properly separated.'],
+                        ] as [$benefit, $summary])
                             <article class="rounded-3xl border border-violet-100 bg-violet-50/60 p-6 shadow-sm">
                                 <div class="grid h-11 w-11 place-items-center rounded-2xl bg-violet-700 text-lg font-bold text-white">✓</div>
-                                <h3 class="mt-5 text-lg font-bold">{{ $feature }}</h3>
+                                <h3 class="mt-5 text-lg font-bold">{{ $benefit }}</h3>
                                 <p class="mt-2 text-sm leading-6 text-slate-600">{{ $summary }}</p>
                             </article>
                         @endforeach

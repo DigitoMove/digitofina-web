@@ -46,7 +46,7 @@ final readonly class SeoMetadata
         return match (true) {
             $routeName === 'landing' => [
                 'title' => 'Microfinance Management System',
-                'description' => 'Manage clients, loans, branches, staff, expenses, merchant payments, and automatic reports from your phone or computer with DigitoFina.',
+                'description' => 'Control loans, branches, staff, expenses and repayments from anywhere while spotting record errors early and projecting interest and profit with DigitoFina.',
             ],
             Str::is('demo.*', (string) $routeName) => [
                 'title' => 'Free 14-Day Demo',
@@ -54,7 +54,7 @@ final readonly class SeoMetadata
             ],
             $routeName === 'pricing' => [
                 'title' => 'Pricing',
-                'description' => 'Compare DigitoFina monthly SaaS subscriptions and one-time microfinance system licence options in Uganda shillings.',
+                'description' => 'Compare DigitoFina monthly and one-time licence options for clearer owner control, staff accountability, profit visibility and confident business growth.',
             ],
             $routeName === 'login' => [
                 'title' => 'Secure Login',
