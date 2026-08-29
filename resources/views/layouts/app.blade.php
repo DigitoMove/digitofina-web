@@ -159,6 +159,7 @@
                     }, $navGroups), fn (array $group): bool => $group['items'] !== []));
                     $adminItems = $user->isMember() ? [] : array_values(array_filter([
                         $canManageOrganization ? ['label' => $user->hasRole('super-admin') ? 'Organizations' : 'Organization', 'route' => $organizationRoute, 'icon' => 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'] : null,
+                        $user->hasAnyRole(['super-admin', 'organization-admin']) ? ['label' => 'Billing & Quotes', 'route' => 'commercial-quotes.index', 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'] : null,
                         $user->canPerform('manage-branches') ? ['label' => 'Branches', 'route' => 'branches.index', 'icon' => 'M4 20V8l8-4 8 4v12 M9 20v-6h6v6'] : null,
                         $user->canPerform('manage-users') && $moduleEnabled('users') ? ['label' => 'Users', 'route' => 'users.index', 'icon' => 'M16 11a4 4 0 1 0-8 0 M4 21a8 8 0 0 1 16 0'] : null,
                         $user->canPerform('manage-roles') && $moduleEnabled('roles') ? ['label' => 'Roles', 'route' => 'roles.index', 'icon' => 'M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-9V7z'] : null,
@@ -325,7 +326,17 @@
                             <span class="font-bold">Demo organization</span>
                             <span class="ml-1">All modules are available with usage limits. {{ $layoutOrganization->demoDaysRemaining() }} day(s) remaining.</span>
                         </div>
-                        <span class="shrink-0 font-semibold">Expires {{ $layoutOrganization->demo_expires_at?->format('d M Y') }}</span>
+                        <div class="flex shrink-0 flex-wrap items-center gap-3">
+                            <span class="font-semibold">Expires {{ $layoutOrganization->demo_expires_at?->format('d M Y') }}</span>
+                            @if($layoutUser?->hasRole('super-admin') && $layoutTenantContext->isScoped())
+                                <form method="POST" action="{{ route('organizations.switch.global') }}">
+                                    @csrf
+                                    <button class="rounded-lg bg-amber-900 px-3 py-2 font-semibold text-white transition hover:bg-amber-950">Clear active organization</button>
+                                </form>
+                            @elseif($layoutUser?->hasRole('organization-admin'))
+                                <a href="{{ route('commercial-quotes.index') }}" class="rounded-lg bg-amber-900 px-3 py-2 font-semibold text-white transition hover:bg-amber-950">Request a quote</a>
+                            @endif
+                        </div>
                     </div>
                 @endif
                 <div class="fixed right-4 top-20 z-50 grid w-[min(24rem,calc(100vw-2rem))] gap-3">

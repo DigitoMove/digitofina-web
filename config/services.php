@@ -35,4 +35,13 @@ return [
         ],
     ],
 
+    'nylon_pay' => [
+        'api_key' => env('NYLON_PAY_API_KEY'),
+        'api_secret' => env('NYLON_PAY_API_SECRET'),
+        'webhook_secret' => env('NYLON_PAY_WEBHOOK_SECRET'),
+        'base_url' => env('NYLON_PAY_BASE_URL', 'https://api.nylonpay.nilesquad.com/api/services'),
+        'timeout' => (int) env('NYLON_PAY_TIMEOUT', 15),
+        'webhook_tolerance_seconds' => (int) env('NYLON_PAY_WEBHOOK_TOLERANCE', 300),
+    ],
+
 ];

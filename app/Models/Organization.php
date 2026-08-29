@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
@@ -83,6 +84,31 @@ class Organization extends Model
     public function domains(): HasMany
     {
         return $this->hasMany(OrganizationDomain::class);
+    }
+
+    public function commercialQuotes(): HasMany
+    {
+        return $this->hasMany(CommercialQuote::class);
+    }
+
+    public function subscriptions(): HasMany
+    {
+        return $this->hasMany(OrganizationSubscription::class);
+    }
+
+    public function latestSubscription(): HasOne
+    {
+        return $this->hasOne(OrganizationSubscription::class)->latestOfMany('activated_at');
+    }
+
+    public function hasExpiredSubscription(): bool
+    {
+        $subscription = $this->latestSubscription;
+
+        return $subscription !== null
+            && $subscription->billing_type === 'subscription'
+            && $subscription->current_period_ends_at?->isPast()
+            && $subscription->status === 'active';
     }
 
     public function isDemoExpired(?Carbon $at = null): bool

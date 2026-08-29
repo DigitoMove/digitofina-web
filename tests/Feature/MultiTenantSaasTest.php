@@ -348,6 +348,37 @@ it('lets a super admin act as an organization user and safely return', function 
         ->and(AuditLog::query()->withoutGlobalScope('tenant')->where('action', 'auth.impersonation.stopped')->exists())->toBeTrue();
 });
 
+it('lets a super admin clear an active demo organization without changing its data', function () {
+    $superAdmin = superAdminUser();
+    [$demoOrganization] = tenantShell('Active Demo Tenant');
+    $demoOrganization->update([
+        'is_demo' => true,
+        'demo_started_at' => now(),
+        'demo_expires_at' => now()->addDays(14),
+    ]);
+
+    $this->actingAs($superAdmin)
+        ->withSession(['super_admin_organization_id' => $demoOrganization->id])
+        ->get(route('dashboard'))
+        ->assertSuccessful()
+        ->assertSee('Clear active organization')
+        ->assertSee(route('organizations.switch.global'), false);
+
+    $this->from(route('dashboard'))
+        ->post(route('organizations.switch.global'))
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionMissing('super_admin_organization_id')
+        ->assertSessionHas('status', 'Returned to global Super Admin view.');
+
+    $this->get(route('dashboard'))
+        ->assertSuccessful()
+        ->assertDontSee('Clear active organization');
+
+    expect($demoOrganization->fresh())
+        ->not->toBeNull()
+        ->is_demo->toBeTrue();
+});
+
 it('preserves a user password unless password change is explicitly enabled', function () {
     [$organization, $branch, $organizationAdmin] = tenantUser([]);
     $organizationAdmin->role->update(['name' => 'Organization Admin', 'slug' => 'organization-admin']);

@@ -14,6 +14,7 @@ use App\Http\Controllers\ClientDocumentController;
 use App\Http\Controllers\ClientGroupController;
 use App\Http\Controllers\ClientKycController;
 use App\Http\Controllers\ClientNoteController;
+use App\Http\Controllers\CommercialQuoteController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DataImportController;
 use App\Http\Controllers\DataWipeController;
@@ -34,10 +35,12 @@ use App\Http\Controllers\MemberPortalController;
 use App\Http\Controllers\ModuleManagementController;
 use App\Http\Controllers\NonCashTransactionController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\NylonPaySettingController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\OrganizationFinancialDefaultsController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\QuotePaymentController;
 use App\Http\Controllers\ReceiptController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RoleController;
@@ -69,6 +72,14 @@ Route::get('/health', fn () => response()->json([
 ]))->name('health');
 
 Route::get('/link-preview.svg', LinkPreviewController::class)->name('link-preview');
+
+Route::middleware(['auth', 'tenant'])->group(function (): void {
+    Route::get('/billing/quotes', [CommercialQuoteController::class, 'index'])->name('commercial-quotes.index');
+    Route::post('/billing/quotes', [CommercialQuoteController::class, 'store'])->middleware('throttle:6,1')->name('commercial-quotes.store');
+    Route::put('/billing/quotes/{commercialQuote}', [CommercialQuoteController::class, 'issue'])->name('commercial-quotes.issue');
+    Route::post('/billing/quotes/{commercialQuote}/payment', [QuotePaymentController::class, 'store'])->middleware('throttle:6,1')->name('commercial-quotes.pay');
+    Route::put('/billing/nylon-pay', NylonPaySettingController::class)->name('nylon-pay.settings.update');
+});
 
 Route::middleware(['tenant', 'guest'])->group(function () {
     Route::get('/login', [LoginController::class, 'create'])->name('login');
