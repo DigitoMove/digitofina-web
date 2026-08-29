@@ -69,6 +69,11 @@ class CommercialQuote extends Model
         return $this->hasOne(OrganizationSubscription::class);
     }
 
+    public function hostingFee(): HasOne
+    {
+        return $this->hasOne(OrganizationHostingFee::class);
+    }
+
     public function isPayable(): bool
     {
         return in_array($this->status, ['issued', 'payment_pending'], true)

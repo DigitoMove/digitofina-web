@@ -14,4 +14,10 @@ return [
             'up_to' => 3000000,
         ],
     ],
+
+    'hosting' => [
+        'annual_amount' => 200000,
+        'currency' => 'UGX',
+        'payment_due_days' => 30,
+    ],
 ];

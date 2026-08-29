@@ -26,9 +26,11 @@ class NylonPayClient
             'currency' => $quote->currency,
             'description' => "DigitoFina quote {$quote->quote_number}",
             'items' => [[
-                'name' => $quote->billing_type === 'subscription'
-                    ? "DigitoFina subscription ({$quote->subscription_months} month(s))"
-                    : 'DigitoFina one-time licence',
+                'name' => match ($quote->billing_type) {
+                    'subscription' => "DigitoFina subscription ({$quote->subscription_months} month(s))",
+                    'hosting' => 'DigitoFina annual hosting fee',
+                    default => 'DigitoFina one-time licence',
+                },
                 'quantity' => 1,
                 'unitPrice' => (int) $quote->amount,
             ]],

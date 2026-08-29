@@ -17,10 +17,14 @@ class OrganizationSubscription extends Model
         'commercial_quote_id',
         'billing_type',
         'status',
+        'activation_source',
+        'payment_status',
         'amount',
         'currency',
         'provider',
         'provider_reference',
+        'assigned_by',
+        'notes',
         'starts_at',
         'current_period_ends_at',
         'activated_at',
@@ -46,5 +50,10 @@ class OrganizationSubscription extends Model
     public function quote(): BelongsTo
     {
         return $this->belongsTo(CommercialQuote::class, 'commercial_quote_id');
+    }
+
+    public function assigner(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_by');
     }
 }

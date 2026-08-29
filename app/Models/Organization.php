@@ -106,6 +106,16 @@ class Organization extends Model
         return $this->hasOne(OrganizationSubscription::class)->latestOfMany('activated_at');
     }
 
+    public function hostingFees(): HasMany
+    {
+        return $this->hasMany(OrganizationHostingFee::class);
+    }
+
+    public function latestHostingFee(): HasOne
+    {
+        return $this->hasOne(OrganizationHostingFee::class)->latestOfMany('period_starts_on');
+    }
+
     public function hasExpiredSubscription(): bool
     {
         $subscription = $this->latestSubscription;

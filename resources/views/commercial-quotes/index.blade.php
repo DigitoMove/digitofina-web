@@ -48,6 +48,88 @@
             </div>
         </form>
     </details>
+
+    <section class="df-panel mb-6 p-5">
+        <h2 class="text-lg font-semibold text-slate-950">Assign a plan directly</h2>
+        <p class="mt-1 text-sm text-slate-500">Activate a subscription or one-time licence without waiting for an organization to request a quote.</p>
+        <form method="POST" action="{{ route('organization-subscriptions.store') }}" class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            @csrf
+            <label class="text-sm font-semibold text-slate-700">Organization <x-required-badge />
+                <select name="organization_id" class="mt-1" required>
+                    <option value="">Select organization</option>
+                    @foreach($organizations as $organization)<option value="{{ $organization->id }}" @selected((int) old('organization_id') === $organization->id)>{{ $organization->name }}</option>@endforeach
+                </select>
+            </label>
+            <label class="text-sm font-semibold text-slate-700">Plan <x-required-badge />
+                <select name="billing_type" class="mt-1" required>
+                    <option value="subscription" @selected(old('billing_type') === 'subscription')>Monthly subscription</option>
+                    <option value="one_time" @selected(old('billing_type') === 'one_time')>One-time licence</option>
+                </select>
+            </label>
+            <label class="text-sm font-semibold text-slate-700">Basis <x-required-badge />
+                <select name="assignment_basis" class="mt-1" required>
+                    <option value="assigned" @selected(old('assignment_basis') === 'assigned')>Assigned by DigitoFina</option>
+                    <option value="paid" @selected(old('assignment_basis') === 'paid')>Already paid externally</option>
+                </select>
+            </label>
+            <label class="text-sm font-semibold text-slate-700">Amount (UGX) <x-required-badge /><input name="amount" type="number" min="0" step="100" value="{{ old('amount', 200000) }}" class="mt-1" required></label>
+            <label class="text-sm font-semibold text-slate-700">Subscription months<input name="subscription_months" type="number" min="1" max="120" value="{{ old('subscription_months', 1) }}" class="mt-1"><span class="mt-1 block text-xs font-normal text-slate-500">Ignored for a one-time licence.</span></label>
+            <label class="text-sm font-semibold text-slate-700">Starts on <x-required-badge /><input name="starts_at" type="date" value="{{ old('starts_at', today()->toDateString()) }}" class="mt-1" required></label>
+            <label class="text-sm font-semibold text-slate-700 md:col-span-2">Notes<textarea name="notes" rows="2" class="mt-1" placeholder="Plan terms, payment reference, or reason for assignment.">{{ old('notes') }}</textarea></label>
+            <div class="md:col-span-2 xl:col-span-4"><button class="df-action-primary">Assign and activate plan</button></div>
+        </form>
+    </section>
+@endif
+
+@if($billingOrganization)
+    <section class="mb-6 grid gap-5 lg:grid-cols-2">
+        <article class="df-panel p-5">
+            <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Current DigitoFina plan</p>
+            @if($currentSubscription)
+                @php
+                    $planSource = match($currentSubscription->activation_source) {
+                        'admin_assignment' => 'Assigned by DigitoFina',
+                        'manual_payment' => 'Paid externally',
+                        default => 'Paid via Nylon Pay',
+                    };
+                @endphp
+                <div class="mt-3 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h2 class="text-xl font-semibold text-slate-950">{{ $currentSubscription->billing_type === 'one_time' ? 'One-time licence' : 'Monthly subscription' }}</h2>
+                        <p class="mt-1 text-sm text-slate-500">{{ $planSource }} · {{ str($currentSubscription->status)->headline() }}</p>
+                    </div>
+                    <span class="rounded-lg bg-emerald-100 px-3 py-2 text-sm font-semibold text-emerald-800">{{ str($currentSubscription->payment_status)->headline() }}</span>
+                </div>
+                <dl class="mt-5 grid grid-cols-2 gap-3 text-sm">
+                    <div class="df-soft-panel p-3"><dt class="text-slate-500">Plan amount</dt><dd class="mt-1 font-semibold">UGX {{ number_format((float) $currentSubscription->amount) }}</dd></div>
+                    <div class="df-soft-panel p-3"><dt class="text-slate-500">Started</dt><dd class="mt-1 font-semibold">{{ $currentSubscription->starts_at->format('d M Y') }}</dd></div>
+                    <div class="df-soft-panel col-span-2 p-3"><dt class="text-slate-500">Access period</dt><dd class="mt-1 font-semibold">{{ $currentSubscription->current_period_ends_at ? 'Through '.$currentSubscription->current_period_ends_at->format('d M Y') : 'Permanent one-time licence' }}</dd></div>
+                </dl>
+            @else
+                <p class="mt-3 text-sm text-amber-800">No paid or assigned plan is active for this organization yet.</p>
+            @endif
+        </article>
+
+        <article class="df-panel p-5">
+            <p class="text-xs font-semibold uppercase tracking-wide text-violet-700">Required annual hosting</p>
+            <div class="mt-3 flex flex-wrap items-start justify-between gap-3">
+                <div><h2 class="text-xl font-semibold text-slate-950">UGX {{ number_format((float) $hostingFee->amount) }} per year</h2><p class="mt-1 text-sm text-slate-500">{{ $hostingFee->period_starts_on->format('d M Y') }} – {{ $hostingFee->period_ends_on->format('d M Y') }}</p></div>
+                <span class="rounded-lg {{ $hostingFee->status === 'paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900' }} px-3 py-2 text-sm font-semibold">{{ str($hostingFee->status)->headline() }}</span>
+            </div>
+            <p class="mt-4 text-sm text-slate-600">Due {{ $hostingFee->due_on->format('d M Y') }}. This charge covers hosting, infrastructure, backups and service availability.</p>
+            @if($hostingFee->status === 'paid')
+                <p class="mt-3 text-sm font-semibold text-emerald-700">Paid {{ $hostingFee->paid_at?->format('d M Y, H:i') }}</p>
+            @elseif(! $isSuperAdmin && $hostingFee->quote?->isPayable())
+                <form method="POST" action="{{ route('commercial-quotes.pay', $hostingFee->quote) }}" class="mt-4">@csrf<button class="df-action-primary">Pay annual hosting with Nylon Pay</button></form>
+            @elseif($isSuperAdmin)
+                <form method="POST" action="{{ route('organization-hosting-fees.paid', $hostingFee) }}" class="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+                    @csrf @method('PUT')
+                    <input name="provider_reference" placeholder="External payment reference (optional)">
+                    <button class="df-action-primary">Mark hosting paid</button>
+                </form>
+            @endif
+        </article>
+    </section>
 @endif
 
 @unless($isSuperAdmin)
@@ -88,7 +170,7 @@
                 @if($quote->amount !== null)
                     <div class="text-right">
                         <div class="text-xl font-bold text-slate-950">{{ $quote->currency }} {{ number_format((float) $quote->amount) }}</div>
-                        <div class="text-xs text-slate-500">{{ $quote->billing_type === 'subscription' ? ($quote->subscription_months.' month subscription') : 'One-time licence' }}</div>
+                        <div class="text-xs text-slate-500">{{ match($quote->billing_type) { 'subscription' => $quote->subscription_months.' month subscription', 'hosting' => 'Annual hosting fee', default => 'One-time licence' } }}</div>
                     </div>
                 @endif
             </div>
@@ -142,7 +224,9 @@
                 @elseif($quote->status === 'paid')
                     <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950">
                         <div class="font-semibold">Payment confirmed {{ $quote->paid_at?->format('d M Y, H:i') }}</div>
-                        @if($quote->subscription?->current_period_ends_at)
+                        @if($quote->billing_type === 'hosting')
+                            <div class="mt-1">Annual hosting fee confirmed for {{ $quote->hostingFee?->period_starts_on?->format('d M Y') }} – {{ $quote->hostingFee?->period_ends_on?->format('d M Y') }}.</div>
+                        @elseif($quote->subscription?->current_period_ends_at)
                             <div class="mt-1">Current subscription period ends {{ $quote->subscription->current_period_ends_at->format('d M Y') }}.</div>
                         @else
                             <div class="mt-1">One-time licence activated.</div>

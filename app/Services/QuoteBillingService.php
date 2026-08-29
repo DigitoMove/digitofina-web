@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CommercialQuote;
 use App\Models\Organization;
+use App\Models\OrganizationHostingFee;
 use App\Models\OrganizationSubscription;
 use App\Models\User;
 use App\Support\CurrencyDenomination;
@@ -168,6 +169,12 @@ class QuoteBillingService
 
     private function activate(CommercialQuote $quote, string $providerReference): void
     {
+        if ($quote->billing_type === 'hosting') {
+            $this->activateHostingFee($quote, $providerReference);
+
+            return;
+        }
+
         $startsAt = now();
         $periodEndsAt = $quote->billing_type === 'subscription'
             ? $startsAt->copy()->addMonthsNoOverflow($quote->subscription_months ?: 1)
@@ -179,6 +186,8 @@ class QuoteBillingService
                 'organization_id' => $quote->organization_id,
                 'billing_type' => $quote->billing_type,
                 'status' => 'active',
+                'activation_source' => 'nylon_pay',
+                'payment_status' => 'paid',
                 'amount' => $quote->amount,
                 'currency' => $quote->currency,
                 'provider' => 'nylon-pay',
@@ -210,6 +219,38 @@ class QuoteBillingService
             'billing',
             'success',
             ['commercial_quote_id' => $quote->id],
+        ));
+    }
+
+    private function activateHostingFee(CommercialQuote $quote, string $providerReference): void
+    {
+        $hostingFee = OrganizationHostingFee::query()
+            ->where('commercial_quote_id', $quote->id)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        if ($hostingFee->status !== 'paid') {
+            $hostingFee->update([
+                'status' => 'paid',
+                'provider' => 'nylon-pay',
+                'provider_reference' => $providerReference,
+                'paid_at' => now(),
+            ]);
+        }
+
+        $quote->update(['status' => 'paid', 'paid_at' => now()]);
+        $this->auditLogger->record('billing.hosting_fee_paid', $hostingFee, [
+            'provider' => 'nylon-pay',
+            'reference' => $providerReference,
+        ]);
+        $this->organizationAdmins($quote->organization_id)->each(fn (User $user) => $this->notifications->notifyUser(
+            $user,
+            'Annual hosting fee paid',
+            'Your annual DigitoFina hosting fee has been confirmed.',
+            route('commercial-quotes.index'),
+            'billing',
+            'success',
+            ['organization_hosting_fee_id' => $hostingFee->id],
         ));
     }
 

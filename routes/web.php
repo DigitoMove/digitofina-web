@@ -41,7 +41,9 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\NylonPaySettingController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\OrganizationFinancialDefaultsController;
+use App\Http\Controllers\OrganizationHostingFeeController;
 use App\Http\Controllers\OrganizationNylonPaySettingController;
+use App\Http\Controllers\OrganizationSubscriptionController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\QuotePaymentController;
@@ -83,6 +85,8 @@ Route::middleware(['auth', 'tenant'])->group(function (): void {
     Route::put('/billing/quotes/{commercialQuote}', [CommercialQuoteController::class, 'issue'])->name('commercial-quotes.issue');
     Route::post('/billing/quotes/{commercialQuote}/payment', [QuotePaymentController::class, 'store'])->middleware('throttle:6,1')->name('commercial-quotes.pay');
     Route::put('/billing/nylon-pay', NylonPaySettingController::class)->name('nylon-pay.settings.update');
+    Route::post('/billing/subscriptions', [OrganizationSubscriptionController::class, 'store'])->name('organization-subscriptions.store');
+    Route::put('/billing/hosting-fees/{organizationHostingFee}/paid', [OrganizationHostingFeeController::class, 'update'])->name('organization-hosting-fees.paid');
     Route::get('/organization/nylon-pay', [OrganizationNylonPaySettingController::class, 'edit'])->name('organization.nylon-pay.edit');
     Route::put('/organization/nylon-pay', [OrganizationNylonPaySettingController::class, 'update'])->name('organization.nylon-pay.update');
 });
