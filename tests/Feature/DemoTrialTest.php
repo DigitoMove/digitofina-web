@@ -22,8 +22,8 @@ uses(RefreshDatabase::class);
 it('shows the marketing landing page and demo option on an available host', function () {
     $this->get('https://gateoffina.com/')
         ->assertSuccessful()
-        ->assertSee('Run your loan business')
-        ->assertSee('Protect every shilling')
+        ->assertSee('Let clients pay by mobile money')
+        ->assertSee('Collect without chasing cash')
         ->assertSee('Hold staff accountable')
         ->assertSee('Create your 14-day demo')
         ->assertSee('UGX 200,000')

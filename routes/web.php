@@ -77,7 +77,7 @@ Route::get('/health', fn () => response()->json([
     'time' => now()->toIso8601String(),
 ]))->name('health');
 
-Route::get('/link-preview.svg', LinkPreviewController::class)->name('link-preview');
+Route::get('/link-preview.png', LinkPreviewController::class)->name('link-preview');
 
 Route::middleware(['auth', 'tenant'])->group(function (): void {
     Route::get('/billing/quotes', [CommercialQuoteController::class, 'index'])->name('commercial-quotes.index');

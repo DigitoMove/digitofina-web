@@ -20,7 +20,7 @@ final readonly class SeoMetadata
         return new self(
             title: self::formatTitle($title),
             description: Str::limit($description, 160, ''),
-            url: $overrides['url'] ?? $request->fullUrl(),
+            url: $overrides['url'] ?? $request->url(),
             image: $overrides['image'] ?? self::previewImageUrl($title, $description),
             type: $overrides['type'] ?? 'website',
             siteName: self::siteName(),
@@ -45,8 +45,8 @@ final readonly class SeoMetadata
     {
         return match (true) {
             $routeName === 'landing' => [
-                'title' => 'Microfinance Management System',
-                'description' => 'Control loans, branches, staff, expenses and repayments from anywhere while spotting record errors early and projecting interest and profit with DigitoFina.',
+                'title' => 'Mobile Money Collections for Loans and SACCOs',
+                'description' => 'Collect loan repayments, savings deposits and member contributions by mobile money, then automatically post confirmed payments in DigitoFina.',
             ],
             Str::is('demo.*', (string) $routeName) => [
                 'title' => 'Free 14-Day Demo',

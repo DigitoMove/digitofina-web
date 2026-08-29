@@ -5,7 +5,8 @@ test('guests see the DigitoFina landing page', function () {
 
     $response
         ->assertSuccessful()
-        ->assertSee('Run your loan business')
+        ->assertSee('Let clients pay by mobile money')
+        ->assertSee('Collect funds directly')
         ->assertSee('What the owner gets')
         ->assertSee(route('login'));
 });
