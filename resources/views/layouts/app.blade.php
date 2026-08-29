@@ -19,6 +19,9 @@
     $layoutChatUnreadCount = 0;
     $layoutChatLatestMessageId = 0;
     $layoutTenantContext = app(\App\Services\TenantContext::class);
+    $layoutImpersonator = session()->has(\App\Http\Controllers\UserImpersonationController::IMPERSONATOR_SESSION_KEY)
+        ? \App\Models\User::query()->find(session(\App\Http\Controllers\UserImpersonationController::IMPERSONATOR_SESSION_KEY))
+        : null;
     $layoutOrganization = $layoutTenantContext->organization()
         ?: $layoutUser?->organization
         ?: $layoutUser?->branch?->organization;
@@ -303,6 +306,19 @@
             </header>
 
             <main class="df-page flex-1 p-4 sm:p-6">
+                @if($layoutImpersonator)
+                    <div class="mb-4 flex flex-col justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-sm sm:flex-row sm:items-center">
+                        <div>
+                            <span class="font-semibold">Acting as {{ auth()->user()->name }}</span>
+                            <span class="text-amber-800"> · {{ auth()->user()->role?->name }} at {{ $layoutOrganization?->name }}</span>
+                        </div>
+                        <form method="POST" action="{{ route('impersonation.destroy') }}">
+                            @csrf
+                            @method('DELETE')
+                            <button class="rounded-lg bg-amber-900 px-3 py-2 font-semibold text-white hover:bg-amber-950">Return to {{ $layoutImpersonator->name }}</button>
+                        </form>
+                    </div>
+                @endif
                 @if ($layoutOrganization?->is_demo)
                     <div class="mb-4 flex flex-col justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-sm sm:flex-row sm:items-center">
                         <div>

@@ -115,7 +115,7 @@ class OrganizationController extends Controller
                 ->whereDoesntHave('role', fn (Builder $query): Builder => $query->where('slug', 'super-admin'))
                 ->orderBy('name')
                 ->get(),
-            'branches' => Branch::query()->where('organization_id', $organization->id)->orderBy('name')->get(),
+            'branches' => Branch::query()->withoutGlobalScope('tenant')->where('organization_id', $organization->id)->orderBy('name')->get(),
         ]);
     }
 

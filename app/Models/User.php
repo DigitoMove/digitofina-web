@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Services\ModuleService;
+use App\Services\TenantContext;
 use App\Support\ModuleCatalog;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -248,10 +249,12 @@ class User extends Authenticatable
 
     public function canAccessModule(string $slug): bool
     {
-        if ($this->hasRole('super-admin') || ! $this->organization) {
+        $organization = app(TenantContext::class)->organization() ?: $this->organization;
+
+        if (! $organization) {
             return true;
         }
 
-        return app(ModuleService::class)->isEnabled($this->organization, $slug);
+        return app(ModuleService::class)->isEnabled($organization, $slug);
     }
 }

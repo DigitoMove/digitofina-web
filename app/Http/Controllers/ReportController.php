@@ -4,12 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\Branch;
 use App\Models\ChartAccount;
-use App\Services\ReportCatalogService;
-use App\Support\ApiSecurity;
 use App\Models\User;
+use App\Services\ReportCatalogService;
+use App\Services\TenantContext;
+use App\Support\ApiSecurity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class ReportController extends Controller
@@ -33,13 +35,14 @@ class ReportController extends Controller
     {
         $this->authorizeReportCatalogAccess($request->user());
 
+        $organizationId = app(TenantContext::class)->id() ?: $request->user()->organization_id;
         $data = $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
-            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
-            'chart_account_id' => ['nullable', 'integer', 'exists:chart_accounts,id'],
+            'branch_id' => ['nullable', 'integer', Rule::exists('branches', 'id')->where('organization_id', $organizationId)],
+            'chart_account_id' => ['nullable', 'integer', Rule::exists('chart_accounts', 'id')->where('organization_id', $organizationId)],
             'chart_account_ids' => ['nullable', 'array'],
-            'chart_account_ids.*' => ['integer', 'distinct', 'exists:chart_accounts,id'],
+            'chart_account_ids.*' => ['integer', 'distinct', Rule::exists('chart_accounts', 'id')->where('organization_id', $organizationId)],
             'detail' => ['nullable', 'in:brief,detailed'],
             'interest_basis' => ['nullable', 'in:collected,projected'],
             'search' => ['nullable', 'string', 'max:255'],

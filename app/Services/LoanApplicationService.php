@@ -35,6 +35,14 @@ class LoanApplicationService
         CurrencyDenomination::assertValid($requestedAmount, 'Requested amount');
         $this->ensureClientBioComplete($client);
 
+        if ((int) $product->organization_id !== (int) $client->organization_id) {
+            throw ValidationException::withMessages(['loan_product_id' => 'Select a loan product belonging to the client organization.']);
+        }
+
+        if ((int) $assignedOfficer->organization_id !== (int) $client->organization_id) {
+            throw ValidationException::withMessages(['assigned_officer_id' => 'Select an officer belonging to the client organization.']);
+        }
+
         if ($requestedAmount < (float) $product->min_amount || $requestedAmount > (float) $product->max_amount) {
             throw ValidationException::withMessages(['requested_amount' => 'Requested amount is outside the selected product limits.']);
         }
@@ -44,7 +52,7 @@ class LoanApplicationService
         }
 
         $loan = Loan::create(collect($data)->except('assigned_officer_id', 'application_date', 'savings_account_id')->all() + [
-            'organization_id' => $officer->organization_id,
+            'organization_id' => $client->organization_id,
             'branch_id' => $client->branch_id,
             'officer_id' => $assignedOfficer->id,
             'created_by' => $officer->id,
@@ -162,6 +170,7 @@ class LoanApplicationService
         $assignedOfficer = User::query()
             ->with('role')
             ->where('status', 'active')
+            ->where('organization_id', app(TenantContext::class)->id() ?: $creator->organization_id)
             ->findOrFail($assignedOfficerId);
 
         if (! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer'], true)) {

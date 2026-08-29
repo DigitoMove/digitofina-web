@@ -41,6 +41,7 @@
                     <th class="px-4 py-3">Role</th>
                     <th class="px-4 py-3">Branch</th>
                     <th class="px-4 py-3">Status</th>
+                    <th class="px-4 py-3">Action</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
@@ -53,9 +54,15 @@
                         <td class="px-4 py-3 text-slate-600">{{ $user->role?->name ?? 'No role' }}</td>
                         <td class="px-4 py-3 text-slate-600">{{ $user->branch?->name ?? 'All branches' }}</td>
                         <td class="px-4 py-3"><span class="df-badge">{{ str($user->status)->headline() }}</span></td>
+                        <td class="px-4 py-3">
+                            <form method="POST" action="{{ route('users.impersonate', $user) }}">
+                                @csrf
+                                <button class="font-semibold text-amber-700 hover:text-amber-900">Act as user</button>
+                            </form>
+                        </td>
                     </tr>
                 @empty
-                    <tr><td colspan="4" class="px-4 py-10 text-center text-slate-500">No users assigned.</td></tr>
+                    <tr><td colspan="5" class="px-4 py-10 text-center text-slate-500">No users assigned.</td></tr>
                 @endforelse
             </tbody>
         </table>

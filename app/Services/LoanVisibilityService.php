@@ -101,10 +101,12 @@ class LoanVisibilityService
      */
     public function assignableOfficers(User $user): Builder
     {
+        $organizationId = app(TenantContext::class)->id() ?: $user->organization_id;
+
         return User::query()
             ->with('role')
             ->where('status', 'active')
-            ->when($user->organization_id, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
+            ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
             ->when($user->branch_id && ! ApiSecurity::hasGlobalBranchAccess($user), fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->whereHas('role', fn (Builder $query): Builder => $query->whereIn('slug', ['branch-manager', 'loan-officer']))
             ->orderBy('name');

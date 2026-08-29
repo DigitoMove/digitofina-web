@@ -25,6 +25,7 @@ use App\Models\SavingsGoal;
 use App\Models\SavingsTransaction;
 use App\Services\LoanVisibilityService;
 use App\Services\ModuleService;
+use App\Services\TenantContext;
 use App\Support\ApiResponse;
 use App\Support\ApiSecurity;
 use Illuminate\Http\JsonResponse;
@@ -247,7 +248,7 @@ class ReportController extends Controller
         ]);
 
         $export = ReportExport::create([
-            'organization_id' => $request->user()->organization_id,
+            'organization_id' => app(TenantContext::class)->id() ?: $request->user()->organization_id,
             'branch_id' => $request->user()->branch_id,
             'requested_by' => $request->user()->id,
             'report_type' => $data['report_type'],

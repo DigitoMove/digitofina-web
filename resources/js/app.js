@@ -94,6 +94,66 @@ const initKeyboardFocus = () => {
     });
 };
 
+const replaceSelectOptions = (select, items, placeholder, selectedValue = '') => {
+    if (!select) {
+        return;
+    }
+
+    select.replaceChildren(new Option(placeholder, ''));
+    items.forEach((item) => select.add(new Option(item.name, String(item.id), false, String(item.id) === String(selectedValue))));
+};
+
+const initUserForms = () => {
+    document.querySelectorAll('[data-user-form]').forEach((form) => {
+        const organization = form.querySelector('[data-user-organization]');
+        const branch = form.querySelector('[data-user-branch]');
+        const role = form.querySelector('[data-user-role]');
+        const passwordToggle = form.querySelector('[data-user-password-toggle]');
+        const passwordFields = form.querySelector('[data-user-password-fields]');
+
+        passwordToggle?.addEventListener('change', () => {
+            passwordFields.classList.toggle('hidden', !passwordToggle.checked);
+            passwordFields.querySelectorAll('input').forEach((input) => {
+                input.disabled = !passwordToggle.checked;
+                input.required = passwordToggle.checked;
+
+                if (!passwordToggle.checked) {
+                    input.value = '';
+                }
+            });
+        });
+
+        if (!organization || !form.dataset.userOptionsUrl) {
+            return;
+        }
+
+        organization.addEventListener('change', async () => {
+            branch.disabled = true;
+            role.disabled = true;
+
+            try {
+                const url = new URL(form.dataset.userOptionsUrl, window.location.origin);
+                url.searchParams.set('organization_id', organization.value);
+                const response = await fetch(url, { headers: { Accept: 'application/json' } });
+
+                if (!response.ok) {
+                    throw new Error('Unable to load organization options.');
+                }
+
+                const options = await response.json();
+                replaceSelectOptions(branch, options.branches || [], 'No branch / all branches');
+                replaceSelectOptions(role, options.roles || [], 'Select role');
+            } catch {
+                replaceSelectOptions(branch, [], 'Unable to load branches');
+                replaceSelectOptions(role, [], 'Unable to load roles');
+            } finally {
+                branch.disabled = false;
+                role.disabled = false;
+            }
+        });
+    });
+};
+
 const initFlashToasts = () => {
     document.querySelectorAll('[data-flash-toast]').forEach((toast) => {
         toast.querySelector('[data-flash-dismiss]')?.addEventListener('click', () => {
@@ -1463,6 +1523,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSteps();
     initRipples();
     initKeyboardFocus();
+    initUserForms();
     initFlashToasts();
     initChatNotifications();
     initChatConversation();

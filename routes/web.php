@@ -48,6 +48,8 @@ use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\TellerDrawerController;
 use App\Http\Controllers\TransactionDeletionController;
 use App\Http\Controllers\TransactionReversalController;
+use App\Http\Controllers\UserFormOptionsController;
+use App\Http\Controllers\UserImpersonationController;
 use App\Http\Controllers\UserManagementController;
 use Illuminate\Support\Facades\Route;
 
@@ -99,6 +101,7 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::post('/member/savings-accounts/{savingsAccount}/deposits', [MemberPaymentController::class, 'depositSavings'])->middleware('module:savings')->name('member.savings.deposits.store');
     Route::post('/member/investment-accounts/{investmentAccount}/top-ups', [MemberPaymentController::class, 'topUpInvestment'])->middleware('module:investments')->name('member.investments.top-ups.store');
     Route::resource('branches', BranchController::class)->except(['show', 'destroy'])->middleware('demo.capacity:branches');
+    Route::get('/users/form-options', UserFormOptionsController::class)->name('users.form-options');
     Route::resource('users', UserManagementController::class)->except(['show', 'destroy'])->middleware('demo.capacity:users');
     Route::resource('roles', RoleController::class)->except(['show', 'destroy']);
     Route::get('/organizations', [OrganizationController::class, 'index'])->name('organizations.index');
@@ -218,4 +221,9 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::post('/transaction-reversal-requests/{makerCheckerRequest}/reject', [TransactionReversalController::class, 'reject'])->name('transactions.reversal-requests.reject');
     Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
     Route::get('/reports/{report}', [ReportController::class, 'show'])->name('reports.show');
+});
+
+Route::middleware(['auth', 'tenant'])->group(function (): void {
+    Route::post('/users/{user}/impersonate', [UserImpersonationController::class, 'store'])->name('users.impersonate');
+    Route::delete('/impersonation', [UserImpersonationController::class, 'destroy'])->name('impersonation.destroy');
 });

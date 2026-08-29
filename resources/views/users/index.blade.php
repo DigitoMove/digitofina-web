@@ -45,7 +45,17 @@
                     <td data-label="Organization">{{ $staff->organization?->name ?? 'Platform' }}</td>
                     <td data-label="Branch">{{ $staff->branch?->name ?? 'All branches' }}</td>
                     <td data-label="Status"><span class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold">{{ str($staff->status)->headline() }}</span></td>
-                    <td data-label="Action"><a href="{{ route('users.edit', $staff) }}" class="font-medium text-blue-700">Edit</a></td>
+                    <td data-label="Action">
+                        <div class="flex flex-wrap gap-2">
+                            <a href="{{ route('users.edit', $staff) }}" class="font-medium text-blue-700">Edit</a>
+                            @if(auth()->user()->hasRole('super-admin') && ! $staff->hasRole('super-admin'))
+                                <form method="POST" action="{{ route('users.impersonate', $staff) }}">
+                                    @csrf
+                                    <button class="font-medium text-amber-700">Act as user</button>
+                                </form>
+                            @endif
+                        </div>
+                    </td>
                 </tr>
             @empty
                 <tr><td class="p-4 text-slate-500" colspan="6">No users found.</td></tr>

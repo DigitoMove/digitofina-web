@@ -21,6 +21,7 @@ class UpdateUserRequest extends FormRequest
     {
         $this->merge([
             'status' => $this->input('status', $this->route('user')?->status ?? 'active'),
+            'change_password' => $this->boolean('change_password'),
         ]);
     }
 
@@ -40,7 +41,8 @@ class UpdateUserRequest extends FormRequest
             'phone' => ['required', 'string', 'max:40', Rule::unique('users', 'phone')->ignore($user)],
             'position' => ['nullable', 'string', 'max:191'],
             'status' => ['nullable', 'in:active,suspended,disabled'],
-            'password' => ['nullable', 'confirmed', Password::defaults()],
+            'change_password' => ['boolean'],
+            'password' => ['nullable', Rule::requiredIf($this->boolean('change_password')), 'confirmed', Password::defaults()],
         ];
     }
 

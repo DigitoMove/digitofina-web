@@ -9,6 +9,7 @@ use App\Models\Organization;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\TenantContext;
 use App\Support\ApiSecurity;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
@@ -35,7 +36,9 @@ class UserManagementController extends Controller
             'branch_id' => ['nullable', 'integer', $this->branchFilterRule($request)],
             'status' => ['nullable', 'in:active,suspended,disabled'],
         ]);
-        $selectedOrganizationId = $currentUser->hasGlobalOrganizationAccess() && filled($filters['organization_id'] ?? null) ? (int) $filters['organization_id'] : null;
+        $selectedOrganizationId = $currentUser->hasGlobalOrganizationAccess()
+            ? (filled($filters['organization_id'] ?? null) ? (int) $filters['organization_id'] : app(TenantContext::class)->id())
+            : null;
         $selectedBranchId = filled($filters['branch_id'] ?? null) ? (int) $filters['branch_id'] : null;
 
         $users = User::query()
@@ -82,7 +85,7 @@ class UserManagementController extends Controller
         Gate::authorize('create', User::class);
 
         return view('users.create', $this->formData(new User([
-            'organization_id' => $request->integer('organization_id') ?: null,
+            'organization_id' => $request->integer('organization_id') ?: app(TenantContext::class)->id(),
         ])));
     }
 
@@ -122,10 +125,10 @@ class UserManagementController extends Controller
         $data = $request->validated();
         $role = Role::query()->findOrFail($data['role_id']);
         $data = $this->normalizeScope($data, $role, $request->user());
-        $payload = Arr::except($data, ['password']);
+        $payload = Arr::except($data, ['password', 'change_password']);
         $payload['is_active'] = $data['status'] === 'active';
 
-        if (filled($data['password'] ?? null)) {
+        if ($request->boolean('change_password') && filled($data['password'] ?? null)) {
             $payload['password'] = Hash::make($data['password']);
         }
 
@@ -141,8 +144,9 @@ class UserManagementController extends Controller
     private function formData(User $user): array
     {
         $currentUser = request()->user();
+        $requestedOrganizationId = request()->old('organization_id', $user->organization_id);
         $targetOrganizationId = $currentUser->hasGlobalOrganizationAccess()
-            ? ($user->organization_id ? (int) $user->organization_id : null)
+            ? ($requestedOrganizationId ? (int) $requestedOrganizationId : null)
             : ($currentUser->organization_id ? (int) $currentUser->organization_id : null);
 
         return [
@@ -152,6 +156,7 @@ class UserManagementController extends Controller
                 ->orderBy('name')
                 ->get(),
             'branches' => Branch::query()
+                ->when($currentUser->hasGlobalOrganizationAccess(), fn ($query) => $query->withoutGlobalScope('tenant'))
                 ->with('organization')
                 ->where('status', 'active')
                 ->when($targetOrganizationId !== null, fn ($query) => $query->where('organization_id', $targetOrganizationId))

@@ -537,15 +537,6 @@
             <input type="hidden" name="account_number" value="{{ $account?->account_number ?? request('account_number') }}">
             <input type="hidden" name="chart_account_id" value="{{ $selectedChartAccount?->id ?? request('chart_account_id') }}">
             <input type="hidden" data-confirm-summary-label="Target" data-confirm-summary-value="{{ $selectedChartAccount ? $selectedChartAccount->code.' · '.$selectedChartAccount->name : ($account ? $account->account_number.' · '.$account->account_name : 'No account selected') }}">
-            @if(! $isLedgerPosting)
-                <label class="text-sm font-semibold text-slate-700">Client Money Direction <x-required-badge />
-                    <select name="transaction_type_id" class="mt-1" data-confirm-summary-label="Transaction type">
-                        @foreach($availableTransactionTypes as $type)
-                            <option value="{{ $type->id }}">{{ $type->name }}</option>
-                        @endforeach
-                    </select>
-                </label>
-            @endif
             <div class="rounded border border-slate-200 bg-slate-50 p-3 text-sm md:col-span-2">
                 <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected posting target</div>
                 @if($selectedChartAccount)
@@ -558,6 +549,18 @@
                     <div class="mt-1 text-slate-500">Search and select an account above before posting.</div>
                 @endif
             </div>
+            <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge />
+                <input name="amount" type="number" min="100" step="100" class="mt-1" required data-confirm-summary-label="Amount">
+            </label>
+            @if(! $isLedgerPosting)
+                <label class="text-sm font-semibold text-slate-700">Client Money Direction <x-required-badge />
+                    <select name="transaction_type_id" class="mt-1" data-confirm-summary-label="Transaction type">
+                        @foreach($availableTransactionTypes as $type)
+                            <option value="{{ $type->id }}">{{ $type->name }}</option>
+                        @endforeach
+                    </select>
+                </label>
+            @endif
             @if($isLedgerPosting)
                 @if($selectedLedgerEntryType)
                     <input type="hidden" name="gl_entry_type" value="{{ $selectedLedgerEntryType }}">
@@ -571,11 +574,8 @@
                     </label>
                 @endif
             @endif
-            <label class="text-sm font-semibold text-slate-700">Cheque No
-                <input name="cheque_number" class="mt-1" data-confirm-summary-label="Cheque no.">
-            </label>
-            <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge />
-                <input name="amount" type="number" min="100" step="100" class="mt-1" required data-confirm-summary-label="Amount">
+            <label class="text-sm font-semibold text-slate-700">Transaction Date <x-required-badge />
+                <input name="transaction_date" type="date" max="{{ today()->toDateString() }}" value="{{ old('transaction_date', today()->toDateString()) }}" class="mt-1" required data-confirm-summary-label="Date">
             </label>
             <label class="text-sm font-semibold text-slate-700">{{ $isLedgerPosting ? 'Ledger Charges' : 'Drawer Charges' }}
                 <input name="charges" type="number" min="0" step="100" value="{{ old('charges', 0) }}" class="mt-1" data-confirm-summary-label="Charges">
@@ -588,7 +588,7 @@
                 </span>
             </label>
             @if($isLedgerPosting)
-                <label class="text-sm font-semibold text-slate-700">Charge Handling
+                <label class="text-sm font-semibold text-slate-700 md:col-span-2">Charge Handling
                     <select name="charge_mode" class="mt-1" data-confirm-summary-label="Charge handling">
                         @foreach($chargeModes as $mode => $label)
                             <option value="{{ $mode }}" @selected(old('charge_mode', 'deduct_from_amount') === $mode)>{{ $label }}</option>
@@ -596,9 +596,6 @@
                     </select>
                 </label>
             @endif
-            <label class="text-sm font-semibold text-slate-700">Transaction Date <x-required-badge />
-                <input name="transaction_date" type="date" max="{{ today()->toDateString() }}" value="{{ old('transaction_date', today()->toDateString()) }}" class="mt-1" required data-confirm-summary-label="Date">
-            </label>
             <label class="text-sm font-semibold text-slate-700 md:col-span-2">Transaction Description
                 <textarea name="description" rows="3" class="mt-1" data-confirm-summary-label="Description"></textarea>
             </label>

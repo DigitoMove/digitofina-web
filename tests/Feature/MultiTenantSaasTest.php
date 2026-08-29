@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Client;
 use App\Models\ClientDocument;
@@ -274,6 +275,146 @@ it('rejects custom roles and branches from another organization when creating us
         ->assertSessionHasErrors('branch_id');
 
     expect(User::query()->where('email', 'scoped-staff@example.test')->exists())->toBeFalse();
+});
+
+it('scopes loan applications and reports to the organization selected by a super admin', function () {
+    $superAdmin = superAdminUser();
+    [$organizationA, $branchA] = tenantShell('Selected Reports Tenant');
+    [$organizationB, $branchB] = tenantShell('Hidden Reports Tenant');
+    $clientA = tenantClient($organizationA, $branchA);
+    $clientB = tenantClient($organizationB, $branchB);
+    $productA = tenantLoanProduct($organizationA, 'SELECTED-PRODUCT');
+    $productB = tenantLoanProduct($organizationB, 'HIDDEN-PRODUCT');
+    $loanA = tenantApplicationLoan($organizationA, $branchA, $clientA, $productA, 'SELECTED-APPLICATION');
+    $loanB = tenantApplicationLoan($organizationB, $branchB, $clientB, $productB, 'HIDDEN-APPLICATION');
+    app(ModuleService::class)->enable($organizationA, Module::where('slug', 'loans')->firstOrFail(), $superAdmin);
+
+    $this->actingAs($superAdmin)
+        ->withSession(['super_admin_organization_id' => $organizationA->id])
+        ->get(route('loans.index', ['status_group' => 'applications']))
+        ->assertSuccessful()
+        ->assertSee($loanA->loan_number)
+        ->assertDontSee($loanB->loan_number);
+
+    $this->actingAs($superAdmin)
+        ->withSession(['super_admin_organization_id' => $organizationA->id])
+        ->get(route('reports.show', [
+            'report' => 'loans-application-by-date',
+            'from' => today()->toDateString(),
+            'to' => today()->toDateString(),
+        ]))
+        ->assertSuccessful()
+        ->assertSee($loanA->loan_number)
+        ->assertDontSee($loanB->loan_number);
+
+    $this->actingAs($superAdmin)
+        ->withSession(['super_admin_organization_id' => $organizationA->id])
+        ->from(route('reports.index'))
+        ->get(route('reports.show', [
+            'report' => 'loans-application-by-date',
+            'branch_id' => $branchB->id,
+        ]))
+        ->assertRedirect(route('reports.index'))
+        ->assertSessionHasErrors('branch_id');
+});
+
+it('lets a super admin act as an organization user and safely return', function () {
+    $superAdmin = superAdminUser();
+    [$previousOrganization] = tenantShell('Previous Super Admin Context');
+    [$organization, , $staff] = tenantUser([]);
+
+    $this->actingAs($superAdmin)
+        ->withSession(['super_admin_organization_id' => $previousOrganization->id])
+        ->post(route('users.impersonate', $staff))
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionHas('impersonator_user_id', $superAdmin->id);
+
+    $this->assertAuthenticatedAs($staff);
+
+    $this->get(route('dashboard'))
+        ->assertSuccessful()
+        ->assertSee('Acting as '.$staff->name)
+        ->assertSee($staff->role->name)
+        ->assertSee($organization->name);
+
+    $this->delete(route('impersonation.destroy'))
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionMissing('impersonator_user_id')
+        ->assertSessionHas('super_admin_organization_id', $previousOrganization->id);
+
+    $this->assertAuthenticatedAs($superAdmin);
+
+    expect(AuditLog::query()->withoutGlobalScope('tenant')->where('action', 'auth.impersonation.started')->exists())->toBeTrue()
+        ->and(AuditLog::query()->withoutGlobalScope('tenant')->where('action', 'auth.impersonation.stopped')->exists())->toBeTrue();
+});
+
+it('preserves a user password unless password change is explicitly enabled', function () {
+    [$organization, $branch, $organizationAdmin] = tenantUser([]);
+    $organizationAdmin->role->update(['name' => 'Organization Admin', 'slug' => 'organization-admin']);
+    $staffRole = Role::create([
+        'organization_id' => $organization->id,
+        'name' => 'Password Test Staff',
+        'slug' => 'password-test-staff',
+    ]);
+    $staff = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'role_id' => $staffRole->id,
+        'phone' => '+256700000908',
+        'password' => Hash::make('OriginalPassword123!'),
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $payload = [
+        'role_id' => $staffRole->id,
+        'branch_id' => $branch->id,
+        'name' => $staff->name,
+        'email' => $staff->email,
+        'phone' => $staff->phone,
+        'status' => 'active',
+    ];
+
+    $this->actingAs($organizationAdmin)
+        ->put(route('users.update', $staff), $payload + [
+            'password' => 'BrowserAutofill123!',
+            'password_confirmation' => 'BrowserAutofill123!',
+        ])
+        ->assertRedirect(route('users.index'))
+        ->assertSessionHasNoErrors();
+
+    expect(Hash::check('OriginalPassword123!', $staff->fresh()->password))->toBeTrue()
+        ->and(Hash::check('BrowserAutofill123!', $staff->fresh()->password))->toBeFalse();
+
+    $this->actingAs($organizationAdmin)
+        ->put(route('users.update', $staff), $payload + [
+            'change_password' => '1',
+            'password' => 'ChangedPassword123!',
+            'password_confirmation' => 'ChangedPassword123!',
+        ])
+        ->assertRedirect(route('users.index'))
+        ->assertSessionHasNoErrors();
+
+    expect(Hash::check('ChangedPassword123!', $staff->fresh()->password))->toBeTrue();
+});
+
+it('loads user assignment branches and roles for the organization selected by a super admin', function () {
+    $superAdmin = superAdminUser();
+    [$organizationA, $branchA] = tenantShell('Current Options Tenant');
+    [$organizationB, $branchB] = tenantShell('Requested Options Tenant');
+    $roleA = Role::create(['organization_id' => $organizationA->id, 'name' => 'Tenant A Custom', 'slug' => 'tenant-a-custom']);
+    $roleB = Role::create(['organization_id' => $organizationB->id, 'name' => 'Tenant B Custom', 'slug' => 'tenant-b-custom']);
+
+    $response = $this->actingAs($superAdmin)
+        ->withSession(['super_admin_organization_id' => $organizationA->id])
+        ->getJson(route('users.form-options', ['organization_id' => $organizationB->id]))
+        ->assertSuccessful()
+        ->assertJsonFragment(['id' => $branchB->id, 'name' => $branchB->name])
+        ->assertJsonFragment(['id' => $roleB->id, 'name' => $roleB->name]);
+
+    expect(collect($response->json('branches'))->pluck('id')->all())->toBe([$branchB->id])
+        ->and(collect($response->json('roles'))->pluck('id'))->toContain($roleB->id)
+        ->not->toContain($roleA->id)
+        ->and(collect($response->json('roles'))->pluck('name'))->not->toContain('Super Admin');
 });
 
 it('keeps organization clients separated in api responses', function () {
@@ -791,6 +932,43 @@ function tenantClient(Organization $organization, Branch $branch, array $attribu
         'phone' => fake()->unique()->numerify('+2567########'),
         'status' => 'active',
         'registered_at' => today(),
+    ]);
+}
+
+function tenantLoanProduct(Organization $organization, string $code): LoanProduct
+{
+    return LoanProduct::create([
+        'organization_id' => $organization->id,
+        'name' => str($code)->headline()->toString(),
+        'code' => $code,
+        'min_amount' => 10000,
+        'max_amount' => 1000000,
+        'min_term' => 1,
+        'max_term' => 12,
+        'term_unit' => 'months',
+        'annual_interest_rate' => 12,
+        'interest_method' => 'flat',
+        'repayment_frequency' => 'monthly',
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+}
+
+function tenantApplicationLoan(Organization $organization, Branch $branch, Client $client, LoanProduct $product, string $number): Loan
+{
+    return Loan::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'client_id' => $client->id,
+        'loan_product_id' => $product->id,
+        'loan_number' => $number,
+        'requested_amount' => 100000,
+        'principal_balance' => 100000,
+        'interest_rate' => 12,
+        'term_periods' => 12,
+        'repayment_frequency' => 'monthly',
+        'status' => 'submitted',
+        'application_date' => today(),
     ]);
 }
 

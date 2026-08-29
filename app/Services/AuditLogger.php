@@ -13,9 +13,10 @@ class AuditLogger
     public function record(string $action, ?Model $auditable = null, array $newValues = [], array $oldValues = [], ?User $actor = null): void
     {
         $user = $actor ?: Auth::user();
+        $newValues = $this->withImpersonationContext($newValues);
 
         AuditLog::create([
-            'organization_id' => $user?->organization_id,
+            'organization_id' => $this->organizationId($user, $auditable),
             'branch_id' => $this->branchId($user, $auditable),
             'user_id' => $user?->id,
             'auditable_type' => $auditable?->getMorphClass(),
@@ -50,6 +51,7 @@ class AuditLogger
         int|string|null $recordId = null,
     ): void {
         $user = $request->user();
+        $newValues = $this->withImpersonationContext($newValues);
 
         AuditLog::create([
             'organization_id' => $this->organizationId($user, $auditable),
@@ -91,5 +93,25 @@ class AuditLogger
         return $request->header('X-Device-Name')
             ?: $request->input('device_name')
             ?: $request->user()?->currentAccessToken()?->name;
+    }
+
+    /**
+     * @param  array<string, mixed>  $newValues
+     * @return array<string, mixed>
+     */
+    private function withImpersonationContext(array $newValues): array
+    {
+        $request = request();
+
+        if (! $request?->hasSession() || ! $request->session()->has('impersonator_user_id')) {
+            return $newValues;
+        }
+
+        $newValues['_impersonation'] = [
+            'impersonator_user_id' => (int) $request->session()->get('impersonator_user_id'),
+            'impersonated_user_id' => Auth::id(),
+        ];
+
+        return $newValues;
     }
 }

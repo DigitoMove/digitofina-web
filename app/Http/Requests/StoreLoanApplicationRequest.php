@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\Client;
 use App\Models\User;
+use App\Services\TenantContext;
 use App\Support\CurrencyDenomination;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -33,12 +34,14 @@ class StoreLoanApplicationRequest extends FormRequest
      */
     public function rules(): array
     {
+        $organizationId = app(TenantContext::class)->id() ?: $this->user()?->organization_id;
+
         return [
-            'client_id' => ['required', Rule::exists('clients', 'id')->where('status', 'active')],
-            'loan_product_id' => ['required', Rule::exists('loan_products', 'id')->where('status', 'active')],
+            'client_id' => ['required', Rule::exists('clients', 'id')->where(fn ($query) => $query->where('organization_id', $organizationId)->where('status', 'active'))],
+            'loan_product_id' => ['required', Rule::exists('loan_products', 'id')->where(fn ($query) => $query->where('organization_id', $organizationId)->where('status', 'active'))],
             'loan_type' => ['required', Rule::in(['standard', 'commercial'])],
-            'assigned_officer_id' => ['nullable', Rule::exists('users', 'id')->where('status', 'active')],
-            'savings_account_id' => ['nullable', Rule::exists('accounts', 'id')],
+            'assigned_officer_id' => ['nullable', Rule::exists('users', 'id')->where(fn ($query) => $query->where('organization_id', $organizationId)->where('status', 'active'))],
+            'savings_account_id' => ['nullable', Rule::exists('accounts', 'id')->where('organization_id', $organizationId)],
             'application_date' => ['nullable', 'date', 'before_or_equal:today'],
             'requested_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'term_periods' => ['required', 'integer', 'min:1'],

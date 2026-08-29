@@ -184,11 +184,13 @@ class ReportCatalogService
 
         $definitions = array_map(fn (array $definition): array => $this->decorateReport($definition), $definitions);
 
-        if (! $user || $user->hasRole('super-admin') || ! $user->organization) {
+        $organization = app(TenantContext::class)->organization() ?: $user?->organization;
+
+        if (! $user || ! $organization) {
             return $this->filterCashierLedgerReports($definitions, $user);
         }
 
-        $enabledModules = app(ModuleService::class)->enabledSlugs($user->organization);
+        $enabledModules = app(ModuleService::class)->enabledSlugs($organization);
 
         $definitions = array_values(array_filter(
             $definitions,
@@ -816,9 +818,10 @@ class ReportCatalogService
 
     private function officerEntries(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
     {
+        $organizationId = app(TenantContext::class)->id() ?: $user->organization_id;
         $officers = User::query()
             ->with(['role', 'branch'])
-            ->where('organization_id', $user->organization_id)
+            ->where('organization_id', $organizationId)
             ->where('status', 'active')
             ->whereHas('role', fn (Builder $query): Builder => $query->where('slug', '!=', 'member'))
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
