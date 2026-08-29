@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\V1\LoanWorkflowController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\NylonPayWebhookController;
 use App\Http\Controllers\Api\V1\OfflineSyncController;
+use App\Http\Controllers\Api\V1\OrganizationNylonPayWebhookController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\SavingsAccountController;
@@ -36,6 +37,7 @@ Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword'])-
 Route::get('/docs/openapi.json', [ApiDocumentationController::class, 'openapi'])->middleware('throttle:api')->name('docs.openapi');
 Route::post('/payments/mobile-money/callback', [PaymentController::class, 'callback'])->middleware(['throttle:api', 'idempotent.financial'])->name('payments.callback');
 Route::post('/webhooks/nylon-pay', NylonPayWebhookController::class)->middleware('throttle:api')->name('webhooks.nylon-pay');
+Route::post('/webhooks/nylon-pay/organizations/{webhookToken}', OrganizationNylonPayWebhookController::class)->middleware('throttle:api')->name('webhooks.organization-nylon-pay');
 Route::post('/webhooks/{source}/{provider}', [WebhookController::class, 'store'])->middleware('throttle:api')->name('webhooks.store');
 
 Route::middleware(['auth:sanctum', 'tenant', 'demo.active', 'throttle:api', 'module:auto'])->group(function (): void {

@@ -326,6 +326,19 @@
                 </div>
 
                 <div class="df-panel p-5 xl:col-span-2">
+                    @if($canUpdateClient)
+                        <div class="mb-5 rounded-xl border border-brand-100 bg-brand-50 p-4">
+                            <h2 class="font-semibold text-slate-950">Client portal access</h2>
+                            <p class="mt-1 text-sm text-slate-600">Set or reset the temporary password for phone login. The client must change it after signing in.</p>
+                            <div class="mt-2 text-xs font-semibold text-slate-500">Login phone: {{ $client->phone }} · {{ $client->user_id ? 'Portal enabled' : 'Not enabled' }}</div>
+                            <form method="POST" action="{{ route('clients.portal-access.store', $client) }}" class="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]" autocomplete="off">
+                                @csrf
+                                <input name="password" type="password" minlength="8" autocomplete="new-password" placeholder="Temporary password" required>
+                                <input name="password_confirmation" type="password" minlength="8" autocomplete="new-password" placeholder="Confirm password" required>
+                                <button class="df-action-primary">{{ $client->user_id ? 'Reset access' : 'Enable access' }}</button>
+                            </form>
+                        </div>
+                    @endif
                     <h2 class="font-semibold text-slate-950">Biodata</h2>
                     @if($errors->has('client_officer_id'))
                         <div class="mt-4 rounded border border-coral-500/20 bg-coral-50 p-3 text-sm text-coral-700">{{ $errors->first('client_officer_id') }}</div>

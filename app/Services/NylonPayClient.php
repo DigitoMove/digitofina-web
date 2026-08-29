@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CommercialQuote;
 use App\Models\NylonPayCredential;
+use App\Models\PaymentRequest;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
@@ -15,9 +16,6 @@ use Throwable;
 
 class NylonPayClient
 {
-    /** @var array{api_key: string, api_secret: string, webhook_secret: string, base_url: string}|null */
-    private ?array $resolvedCredentials = null;
-
     /** @return array{id: string, url: string, token: string|null, expiresAt: string|null, status: string} */
     public function createInvoice(CommercialQuote $quote, string $redirectUrl): array
     {
@@ -44,6 +42,38 @@ class NylonPayClient
         ];
 
         $data = $this->send('sdk-create-invoice', $payload);
+
+        return $this->invoiceData($data);
+    }
+
+    /** @return array{id: string, url: string, token: string|null, expiresAt: string|null, status: string} */
+    public function createCollectionInvoice(PaymentRequest $paymentRequest, string $redirectUrl): array
+    {
+        $organizationId = (int) $paymentRequest->organization_id;
+        $this->assertConfigured($organizationId);
+        $purpose = str($paymentRequest->metadata['purpose'] ?? 'payment')->headline()->toString();
+        $data = $this->send('sdk-create-invoice', [
+            'amount' => (int) $paymentRequest->amount,
+            'currency' => $paymentRequest->currency,
+            'description' => "{$purpose} {$paymentRequest->reference}",
+            'items' => [['name' => $purpose, 'quantity' => 1, 'unitPrice' => (int) $paymentRequest->amount]],
+            'redirectUrl' => $redirectUrl,
+            'reference' => $paymentRequest->reference,
+            'metadata' => [
+                'paymentRequestId' => (string) $paymentRequest->id,
+                'organizationId' => (string) $organizationId,
+                'purpose' => (string) ($paymentRequest->metadata['purpose'] ?? 'payment'),
+            ],
+        ], $organizationId);
+
+        return $this->invoiceData($data);
+    }
+
+    /** @param array<string, mixed> $data
+     * @return array{id: string, url: string, token: string|null, expiresAt: string|null, status: string}
+     */
+    private function invoiceData(array $data): array
+    {
         $url = $data['url'] ?? null;
         $id = $data['id'] ?? null;
 
@@ -60,18 +90,18 @@ class NylonPayClient
         ];
     }
 
-    public function isConfigured(): bool
+    public function isConfigured(?int $organizationId = null): bool
     {
-        $credentials = $this->credentials();
+        $credentials = $this->credentials($organizationId);
 
         return Str::startsWith($credentials['api_key'], 'npk_')
             && Str::startsWith($credentials['api_secret'], 'nps_')
             && filled($credentials['webhook_secret']);
     }
 
-    public function verifyWebhook(string $payload, string $signature): bool
+    public function verifyWebhook(string $payload, string $signature, ?NylonPayCredential $credential = null): bool
     {
-        $secret = $this->credentials()['webhook_secret'];
+        $secret = $this->credentials($credential?->organization_id, $credential)['webhook_secret'];
 
         if ($secret === '' || preg_match('/^[0-9a-f]{64}$/', $signature) !== 1) {
             return false;
@@ -92,7 +122,7 @@ class NylonPayClient
     /** @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
-    private function send(string $action, array $payload): array
+    private function send(string $action, array $payload, ?int $organizationId = null): array
     {
         $fingerprint = $this->fingerprint();
         $payload['_fingerprint'] = $fingerprint;
@@ -103,7 +133,7 @@ class NylonPayClient
             $nonce,
             $timestamp,
             $this->canonicalJson($payload),
-        ]), $this->credentials()['api_secret']);
+        ]), $this->credentials($organizationId)['api_secret']);
         $body = json_encode([
             'intent' => 'execute',
             'service' => 'sdk',
@@ -113,13 +143,13 @@ class NylonPayClient
 
         $response = $this->request()
             ->withHeaders([
-                'X-Nylon-Key' => $this->credentials()['api_key'],
+                'X-Nylon-Key' => $this->credentials($organizationId)['api_key'],
                 'X-Nylon-Nonce' => $nonce,
                 'X-Nylon-Timestamp' => $timestamp,
                 'X-Nylon-Signature' => $signature,
             ])
             ->withBody($body, 'application/json')
-            ->post($this->credentials()['base_url']);
+            ->post($this->credentials($organizationId)['base_url']);
 
         if ($response->failed()) {
             throw new RuntimeException('Nylon Pay could not create the checkout. Please try again.');
@@ -131,7 +161,7 @@ class NylonPayClient
             throw new RuntimeException(is_string($envelope['message'] ?? null) ? $envelope['message'] : 'Nylon Pay returned an invalid response.');
         }
 
-        return $this->verifiedResponseData($envelope['data'], $nonce);
+        return $this->verifiedResponseData($envelope['data'], $nonce, $organizationId);
     }
 
     private function request(): PendingRequest
@@ -149,7 +179,7 @@ class NylonPayClient
     /** @param array<string, mixed> $data
      * @return array<string, mixed>
      */
-    private function verifiedResponseData(array $data, string $nonce): array
+    private function verifiedResponseData(array $data, string $nonce, ?int $organizationId = null): array
     {
         $signature = $data['_responseSignature'] ?? null;
         unset($data['_responseSignature']);
@@ -158,7 +188,7 @@ class NylonPayClient
             throw new RuntimeException('Nylon Pay response signature is missing.');
         }
 
-        $expected = hash_hmac('sha256', $this->canonicalJson($data), $this->credentials()['api_secret']);
+        $expected = hash_hmac('sha256', $this->canonicalJson($data), $this->credentials($organizationId)['api_secret']);
 
         if (! hash_equals($expected, $signature)) {
             throw new RuntimeException('Nylon Pay response signature could not be verified.');
@@ -173,9 +203,9 @@ class NylonPayClient
         return $data;
     }
 
-    private function assertConfigured(): void
+    private function assertConfigured(?int $organizationId = null): void
     {
-        if (! $this->isConfigured()) {
+        if (! $this->isConfigured($organizationId)) {
             throw new RuntimeException('Nylon Pay is not configured. Set its API key, API secret, and webhook secret first.');
         }
     }
@@ -230,15 +260,17 @@ class NylonPayClient
     }
 
     /** @return array{api_key: string, api_secret: string, webhook_secret: string, base_url: string} */
-    private function credentials(): array
+    private function credentials(?int $organizationId = null, ?NylonPayCredential $credential = null): array
     {
-        if ($this->resolvedCredentials !== null) {
-            return $this->resolvedCredentials;
+        $stored = $credential ?: NylonPayCredential::query()
+            ->where('scope_key', $organizationId ? "organization:{$organizationId}" : 'platform:default')
+            ->first();
+
+        if (! $stored && $organizationId === null) {
+            $stored = NylonPayCredential::query()->whereNull('organization_id')->where('profile', 'default')->first();
         }
 
-        $stored = NylonPayCredential::query()->where('profile', 'default')->first();
-
-        return $this->resolvedCredentials = [
+        return [
             'api_key' => (string) ($stored?->api_key ?: config('services.nylon_pay.api_key')),
             'api_secret' => (string) ($stored?->api_secret ?: config('services.nylon_pay.api_secret')),
             'webhook_secret' => (string) ($stored?->webhook_secret ?: config('services.nylon_pay.webhook_secret')),

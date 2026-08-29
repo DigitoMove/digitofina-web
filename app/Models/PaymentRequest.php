@@ -8,7 +8,25 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class PaymentRequest extends Model
 {
-    protected $guarded = [];
+    protected $fillable = [
+        'organization_id',
+        'payment_provider_id',
+        'payable_type',
+        'payable_id',
+        'reference',
+        'external_reference',
+        'checkout_url',
+        'payer_phone',
+        'amount',
+        'currency',
+        'status',
+        'metadata',
+        'expires_at',
+        'posted_at',
+        'posted_transaction_type',
+        'posted_transaction_id',
+        'posting_error',
+    ];
 
     protected function casts(): array
     {

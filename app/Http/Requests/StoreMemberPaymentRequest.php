@@ -23,7 +23,6 @@ class StoreMemberPaymentRequest extends FormRequest
         return [
             'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'phone' => ['required', 'string', 'max:40'],
-            'provider_id' => ['nullable', 'integer', 'exists:payment_providers,id'],
         ];
     }
 }

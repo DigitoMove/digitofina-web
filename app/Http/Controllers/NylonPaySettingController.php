@@ -14,7 +14,7 @@ class NylonPaySettingController extends Controller
      */
     public function __invoke(UpdateNylonPayCredentialRequest $request, AuditLogger $auditLogger): RedirectResponse
     {
-        $credential = NylonPayCredential::firstOrNew(['profile' => 'default']);
+        $credential = NylonPayCredential::firstOrNew(['scope_key' => 'platform:default'], ['profile' => 'default']);
         $old = ['configured' => $credential->exists, 'base_url' => $credential->base_url];
         $data = collect($request->validated())
             ->reject(fn (mixed $value, string $key): bool => in_array($key, ['api_key', 'api_secret', 'webhook_secret'], true) && blank($value))

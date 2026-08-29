@@ -83,6 +83,8 @@
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
                 </button>
 
+                <div class="mt-5 text-center text-sm text-slate-500">Borrower or saver? <a href="{{ route('client.login') }}" class="font-semibold text-brand-700">Use client login</a></div>
+
                 @if ($demoAvailable)
                     <div class="mt-6 flex items-center justify-center gap-3 text-sm">
                         <a href="{{ route('landing') }}" class="font-semibold text-slate-500 hover:text-brand-900">About DigitoFina</a>

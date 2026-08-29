@@ -36,6 +36,34 @@
     </div>
 @endif
 
+@if(request('payment_return'))
+    <div class="mb-5 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">You returned from Nylon Pay. Your balance updates after the signed payment confirmation is received.</div>
+@endif
+
+<section class="mb-6 rounded-lg border border-brand-200 bg-brand-50 p-5">
+    <div class="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+        <div>
+            <h2 class="font-semibold text-slate-950">Request a new loan</h2>
+            <p class="mt-1 text-sm text-slate-600">Available only to verified clients with no unpaid loan or application in progress.</p>
+            @unless($canRequestLoan)<p class="mt-2 text-sm font-semibold text-amber-800">You are not currently eligible for another loan request.</p>@endunless
+        </div>
+        <form method="POST" action="{{ route('member.loan-applications.store') }}" class="grid w-full gap-3 lg:max-w-3xl lg:grid-cols-3">
+            @csrf
+            <select name="loan_product_id" @disabled(! $canRequestLoan) required><option value="">Choose loan product</option>@foreach($loanProducts as $product)<option value="{{ $product->id }}">{{ $product->name }} · UGX {{ number_format((float) $product->min_amount) }}–{{ number_format((float) $product->max_amount) }}</option>@endforeach</select>
+            <input name="requested_amount" type="number" min="100" step="100" placeholder="Amount (UGX)" @disabled(! $canRequestLoan) required>
+            <input name="term_periods" type="number" min="1" placeholder="Repayment periods" @disabled(! $canRequestLoan) required>
+            <select name="repayment_frequency" @disabled(! $canRequestLoan) required><option value="monthly">Monthly</option><option value="weekly">Weekly</option><option value="daily">Daily</option></select>
+            <input name="purpose" placeholder="Purpose of the loan" @disabled(! $canRequestLoan) required>
+            <input name="source_of_repayment" placeholder="Source of repayment">
+            <button @disabled(! $canRequestLoan) class="df-action-primary lg:col-span-3 disabled:bg-slate-300">Send request to Loan Officer</button>
+        </form>
+    </div>
+</section>
+
+@unless($nylonPayConfigured)
+    <div class="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Online payments are unavailable until your organization configures its Nylon Pay collection account.</div>
+@endunless
+
 <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
     <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div class="text-sm font-medium text-slate-500">Savings balance</div>
@@ -114,14 +142,7 @@
                             <div class="mt-3 grid gap-2">
                                 <input name="amount" type="number" min="0" step="1" value="{{ $canRepay ? $loanBalance : 0 }}" @disabled(! $canRepay) class="w-full rounded-lg border-slate-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                                 <input name="phone" value="{{ old('phone', $defaultPaymentPhone) }}" placeholder="Mobile money phone" @disabled(! $canRepay) class="w-full rounded-lg border-slate-300 text-sm focus:border-brand-500 focus:ring-brand-500">
-                                @if ($paymentProviders->count() > 1)
-                                    <select name="provider_id" @disabled(! $canRepay) class="w-full rounded-lg border-slate-300 text-sm focus:border-brand-500 focus:ring-brand-500">
-                                        @foreach ($paymentProviders as $provider)
-                                            <option value="{{ $provider->id }}">{{ $provider->name }}</option>
-                                        @endforeach
-                                    </select>
-                                @endif
-                                <button @disabled(! $canRepay) class="rounded-lg bg-brand-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">Pay {{ $money($loanBalance) }}</button>
+                                <button @disabled(! $canRepay || ! $nylonPayConfigured) class="rounded-lg bg-brand-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">Pay {{ $money($loanBalance) }} with Nylon Pay</button>
                             </div>
                         </form>
                     </div>
@@ -226,7 +247,7 @@
                         @csrf
                         <input name="amount" type="number" min="0" step="1" placeholder="Amount" @disabled($account->status !== 'active') class="rounded-lg border-slate-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         <input name="phone" value="{{ old('phone', $defaultPaymentPhone) }}" placeholder="Mobile money phone" @disabled($account->status !== 'active') class="rounded-lg border-slate-300 text-sm focus:border-brand-500 focus:ring-brand-500">
-                        <button @disabled($account->status !== 'active') class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300">Deposit</button>
+                        <button @disabled($account->status !== 'active' || ! $nylonPayConfigured) class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300">Deposit with Nylon Pay</button>
                     </form>
                 </div>
             @empty

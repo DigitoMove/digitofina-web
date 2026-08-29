@@ -29,7 +29,7 @@ class CommercialQuoteController extends Controller
                 ->paginate(20),
             'isSuperAdmin' => $user->hasRole('super-admin'),
             'nylonPayConfigured' => $nylonPay->isConfigured(),
-            'nylonPayCredential' => $user->hasRole('super-admin') ? NylonPayCredential::query()->where('profile', 'default')->first() : null,
+            'nylonPayCredential' => $user->hasRole('super-admin') ? NylonPayCredential::query()->where('scope_key', 'platform:default')->first() : null,
             'webhookUrl' => route('api.v1.webhooks.nylon-pay'),
         ]);
     }

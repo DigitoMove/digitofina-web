@@ -6,17 +6,15 @@ use App\Http\Requests\StoreMemberPaymentRequest;
 use App\Models\Client;
 use App\Models\InvestmentAccount;
 use App\Models\Loan;
-use App\Models\PaymentProvider;
 use App\Models\PaymentRequest;
 use App\Models\SavingsAccount;
-use App\Services\PaymentGatewayService;
-use Illuminate\Database\Eloquent\Builder;
+use App\Services\NylonPayCollectionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Validation\ValidationException;
 
 class MemberPaymentController extends Controller
 {
-    public function repayLoan(StoreMemberPaymentRequest $request, Loan $loan, PaymentGatewayService $payments): RedirectResponse
+    public function repayLoan(StoreMemberPaymentRequest $request, Loan $loan, NylonPayCollectionService $payments): RedirectResponse
     {
         $client = $this->client($request);
         abort_unless((int) $loan->client_id === (int) $client->id, 404);
@@ -32,11 +30,11 @@ class MemberPaymentController extends Controller
             throw ValidationException::withMessages(['amount' => 'The repayment amount cannot exceed the loan balance including penalties.']);
         }
 
-        $paymentRequest = $payments->initiateCollection(
-            provider: $this->paymentProvider($client, $request->integer('provider_id') ?: null),
+        $paymentRequest = $payments->initiate(
             payable: $loan,
             amount: $amount,
             phone: $request->validated('phone'),
+            member: $request->user(),
             metadata: $this->metadata($request, $client, 'loan_repayment') + [
                 'includes_penalties' => true,
                 'principal_balance' => (float) $loan->principal_balance,
@@ -47,10 +45,10 @@ class MemberPaymentController extends Controller
             ],
         );
 
-        return $this->redirectWithPayment($paymentRequest, 'Loan repayment request sent to your phone.');
+        return $this->redirectWithPayment($paymentRequest);
     }
 
-    public function depositSavings(StoreMemberPaymentRequest $request, SavingsAccount $savingsAccount, PaymentGatewayService $payments): RedirectResponse
+    public function depositSavings(StoreMemberPaymentRequest $request, SavingsAccount $savingsAccount, NylonPayCollectionService $payments): RedirectResponse
     {
         $client = $this->client($request);
         abort_unless((int) $savingsAccount->client_id === (int) $client->id, 404);
@@ -59,18 +57,18 @@ class MemberPaymentController extends Controller
             throw ValidationException::withMessages(['amount' => 'Only active savings accounts can receive online deposits.']);
         }
 
-        $paymentRequest = $payments->initiateCollection(
-            provider: $this->paymentProvider($client, $request->integer('provider_id') ?: null),
+        $paymentRequest = $payments->initiate(
             payable: $savingsAccount,
             amount: (float) $request->validated('amount'),
             phone: $request->validated('phone'),
+            member: $request->user(),
             metadata: $this->metadata($request, $client, 'savings_deposit'),
         );
 
-        return $this->redirectWithPayment($paymentRequest, 'Savings deposit request sent to your phone.');
+        return $this->redirectWithPayment($paymentRequest);
     }
 
-    public function topUpInvestment(StoreMemberPaymentRequest $request, InvestmentAccount $investmentAccount, PaymentGatewayService $payments): RedirectResponse
+    public function topUpInvestment(StoreMemberPaymentRequest $request, InvestmentAccount $investmentAccount, NylonPayCollectionService $payments): RedirectResponse
     {
         $client = $this->client($request);
         abort_unless((int) $investmentAccount->client_id === (int) $client->id, 404);
@@ -84,38 +82,20 @@ class MemberPaymentController extends Controller
             throw ValidationException::withMessages(['amount' => 'This investment plan does not allow top-ups.']);
         }
 
-        $paymentRequest = $payments->initiateCollection(
-            provider: $this->paymentProvider($client, $request->integer('provider_id') ?: null),
+        $paymentRequest = $payments->initiate(
             payable: $investmentAccount,
             amount: (float) $request->validated('amount'),
             phone: $request->validated('phone'),
+            member: $request->user(),
             metadata: $this->metadata($request, $client, 'investment_top_up'),
         );
 
-        return $this->redirectWithPayment($paymentRequest, 'Investment top-up request sent to your phone.');
+        return $this->redirectWithPayment($paymentRequest);
     }
 
     private function client(StoreMemberPaymentRequest $request): Client
     {
         return $request->user()->client()->firstOrFail();
-    }
-
-    private function paymentProvider(Client $client, ?int $providerId): PaymentProvider
-    {
-        $query = PaymentProvider::query()
-            ->where('status', 'active')
-            ->where(function (Builder $query) use ($client): void {
-                $query
-                    ->where('organization_id', $client->organization_id)
-                    ->orWhereNull('organization_id');
-            });
-
-        if ($providerId) {
-            return (clone $query)->whereKey($providerId)->firstOrFail();
-        }
-
-        return (clone $query)->where('is_default', true)->where('organization_id', $client->organization_id)->first()
-            ?? (clone $query)->where('is_default', true)->firstOrFail();
     }
 
     /**
@@ -139,11 +119,8 @@ class MemberPaymentController extends Controller
             + (float) $loan->penalty_balance;
     }
 
-    private function redirectWithPayment(PaymentRequest $paymentRequest, string $message): RedirectResponse
+    private function redirectWithPayment(PaymentRequest $paymentRequest): RedirectResponse
     {
-        return redirect()
-            ->route('member.dashboard')
-            ->with('status', $message)
-            ->with('payment_reference', $paymentRequest->reference);
+        return redirect()->away($paymentRequest->checkout_url);
     }
 }

@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\Client;
 use App\Models\InvestmentAccount;
 use App\Models\Loan;
+use App\Models\LoanProduct;
 use App\Models\PaymentProvider;
 use App\Models\PaymentRequest;
 use App\Models\SavingsAccount;
+use App\Services\NylonPayClient;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -15,7 +17,7 @@ use Illuminate\View\View;
 
 class MemberPortalController extends Controller
 {
-    public function __invoke(): View|RedirectResponse
+    public function __invoke(NylonPayClient $nylonPay): View|RedirectResponse
     {
         $client = Client::query()
             ->with([
@@ -59,6 +61,7 @@ class MemberPortalController extends Controller
             ->sortByDesc(fn ($transaction): string => ($transaction->transaction_date ?? $transaction->paid_at ?? $transaction->posted_at ?? $transaction->created_at)->toDateString().' '.$transaction->created_at->format('H:i:s.u'))
             ->take(15);
         $paymentRequests = $this->paymentRequests($client, $loans, $savingsAccounts, $investmentAccounts);
+        $hasOpenLoan = $loans->contains(fn (Loan $loan): bool => ! in_array($loan->status, ['fully_paid', 'closed', 'rejected', 'cancelled'], true));
 
         return view('member.dashboard', [
             'client' => $client,
@@ -74,6 +77,9 @@ class MemberPortalController extends Controller
             'loanBreakdown' => $loanBreakdown,
             'loanBalance' => array_sum($loanBreakdown),
             'transactions' => $recentTransactions->isNotEmpty() ? $recentTransactions : $client->accounts->flatMap->transactions->sortByDesc('posted_at')->take(15),
+            'canRequestLoan' => $client->status === 'active' && $client->kyc_status === 'verified' && ! $hasOpenLoan,
+            'loanProducts' => LoanProduct::query()->where('organization_id', $client->organization_id)->where('status', 'active')->where('is_active', true)->orderBy('name')->get(),
+            'nylonPayConfigured' => $nylonPay->isConfigured($client->organization_id),
         ]);
     }
 

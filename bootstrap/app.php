@@ -6,6 +6,7 @@ use App\Http\Middleware\EnsureDemoAvailable;
 use App\Http\Middleware\EnsureDemoCapacity;
 use App\Http\Middleware\EnsureIdempotentFinancialRequest;
 use App\Http\Middleware\EnsureModuleEnabled;
+use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\ResolveTenant;
 use App\Support\ApiResponse;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -47,6 +48,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'idempotent.financial' => EnsureIdempotentFinancialRequest::class,
             'module' => EnsureModuleEnabled::class,
             'marketing.available' => EnsureDemoAvailable::class,
+            'password.changed' => EnsurePasswordChanged::class,
             'tenant' => ResolveTenant::class,
         ]);
     })

@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class NylonPayCredential extends Model
 {
-    protected $fillable = ['profile', 'api_key', 'api_secret', 'webhook_secret', 'base_url', 'updated_by'];
+    protected $fillable = ['organization_id', 'scope_key', 'profile', 'api_key', 'api_secret', 'webhook_secret', 'webhook_token', 'base_url', 'updated_by'];
 
     protected $hidden = ['api_key', 'api_secret', 'webhook_secret'];
 
@@ -23,6 +23,11 @@ class NylonPayCredential extends Model
     public function updater(): BelongsTo
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class);
     }
 
     public function masked(string $attribute): ?string
