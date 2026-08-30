@@ -29,6 +29,7 @@ it('provides a friendly client login link and preserves the previous address', f
 
 it('serves the client login on an organization custom domain', function () {
     [$organization] = clientPortalFixture();
+    config()->set('client_portal.domains', ['clients.*']);
     OrganizationDomain::create([
         'organization_id' => $organization->id,
         'domain' => 'clients.hope-sacco.test',
@@ -38,9 +39,19 @@ it('serves the client login on an organization custom domain', function () {
         'verified_at' => now(),
     ]);
 
+    $this->get('https://clients.hope-sacco.test/')
+        ->assertRedirect('https://clients.hope-sacco.test/client');
     $this->get('https://clients.hope-sacco.test/client')
         ->assertOk()
         ->assertSee('Access your loan account');
+});
+
+it('does not redirect a non-client subdomain to the client login', function () {
+    config()->set('client_portal.domains', ['clients.*']);
+
+    $this->get('https://staff.hope-sacco.test/')
+        ->assertOk()
+        ->assertSee('DigitoFina');
 });
 
 it('lets an approved client sign in by phone and forces a temporary password change', function () {
