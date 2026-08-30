@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Client;
 use App\Models\User;
+use App\Support\RoleCatalog;
 
 class ClientPolicy
 {
@@ -37,6 +38,21 @@ class ClientPolicy
     {
         return ($user->hasRole('super-admin') || $user->hasRole('organization-admin') || $user->canPerform('manage-organization'))
             && $this->canAccessBranch($user, $client);
+    }
+
+    public function impersonate(User $user, Client $client): bool
+    {
+        if (! $user->hasAnyRole([RoleCatalog::SUPER_ADMIN_SLUG, 'organization-admin'])) {
+            return false;
+        }
+
+        return $user->hasRole(RoleCatalog::SUPER_ADMIN_SLUG)
+            || (int) $user->organization_id === (int) $client->organization_id;
+    }
+
+    public function resetPortalAccess(User $user, Client $client): bool
+    {
+        return $this->impersonate($user, $client);
     }
 
     public function uploadDocument(User $user, Client $client): bool

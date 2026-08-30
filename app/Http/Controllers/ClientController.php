@@ -109,6 +109,7 @@ class ClientController extends Controller
 
         $client->load(array_filter([
             'branch',
+            'user.role',
             'officer',
             'accounts.accountType',
             'accounts.transactions' => fn ($query) => $query

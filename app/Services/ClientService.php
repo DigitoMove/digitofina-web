@@ -6,13 +6,10 @@ use App\Models\Account;
 use App\Models\AccountType;
 use App\Models\Branch;
 use App\Models\Client;
-use App\Models\Role;
 use App\Models\User;
 use App\Support\ApiSecurity;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 class ClientService
@@ -21,6 +18,7 @@ class ClientService
         private AccountNumberGenerator $numbers,
         private AuditLogger $auditLogger,
         private InAppNotificationService $notifications,
+        private ClientPortalAccessService $portalAccess,
     ) {}
 
     /**
@@ -30,16 +28,16 @@ class ClientService
     {
         $client = DB::transaction(function () use ($data, $officer): Client {
             $branch = Branch::findOrFail($data['branch_id']);
-            $memberUser = $this->memberUser($data, $branch, $officer);
 
             $client = Client::create($data + [
                 'organization_id' => $officer->organization_id,
                 'officer_id' => $officer->id,
-                'user_id' => $memberUser?->id,
+                'user_id' => null,
                 'client_number' => $this->numbers->clientNumber($branch),
                 'registered_at' => now()->toDateString(),
             ]);
 
+            $this->portalAccess->provisionDefaultAccess($client, $officer);
             $this->ensureBasicSavingsAccount($client->load('branch'), $officer);
             $this->auditLogger->record('client.created', $client, $client->toArray());
             $this->notifications->notifyUser(
@@ -186,27 +184,6 @@ class ClientService
 
             return $client->refresh();
         });
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    private function memberUser(array $data, Branch $branch, User $officer): ?User
-    {
-        if (blank($data['email'] ?? null)) {
-            return null;
-        }
-
-        return User::firstOrCreate(['email' => $data['email']], [
-            'organization_id' => $officer->organization_id,
-            'branch_id' => $branch->id,
-            'role_id' => Role::where('slug', 'member')->value('id'),
-            'name' => trim(($data['first_name'] ?? '').' '.($data['last_name'] ?? '')),
-            'phone' => $data['phone'] ?? null,
-            'position' => 'Member',
-            'status' => 'active',
-            'password' => Hash::make(Str::password(12)),
-        ]);
     }
 
     private function storeProfilePhoto(Client $client, ?UploadedFile $profilePhoto): void

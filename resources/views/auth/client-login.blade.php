@@ -19,9 +19,10 @@
                 <div class="mt-5 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">{{ $errors->first() }}</div>
             @endif
 
-            <label class="mt-6 block text-sm font-semibold text-slate-700">Phone number <x-required-badge />
-                <input name="phone" value="{{ old('phone') }}" inputmode="tel" autocomplete="username" class="mt-1 h-12 w-full rounded-xl border-brand-100" placeholder="0701 822 382" required autofocus>
+            <label class="mt-6 block text-sm font-semibold text-slate-700">Phone number or client number <x-required-badge />
+                <input name="phone" value="{{ old('phone') }}" autocomplete="username" class="mt-1 h-12 w-full rounded-xl border-brand-100" placeholder="0701 822 382 or 1001-C000001" required autofocus>
             </label>
+            <p class="mt-1 text-xs text-slate-500">If a phone number is shared by more than one client, use the client number.</p>
             <label class="mt-4 block text-sm font-semibold text-slate-700">Password <x-required-badge />
                 <input name="password" type="password" autocomplete="current-password" class="mt-1 h-12 w-full rounded-xl border-brand-100" required>
             </label>

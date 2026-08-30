@@ -8,38 +8,42 @@ use App\Models\User;
 use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Schema;
 
 class ClientPortalAccessService
 {
     public function __construct(private AuditLogger $auditLogger) {}
 
-    public function issue(Client $client, string $temporaryPassword, User $actor): User
+    public function provisionDefaultAccess(Client $client, ?User $actor = null): User
+    {
+        return $this->issue($client, (string) config('client_portal.default_temporary_password'), $actor);
+    }
+
+    public function issue(Client $client, string $temporaryPassword, ?User $actor = null): User
     {
         return DB::transaction(function () use ($client, $temporaryPassword, $actor): User {
-            $client = Client::query()->whereKey($client->getKey())->lockForUpdate()->firstOrFail();
+            $client = Client::query()->with('user.role')->whereKey($client->getKey())->lockForUpdate()->firstOrFail();
             $normalizedPhone = PhoneNumber::normalize($client->phone);
+            $role = Role::query()->firstOrCreate(['slug' => 'member'], ['name' => 'Member']);
+            abort_if($client->user && ! $client->user->isMember(), 422, 'This client is linked to a staff account and needs separate portal-account review.');
+            abort_if($client->user && (int) $client->user->organization_id !== (int) $client->organization_id, 422, 'The linked portal user belongs to another organization.');
 
-            $phoneInUse = User::query()
-                ->where('organization_id', $client->organization_id)
-                ->whereKeyNot($client->user_id ?: 0)
-                ->whereIn('phone', PhoneNumber::variants($normalizedPhone))
-                ->exists();
+            $user = $client->user ?: User::withTrashed()
+                ->with('role')
+                ->where('email', $this->portalEmail($client))
+                ->first() ?: new User;
+            abort_if($user->exists && ! $user->isMember(), 422, 'The generated client portal identity is already in use.');
 
-            if ($phoneInUse) {
-                throw ValidationException::withMessages(['password' => 'Another user in this organization already uses this phone number.']);
+            if ($user->trashed()) {
+                $user->restore();
             }
 
-            $roleId = Role::query()->where('slug', 'member')->value('id');
-            abort_unless($roleId, 422, 'The Member role must exist before portal access can be issued.');
-
-            $user = $client->user ?: new User;
             $user->fill([
                 'organization_id' => $client->organization_id,
                 'branch_id' => $client->branch_id,
-                'role_id' => $roleId,
+                'role_id' => $role->id,
                 'name' => $client->full_name ?: $client->business_name ?: $client->client_number,
-                'email' => $client->email ?: strtolower($client->client_number).'@client.digitofina.invalid',
+                'email' => $user->exists ? $user->email : $this->portalEmail($client),
                 'phone' => $normalizedPhone,
                 'position' => 'Client',
                 'status' => 'active',
@@ -49,10 +53,18 @@ class ClientPortalAccessService
             ])->save();
 
             $user->tokens()->delete();
+            if (Schema::hasTable('sessions')) {
+                DB::table('sessions')->where('user_id', $user->id)->delete();
+            }
             $client->update(['user_id' => $user->id]);
             $this->auditLogger->record('client.portal_access_issued', $client, ['portal_user_id' => $user->id], actor: $actor);
 
             return $user;
         });
+    }
+
+    private function portalEmail(Client $client): string
+    {
+        return "client-{$client->organization_id}-{$client->id}@client.digitofina.invalid";
     }
 }

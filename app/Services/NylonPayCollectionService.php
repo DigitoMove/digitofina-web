@@ -7,6 +7,7 @@ use App\Models\PaymentRequest;
 use App\Models\User;
 use App\Support\CurrencyDenomination;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
 class NylonPayCollectionService
@@ -34,7 +35,12 @@ class NylonPayCollectionService
             'amount' => $amount,
             'currency' => 'UGX',
             'status' => 'initiated',
-            'metadata' => $metadata + ['initiated_by' => $member->id, 'channel' => 'client_portal'],
+            'metadata' => $metadata + array_filter([
+                'initiated_by' => $member->id,
+                'channel' => 'client_portal',
+                'impersonator_user_id' => session(ImpersonationService::IMPERSONATOR_SESSION_KEY),
+                'impersonated_user_id' => session()->has(ImpersonationService::IMPERSONATOR_SESSION_KEY) ? Auth::id() : null,
+            ], fn (mixed $value): bool => $value !== null),
             'expires_at' => now()->addMinutes(15),
         ]);
 

@@ -13,6 +13,7 @@ use App\Http\Controllers\ClientController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientDocumentController;
 use App\Http\Controllers\ClientGroupController;
+use App\Http\Controllers\ClientImpersonationController;
 use App\Http\Controllers\ClientKycController;
 use App\Http\Controllers\ClientNoteController;
 use App\Http\Controllers\ClientPortalAccessController;
@@ -60,6 +61,7 @@ use App\Http\Controllers\TransactionReversalController;
 use App\Http\Controllers\UserFormOptionsController;
 use App\Http\Controllers\UserImpersonationController;
 use App\Http\Controllers\UserManagementController;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', LandingPageController::class)->middleware('tenant')->name('landing');
@@ -94,8 +96,10 @@ Route::middleware(['auth', 'tenant'])->group(function (): void {
 Route::middleware(['tenant', 'guest'])->group(function () {
     Route::get('/login', [LoginController::class, 'create'])->name('login');
     Route::post('/login', [LoginController::class, 'store']);
-    Route::get('/client/login', [ClientLoginController::class, 'create'])->name('client.login');
-    Route::post('/client/login', [ClientLoginController::class, 'store'])->middleware('throttle:5,1')->name('client.login.store');
+    Route::get('/client', [ClientLoginController::class, 'create'])->name('client.login');
+    Route::post('/client', [ClientLoginController::class, 'store'])->middleware('throttle:5,1')->name('client.login.store');
+    Route::post('/client/login', [ClientLoginController::class, 'store'])->middleware('throttle:5,1');
+    Route::get('/client/login', fn (): RedirectResponse => redirect()->route('client.login'))->name('client.login.legacy');
     Route::get('/forgot-password', [PasswordResetLinkController::class, 'create'])->name('password.request');
     Route::post('/forgot-password', [PasswordResetLinkController::class, 'store'])->name('password.email');
     Route::get('/reset-password/{token}', [NewPasswordController::class, 'create'])->name('password.reset');
@@ -249,6 +253,7 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
 });
 
 Route::middleware(['auth', 'tenant'])->group(function (): void {
+    Route::post('/clients/{client}/impersonate', [ClientImpersonationController::class, 'store'])->middleware('throttle:10,1')->name('clients.impersonate');
     Route::post('/users/{user}/impersonate', [UserImpersonationController::class, 'store'])->name('users.impersonate');
     Route::delete('/impersonation', [UserImpersonationController::class, 'destroy'])->name('impersonation.destroy');
 });

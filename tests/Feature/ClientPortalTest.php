@@ -6,14 +6,42 @@ use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\Module;
 use App\Models\Organization;
+use App\Models\OrganizationDomain;
 use App\Models\OrganizationModule;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\ClientService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 
 uses(RefreshDatabase::class);
+
+it('provides a friendly client login link and preserves the previous address', function () {
+    $this->get('/client')->assertOk()->assertSee('Access your loan account');
+    $this->get('/client/login')->assertRedirect('/client');
+    $this->post('/client/login', ['phone' => 'unknown-client', 'password' => 'incorrect-password'])
+        ->assertSessionHasErrors('phone');
+
+    expect(route('client.login', absolute: false))->toBe('/client')
+        ->and(route('client.login.store', absolute: false))->toBe('/client');
+});
+
+it('serves the client login on an organization custom domain', function () {
+    [$organization] = clientPortalFixture();
+    OrganizationDomain::create([
+        'organization_id' => $organization->id,
+        'domain' => 'clients.hope-sacco.test',
+        'type' => 'custom_domain',
+        'is_primary' => true,
+        'status' => 'active',
+        'verified_at' => now(),
+    ]);
+
+    $this->get('https://clients.hope-sacco.test/client')
+        ->assertOk()
+        ->assertSee('Access your loan account');
+});
 
 it('lets an approved client sign in by phone and forces a temporary password change', function () {
     [, , $member, $client] = clientPortalFixture();
@@ -51,6 +79,115 @@ it('allows only an eligible client without an open loan to request a loan', func
 
     $this->actingAs($member)->post(route('member.loan-applications.store'), $payload)->assertSessionHasErrors('loan');
     expect(Loan::count())->toBe(1);
+});
+
+it('automatically gives every newly registered client the default temporary portal password', function () {
+    [$organization, $branch, , , $officer] = clientPortalFixture();
+
+    $client = app(ClientService::class)->register([
+        'branch_id' => $branch->id,
+        'client_type' => 'individual',
+        'first_name' => 'Sarah',
+        'middle_name' => null,
+        'last_name' => 'Nansubuga',
+        'gender' => 'female',
+        'date_of_birth' => '1992-04-10',
+        'national_id' => 'CM90000002ABCD',
+        'phone' => '0701555666',
+        'email' => null,
+        'kyc_status' => 'pending',
+        'status' => 'active',
+    ], $officer);
+
+    $portalUser = $client->fresh()->user;
+
+    expect($portalUser)->not->toBeNull()
+        ->and($portalUser->isMember())->toBeTrue()
+        ->and($portalUser->organization_id)->toBe($organization->id)
+        ->and($portalUser->branch_id)->toBe($branch->id)
+        ->and($portalUser->must_change_password)->toBeTrue()
+        ->and(Hash::check('12345678', $portalUser->password))->toBeTrue();
+
+    $this->post(route('client.login.store'), [
+        'phone' => $client->client_number,
+        'password' => '12345678',
+    ])->assertRedirect(route('profile.edit'));
+});
+
+it('backfills and resets existing member portal accounts without changing staff-linked clients', function () {
+    [$organization, $branch, $member, $client, $officer] = clientPortalFixture();
+    $member->update(['password' => Hash::make('Old-Password-123!'), 'must_change_password' => false]);
+    $unlinkedClient = Client::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'officer_id' => $officer->id,
+        'user_id' => null,
+        'client_number' => $branch->code.'-C000002',
+        'client_type' => 'individual',
+        'first_name' => 'Grace',
+        'last_name' => 'Nakku',
+        'phone' => $client->phone,
+        'kyc_status' => 'pending',
+        'status' => 'active',
+    ]);
+    $staffLinkedClient = Client::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'officer_id' => $officer->id,
+        'user_id' => $officer->id,
+        'client_number' => $branch->code.'-C000003',
+        'client_type' => 'individual',
+        'first_name' => 'Staff',
+        'last_name' => 'Savings',
+        'phone' => '0701999888',
+        'kyc_status' => 'pending',
+        'status' => 'active',
+    ]);
+
+    $this->artisan('clients:provision-portal-access')->assertSuccessful();
+
+    expect(Hash::check('12345678', $member->fresh()->password))->toBeTrue()
+        ->and($member->fresh()->must_change_password)->toBeTrue()
+        ->and($unlinkedClient->fresh()->user?->isMember())->toBeTrue()
+        ->and(Hash::check('12345678', $unlinkedClient->fresh()->user->password))->toBeTrue()
+        ->and($staffLinkedClient->fresh()->user_id)->toBe($officer->id)
+        ->and($officer->fresh()->isMember())->toBeFalse();
+
+    $userCount = User::query()->count();
+    $this->artisan('clients:provision-portal-access')->assertSuccessful();
+    expect(User::query()->count())->toBe($userCount);
+
+    $this->post(route('client.login.store'), [
+        'phone' => $unlinkedClient->client_number,
+        'password' => '12345678',
+    ])->assertRedirect(route('profile.edit'));
+});
+
+it('allows organization admins to reset client passwords and blocks non-admin staff', function () {
+    [$organization, , $member, $client, $officer] = clientPortalFixture();
+    $administratorRole = Role::query()->firstOrCreate(['slug' => 'organization-admin'], ['name' => 'Organization Admin']);
+    $administrator = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => null,
+        'role_id' => $administratorRole->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($administrator)->post(route('clients.portal-access.store', $client), [
+        'password' => 'Admin-Reset-123!',
+        'password_confirmation' => 'Admin-Reset-123!',
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    expect(Hash::check('Admin-Reset-123!', $member->fresh()->password))->toBeTrue()
+        ->and($member->fresh()->must_change_password)->toBeTrue();
+
+    $this->actingAs($officer)->post(route('clients.portal-access.store', $client), [
+        'password' => 'Officer-Reset-123!',
+        'password_confirmation' => 'Officer-Reset-123!',
+    ])->assertRedirect(route('dashboard'))->assertSessionHas('warning');
+
+    expect(Hash::check('Admin-Reset-123!', $member->fresh()->password))->toBeTrue();
 });
 
 /** @return array{Organization, Branch, User, Client, User} */

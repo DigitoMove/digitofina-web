@@ -33,6 +33,7 @@ class DataImportService
         private readonly AuditLogger $audit,
         private readonly AccountNumberGenerator $numbers,
         private readonly LoanScheduleService $loanSchedules,
+        private readonly ClientPortalAccessService $portalAccess,
     ) {}
 
     /**
@@ -592,6 +593,11 @@ class DataImportService
             ->first();
         $isNewClient = ! $client;
         $client ??= Client::create($this->clientPayload($data, $user));
+
+        if ($isNewClient) {
+            $this->portalAccess->provisionDefaultAccess($client, $user);
+        }
+
         $client->loadMissing('branch');
 
         $savingsAccount = $this->ensureImportedClientSavingsAccount($client, $user);

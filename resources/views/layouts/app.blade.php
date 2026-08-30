@@ -311,8 +311,8 @@
                 @if($layoutImpersonator)
                     <div class="mb-4 flex flex-col justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-sm sm:flex-row sm:items-center">
                         <div>
-                            <span class="font-semibold">Acting as {{ auth()->user()->name }}</span>
-                            <span class="text-amber-800"> · {{ auth()->user()->role?->name }} at {{ $layoutOrganization?->name }}</span>
+                            <span class="font-semibold">Support session — Acting as {{ auth()->user()->name }}</span>
+                            <span class="text-amber-800"> · {{ auth()->user()->role?->name }} at {{ $layoutOrganization?->name }}. Actions are live and audited.</span>
                         </div>
                         <form method="POST" action="{{ route('impersonation.destroy') }}">
                             @csrf

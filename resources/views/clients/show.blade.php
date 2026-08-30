@@ -32,6 +32,7 @@
     $otherAccounts = ($savingsEnabled || $loansEnabled || $investmentsEnabled || $sharesEnabled || $fixedDepositsEnabled) ? $client->accounts->reject(fn ($account) => in_array($account->accountType?->category, ['savings', 'loan', 'current'], true)) : collect();
     $canCreateLoan = $loansEnabled && auth()->user()->can('create', \App\Models\Loan::class);
     $canDeleteClient = auth()->user()->can('delete', $client);
+    $canResetClientPortal = auth()->user()->can('resetPortalAccess', $client);
     $activeSavings = $basicSavingsAccounts->where('status', 'active')->count();
     $dormantSavings = $basicSavingsAccounts->where('status', 'dormant')->count();
     $activeCurrent = $currentAccounts->where('status', 'active')->count();
@@ -170,6 +171,14 @@
         <p class="df-muted">{{ $client->client_number }} · {{ $displayName }} · {{ $client->branch->name }}</p>
     </div>
     <div class="flex flex-wrap gap-2">
+        @can('impersonate', $client)
+            @if($client->user?->isMember() && $client->user->is_active && $client->user->status === 'active' && $client->status === 'active')
+                <form method="POST" action="{{ route('clients.impersonate', $client) }}">
+                    @csrf
+                    <button class="min-h-10 rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400">View as client</button>
+                </form>
+            @endif
+        @endcan
         @foreach ($accountDropdowns as [$label, $links])
             <details class="group relative">
                 <summary class="df-action-primary min-h-10 cursor-pointer list-none rounded-lg px-3 py-2">{{ $label }} <span class="ml-1 text-xs">▾</span></summary>
@@ -326,11 +335,11 @@
                 </div>
 
                 <div class="df-panel p-5 xl:col-span-2">
-                    @if($canUpdateClient)
+                    @if($canResetClientPortal)
                         <div class="mb-5 rounded-xl border border-brand-100 bg-brand-50 p-4">
                             <h2 class="font-semibold text-slate-950">Client portal access</h2>
                             <p class="mt-1 text-sm text-slate-600">Set or reset the temporary password for phone login. The client must change it after signing in.</p>
-                            <div class="mt-2 text-xs font-semibold text-slate-500">Login phone: {{ $client->phone }} · {{ $client->user_id ? 'Portal enabled' : 'Not enabled' }}</div>
+                            <div class="mt-2 text-xs font-semibold text-slate-500">Login: {{ $client->phone }} or {{ $client->client_number }} · {{ $client->user_id ? 'Portal enabled' : 'Not enabled' }}</div>
                             <form method="POST" action="{{ route('clients.portal-access.store', $client) }}" class="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]" autocomplete="off">
                                 @csrf
                                 <input name="password" type="password" minlength="8" autocomplete="new-password" placeholder="Temporary password" required>

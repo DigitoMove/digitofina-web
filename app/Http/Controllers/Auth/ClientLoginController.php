@@ -27,8 +27,13 @@ class ClientLoginController extends Controller
         $matches = User::query()
             ->with(['client', 'role', 'organization'])
             ->whereHas('role', fn ($query) => $query->where('slug', 'member'))
-            ->whereHas('client', fn ($query) => $query->where('status', 'active')->where('kyc_status', 'verified'))
-            ->whereIn('phone', PhoneNumber::variants($request->validated('phone')))
+            ->whereHas('client', fn ($query) => $query->where('status', 'active'))
+            ->where(function ($query) use ($request): void {
+                $login = $request->validated('phone');
+                $query
+                    ->whereIn('phone', PhoneNumber::variants($login))
+                    ->orWhereHas('client', fn ($clientQuery) => $clientQuery->where('client_number', $login));
+            })
             ->when($organizationId, fn ($query) => $query->where('organization_id', $organizationId))
             ->get()
             ->filter(fn (User $user): bool => Hash::check($request->validated('password'), $user->password));
@@ -38,7 +43,7 @@ class ClientLoginController extends Controller
 
             throw ValidationException::withMessages([
                 'phone' => $organizationId
-                    ? 'The phone number or password is incorrect, or this client is not yet approved.'
+                    ? 'The phone number, client number, or password is incorrect.'
                     : 'Use your organization login address, or contact your loan office for help.',
             ]);
         }
