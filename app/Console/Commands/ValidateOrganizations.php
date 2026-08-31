@@ -24,6 +24,7 @@ class ValidateOrganizations extends Command
         'loans',
         'loan_schedules',
         'loan_repayments',
+        'loan_disbursements',
         'guarantors',
         'collaterals',
         'savings_products',
@@ -62,6 +63,7 @@ class ValidateOrganizations extends Command
 
         $this->relationshipCheck($issues, 'loans', 'clients', 'client_id', 'Loans whose organization does not match the client');
         $this->relationshipCheck($issues, 'loan_repayments', 'loans', 'loan_id', 'Repayments whose organization does not match the loan');
+        $this->relationshipCheck($issues, 'loan_disbursements', 'loans', 'loan_id', 'Disbursements whose organization does not match the loan');
         $this->relationshipCheck($issues, 'loan_schedules', 'loans', 'loan_id', 'Loan schedules whose organization does not match the loan');
         $this->relationshipCheck($issues, 'guarantors', 'loans', 'loan_id', 'Guarantors whose organization does not match the loan');
         $this->relationshipCheck($issues, 'collaterals', 'loans', 'loan_id', 'Collaterals whose organization does not match the loan');

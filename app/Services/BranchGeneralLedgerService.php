@@ -59,6 +59,11 @@ class BranchGeneralLedgerService
         return $this->ensureAccount($branch, '5295');
     }
 
+    public function applicationFeesIncome(Branch $branch): ChartAccount
+    {
+        return $this->ensureAccount($branch, '4330');
+    }
+
     private function ensureAccount(Branch $branch, string $suffix): ChartAccount
     {
         $definition = collect($this->defaults())->firstWhere('suffix', $suffix);

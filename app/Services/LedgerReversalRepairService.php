@@ -31,9 +31,13 @@ class LedgerReversalRepairService
         ];
 
         $query = Transaction::query()
-            ->with(['reversal', 'journalEntries.lines'])
-            ->whereNotNull('reversed_by')
-            ->whereNotNull('reversed_at')
+            ->with(['reversal', 'reversalTransaction', 'journalEntries.lines'])
+            ->where(function (Builder $query): void {
+                $query->whereNotNull('reversed_by')
+                    ->orWhereNotNull('reversed_at')
+                    ->orWhere('status', 'reversed')
+                    ->orWhereHas('reversalTransaction');
+            })
             ->when($transactionId, fn (Builder $query, int $transactionId): Builder => $query->whereKey($transactionId))
             ->whereHas('journalEntries.lines')
             ->orderBy('id');
@@ -44,9 +48,9 @@ class LedgerReversalRepairService
 
         $query->get()->each(function (Transaction $original) use (&$summary, $dryRun, $actor): void {
             $summary['scanned']++;
-            $reversal = $original->reversal;
+            $reversal = $original->reversal ?: $original->reversalTransaction;
 
-            if (! $reversal) {
+            if (! $reversal || (int) $reversal->organization_id !== (int) $original->organization_id) {
                 return;
             }
 

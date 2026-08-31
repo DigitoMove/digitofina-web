@@ -251,7 +251,10 @@ class TransactionPostingService
                 }
 
                 $chartAccount = isset($journal['account_code'])
-                    ? ChartAccount::query()->where('code', $journal['account_code'])->first()
+                    ? ChartAccount::query()
+                        ->where('organization_id', $account->organization_id)
+                        ->where('code', $journal['account_code'])
+                        ->first()
                     : null;
                 $payload = $journal;
                 unset($payload['account_code']);

@@ -41,6 +41,7 @@ class LoanService
         private LoanApplicationFeeService $applicationFees,
         private BusinessCalendarService $calendar,
         private InAppNotificationService $notifications,
+        private BranchGeneralLedgerService $generalLedger,
     ) {}
 
     public function approve(Loan $loan, User $approver, float $approvedAmount, ?string $comments = null): Loan
@@ -261,7 +262,10 @@ class LoanService
             ['account_code' => '2100', 'entry_type' => 'debit', 'memo' => 'Client savings liability reduced for loan application fee'],
             ['account_code' => $this->applicationFeeIncomeCode($loan), 'entry_type' => 'credit', 'memo' => 'Loan application fee income on rejected loan'],
         ] as $journal) {
-            $chartAccount = ChartAccount::query()->where('code', $journal['account_code'])->first();
+            $chartAccount = ChartAccount::query()
+                ->where('organization_id', $savings->organization_id)
+                ->where('code', $journal['account_code'])
+                ->first();
 
             JournalEntry::create([
                 'organization_id' => $savings->organization_id,
@@ -917,7 +921,10 @@ class LoanService
             ['account_code' => '2100', 'entry_type' => 'debit', 'memo' => 'Client savings liability reduced for loan application fee'],
             ['account_code' => $this->applicationFeeIncomeCode($loan), 'entry_type' => 'credit', 'memo' => 'Loan application fee income paid from savings'],
         ] as $journal) {
-            $chartAccount = ChartAccount::query()->where('code', $journal['account_code'])->first();
+            $chartAccount = ChartAccount::query()
+                ->where('organization_id', $savings->organization_id)
+                ->where('code', $journal['account_code'])
+                ->first();
 
             JournalEntry::create([
                 'organization_id' => $savings->organization_id,
@@ -1106,14 +1113,8 @@ class LoanService
     private function applicationFeeIncomeCode(Loan $loan): string
     {
         $branch = $loan->branch;
-        $branchCode = $branch?->code;
-
-        if ($branchCode) {
-            $branchAccountCode = $branchCode.'-4330';
-
-            if (ChartAccount::query()->where('code', $branchAccountCode)->where('is_active', true)->exists()) {
-                return $branchAccountCode;
-            }
+        if ($branch) {
+            return $this->generalLedger->applicationFeesIncome($branch)->code;
         }
 
         return '4200';

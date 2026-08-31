@@ -1225,7 +1225,6 @@ it('repairs old reversed ledger journals that are missing reversal lines', funct
         'description' => 'Old merchant code drawer posting',
         'status' => 'reversed',
         'posted_at' => now(),
-        'reversed_at' => now(),
     ]);
     $reversal = Transaction::create([
         'organization_id' => $organization->id,
@@ -1241,7 +1240,6 @@ it('repairs old reversed ledger journals that are missing reversal lines', funct
         'status' => 'posted',
         'posted_at' => now(),
     ]);
-    $original->update(['reversed_by' => $reversal->id]);
     $journal = JournalEntry::create([
         'organization_id' => $organization->id,
         'branch_id' => $branch->id,

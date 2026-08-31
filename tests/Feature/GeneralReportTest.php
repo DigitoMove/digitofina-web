@@ -12,10 +12,13 @@ use App\Models\Module;
 use App\Models\Organization;
 use App\Models\OrganizationModule;
 use App\Models\Role;
+use App\Models\Transaction;
+use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\ModuleService;
 use App\Services\ReportCatalogService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -115,6 +118,68 @@ it('generates the projected simplified income statement from scheduled interest'
         ->and($rows['Interest - Projected Loan']['Explanation'])->toContain('projected')
         ->and($rows['Total Income / Money In']['Amount'])->toBe('UGX 210.00')
         ->and($report['summary']['Income'])->toBe('UGX 210.00');
+});
+
+it('includes legacy and rejected application fees in income and profitability reports', function () {
+    $user = generalReportUser();
+    $this->actingAs($user);
+    $branch = Branch::create(['code' => 'FEE1', 'name' => 'Fee Branch', 'is_active' => true, 'status' => 'active']);
+    $product = generalReportLoanProduct('Fee Loan', 'FEE-LOAN');
+    $loan = generalReportRepayment($branch, $product, 0, 0);
+
+    DB::table('loan_disbursements')->insert([
+        'organization_id' => null,
+        'branch_id' => $branch->id,
+        'loan_id' => $loan->id,
+        'disbursed_by' => $user->id,
+        'disbursed_amount' => 1_000,
+        'fees_deducted' => 75,
+        'net_amount' => 925,
+        'payment_method' => 'cash',
+        'transaction_reference' => 'LEGACY-FEE-001',
+        'disbursement_date' => today()->startOfDay(),
+        'status' => 'successful',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $feeType = TransactionType::create([
+        'organization_id' => $branch->organization_id,
+        'name' => 'Loan Application Fee',
+        'code' => 'loan_application_fee',
+        'direction' => 'debit',
+        'affects_cash_drawer' => false,
+        'is_active' => true,
+    ]);
+    Transaction::create([
+        'organization_id' => $branch->organization_id,
+        'transaction_type_id' => $feeType->id,
+        'branch_id' => $branch->id,
+        'user_id' => $user->id,
+        'reference' => 'REJECTED-FEE-001',
+        'amount' => 25,
+        'description' => 'Loan application fee for rejected loan FEE-LN-001',
+        'status' => 'posted',
+        'posted_at' => now(),
+    ]);
+
+    $filters = [
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+        'branch_id' => $branch->id,
+    ];
+    $reports = app(ReportCatalogService::class);
+    $simplified = $reports->generate('general-income-statement', $filters, $user);
+    $accounting = $reports->generate('income-statement', $filters, $user);
+    $profitability = $reports->generate('profitability-summary', $filters, $user);
+    $feeDetails = $reports->generate('application-fees-income', $filters, $user);
+
+    expect($simplified['rows']->keyBy('Source')['Application Fees']['Amount'])->toBe('UGX 100.00')
+        ->and($accounting['rows']->keyBy('Account')['Application Fees Income (Reconciled)']['Amount'])->toBe('UGX 100.00')
+        ->and($accounting['summary']['Income'])->toBe('UGX 100.00')
+        ->and($profitability['rows']->keyBy('Metric')['Application fees received']['Amount'])->toBe('UGX 100.00')
+        ->and($feeDetails['summary']['Application fees charged'])->toBe('UGX 100.00')
+        ->and($feeDetails['rows']->pluck('Loan'))->toContain('Rejected loan application');
 });
 
 function generalReportUser(): User

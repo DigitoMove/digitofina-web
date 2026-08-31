@@ -61,6 +61,11 @@ class Transaction extends Model
         return $this->belongsTo(self::class, 'reversed_by');
     }
 
+    public function reversalTransaction(): HasOne
+    {
+        return $this->hasOne(self::class, 'reversal_of_id');
+    }
+
     public function originalTransaction(): BelongsTo
     {
         return $this->belongsTo(self::class, 'reversal_of_id');

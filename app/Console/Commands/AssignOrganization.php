@@ -32,6 +32,7 @@ class AssignOrganization extends Command
         ['table' => 'loan_applications', 'branch' => 'branch_id', 'user' => ['created_by', 'officer_id']],
         ['table' => 'loan_schedules', 'parent' => ['table' => 'loans', 'local' => 'loan_id', 'parent' => 'id']],
         ['table' => 'loan_repayments', 'branch' => 'branch_id', 'user' => ['received_by'], 'parent' => ['table' => 'loans', 'local' => 'loan_id', 'parent' => 'id']],
+        ['table' => 'loan_disbursements', 'branch' => 'branch_id', 'user' => ['disbursed_by'], 'parent' => ['table' => 'loans', 'local' => 'loan_id', 'parent' => 'id']],
         ['table' => 'guarantors', 'parent' => ['table' => 'loans', 'local' => 'loan_id', 'parent' => 'id']],
         ['table' => 'collaterals', 'parent' => ['table' => 'loans', 'local' => 'loan_id', 'parent' => 'id']],
         ['table' => 'savings_products', 'user' => ['created_by']],

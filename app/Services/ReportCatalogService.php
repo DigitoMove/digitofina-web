@@ -1181,6 +1181,29 @@ class ReportCatalogService
     {
         $income = $this->ledgerBalances(['income'], $from, $to, $branchId, $user, false);
         $expenses = $this->ledgerBalances(['expense'], $from, $to, $branchId, $user, false);
+        $recordedApplicationFees = max(
+            $this->applicationFeeAccountBalance($income),
+            $this->applicationFeeLedgerIncomeTotal($from, $to, $branchId, $user),
+        );
+        $unpostedApplicationFees = max(
+            0,
+            $this->applicationFeeOperationalTotal($from, $to, $branchId, $user) - $recordedApplicationFees,
+        );
+
+        if ($unpostedApplicationFees > 0.005) {
+            $income->push([
+                'id' => null,
+                'code' => '',
+                'account' => 'Application Fees Income (Reconciled)',
+                'type' => 'income',
+                'normal_balance' => 'credit',
+                'debit' => 0.0,
+                'credit' => $unpostedApplicationFees,
+                'balance' => $unpostedApplicationFees,
+                'has_activity' => true,
+            ]);
+        }
+
         $totalIncome = (float) $income->sum('balance');
         $totalExpenses = (float) $expenses->sum('balance');
         $netIncome = $totalIncome - $totalExpenses;
@@ -1259,18 +1282,10 @@ class ReportCatalogService
 
         $incomeAccounts = $this->ledgerBalances(['income'], $from, $to, $branchId, $user, false);
         $expenseAccounts = $this->ledgerBalances(['expense'], $from, $to, $branchId, $user, false);
-        $applicationFeesFromLedger = (float) $incomeAccounts
-            ->filter(fn (array $account): bool => str_contains(Str::lower((string) $account['account']), 'application fee'))
-            ->sum('balance');
-        $applicationFees = $applicationFeesFromLedger > 0
-            ? $applicationFeesFromLedger
-            : (float) LoanDisbursement::query()
-                ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
-                ->whereBetween('disbursement_date', [$from, $to])
-                ->where('status', 'successful')
-                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-                ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
-                ->sum('fees_deducted');
+        $applicationFees = max(
+            $this->applicationFeeAccountBalance($incomeAccounts),
+            $this->applicationFeeOperationalTotal($from, $to, $branchId, $user),
+        );
         $penalties = (float) (clone $repayments)->sum('penalty_paid');
         $otherBusinessIncome = (float) $incomeAccounts
             ->filter(fn (array $account): bool => str_contains(Str::lower((string) $account['account']), 'other business income'))
@@ -1425,14 +1440,10 @@ class ReportCatalogService
 
     private function applicationFeesIncome(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
     {
-        $query = LoanDisbursement::query()
+        $query = $this->loanDisbursementsQuery($from, $to, $branchId, $user)
             ->with(['branch', 'loan.client', 'disbursedBy'])
-            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
-            ->whereBetween('disbursement_date', [$from, $to])
             ->where('status', 'successful')
-            ->where('fees_deducted', '>', 0)
-            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
+            ->where('fees_deducted', '>', 0);
 
         $rows = (clone $query)->orderByDesc('disbursement_date')->limit($limit)->get()->map(fn (LoanDisbursement $disbursement): array => [
             'Date' => $disbursement->disbursement_date?->format('d M Y'),
@@ -1443,18 +1454,107 @@ class ReportCatalogService
             'Application Fee Charged' => $this->money((float) $disbursement->fees_deducted),
             'Net Credited' => $this->money((float) $disbursement->net_amount),
             'Disbursed By' => $disbursement->disbursedBy?->name ?? 'N/A',
-        ]);
+        ])->concat(
+            $this->rejectedApplicationFeeTransactionsQuery($from, $to, $branchId, $user)
+                ->with(['branch', 'account.client', 'user'])
+                ->latest('posted_at')
+                ->limit($limit)
+                ->get()
+                ->map(fn (Transaction $transaction): array => [
+                    'Date' => $transaction->posted_at?->format('d M Y'),
+                    'Branch' => $transaction->branch?->name ?? 'N/A',
+                    'Loan' => 'Rejected loan application',
+                    'Client' => $transaction->account?->client?->full_name ?? 'N/A',
+                    'Gross Principal' => $this->money(0),
+                    'Application Fee Charged' => $this->money((float) $transaction->amount),
+                    'Net Credited' => $this->money(0),
+                    'Disbursed By' => $transaction->user?->name ?? 'N/A',
+                ]),
+        )->take($limit)->values();
+
+        $rejectedFees = (float) $this->rejectedApplicationFeeTransactionsQuery($from, $to, $branchId, $user)->sum('amount');
 
         return [
             ['Date', 'Branch', 'Loan', 'Client', 'Gross Principal', 'Application Fee Charged', 'Net Credited', 'Disbursed By'],
             $rows,
             [
-                'Application fees charged' => $this->money((float) (clone $query)->sum('fees_deducted')),
+                'Application fees charged' => $this->money((float) (clone $query)->sum('fees_deducted') + $rejectedFees),
                 'Loans disbursed' => number_format((clone $query)->count()),
                 'Gross principal disbursed' => $this->money((float) (clone $query)->sum('disbursed_amount')),
                 'Net credited to savings' => $this->money((float) (clone $query)->sum('net_amount')),
             ],
         ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $incomeAccounts
+     */
+    private function applicationFeeAccountBalance(Collection $incomeAccounts): float
+    {
+        return (float) $incomeAccounts
+            ->filter(fn (array $account): bool => str_contains(Str::lower((string) $account['account']), 'application fee'))
+            ->sum('balance');
+    }
+
+    private function applicationFeeOperationalTotal(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): float
+    {
+        $disbursementFees = (float) $this->loanDisbursementsQuery($from, $to, $branchId, $user)
+            ->where('status', 'successful')
+            ->sum('fees_deducted');
+        $rejectedFees = (float) $this->rejectedApplicationFeeTransactionsQuery($from, $to, $branchId, $user)
+            ->sum('amount');
+
+        return $disbursementFees + $rejectedFees;
+    }
+
+    private function applicationFeeLedgerIncomeTotal(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): float
+    {
+        return (float) JournalEntry::query()
+            ->where('status', 'posted')
+            ->whereBetween(DB::raw('coalesce(posted_at, created_at)'), [$from, $to])
+            ->whereHas('chartAccount', fn (Builder $query): Builder => $query->where('type', 'income'))
+            ->where(function (Builder $query): void {
+                $query->where('memo', 'like', '%application fee%')
+                    ->orWhere('description', 'like', '%application fee%');
+            })
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
+            ->get()
+            ->sum(fn (JournalEntry $entry): float => $entry->entry_type === 'credit'
+                ? (float) $entry->amount
+                : -(float) $entry->amount);
+    }
+
+    private function loanDisbursementsQuery(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): Builder
+    {
+        $organizationId = $this->reportOrganizationId($user);
+
+        return LoanDisbursement::query()
+            ->withoutGlobalScope('tenant')
+            ->whereHas('branch', fn (Builder $query): Builder => $query
+                ->withoutGlobalScope('tenant')
+                ->where('organization_id', $organizationId))
+            ->whereBetween('disbursement_date', [$from, $to])
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
+    }
+
+    private function rejectedApplicationFeeTransactionsQuery(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): Builder
+    {
+        $organizationId = $this->reportOrganizationId($user);
+
+        return Transaction::query()
+            ->withoutGlobalScope('tenant')
+            ->whereHas('branch', fn (Builder $query): Builder => $query
+                ->withoutGlobalScope('tenant')
+                ->where('organization_id', $organizationId))
+            ->whereHas('type', fn (Builder $query): Builder => $query->where('code', 'loan_application_fee'))
+            ->where('description', 'like', '%rejected loan%')
+            ->where('status', 'posted')
+            ->whereNull('reversal_of_id')
+            ->whereNull('reversed_by')
+            ->whereBetween('posted_at', [$from, $to])
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
     }
 
     /**
@@ -1728,13 +1828,7 @@ class ReportCatalogService
 
     private function profitabilitySummary(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, string $interestBasis): array
     {
-        $applicationFees = (float) LoanDisbursement::query()
-            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
-            ->whereBetween('disbursement_date', [$from, $to])
-            ->where('status', 'successful')
-            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
-            ->sum('fees_deducted');
+        $applicationFees = $this->applicationFeeOperationalTotal($from, $to, $branchId, $user);
         $interestAccrued = (float) LoanSchedule::query()
             ->excludingCancelledLoans()
             ->whereBetween('due_date', [$from, $to])
@@ -1846,12 +1940,7 @@ class ReportCatalogService
      */
     private function branchProfitabilityMetrics(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, string $interestBasis): array
     {
-        $applicationFees = (float) LoanDisbursement::query()
-            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
-            ->whereBetween('disbursement_date', [$from, $to])
-            ->where('status', 'successful')
-            ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
-            ->sum('fees_deducted');
+        $applicationFees = $this->applicationFeeOperationalTotal($from, $to, $branchId, $user);
         $journalIncome = $this->journalTypeNet('income', $from, $to, $branchId, $user);
         $expenses = $this->journalTypeNet('expense', $from, $to, $branchId, $user);
         $interest = (float) LoanRepayment::query()
@@ -2012,13 +2101,9 @@ class ReportCatalogService
 
     private function loanDisbursements(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
     {
-        $query = LoanDisbursement::query()
+        $query = $this->loanDisbursementsQuery($from, $to, $branchId, $user)
             ->with(['loan.client', 'disbursedBy'])
-            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
-            ->whereBetween('disbursement_date', [$from, $to])
-            ->when($payload['status'] ?? 'successful', fn (Builder $query, string $status): Builder => $query->where('status', $status))
-            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
+            ->when($payload['status'] ?? 'successful', fn (Builder $query, string $status): Builder => $query->where('status', $status));
 
         $rows = $query->latest()->limit($limit)->get()->map(fn (LoanDisbursement $disbursement): array => [
             'Date' => $disbursement->disbursement_date?->format('d M Y'),
@@ -2587,6 +2672,7 @@ class ReportCatalogService
     private function journalTypeNet(string $type, CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): float
     {
         return (float) JournalEntry::query()
+            ->where('status', 'posted')
             ->whereBetween(DB::raw('coalesce(posted_at, created_at)'), [$from, $to])
             ->whereHas('chartAccount', fn (Builder $query): Builder => $query->where('type', $type))
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))

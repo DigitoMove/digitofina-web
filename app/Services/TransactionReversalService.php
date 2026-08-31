@@ -62,6 +62,7 @@ class TransactionReversalService
             $this->reverseDrawerMovement($original, $checker);
 
             $reversal = Transaction::create([
+                'organization_id' => $original->organization_id,
                 'account_id' => $original->account_id,
                 'transaction_type_id' => $original->transaction_type_id,
                 'drawer_session_id' => $original->drawer_session_id,
