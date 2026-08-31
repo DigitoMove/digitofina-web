@@ -520,8 +520,10 @@ it('lets an admin appraise approve and disburse a loan in one shortcut', functio
 
 it('charges the disbursement application fee from savings when savings can cover it', function () {
     $user = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($user, ['loans', 'reports']);
     $client = loanWorkflowClient($user);
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
     $savings = loanWorkflowSavingsAccount($user, $client);
 
     SystemSetting::withoutGlobalScope('tenant')->create([
@@ -533,6 +535,7 @@ it('charges the disbursement application fee from savings when savings can cover
     ]);
 
     $loan = Loan::create([
+        'organization_id' => $organization->id,
         'client_id' => $client->id,
         'branch_id' => $client->branch_id,
         'loan_product_id' => $product->id,
@@ -574,8 +577,10 @@ it('charges the disbursement application fee from savings when savings can cover
 
 it('deducts the disbursement application fee from proceeds when savings cannot cover it', function () {
     $user = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($user, ['loans', 'reports']);
     $client = loanWorkflowClient($user);
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
     $savings = loanWorkflowSavingsAccount($user, $client);
     $savings->update(['balance' => 10_000]);
 
@@ -588,6 +593,7 @@ it('deducts the disbursement application fee from proceeds when savings cannot c
     ]);
 
     $loan = Loan::create([
+        'organization_id' => $organization->id,
         'client_id' => $client->id,
         'branch_id' => $client->branch_id,
         'loan_product_id' => $product->id,

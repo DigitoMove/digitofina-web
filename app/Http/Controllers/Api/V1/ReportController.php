@@ -35,7 +35,7 @@ class ReportController extends Controller
 {
     public function dashboard(Request $request, LoanVisibilityService $visibility): JsonResponse
     {
-        abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->authorizeReportAccess($request);
         $moduleEnabled = fn (string $module): bool => $this->moduleEnabled($request, $module);
 
         return ApiResponse::data(array_filter([
@@ -56,7 +56,7 @@ class ReportController extends Controller
 
     public function clients(Request $request): JsonResponse
     {
-        abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->authorizeReportAccess($request);
         $this->requireModule($request, 'savings');
 
         $rows = ApiSecurity::scopeTenant(Client::query(), $request->user())
@@ -70,7 +70,7 @@ class ReportController extends Controller
 
     public function savings(Request $request): JsonResponse
     {
-        abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->authorizeReportAccess($request);
         $this->requireModule($request, 'savings');
 
         $accountsByStatus = ApiSecurity::scopeTenant(SavingsAccount::query(), $request->user())
@@ -97,7 +97,7 @@ class ReportController extends Controller
 
     public function savingsAnalytics(Request $request): JsonResponse
     {
-        abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->authorizeReportAccess($request);
         $this->requireModule($request, 'loans');
 
         $monthStart = today()->startOfMonth();
@@ -144,7 +144,7 @@ class ReportController extends Controller
 
     public function loans(Request $request): JsonResponse
     {
-        abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->authorizeReportAccess($request);
         $this->requireModule($request, 'loans');
 
         $rows = ApiSecurity::scopeTenant(Loan::query(), $request->user())
@@ -162,7 +162,7 @@ class ReportController extends Controller
 
     public function arrears(Request $request, LoanVisibilityService $visibility): JsonResponse
     {
-        abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->authorizeReportAccess($request);
         abort_if($request->user()->isTellerCashier(), 403);
         $this->requireModule($request, 'loans');
 
@@ -174,7 +174,7 @@ class ReportController extends Controller
 
     public function tellers(Request $request): JsonResponse
     {
-        abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->authorizeReportAccess($request);
         $this->requireModule($request, 'investments');
 
         return ApiResponse::collection(
@@ -185,7 +185,7 @@ class ReportController extends Controller
 
     public function branchPerformance(Request $request): JsonResponse
     {
-        abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->authorizeReportAccess($request);
 
         return ApiResponse::collection(
             BranchPerformanceResource::collection(ApiSecurity::scopeTenant(Branch::query(), $request->user())->withCount(['clients'])->withSum('savingsAccounts', 'current_balance')->paginate($request->integer('per_page', 20))),
@@ -195,7 +195,7 @@ class ReportController extends Controller
 
     public function investments(Request $request): JsonResponse
     {
-        abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->authorizeReportAccess($request);
 
         $accounts = ApiSecurity::scopeTenant(InvestmentAccount::query(), $request->user());
         $transactions = ApiSecurity::scopeTenant(InvestmentTransaction::query(), $request->user());
@@ -240,6 +240,7 @@ class ReportController extends Controller
     public function export(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('export-reports'), 403);
+        $organizationId = $this->activeOrganizationId($request);
 
         $data = $request->validate([
             'report_type' => ['required', 'string', 'max:80'],
@@ -248,7 +249,7 @@ class ReportController extends Controller
         ]);
 
         $export = ReportExport::create([
-            'organization_id' => app(TenantContext::class)->id() ?: $request->user()->organization_id,
+            'organization_id' => $organizationId,
             'branch_id' => $request->user()->branch_id,
             'requested_by' => $request->user()->id,
             'report_type' => $data['report_type'],
@@ -274,5 +275,20 @@ class ReportController extends Controller
     private function requireModule(Request $request, string $module): void
     {
         abort_unless($this->moduleEnabled($request, $module), 403, 'This module is disabled for your organization.');
+    }
+
+    private function authorizeReportAccess(Request $request): void
+    {
+        abort_unless($request->user()->canPerform('view-reports'), 403);
+        $this->activeOrganizationId($request);
+    }
+
+    private function activeOrganizationId(Request $request): int
+    {
+        $organizationId = app(TenantContext::class)->id() ?: $request->user()->organization_id;
+
+        abort_unless($organizationId, 422, 'Select an active organization before generating a report.');
+
+        return (int) $organizationId;
     }
 }

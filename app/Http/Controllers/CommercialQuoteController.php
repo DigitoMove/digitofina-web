@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\CreateCommercialQuoteRequest;
 use App\Http\Requests\IssueCommercialQuoteRequest;
 use App\Http\Requests\StoreCommercialQuoteRequest;
 use App\Models\CommercialQuote;
@@ -30,6 +31,7 @@ class CommercialQuoteController extends Controller
         return view('commercial-quotes.index', [
             'quotes' => CommercialQuote::query()
                 ->with(['organization', 'requester', 'issuer', 'subscription', 'hostingFee'])
+                ->whereIn('billing_type', ['subscription', 'one_time'])
                 ->when(! $user->hasRole('super-admin'), fn (Builder $query): Builder => $query->where('organization_id', $user->organization_id))
                 ->latest('id')
                 ->paginate(20),
@@ -56,5 +58,13 @@ class CommercialQuoteController extends Controller
         $billing->issue($commercialQuote, $request->user(), $request->validated());
 
         return redirect()->route('commercial-quotes.index')->with('status', "Quote {$commercialQuote->quote_number} issued.");
+    }
+
+    public function storeForOrganization(CreateCommercialQuoteRequest $request, QuoteBillingService $billing): RedirectResponse
+    {
+        $organization = Organization::query()->findOrFail($request->integer('organization_id'));
+        $quote = $billing->createAndIssue($organization, $request->user(), $request->validated());
+
+        return redirect()->route('commercial-quotes.index')->with('status', "Quote {$quote->quote_number} created and sent to {$organization->name}.");
     }
 }

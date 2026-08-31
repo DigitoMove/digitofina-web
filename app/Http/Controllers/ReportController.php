@@ -19,12 +19,13 @@ class ReportController extends Controller
     public function index(Request $request, ReportCatalogService $reports): View
     {
         $this->authorizeReportCatalogAccess($request->user());
+        $organizationId = $this->activeOrganizationId($request);
 
         return view('reports.index', [
             'groups' => $reports->grouped($request->user()),
             'priorityReports' => $reports->priorityReports($request->user()),
-            'branches' => Branch::query()->orderBy('name')->get(),
-            'chartAccounts' => $this->ledgerAccountOptions($request),
+            'branches' => Branch::query()->where('organization_id', $organizationId)->orderBy('name')->get(),
+            'chartAccounts' => $this->ledgerAccountOptions($request, $organizationId),
             'canChooseBranch' => ApiSecurity::hasGlobalBranchAccess($request->user()),
             'defaultFrom' => today()->toDateString(),
             'defaultTo' => now()->toDateString(),
@@ -35,7 +36,7 @@ class ReportController extends Controller
     {
         $this->authorizeReportCatalogAccess($request->user());
 
-        $organizationId = app(TenantContext::class)->id() ?: $request->user()->organization_id;
+        $organizationId = $this->activeOrganizationId($request);
         $data = $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
@@ -53,8 +54,8 @@ class ReportController extends Controller
         }
 
         return view('reports.show', $reports->generate($report, $data, $request->user()) + [
-            'branches' => Branch::query()->orderBy('name')->get(),
-            'chartAccounts' => $this->ledgerAccountOptions($request),
+            'branches' => Branch::query()->where('organization_id', $organizationId)->orderBy('name')->get(),
+            'chartAccounts' => $this->ledgerAccountOptions($request, $organizationId),
             'canChooseBranch' => ApiSecurity::hasGlobalBranchAccess($request->user()),
         ]);
     }
@@ -62,10 +63,11 @@ class ReportController extends Controller
     /**
      * @return EloquentCollection<int, ChartAccount>
      */
-    private function ledgerAccountOptions(Request $request): EloquentCollection
+    private function ledgerAccountOptions(Request $request, int $organizationId): EloquentCollection
     {
         return ChartAccount::query()
             ->with('branch')
+            ->where('organization_id', $organizationId)
             ->where('is_active', true)
             ->whereNull('merged_into_id')
             ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), function (Builder $query) use ($request): void {
@@ -75,6 +77,15 @@ class ReportController extends Controller
             })
             ->orderBy('code')
             ->get();
+    }
+
+    private function activeOrganizationId(Request $request): int
+    {
+        $organizationId = app(TenantContext::class)->id() ?: $request->user()->organization_id;
+
+        abort_unless($organizationId, 403, 'Select an organization before opening reports.');
+
+        return (int) $organizationId;
     }
 
     private function authorizeReportCatalogAccess(User $user): void

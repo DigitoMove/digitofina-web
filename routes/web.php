@@ -84,6 +84,7 @@ Route::get('/link-preview.png', LinkPreviewController::class)->name('link-previe
 Route::middleware(['auth', 'tenant'])->group(function (): void {
     Route::get('/billing/quotes', [CommercialQuoteController::class, 'index'])->name('commercial-quotes.index');
     Route::post('/billing/quotes', [CommercialQuoteController::class, 'store'])->middleware('throttle:6,1')->name('commercial-quotes.store');
+    Route::post('/billing/quotes/organizations', [CommercialQuoteController::class, 'storeForOrganization'])->middleware('throttle:6,1')->name('commercial-quotes.organizations.store');
     Route::put('/billing/quotes/{commercialQuote}', [CommercialQuoteController::class, 'issue'])->name('commercial-quotes.issue');
     Route::post('/billing/quotes/{commercialQuote}/payment', [QuotePaymentController::class, 'store'])->middleware('throttle:6,1')->name('commercial-quotes.pay');
     Route::put('/billing/nylon-pay', NylonPaySettingController::class)->name('nylon-pay.settings.update');

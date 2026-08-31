@@ -14,6 +14,7 @@ use App\Models\JournalLine;
 use App\Services\AuditLogger;
 use App\Services\FinancialControlService;
 use App\Services\JournalEntryService;
+use App\Services\TenantContext;
 use App\Support\ApiQuery;
 use App\Support\ApiResponse;
 use App\Support\ApiSecurity;
@@ -26,6 +27,7 @@ class AccountingController extends Controller
     public function chartOfAccounts(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-accounting') || $request->user()->canPerform('view-reports'), 403);
+        $this->activeOrganizationId($request);
 
         $accounts = ApiQuery::apply(
             ApiSecurity::scopeTenant(ChartAccount::query(), $request->user()),
@@ -43,6 +45,7 @@ class AccountingController extends Controller
     public function journalEntries(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('manage-accounting') || $request->user()->canPerform('view-reports'), 403);
+        $this->activeOrganizationId($request);
 
         $journals = ApiQuery::apply(
             ApiSecurity::scopeTenant(JournalEntry::query(), $request->user())->with('lines.chartAccount'),
@@ -98,11 +101,12 @@ class AccountingController extends Controller
     public function trialBalance(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports') || $request->user()->canPerform('manage-accounting'), 403);
+        $organizationId = $this->activeOrganizationId($request);
 
         $rows = JournalLine::query()
             ->join('chart_accounts', 'journal_lines.chart_account_id', '=', 'chart_accounts.id')
             ->join('journal_entries', 'journal_lines.journal_entry_id', '=', 'journal_entries.id')
-            ->when($request->user()->organization_id, fn ($query, int $organizationId) => $query->where('journal_entries.organization_id', $organizationId))
+            ->where('journal_entries.organization_id', $organizationId)
             ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn ($query) => $query->where('journal_entries.branch_id', $request->user()->branch_id))
             ->select('chart_accounts.code', 'chart_accounts.name', 'chart_accounts.type', DB::raw('sum(journal_lines.debit) as debit'), DB::raw('sum(journal_lines.credit) as credit'))
             ->groupBy('chart_accounts.id', 'chart_accounts.code', 'chart_accounts.name', 'chart_accounts.type')
@@ -127,6 +131,7 @@ class AccountingController extends Controller
     public function generalLedger(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports') || $request->user()->canPerform('manage-accounting'), 403);
+        $this->activeOrganizationId($request);
 
         $linesQuery = JournalLine::query()
             ->with(['journalEntry', 'chartAccount'])
@@ -167,26 +172,28 @@ class AccountingController extends Controller
     {
         abort_unless($request->user()->canPerform('view-reports') || $request->user()->canPerform('manage-accounting'), 403);
 
-        return ApiResponse::data($this->statementRows(['income', 'expenses', 'expense']), 'Income statement retrieved.');
+        return ApiResponse::data($this->statementRows(['income', 'expenses', 'expense'], $request), 'Income statement retrieved.');
     }
 
     public function balanceSheet(Request $request): JsonResponse
     {
         abort_unless($request->user()->canPerform('view-reports') || $request->user()->canPerform('manage-accounting'), 403);
 
-        return ApiResponse::data($this->statementRows(['assets', 'asset', 'liabilities', 'liability', 'equity']), 'Balance sheet retrieved.');
+        return ApiResponse::data($this->statementRows(['assets', 'asset', 'liabilities', 'liability', 'equity'], $request), 'Balance sheet retrieved.');
     }
 
     /**
      * @param  array<int, string>  $types
      */
-    private function statementRows(array $types): array
+    private function statementRows(array $types, Request $request): array
     {
+        $organizationId = $this->activeOrganizationId($request);
+
         return JournalLine::query()
             ->join('chart_accounts', 'journal_lines.chart_account_id', '=', 'chart_accounts.id')
             ->join('journal_entries', 'journal_lines.journal_entry_id', '=', 'journal_entries.id')
-            ->when(request()->user()?->organization_id, fn ($query, int $organizationId) => $query->where('journal_entries.organization_id', $organizationId))
-            ->when(request()->user() && ! ApiSecurity::hasGlobalBranchAccess(request()->user()), fn ($query) => $query->where('journal_entries.branch_id', request()->user()->branch_id))
+            ->where('journal_entries.organization_id', $organizationId)
+            ->when(! ApiSecurity::hasGlobalBranchAccess($request->user()), fn ($query) => $query->where('journal_entries.branch_id', $request->user()->branch_id))
             ->whereIn('chart_accounts.type', $types)
             ->select('chart_accounts.code', 'chart_accounts.name', 'chart_accounts.type', DB::raw('sum(journal_lines.debit) as debit'), DB::raw('sum(journal_lines.credit) as credit'))
             ->groupBy('chart_accounts.id', 'chart_accounts.code', 'chart_accounts.name', 'chart_accounts.type')
@@ -194,5 +201,14 @@ class AccountingController extends Controller
             ->get()
             ->map(fn ($row) => $row->toArray() + ['balance' => (float) $row->credit - (float) $row->debit])
             ->all();
+    }
+
+    private function activeOrganizationId(Request $request): int
+    {
+        $organizationId = app(TenantContext::class)->id() ?: $request->user()->organization_id;
+
+        abort_unless($organizationId, 422, 'Select an active organization before generating a report.');
+
+        return (int) $organizationId;
     }
 }

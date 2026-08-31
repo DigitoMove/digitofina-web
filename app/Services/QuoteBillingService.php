@@ -51,6 +51,27 @@ class QuoteBillingService
         return $quote;
     }
 
+    /** @param array{billing_type: string, subscription_months?: int|null, requested_scope: string, amount: numeric-string|int|float, currency: string, valid_until: string, terms?: string|null} $data */
+    public function createAndIssue(Organization $organization, User $issuer, array $data): CommercialQuote
+    {
+        return DB::transaction(function () use ($organization, $issuer, $data): CommercialQuote {
+            $quote = CommercialQuote::create([
+                'organization_id' => $organization->id,
+                'requested_by' => null,
+                'quote_number' => 'DFQ-'.now()->format('ymd').'-'.Str::upper(Str::random(8)),
+                'billing_type' => $data['billing_type'],
+                'subscription_months' => $data['billing_type'] === 'subscription' ? ($data['subscription_months'] ?? 1) : null,
+                'currency' => $data['currency'],
+                'requested_scope' => $data['requested_scope'],
+                'status' => 'requested',
+            ]);
+
+            $this->auditLogger->record('commercial_quote.created_by_super_admin', $quote, $quote->toArray(), actor: $issuer);
+
+            return $this->issue($quote, $issuer, $data);
+        });
+    }
+
     /** @param array{billing_type: string, subscription_months?: int|null, amount: numeric-string|int|float, currency: string, valid_until: string, terms?: string|null} $data */
     public function issue(CommercialQuote $quote, User $issuer, array $data): CommercialQuote
     {

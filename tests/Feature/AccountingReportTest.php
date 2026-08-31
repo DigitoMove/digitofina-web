@@ -22,13 +22,16 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 it('generates accountant style income statement and balance sheet reports', function () {
+    $organization = accountingReportOrganization();
     $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
     $admin = User::factory()->create([
+        'organization_id' => $organization->id,
         'branch_id' => null,
         'role_id' => $role->id,
         'status' => 'active',
         'is_active' => true,
     ]);
+    $this->actingAs($admin);
     $branch = Branch::create(['code' => '1001', 'name' => 'Luweero', 'is_active' => true, 'status' => 'active']);
 
     accountingReportEntry($branch, '1000', 'Cash on Hand', 'asset', 'debit', 'debit', 1000);
@@ -83,13 +86,16 @@ it('generates accountant style income statement and balance sheet reports', func
 });
 
 it('summarizes selected ledger accounts by day with opening and closing balances', function () {
+    $organization = accountingReportOrganization();
     $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
     $admin = User::factory()->create([
+        'organization_id' => $organization->id,
         'branch_id' => null,
         'role_id' => $role->id,
         'status' => 'active',
         'is_active' => true,
     ]);
+    $this->actingAs($admin);
     $branch = Branch::create(['code' => '1001', 'name' => 'Kavule Branch', 'is_active' => true, 'status' => 'active']);
     $mtn = accountingReportLedgerAccount($branch, '1001-MTN', 'MTN Merchant Code');
     $airtel = accountingReportLedgerAccount($branch, '1001-AIR', 'Airtel Merchant Code');
@@ -219,19 +225,23 @@ it('limits teller cashiers to the ledger accounts report category', function () 
 });
 
 it('reports both source and destination sides of drawer transfers for the day', function () {
+    $organization = accountingReportOrganization();
     $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
     $admin = User::factory()->create([
+        'organization_id' => $organization->id,
         'branch_id' => null,
         'role_id' => $role->id,
         'status' => 'active',
         'is_active' => true,
     ]);
     $receiver = User::factory()->create([
+        'organization_id' => $organization->id,
         'branch_id' => null,
         'role_id' => $role->id,
         'status' => 'active',
         'is_active' => true,
     ]);
+    $this->actingAs($admin);
     $branch = Branch::create(['code' => '1001', 'name' => 'Kavule Branch', 'is_active' => true, 'status' => 'active']);
     $sourceDrawer = accountingReportDrawer($branch, $admin, 'SRC-REPORT', 400000);
     $destinationDrawer = accountingReportDrawer($branch, $receiver, 'DST-REPORT', 125000);
@@ -278,10 +288,11 @@ it('reports both source and destination sides of drawer transfers for the day', 
 
 function accountingReportEntry(Branch $branch, string $code, string $name, string $type, string $normalBalance, string $entryType, int $amount): ChartAccount
 {
-    $account = ChartAccount::create([
+    $account = ChartAccount::updateOrCreate([
         'organization_id' => $branch->organization_id,
-        'branch_id' => $branch->id,
         'code' => $code,
+    ], [
+        'branch_id' => $branch->id,
         'name' => $name,
         'type' => $type,
         'normal_balance' => $normalBalance,
@@ -306,10 +317,11 @@ function accountingReportEntry(Branch $branch, string $code, string $name, strin
 
 function accountingReportLedgerAccount(Branch $branch, string $code, string $name): ChartAccount
 {
-    return ChartAccount::create([
+    return ChartAccount::updateOrCreate([
         'organization_id' => $branch->organization_id,
-        'branch_id' => $branch->id,
         'code' => $code,
+    ], [
+        'branch_id' => $branch->id,
         'name' => $name,
         'type' => 'asset',
         'normal_balance' => 'debit',
@@ -402,4 +414,22 @@ function accountingReportDrawerSession(TellerDrawer $drawer, User $user, int $op
         'status' => 'open',
         'opened_at' => '2026-02-03 08:00:00',
     ]);
+}
+
+function accountingReportOrganization(): Organization
+{
+    $organization = Organization::create([
+        'name' => fake()->company(),
+        'slug' => fake()->unique()->slug(),
+        'status' => 'active',
+    ]);
+    app(ModuleService::class)->syncCatalog();
+    app(ModuleService::class)->syncDefaults($organization);
+    Module::query()->pluck('id')->each(fn (int $moduleId) => OrganizationModule::updateOrCreate(
+        ['organization_id' => $organization->id, 'module_id' => $moduleId],
+        ['is_enabled' => true, 'enabled_at' => now()],
+    ));
+    app(ModuleService::class)->clearCache($organization);
+
+    return $organization;
 }

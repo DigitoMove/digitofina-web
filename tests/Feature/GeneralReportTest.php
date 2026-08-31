@@ -8,8 +8,12 @@ use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
+use App\Models\Module;
+use App\Models\Organization;
+use App\Models\OrganizationModule;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\ModuleService;
 use App\Services\ReportCatalogService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -29,6 +33,7 @@ it('places the simplified income statement first and defaults it to a full month
 
 it('generates a branch and period filtered simplified income statement', function () {
     $user = generalReportUser();
+    $this->actingAs($user);
     $branch = Branch::create(['code' => '1001', 'name' => 'Main Branch', 'is_active' => true, 'status' => 'active']);
     $otherBranch = Branch::create(['code' => '1002', 'name' => 'Other Branch', 'is_active' => true, 'status' => 'active']);
     $weekly = generalReportLoanProduct('Weekly Loan', 'WEEKLY');
@@ -80,6 +85,7 @@ it('generates a branch and period filtered simplified income statement', functio
 
 it('generates the projected simplified income statement from scheduled interest', function () {
     $user = generalReportUser();
+    $this->actingAs($user);
     $branch = Branch::create(['code' => '1001', 'name' => 'Main Branch', 'is_active' => true, 'status' => 'active']);
     $product = generalReportLoanProduct('Projected Loan', 'PROJECTED');
     $loan = generalReportRepayment($branch, $product, 40, 10);
@@ -113,9 +119,22 @@ it('generates the projected simplified income statement from scheduled interest'
 
 function generalReportUser(): User
 {
+    $organization = Organization::create([
+        'name' => fake()->company(),
+        'slug' => fake()->unique()->slug(),
+        'status' => 'active',
+    ]);
+    app(ModuleService::class)->syncCatalog();
+    app(ModuleService::class)->syncDefaults($organization);
+    Module::query()->pluck('id')->each(fn (int $moduleId) => OrganizationModule::updateOrCreate(
+        ['organization_id' => $organization->id, 'module_id' => $moduleId],
+        ['is_enabled' => true, 'enabled_at' => now()],
+    ));
+    app(ModuleService::class)->clearCache($organization);
     $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
 
     return User::factory()->create([
+        'organization_id' => $organization->id,
         'branch_id' => null,
         'role_id' => $role->id,
         'status' => 'active',
@@ -179,9 +198,11 @@ function generalReportRepayment(Branch $branch, LoanProduct $product, int $inter
 
 function generalReportLedger(Branch $branch, string $code, string $name, string $type, string $entryType, int $amount): void
 {
-    $account = ChartAccount::create([
-        'branch_id' => $branch->id,
+    $account = ChartAccount::updateOrCreate([
+        'organization_id' => $branch->organization_id,
         'code' => $code,
+    ], [
+        'branch_id' => $branch->id,
         'name' => $name,
         'type' => $type,
         'normal_balance' => $type === 'expense' ? 'debit' : 'credit',

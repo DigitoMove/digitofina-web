@@ -50,9 +50,15 @@
     </details>
 
     <section class="df-panel mb-6 p-5">
-        <h2 class="text-lg font-semibold text-slate-950">Assign a plan directly</h2>
-        <p class="mt-1 text-sm text-slate-500">Activate a subscription or one-time licence without waiting for an organization to request a quote.</p>
-        <form method="POST" action="{{ route('organization-subscriptions.store') }}" class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-violet-700">Super Admin action</p>
+                <h2 class="mt-1 text-lg font-semibold text-slate-950">Create and send a quote</h2>
+                <p class="mt-1 text-sm text-slate-500">Choose an organization, set the agreed price and terms, then send the payable quote directly to its administrators.</p>
+            </div>
+            <span class="rounded-lg bg-violet-100 px-3 py-2 text-xs font-semibold text-violet-800">No request required</span>
+        </div>
+        <form method="POST" action="{{ route('commercial-quotes.organizations.store') }}" class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4" autocomplete="off">
             @csrf
             <label class="text-sm font-semibold text-slate-700">Organization <x-required-badge />
                 <select name="organization_id" class="mt-1" required>
@@ -60,25 +66,41 @@
                     @foreach($organizations as $organization)<option value="{{ $organization->id }}" @selected((int) old('organization_id') === $organization->id)>{{ $organization->name }}</option>@endforeach
                 </select>
             </label>
-            <label class="text-sm font-semibold text-slate-700">Plan <x-required-badge />
+            <label class="text-sm font-semibold text-slate-700">Pricing type <x-required-badge />
                 <select name="billing_type" class="mt-1" required>
                     <option value="subscription" @selected(old('billing_type') === 'subscription')>Monthly subscription</option>
                     <option value="one_time" @selected(old('billing_type') === 'one_time')>One-time licence</option>
                 </select>
             </label>
-            <label class="text-sm font-semibold text-slate-700">Basis <x-required-badge />
-                <select name="assignment_basis" class="mt-1" required>
-                    <option value="assigned" @selected(old('assignment_basis') === 'assigned')>Assigned by DigitoFina</option>
-                    <option value="paid" @selected(old('assignment_basis') === 'paid')>Already paid externally</option>
-                </select>
-            </label>
-            <label class="text-sm font-semibold text-slate-700">Amount (UGX) <x-required-badge /><input name="amount" type="number" min="0" step="100" value="{{ old('amount', 200000) }}" class="mt-1" required></label>
-            <label class="text-sm font-semibold text-slate-700">Subscription months<input name="subscription_months" type="number" min="1" max="120" value="{{ old('subscription_months', 1) }}" class="mt-1"><span class="mt-1 block text-xs font-normal text-slate-500">Ignored for a one-time licence.</span></label>
-            <label class="text-sm font-semibold text-slate-700">Starts on <x-required-badge /><input name="starts_at" type="date" value="{{ old('starts_at', today()->toDateString()) }}" class="mt-1" required></label>
-            <label class="text-sm font-semibold text-slate-700 md:col-span-2">Notes<textarea name="notes" rows="2" class="mt-1" placeholder="Plan terms, payment reference, or reason for assignment.">{{ old('notes') }}</textarea></label>
-            <div class="md:col-span-2 xl:col-span-4"><button class="df-action-primary">Assign and activate plan</button></div>
+            <label class="text-sm font-semibold text-slate-700">Amount (UGX) <x-required-badge /><input name="amount" type="number" min="500" step="100" value="{{ old('amount', 200000) }}" class="mt-1" required></label>
+            <label class="text-sm font-semibold text-slate-700">Subscription months<input name="subscription_months" type="number" min="1" max="36" value="{{ old('subscription_months', 1) }}" class="mt-1"><span class="mt-1 block text-xs font-normal text-slate-500">Ignored for a one-time licence.</span></label>
+            <label class="text-sm font-semibold text-slate-700">Valid until <x-required-badge /><input name="valid_until" type="date" min="{{ today()->toDateString() }}" value="{{ old('valid_until', today()->addDays(14)->toDateString()) }}" class="mt-1" required></label>
+            <input type="hidden" name="currency" value="UGX">
+            <label class="text-sm font-semibold text-slate-700 md:col-span-2 xl:col-span-3">Scope and requirements <x-required-badge /><textarea name="requested_scope" rows="3" class="mt-1" required placeholder="Branches, users, onboarding, training, integrations, and implementation requirements.">{{ old('requested_scope') }}</textarea></label>
+            <label class="text-sm font-semibold text-slate-700 md:col-span-2 xl:col-span-4">Agreed terms<textarea name="terms" rows="3" class="mt-1" placeholder="Payment terms, onboarding, support, renewal, training, and implementation terms.">{{ old('terms') }}</textarea></label>
+            <div class="md:col-span-2 xl:col-span-4"><button class="df-action-primary">Create and send quote</button></div>
         </form>
     </section>
+
+    <details class="df-panel mb-6 overflow-hidden">
+        <summary class="cursor-pointer px-5 py-4 font-semibold text-slate-950">Activate a plan without creating a quote</summary>
+        <div class="border-t border-slate-200 p-5">
+            <p class="text-sm text-slate-500">Use this only when access was granted administratively or payment was already received outside DigitoFina.</p>
+            <form method="POST" action="{{ route('organization-subscriptions.store') }}" class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                @csrf
+                <label class="text-sm font-semibold text-slate-700">Organization <x-required-badge />
+                    <select name="organization_id" class="mt-1" required><option value="">Select organization</option>@foreach($organizations as $organization)<option value="{{ $organization->id }}">{{ $organization->name }}</option>@endforeach</select>
+                </label>
+                <label class="text-sm font-semibold text-slate-700">Plan <x-required-badge /><select name="billing_type" class="mt-1" required><option value="subscription">Monthly subscription</option><option value="one_time">One-time licence</option></select></label>
+                <label class="text-sm font-semibold text-slate-700">Basis <x-required-badge /><select name="assignment_basis" class="mt-1" required><option value="assigned">Assigned by DigitoFina</option><option value="paid">Already paid externally</option></select></label>
+                <label class="text-sm font-semibold text-slate-700">Amount (UGX) <x-required-badge /><input name="amount" type="number" min="0" step="100" value="200000" class="mt-1" required></label>
+                <label class="text-sm font-semibold text-slate-700">Subscription months<input name="subscription_months" type="number" min="1" max="120" value="1" class="mt-1"></label>
+                <label class="text-sm font-semibold text-slate-700">Starts on <x-required-badge /><input name="starts_at" type="date" value="{{ today()->toDateString() }}" class="mt-1" required></label>
+                <label class="text-sm font-semibold text-slate-700 md:col-span-2">Notes<textarea name="notes" rows="2" class="mt-1" placeholder="Plan terms, payment reference, or reason for assignment."></textarea></label>
+                <div class="md:col-span-2 xl:col-span-4"><button class="df-action-primary">Assign and activate plan</button></div>
+            </form>
+        </div>
+    </details>
 @endif
 
 @if($billingOrganization)
@@ -156,6 +178,11 @@
     </section>
 @endunless
 
+<section class="mb-4">
+    <h2 class="text-lg font-semibold text-slate-950">{{ $isSuperAdmin ? 'Organization quote requests and sent quotes' : 'Your quote requests and responses' }}</h2>
+    <p class="mt-1 text-sm text-slate-500">{{ $isSuperAdmin ? 'Hosting fees and direct plan assignments are managed separately and do not appear here.' : 'Track requests, agreed pricing, payment, and activation here.' }}</p>
+</section>
+
 <div class="grid gap-5">
     @forelse($quotes as $quote)
         <article class="df-panel overflow-hidden">
@@ -165,7 +192,7 @@
                         <h2 class="font-semibold text-slate-950">{{ $quote->quote_number }}</h2>
                         <span class="df-badge">{{ str($quote->status)->headline() }}</span>
                     </div>
-                    <p class="mt-1 text-sm text-slate-500">{{ $quote->organization->name }} · Requested {{ $quote->created_at->format('d M Y, H:i') }}</p>
+                    <p class="mt-1 text-sm text-slate-500">{{ $quote->organization->name }} · {{ $quote->requester ? 'Requested by '.$quote->requester->name : 'Created by DigitoFina' }} · {{ $quote->created_at->format('d M Y, H:i') }}</p>
                 </div>
                 @if($quote->amount !== null)
                     <div class="text-right">
@@ -200,7 +227,7 @@
                         <label class="text-sm font-semibold text-slate-700">Months
                             <input name="subscription_months" type="number" min="1" max="36" value="{{ $quote->subscription_months ?: 1 }}" class="mt-1">
                         </label>
-                        <label class="text-sm font-semibold text-slate-700">Amount (UGX)
+                        <label class="text-sm font-semibold text-slate-700">Agreed amount (UGX)
                             <input name="amount" type="number" min="500" step="100" value="{{ old('amount', $quote->amount) }}" class="mt-1" required>
                         </label>
                         <label class="text-sm font-semibold text-slate-700">Valid until
@@ -210,7 +237,7 @@
                         <label class="text-sm font-semibold text-slate-700 md:col-span-2">Terms
                             <textarea name="terms" rows="4" class="mt-1" placeholder="Onboarding, support, renewal, training, and implementation terms.">{{ old('terms', $quote->terms) }}</textarea>
                         </label>
-                        <div class="md:col-span-2"><button class="df-action-primary">{{ $quote->status === 'issued' ? 'Update quote' : 'Issue quote' }}</button></div>
+                        <div class="md:col-span-2"><button class="df-action-primary">{{ $quote->status === 'issued' ? 'Update and resend quote' : 'Set agreed price and send quote' }}</button></div>
                     </form>
                 @elseif(! $isSuperAdmin && $quote->isPayable())
                     <div class="flex flex-col justify-center rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">

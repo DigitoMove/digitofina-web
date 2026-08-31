@@ -55,6 +55,87 @@ it('lets an organization admin request a quote and a super admin issue it', func
         ->assertSee('Pay securely with Nylon Pay');
 });
 
+it('lets a super admin create and send a quote directly to an organization', function () {
+    [$organization, $organizationAdmin] = quoteOrganizationAdministrator('Direct Quote Tenant');
+    $superAdmin = quoteSuperAdministrator();
+
+    $this->actingAs($superAdmin)
+        ->post(route('commercial-quotes.organizations.store'), [
+            'organization_id' => $organization->id,
+            'billing_type' => 'subscription',
+            'subscription_months' => 6,
+            'requested_scope' => 'Six months of service for two branches, setup, onboarding, and staff training.',
+            'amount' => 900000,
+            'currency' => 'UGX',
+            'valid_until' => today()->addDays(14)->toDateString(),
+            'terms' => 'The agreed amount includes onboarding, training, support, and two branches.',
+        ])
+        ->assertRedirect(route('commercial-quotes.index'))
+        ->assertSessionHasNoErrors();
+
+    $quote = CommercialQuote::query()->sole();
+
+    expect($quote->organization_id)->toBe($organization->id)
+        ->and($quote->requested_by)->toBeNull()
+        ->and($quote->issued_by)->toBe($superAdmin->id)
+        ->and($quote->status)->toBe('issued')
+        ->and((float) $quote->amount)->toBe(900000.0)
+        ->and($organizationAdmin->notifications()->count())->toBe(1);
+
+    $this->actingAs($organizationAdmin)
+        ->get(route('commercial-quotes.index'))
+        ->assertSuccessful()
+        ->assertSee($quote->quote_number)
+        ->assertSee('Created by DigitoFina')
+        ->assertSee('Pay securely with Nylon Pay');
+});
+
+it('keeps automatic hosting charges out of the commercial quote queue', function () {
+    [$organization, $organizationAdmin] = quoteOrganizationAdministrator('Separated Hosting Tenant');
+    $superAdmin = quoteSuperAdministrator();
+    $commercialQuote = quoteIssuedCommercialQuote($organization, $organizationAdmin, 250000);
+    $hostingQuote = CommercialQuote::create([
+        'organization_id' => $organization->id,
+        'requested_by' => null,
+        'quote_number' => 'DFH-'.fake()->unique()->numerify('############'),
+        'billing_type' => 'hosting',
+        'subscription_months' => 12,
+        'amount' => 200000,
+        'currency' => 'UGX',
+        'requested_scope' => 'Required annual hosting, infrastructure, backups, and service availability.',
+        'status' => 'issued',
+        'valid_until' => today()->addDays(30),
+        'issued_at' => now(),
+    ]);
+
+    $this->actingAs($superAdmin)
+        ->get(route('commercial-quotes.index'))
+        ->assertSuccessful()
+        ->assertSee($commercialQuote->quote_number)
+        ->assertDontSee($hostingQuote->quote_number)
+        ->assertSee('Hosting fees and direct plan assignments are managed separately');
+});
+
+it('prevents organization admins from creating quotes for an organization', function () {
+    [$organization, $organizationAdmin] = quoteOrganizationAdministrator('Forbidden Direct Quote Tenant');
+
+    $this->from(route('commercial-quotes.index'))
+        ->actingAs($organizationAdmin)
+        ->post(route('commercial-quotes.organizations.store'), [
+            'organization_id' => $organization->id,
+            'billing_type' => 'subscription',
+            'subscription_months' => 1,
+            'requested_scope' => 'A direct quote that an organization administrator must not be allowed to create.',
+            'amount' => 200000,
+            'currency' => 'UGX',
+            'valid_until' => today()->addDays(14)->toDateString(),
+        ])
+        ->assertRedirect(route('commercial-quotes.index'))
+        ->assertSessionHas('warning');
+
+    expect(CommercialQuote::query()->count())->toBe(0);
+});
+
 it('creates a signed Nylon Pay invoice and activates the organization only after a verified webhook', function () {
     [$organization, $organizationAdmin] = quoteOrganizationAdministrator('Nylon Payment Tenant');
     $quote = quoteIssuedCommercialQuote($organization, $organizationAdmin, 350000);

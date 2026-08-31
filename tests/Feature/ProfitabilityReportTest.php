@@ -9,21 +9,28 @@ use App\Models\LoanDisbursement;
 use App\Models\LoanProduct;
 use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
+use App\Models\Module;
+use App\Models\Organization;
+use App\Models\OrganizationModule;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\ModuleService;
 use App\Services\ReportCatalogService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
 it('reports profitability standing by branch with an all branches total', function () {
+    $organization = profitabilityReportOrganization();
     $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
     $admin = User::factory()->create([
+        'organization_id' => $organization->id,
         'branch_id' => null,
         'role_id' => $role->id,
         'status' => 'active',
         'is_active' => true,
     ]);
+    $this->actingAs($admin);
     $luweero = Branch::create(['code' => '1001', 'name' => 'Luweero', 'is_active' => true, 'status' => 'active']);
     $matugga = Branch::create(['code' => '1002', 'name' => 'Matugga', 'is_active' => true, 'status' => 'active']);
     $product = LoanProduct::create([
@@ -196,13 +203,16 @@ it('reports profitability standing by branch with an all branches total', functi
 });
 
 it('can include projected loan interest in profitability reports', function () {
+    $organization = profitabilityReportOrganization();
     $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
     $admin = User::factory()->create([
+        'organization_id' => $organization->id,
         'branch_id' => null,
         'role_id' => $role->id,
         'status' => 'active',
         'is_active' => true,
     ]);
+    $this->actingAs($admin);
     $branch = Branch::create(['code' => '1003', 'name' => 'Kiwenda', 'is_active' => true, 'status' => 'active']);
     $product = LoanProduct::create([
         'name' => 'Projected Loan',
@@ -330,4 +340,22 @@ function profitabilityReportLedger(Branch $branch, string $type, string $entryTy
         'status' => 'posted',
         'posted_at' => now(),
     ]);
+}
+
+function profitabilityReportOrganization(): Organization
+{
+    $organization = Organization::create([
+        'name' => fake()->company(),
+        'slug' => fake()->unique()->slug(),
+        'status' => 'active',
+    ]);
+    app(ModuleService::class)->syncCatalog();
+    app(ModuleService::class)->syncDefaults($organization);
+    Module::query()->pluck('id')->each(fn (int $moduleId) => OrganizationModule::updateOrCreate(
+        ['organization_id' => $organization->id, 'module_id' => $moduleId],
+        ['is_enabled' => true, 'enabled_at' => now()],
+    ));
+    app(ModuleService::class)->clearCache($organization);
+
+    return $organization;
 }

@@ -26,6 +26,7 @@ use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\LedgerAccountStatementService;
+use App\Services\ModuleService;
 use App\Services\TransactionReversalService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -192,6 +193,7 @@ it('links listed posted transactions to their receipt details', function () {
         'status' => 'active',
         'is_active' => true,
     ]);
+    $organization = transactionReportingTenant($admin, $branch);
     $client = Client::create([
         'branch_id' => $branch->id,
         'client_number' => '1002-C000001',
@@ -226,6 +228,7 @@ it('links listed posted transactions to their receipt details', function () {
         'is_active' => true,
     ]);
     $transaction = Transaction::create([
+        'organization_id' => $organization->id,
         'account_id' => $account->id,
         'transaction_type_id' => $type->id,
         'branch_id' => $branch->id,
@@ -263,6 +266,7 @@ it('filters posted transaction reports by description', function () {
         'status' => 'active',
         'is_active' => true,
     ]);
+    $organization = transactionReportingTenant($admin, $branch);
     $client = Client::create([
         'branch_id' => $branch->id,
         'client_number' => '1004-C000001',
@@ -298,6 +302,7 @@ it('filters posted transaction reports by description', function () {
     ]);
 
     Transaction::create([
+        'organization_id' => $organization->id,
         'account_id' => $account->id,
         'transaction_type_id' => $type->id,
         'branch_id' => $branch->id,
@@ -311,6 +316,7 @@ it('filters posted transaction reports by description', function () {
         'posted_at' => now(),
     ]);
     Transaction::create([
+        'organization_id' => $organization->id,
         'account_id' => $account->id,
         'transaction_type_id' => $type->id,
         'branch_id' => $branch->id,
@@ -324,6 +330,7 @@ it('filters posted transaction reports by description', function () {
         'posted_at' => now(),
     ]);
     $ledgerTransaction = Transaction::create([
+        'organization_id' => $organization->id,
         'transaction_type_id' => $type->id,
         'branch_id' => $branch->id,
         'user_id' => $admin->id,
@@ -1368,11 +1375,13 @@ function transactionDeletionContext(): array
         'slug' => 'super-admin',
     ]);
     $admin = User::factory()->create([
+        'organization_id' => $organization->id,
         'branch_id' => null,
         'role_id' => $role->id,
         'status' => 'active',
         'is_active' => true,
     ]);
+    transactionEnableAllModules($organization);
     $type = TransactionType::create([
         'organization_id' => $organization->id,
         'name' => 'Drawer Cash Out',
@@ -1433,4 +1442,30 @@ function transactionDeletionPosting(Branch $branch, ?User $user, TransactionType
     ]);
 
     return $transaction;
+}
+
+function transactionReportingTenant(User $admin, Branch $branch): Organization
+{
+    $organization = Organization::create([
+        'name' => fake()->unique()->company(),
+        'slug' => fake()->unique()->slug(),
+        'status' => 'active',
+    ]);
+    $branch->update(['organization_id' => $organization->id]);
+    $admin->update(['organization_id' => $organization->id]);
+    transactionEnableAllModules($organization);
+
+    return $organization;
+}
+
+function transactionEnableAllModules(Organization $organization): void
+{
+    $modules = app(ModuleService::class);
+    $modules->syncCatalog();
+    $modules->syncDefaults($organization);
+    Module::query()->pluck('id')->each(fn (int $moduleId) => OrganizationModule::updateOrCreate(
+        ['organization_id' => $organization->id, 'module_id' => $moduleId],
+        ['is_enabled' => true, 'enabled_at' => now()],
+    ));
+    $modules->clearCache($organization);
 }

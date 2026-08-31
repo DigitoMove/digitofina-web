@@ -31,7 +31,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use LogicException;
 
 class ReportCatalogService
 {
@@ -50,7 +52,13 @@ class ReportCatalogService
         'equity-accounts',
     ];
 
-    public function __construct(private BusinessCalendarService $calendar) {}
+    /** @var array<string, bool> */
+    private array $organizationColumns = [];
+
+    public function __construct(
+        private BusinessCalendarService $calendar,
+        private TenantContext $tenant,
+    ) {}
 
     /**
      * @return Collection<string, Collection<int, array<string, mixed>>>
@@ -214,6 +222,7 @@ class ReportCatalogService
      */
     public function generate(string $slug, array $filters, User $user): array
     {
+        $this->reportOrganizationId($user);
         $definition = $this->find($slug, $user);
 
         abort_unless($definition, 404);
@@ -265,14 +274,14 @@ class ReportCatalogService
             'profitability_summary' => $this->profitabilitySummary($from, $to, $branchId, $user, $interestBasis),
             'branch_profitability_standing' => $this->branchProfitabilityStanding($from, $to, $branchId, $user, $interestBasis),
             'accounts' => $this->accounts($payload, $from, $to, $branchId, $limit, $user),
-            'shares' => $this->shares($from, $to, $limit),
+            'shares' => $this->shares($from, $to, $branchId, $limit, $user),
             'loans' => $this->loans($payload, $from, $to, $branchId, $limit, $user),
             'loan_disbursements' => $this->loanDisbursements($payload, $from, $to, $branchId, $limit, $user),
             'loan_schedules' => $this->loanSchedules($payload, $from, $to, $branchId, $limit, $user),
             'loan_summary' => $this->loanSummary($branchId, $user),
             'loan_book' => $this->loanBook($branchId, $detail === 'brief' ? 100 : 5000, $user),
             'loan_repayments' => $this->loanRepayments($from, $to, $branchId, $limit, $user),
-            'term_deposits' => $this->termDeposits($payload, $from, $to, $limit),
+            'term_deposits' => $this->termDeposits($payload, $from, $to, $branchId, $limit, $user),
             'investment_accounts' => $this->investmentAccounts($payload, $from, $to, $branchId, $limit, $user),
             'investment_transactions' => $this->investmentTransactions($payload, $from, $to, $branchId, $limit, $user),
             'investment_plan_performance' => $this->investmentPlanPerformance($branchId, $user),
@@ -655,6 +664,7 @@ class ReportCatalogService
         $movements = (clone $query)->latest()->limit($limit)->get();
         $transactionsByReference = Transaction::query()
             ->whereIn('reference', $movements->pluck('reference')->filter()->unique())
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->pluck('id', 'reference');
         $rows = $movements->map(fn (DrawerMovement $movement): array => [
             'Date' => $movement->created_at?->format('d M Y H:i'),
@@ -875,6 +885,7 @@ class ReportCatalogService
     {
         $query = ChartAccount::query()
             ->with('branch')
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->when($branchId, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id)->orWhereNull('branch_id')));
 
@@ -891,7 +902,9 @@ class ReportCatalogService
 
     private function journalEntries(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user, ?int $chartAccountId = null, string $search = ''): array
     {
-        $selectedChartAccount = $chartAccountId ? ChartAccount::query()->find($chartAccountId) : null;
+        $selectedChartAccount = $chartAccountId
+            ? ChartAccount::query()->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))->find($chartAccountId)
+            : null;
         $query = JournalEntry::query()
             ->with([
                 'chartAccount',
@@ -971,6 +984,7 @@ class ReportCatalogService
     {
         $accounts = ChartAccount::query()
             ->with('branch')
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->where('is_active', true)
             ->whereNull('merged_into_id')
             ->when($chartAccountIds !== [], fn (Builder $query): Builder => $query->whereKey($chartAccountIds))
@@ -1218,6 +1232,7 @@ class ReportCatalogService
     private function generalIncomeStatement(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, string $interestBasis): array
     {
         $repayments = LoanRepayment::query()
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereBetween('loan_repayments.paid_at', [$from, $to])
             ->where('loan_repayments.status', 'successful')
             ->when($branchId, fn (Builder $query): Builder => $query->where('loan_repayments.branch_id', $branchId))
@@ -1250,6 +1265,7 @@ class ReportCatalogService
         $applicationFees = $applicationFeesFromLedger > 0
             ? $applicationFeesFromLedger
             : (float) LoanDisbursement::query()
+                ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
                 ->whereBetween('disbursement_date', [$from, $to])
                 ->where('status', 'successful')
                 ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
@@ -1411,6 +1427,7 @@ class ReportCatalogService
     {
         $query = LoanDisbursement::query()
             ->with(['branch', 'loan.client', 'disbursedBy'])
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereBetween('disbursement_date', [$from, $to])
             ->where('status', 'successful')
             ->where('fees_deducted', '>', 0)
@@ -1447,6 +1464,7 @@ class ReportCatalogService
     private function ledgerBalances(array $types, CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, bool $cumulative): Collection
     {
         $accounts = ChartAccount::query()
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereIn('type', $types)
             ->when($branchId, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id)->orWhereNull('branch_id')))
@@ -1540,6 +1558,7 @@ class ReportCatalogService
         $dateSelect = $daily ? ", {$dateExpression} as business_date" : '';
         $dateGroup = $daily ? [$dateExpression] : [];
         $branchScope = $this->effectiveBranchId($branchId, $user);
+        $organizationId = $this->reportOrganizationId($user);
         $applyDateScope = function ($query) use ($dateExpression, $from, $to, $before): void {
             if ($before) {
                 $query->whereRaw($dateExpression.' < ?', [$to->toDateString()]);
@@ -1569,6 +1588,7 @@ class ReportCatalogService
         $lineTotals = DB::table('journal_lines')
             ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
             ->leftJoin('transactions', 'transactions.id', '=', 'journal_entries.transaction_id')
+            ->where('journal_entries.organization_id', $organizationId)
             ->whereIn('journal_lines.chart_account_id', $ids)
             ->where('journal_entries.status', 'posted')
             ->tap($applyDateScope)
@@ -1580,6 +1600,7 @@ class ReportCatalogService
 
         $fallbackTotals = DB::table('journal_entries')
             ->leftJoin('transactions', 'transactions.id', '=', 'journal_entries.transaction_id')
+            ->where('journal_entries.organization_id', $organizationId)
             ->whereIn('journal_entries.chart_account_id', $ids)
             ->where('journal_entries.status', 'posted')
             ->whereNotExists(function ($query): void {
@@ -1708,6 +1729,7 @@ class ReportCatalogService
     private function profitabilitySummary(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, string $interestBasis): array
     {
         $applicationFees = (float) LoanDisbursement::query()
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereBetween('disbursement_date', [$from, $to])
             ->where('status', 'successful')
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
@@ -1719,6 +1741,7 @@ class ReportCatalogService
             ->whereHas('loan', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
             ->sum('interest_due');
         $interestCollected = (float) LoanRepayment::query()
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereBetween('paid_at', [$from, $to])
             ->where('status', 'successful')
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
@@ -1727,12 +1750,14 @@ class ReportCatalogService
         $journalIncome = $this->journalTypeNet('income', $from, $to, $branchId, $user);
         $expenses = $this->journalTypeNet('expense', $from, $to, $branchId, $user);
         $capitalDisbursed = (float) LoanDisbursement::query()
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereBetween('disbursement_date', [$from, $to])
             ->where('status', 'successful')
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->sum('disbursed_amount');
         $principalRecovered = (float) LoanRepayment::query()
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereBetween('paid_at', [$from, $to])
             ->where('status', 'successful')
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
@@ -1776,6 +1801,7 @@ class ReportCatalogService
     private function branchProfitabilityStanding(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, string $interestBasis): array
     {
         $branchMetrics = Branch::query()
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->tap(fn (Builder $query) => ApiSecurity::scopeTenant($query, $user))
             ->when($branchId, fn (Builder $query): Builder => $query->whereKey($branchId))
             ->orderBy('name')
@@ -1821,6 +1847,7 @@ class ReportCatalogService
     private function branchProfitabilityMetrics(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, string $interestBasis): array
     {
         $applicationFees = (float) LoanDisbursement::query()
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereBetween('disbursement_date', [$from, $to])
             ->where('status', 'successful')
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
@@ -1828,6 +1855,7 @@ class ReportCatalogService
         $journalIncome = $this->journalTypeNet('income', $from, $to, $branchId, $user);
         $expenses = $this->journalTypeNet('expense', $from, $to, $branchId, $user);
         $interest = (float) LoanRepayment::query()
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereBetween('paid_at', [$from, $to])
             ->where('status', 'successful')
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
@@ -1838,6 +1866,7 @@ class ReportCatalogService
             ->whereHas('loan', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
             ->sum('interest_due');
         $collected = (float) LoanRepayment::query()
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereBetween('paid_at', [$from, $to])
             ->where('status', 'successful')
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
@@ -1848,6 +1877,7 @@ class ReportCatalogService
             ->whereHas('loan', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
             ->sum('total_due');
         $totalLoans = (float) LoanDisbursement::query()
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereBetween('disbursement_date', [$from, $to])
             ->where('status', 'successful')
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user))
@@ -1935,11 +1965,13 @@ class ReportCatalogService
         return [['Account No.', 'Name', 'Client', 'Type', 'Branch', 'Balance', 'Status'], $rows, ['Balance' => $this->money((float) $query->sum('balance'))]];
     }
 
-    private function shares(CarbonInterface $from, CarbonInterface $to, int $limit): array
+    private function shares(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
     {
-        $rows = ShareAccount::query()
+        $query = ShareAccount::query()
             ->with(['client', 'product'])
             ->whereBetween('created_at', [$from, $to])
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+        $rows = (clone $query)
             ->latest()
             ->limit($limit)
             ->get()
@@ -1952,7 +1984,7 @@ class ReportCatalogService
                 'Status' => Str::headline((string) $account->status),
             ]);
 
-        return [['Client', 'Product', 'Shares', 'Share Value', 'Capital', 'Status'], $rows, ['Share capital' => $this->money((float) ShareAccount::sum('total_share_capital'))]];
+        return [['Client', 'Product', 'Shares', 'Share Value', 'Capital', 'Status'], $rows, ['Share capital' => $this->money((float) (clone $query)->sum('total_share_capital'))]];
     }
 
     private function loans(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
@@ -1982,6 +2014,7 @@ class ReportCatalogService
     {
         $query = LoanDisbursement::query()
             ->with(['loan.client', 'disbursedBy'])
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereBetween('disbursement_date', [$from, $to])
             ->when($payload['status'] ?? 'successful', fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
@@ -2196,6 +2229,7 @@ class ReportCatalogService
     {
         $query = LoanRepayment::query()
             ->with(['loan.client', 'receivedBy'])
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereBetween('paid_at', [$from, $to])
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
@@ -2292,6 +2326,7 @@ class ReportCatalogService
     private function investmentPlanPerformance(?int $branchId, User $user): array
     {
         $plans = ApiSecurity::scopeTenant(InvestmentPlan::query(), $user)
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->withCount([
                 'investmentAccounts' => fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user),
             ])
@@ -2390,12 +2425,13 @@ class ReportCatalogService
         ];
     }
 
-    private function termDeposits(array $payload, CarbonInterface $from, CarbonInterface $to, int $limit): array
+    private function termDeposits(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
     {
         $query = FixedDepositAccount::query()
             ->with(['client', 'product'])
             ->when($payload['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
-            ->when($payload['maturity'] ?? false, fn (Builder $query): Builder => $query->whereBetween('maturity_date', [$from, $to]));
+            ->when($payload['maturity'] ?? false, fn (Builder $query): Builder => $query->whereBetween('maturity_date', [$from, $to]))
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
 
         $rows = $query->orderBy('maturity_date')->limit($limit)->get()->map(fn (FixedDepositAccount $account): array => [
             'Client' => $account->client?->full_name ?? 'N/A',
@@ -2433,6 +2469,7 @@ class ReportCatalogService
 
     private function scopeBranch(Builder $query, ?int $branchId, User $user): Builder
     {
+        $this->scopeOrganization($query, $user);
         $branchColumn = $query->getModel()->qualifyColumn('branch_id');
         $effectiveBranchId = $this->effectiveBranchId($branchId, $user);
 
@@ -2468,6 +2505,7 @@ class ReportCatalogService
 
     private function scopeLoanReport(Builder $query, ?int $branchId, User $user): Builder
     {
+        $this->scopeOrganization($query, $user);
         app(LoanVisibilityService::class)->scope($query, $user);
 
         return $branchId ? $query->where($query->getModel()->qualifyColumn('branch_id'), $branchId) : $query;
@@ -2475,9 +2513,47 @@ class ReportCatalogService
 
     private function scopeRepaymentReport(Builder $query, ?int $branchId, User $user): Builder
     {
+        $this->scopeOrganization($query, $user);
         app(LoanVisibilityService::class)->scopeRepaymentCalendar($query, $user);
 
         return $branchId ? $query->where($query->getModel()->qualifyColumn('branch_id'), $branchId) : $query;
+    }
+
+    private function scopeOrganization(Builder $query, User $user): Builder
+    {
+        $organizationId = $this->reportOrganizationId($user);
+        $model = $query->getModel();
+
+        if ($model instanceof LoanSchedule) {
+            return $query->whereHas('loan', fn (Builder $query): Builder => $query->where('organization_id', $organizationId));
+        }
+
+        if ($model instanceof DrawerMovement) {
+            return $query->whereHas('session.drawer', fn (Builder $query): Builder => $query->where('organization_id', $organizationId));
+        }
+
+        if ($model instanceof DrawerSession) {
+            return $query->whereHas('drawer', fn (Builder $query): Builder => $query->where('organization_id', $organizationId));
+        }
+
+        $table = $model->getTable();
+        $hasOrganizationColumn = $this->organizationColumns[$table]
+            ??= Schema::hasColumn($table, 'organization_id');
+
+        if (! $hasOrganizationColumn) {
+            throw new LogicException("Report source [{$table}] has no organization scope configured.");
+        }
+
+        return $query->where($model->qualifyColumn('organization_id'), $organizationId);
+    }
+
+    private function reportOrganizationId(User $user): int
+    {
+        $organizationId = $this->tenant->id() ?: $user->organization_id;
+
+        abort_unless($organizationId, 422, 'Select an active organization before generating a report.');
+
+        return (int) $organizationId;
     }
 
     private function scopePositiveLoanBalance(Builder $query): Builder
