@@ -29,7 +29,7 @@ class TransactionReversalService
     {
         return DB::transaction(function () use ($request, $checker): Transaction {
             $original = Transaction::query()
-                ->with(['account.accountType', 'type', 'drawerSession.drawer'])
+                ->with(['account.accountType', 'type', 'drawerSession.drawer', 'originalTransaction'])
                 ->whereKey($request->subject_id)
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -124,7 +124,7 @@ class TransactionReversalService
     {
         $movements = DrawerMovement::query()
             ->with('session.drawer')
-            ->where('reference', $transaction->reference)
+            ->where('reference', $this->drawerMovementReference($transaction))
             ->orderBy('drawer_session_id')
             ->lockForUpdate()
             ->get();
@@ -166,6 +166,7 @@ class TransactionReversalService
             $drawer->refresh();
 
             DrawerMovement::create([
+                'organization_id' => $transaction->organization_id,
                 'drawer_session_id' => $movement->drawer_session_id,
                 'user_id' => $checker->id,
                 'type' => $reversalType,
@@ -175,6 +176,15 @@ class TransactionReversalService
                 'description' => 'Reversal of '.$transaction->reference,
             ]);
         }
+    }
+
+    private function drawerMovementReference(Transaction $transaction): string
+    {
+        if ($transaction->originalTransaction) {
+            return 'RV-'.$transaction->originalTransaction->reference;
+        }
+
+        return $transaction->reference;
     }
 
     private function reverseLoanRepayment(LoanRepayment $repayment, User $checker, ?string $reason): void

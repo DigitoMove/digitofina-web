@@ -472,6 +472,205 @@ it('deletes a drawer transaction by reference and restores the responsible drawe
         ->and(DrawerMovement::query()->where('reference', $transaction->reference.'-DELETE')->where('type', 'cash_in')->exists())->toBeTrue();
 });
 
+it('restores drawer cash when a posted reversal is itself reversed', function () {
+    [$admin, $branch, $type] = transactionDeletionContext();
+    $drawer = TellerDrawer::create([
+        'organization_id' => $branch->organization_id,
+        'branch_id' => $branch->id,
+        'assigned_user_id' => $admin->id,
+        'name' => 'Merchant Payments Drawer',
+        'code' => 'MERCHANT-TDR',
+        'current_balance' => 1315,
+        'status' => 'open',
+    ]);
+    $session = DrawerSession::create([
+        'organization_id' => $branch->organization_id,
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $admin->id,
+        'opening_balance' => 1000,
+        'status' => 'open',
+        'opened_at' => now(),
+    ]);
+    $transaction = transactionDeletionPosting($branch, $admin, $type, [
+        'drawer_session_id' => $session->id,
+        'reference' => 'TX-MERCHANT-CASH-IN',
+        'amount' => 315,
+        'description' => 'Received cash from merchant payments',
+    ]);
+    DrawerMovement::create([
+        'organization_id' => $branch->organization_id,
+        'drawer_session_id' => $session->id,
+        'user_id' => $admin->id,
+        'type' => 'cash_in',
+        'amount' => 315,
+        'balance_after' => 1315,
+        'reference' => $transaction->reference,
+        'description' => $transaction->description,
+    ]);
+    $firstRequest = MakerCheckerRequest::create([
+        'organization_id' => $branch->organization_id,
+        'branch_id' => $branch->id,
+        'subject_type' => $transaction->getMorphClass(),
+        'subject_id' => $transaction->id,
+        'requested_by' => $admin->id,
+        'action' => 'transaction_reversal',
+        'required_permission' => 'approve-reversals',
+        'amount' => $transaction->amount,
+        'status' => 'pending',
+        'reason' => 'Incorrect merchant amount',
+    ]);
+
+    $firstReversal = app(TransactionReversalService::class)->approve($firstRequest, $admin);
+
+    expect((float) $drawer->fresh()->current_balance)->toBe(1000.0);
+
+    $secondRequest = MakerCheckerRequest::create([
+        'organization_id' => $branch->organization_id,
+        'branch_id' => $branch->id,
+        'subject_type' => $firstReversal->getMorphClass(),
+        'subject_id' => $firstReversal->id,
+        'requested_by' => $admin->id,
+        'action' => 'transaction_reversal',
+        'required_permission' => 'approve-reversals',
+        'amount' => $firstReversal->amount,
+        'status' => 'pending',
+        'reason' => 'Restore the merchant receipt',
+    ]);
+
+    app(TransactionReversalService::class)->approve($secondRequest, $admin);
+
+    $restoringMovement = DrawerMovement::query()
+        ->where('reference', 'RV-'.$firstReversal->reference)
+        ->firstOrFail();
+
+    expect((float) $drawer->fresh()->current_balance)->toBe(1315.0)
+        ->and($restoringMovement->type)->toBe('cash_in')
+        ->and((float) $restoringMovement->amount)->toBe(315.0)
+        ->and($restoringMovement->organization_id)->toBe($branch->organization_id);
+});
+
+it('repairs historical reversal-of-reversal drawer balances only once', function () {
+    [$admin, $branch, $type] = transactionDeletionContext();
+    $originalPostedAt = now()->subMinutes(4);
+    $firstReversalPostedAt = now()->subMinutes(3);
+    $restoringReversalPostedAt = now()->subMinutes(2);
+    $laterMovementPostedAt = now()->subMinute();
+    $drawer = TellerDrawer::create([
+        'organization_id' => $branch->organization_id,
+        'branch_id' => $branch->id,
+        'assigned_user_id' => $admin->id,
+        'name' => 'Historical Repair Drawer',
+        'code' => 'REPAIR-TDR',
+        'current_balance' => 900,
+        'status' => 'open',
+    ]);
+    $session = DrawerSession::create([
+        'organization_id' => $branch->organization_id,
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $admin->id,
+        'opening_balance' => 1000,
+        'status' => 'open',
+        'opened_at' => now()->subMinutes(5),
+    ]);
+    $original = Transaction::create([
+        'organization_id' => $branch->organization_id,
+        'transaction_type_id' => $type->id,
+        'drawer_session_id' => $session->id,
+        'branch_id' => $branch->id,
+        'user_id' => $admin->id,
+        'reference' => 'TX-HISTORICAL-MERCHANT',
+        'amount' => 315,
+        'balance_after' => 0,
+        'currency' => 'UGX',
+        'description' => 'Received cash from merchant payments',
+        'status' => 'reversed',
+        'posted_at' => $originalPostedAt,
+        'created_at' => $originalPostedAt,
+    ]);
+    $firstReversal = Transaction::create([
+        'organization_id' => $branch->organization_id,
+        'transaction_type_id' => $type->id,
+        'drawer_session_id' => $session->id,
+        'branch_id' => $branch->id,
+        'user_id' => $admin->id,
+        'reversal_of_id' => $original->id,
+        'reference' => 'RV-HISTORICAL-MERCHANT',
+        'amount' => 315,
+        'balance_after' => 0,
+        'currency' => 'UGX',
+        'description' => 'Reversal of historical merchant receipt',
+        'status' => 'reversed',
+        'posted_at' => $firstReversalPostedAt,
+        'created_at' => $firstReversalPostedAt,
+    ]);
+    $restoringReversal = Transaction::create([
+        'organization_id' => $branch->organization_id,
+        'transaction_type_id' => $type->id,
+        'drawer_session_id' => $session->id,
+        'branch_id' => $branch->id,
+        'user_id' => $admin->id,
+        'reversal_of_id' => $firstReversal->id,
+        'reference' => 'RV-RESTORE-HISTORICAL-MERCHANT',
+        'amount' => 315,
+        'balance_after' => 0,
+        'currency' => 'UGX',
+        'description' => 'Restore historical merchant receipt',
+        'status' => 'posted',
+        'posted_at' => $restoringReversalPostedAt,
+        'created_at' => $restoringReversalPostedAt,
+    ]);
+    $original->update(['reversed_by' => $firstReversal->id, 'reversed_at' => $firstReversalPostedAt]);
+    $firstReversal->update(['reversed_by' => $restoringReversal->id, 'reversed_at' => $restoringReversalPostedAt]);
+    DrawerMovement::create([
+        'organization_id' => $branch->organization_id,
+        'drawer_session_id' => $session->id,
+        'user_id' => $admin->id,
+        'type' => 'cash_in',
+        'amount' => 315,
+        'balance_after' => 1315,
+        'reference' => $original->reference,
+        'created_at' => $originalPostedAt,
+        'updated_at' => $originalPostedAt,
+    ]);
+    DrawerMovement::create([
+        'organization_id' => $branch->organization_id,
+        'drawer_session_id' => $session->id,
+        'user_id' => $admin->id,
+        'type' => 'cash_out',
+        'amount' => 315,
+        'balance_after' => 1000,
+        'reference' => 'RV-'.$original->reference,
+        'created_at' => $firstReversalPostedAt,
+        'updated_at' => $firstReversalPostedAt,
+    ]);
+    $laterMovement = DrawerMovement::create([
+        'organization_id' => $branch->organization_id,
+        'drawer_session_id' => $session->id,
+        'user_id' => $admin->id,
+        'type' => 'cash_out',
+        'amount' => 100,
+        'balance_after' => 900,
+        'reference' => 'TX-AFTER-MISSING-RESTORE',
+        'created_at' => $laterMovementPostedAt,
+        'updated_at' => $laterMovementPostedAt,
+    ]);
+    $migration = require database_path('migrations/2026_09_01_213350_repair_reversal_of_reversal_drawer_movements.php');
+
+    $migration->up();
+    $migration->up();
+
+    $restoredMovement = DrawerMovement::query()
+        ->where('reference', 'RV-'.$firstReversal->reference)
+        ->firstOrFail();
+
+    expect((float) $drawer->fresh()->current_balance)->toBe(1215.0)
+        ->and((float) $laterMovement->fresh()->balance_after)->toBe(1215.0)
+        ->and($restoredMovement->type)->toBe('cash_in')
+        ->and((float) $restoredMovement->amount)->toBe(315.0)
+        ->and((float) $restoredMovement->balance_after)->toBe(1315.0)
+        ->and(DrawerMovement::query()->where('reference', 'RV-'.$firstReversal->reference)->count())->toBe(1);
+});
+
 it('reopens a closed loan account when its payoff repayment is reversed', function () {
     $branch = Branch::create([
         'code' => '1003',
