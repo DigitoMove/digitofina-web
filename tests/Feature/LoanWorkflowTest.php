@@ -280,6 +280,63 @@ it('approves and disburses a loan with guarantor checks and a repayment schedule
         ->and((float) $loan->interest_balance)->toBeGreaterThan(0.0);
 });
 
+it('lists organization admins on loan details and allows assigning the loan to them', function () {
+    $branchManager = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($branchManager, ['clients', 'loans']);
+    $client = loanWorkflowClient($branchManager);
+    $product = loanWorkflowProduct(['organization_id' => $organization->id]);
+    $loan = loanWorkflowTrackedLoan($branchManager, $client, $product, '1001-LN-ORG-ADMIN', 'draft');
+    $organizationAdminRole = Role::create([
+        'organization_id' => $organization->id,
+        'name' => 'Organization Admin',
+        'slug' => 'organization-admin',
+    ]);
+    $organizationAdmin = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => null,
+        'role_id' => $organizationAdminRole->id,
+        'name' => 'Assignable Organization Admin',
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => null,
+        'role_id' => $organizationAdminRole->id,
+        'name' => 'Inactive Organization Admin',
+        'status' => 'inactive',
+        'is_active' => false,
+    ]);
+    $otherOrganization = Organization::create([
+        'name' => 'Other Organization',
+        'slug' => 'other-organization',
+        'status' => 'active',
+    ]);
+    User::factory()->create([
+        'organization_id' => $otherOrganization->id,
+        'branch_id' => null,
+        'role_id' => $organizationAdminRole->id,
+        'name' => 'Other Organization Admin',
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($branchManager)
+        ->get(route('loans.show', $loan))
+        ->assertSuccessful()
+        ->assertSee('Assignable Organization Admin')
+        ->assertDontSee('Inactive Organization Admin')
+        ->assertDontSee('Other Organization Admin');
+
+    $this->actingAs($branchManager)
+        ->post(route('loans.assign-officer', $loan), ['officer_id' => $organizationAdmin->id])
+        ->assertRedirect()
+        ->assertSessionHas('status', 'Assigned officer updated.');
+
+    expect($loan->fresh()->officer_id)->toBe($organizationAdmin->id)
+        ->and($client->fresh()->officer_id)->toBe($organizationAdmin->id);
+});
+
 it('copies guarantors from the client most recent loan with guarantors', function () {
     $user = loanWorkflowUser();
     $client = loanWorkflowClient($user);

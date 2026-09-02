@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Loan;
 use App\Models\User;
 use App\Support\ApiSecurity;
+use App\Support\RoleCatalog;
 use Illuminate\Database\Eloquent\Builder;
 
 class LoanVisibilityService
@@ -107,8 +108,13 @@ class LoanVisibilityService
             ->with('role')
             ->where('status', 'active')
             ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
-            ->when($user->branch_id && ! ApiSecurity::hasGlobalBranchAccess($user), fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
-            ->whereHas('role', fn (Builder $query): Builder => $query->whereIn('slug', ['branch-manager', 'loan-officer']))
+            ->when($user->branch_id && ! ApiSecurity::hasGlobalBranchAccess($user), function (Builder $query) use ($user): void {
+                $query->where(function (Builder $query) use ($user): void {
+                    $query->where('branch_id', $user->branch_id)
+                        ->orWhereHas('role', fn (Builder $query): Builder => $query->where('slug', 'organization-admin'));
+                });
+            })
+            ->whereHas('role', fn (Builder $query): Builder => $query->whereIn('slug', RoleCatalog::LOAN_ASSIGNABLE_SLUGS))
             ->orderBy('name');
     }
 }

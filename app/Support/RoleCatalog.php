@@ -5,6 +5,17 @@ namespace App\Support;
 final class RoleCatalog
 {
     /**
+     * Roles that may own a loan assignment.
+     *
+     * @var array<int, string>
+     */
+    public const LOAN_ASSIGNABLE_SLUGS = [
+        'organization-admin',
+        'branch-manager',
+        'loan-officer',
+    ];
+
+    /**
      * Roles supplied by DigitoFina and assignable within every organization.
      *
      * The legacy cashier aliases remain here for upgraded installations.

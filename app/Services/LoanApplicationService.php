@@ -9,6 +9,7 @@ use App\Models\LoanProduct;
 use App\Models\LoanSchedule;
 use App\Models\User;
 use App\Support\CurrencyDenomination;
+use App\Support\RoleCatalog;
 use Carbon\CarbonImmutable;
 use Illuminate\Validation\ValidationException;
 
@@ -157,7 +158,7 @@ class LoanApplicationService
 
         if ($assignedOfficerId === 0) {
             if ($isCommercial && ($creator->hasRole('super-admin') || $creator->canPerform('manage-users') || $creator->canPerform('disburse-loans'))) {
-                throw ValidationException::withMessages(['assigned_officer_id' => 'Commercial loans must be assigned to a branch head or Loan Officer.']);
+                throw ValidationException::withMessages(['assigned_officer_id' => 'Commercial loans must be assigned to an organization admin, branch head, or Loan Officer.']);
             }
 
             return $creator;
@@ -173,8 +174,8 @@ class LoanApplicationService
             ->where('organization_id', app(TenantContext::class)->id() ?: $creator->organization_id)
             ->findOrFail($assignedOfficerId);
 
-        if (! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer'], true)) {
-            throw ValidationException::withMessages(['assigned_officer_id' => 'Select an active branch head or Loan Officer.']);
+        if (! in_array($assignedOfficer->role?->slug, RoleCatalog::LOAN_ASSIGNABLE_SLUGS, true)) {
+            throw ValidationException::withMessages(['assigned_officer_id' => 'Select an active organization admin, branch head, or Loan Officer.']);
         }
 
         return $assignedOfficer;

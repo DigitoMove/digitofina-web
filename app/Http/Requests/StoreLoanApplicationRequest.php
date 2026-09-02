@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\User;
 use App\Services\TenantContext;
 use App\Support\CurrencyDenomination;
+use App\Support\RoleCatalog;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -94,7 +95,7 @@ class StoreLoanApplicationRequest extends FormRequest
                 }
 
                 if ($this->input('loan_type') === 'commercial' && ! $assignedOfficerId) {
-                    $validator->errors()->add('assigned_officer_id', 'Commercial loans must be assigned to a branch head or Loan Officer.');
+                    $validator->errors()->add('assigned_officer_id', 'Commercial loans must be assigned to an organization admin, branch head, or Loan Officer.');
 
                     return;
                 }
@@ -111,8 +112,8 @@ class StoreLoanApplicationRequest extends FormRequest
 
                 $assignedOfficer = User::query()->with('role')->find($assignedOfficerId);
 
-                if (! $assignedOfficer || ! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer'], true)) {
-                    $validator->errors()->add('assigned_officer_id', 'Select an active branch head or Loan Officer.');
+                if (! $assignedOfficer || ! in_array($assignedOfficer->role?->slug, RoleCatalog::LOAN_ASSIGNABLE_SLUGS, true)) {
+                    $validator->errors()->add('assigned_officer_id', 'Select an active organization admin, branch head, or Loan Officer.');
                 }
             },
         ];

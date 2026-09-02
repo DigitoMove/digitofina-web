@@ -24,6 +24,7 @@ use App\Models\TransactionType;
 use App\Models\User;
 use App\Support\ApiSecurity;
 use App\Support\CurrencyDenomination;
+use App\Support\RoleCatalog;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
@@ -355,8 +356,8 @@ class LoanService
                 ->whereKey($officerId)
                 ->firstOrFail();
 
-            if (! in_array($assignedOfficer->role?->slug, ['branch-manager', 'loan-officer'], true)) {
-                throw new InvalidArgumentException('Select an active branch head or Loan Officer.');
+            if (! in_array($assignedOfficer->role?->slug, RoleCatalog::LOAN_ASSIGNABLE_SLUGS, true)) {
+                throw new InvalidArgumentException('Select an active organization admin, branch head, or Loan Officer.');
             }
 
             if ($loan->organization_id && $assignedOfficer->organization_id && (int) $loan->organization_id !== (int) $assignedOfficer->organization_id) {
