@@ -671,6 +671,160 @@ it('repairs historical reversal-of-reversal drawer balances only once', function
         ->and(DrawerMovement::query()->where('reference', 'RV-'.$firstReversal->reference)->count())->toBe(1);
 });
 
+it('corrects the reviewed merchant ledger reversal without changing later transactions', function () {
+    [$organization, $branch, $admin, $merchant, $cashAccount, $type] = ledgerReversalLineContext();
+    $merchant->update(['name' => 'Merchant Code Payments/Clearing']);
+    $expenseAccount = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'code' => 'CORRECTION-EXPENSE',
+        'name' => 'Transaction Charges Expense',
+        'type' => 'expense',
+        'normal_balance' => 'debit',
+        'is_active' => true,
+    ]);
+    $drawer = TellerDrawer::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'assigned_user_id' => $admin->id,
+        'name' => 'Lukwanga Drawer',
+        'code' => 'TD-1001-01-CORRECTION',
+        'current_balance' => 1000,
+        'status' => 'open',
+    ]);
+    $session = DrawerSession::create([
+        'organization_id' => $organization->id,
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $admin->id,
+        'opening_balance' => 1000,
+        'status' => 'open',
+        'opened_at' => now()->subDay(),
+    ]);
+    $original = Transaction::create([
+        'organization_id' => $organization->id,
+        'transaction_type_id' => $type->id,
+        'drawer_session_id' => $session->id,
+        'branch_id' => $branch->id,
+        'user_id' => $admin->id,
+        'reference' => 'DF260831203402YTGSU',
+        'amount' => 315000,
+        'charges' => 105000,
+        'balance_after' => 0,
+        'currency' => 'UGX',
+        'description' => 'Received cash from merchant payments',
+        'status' => 'reversed',
+        'posted_at' => now()->subHours(4),
+    ]);
+    $firstReversal = Transaction::create([
+        'organization_id' => $organization->id,
+        'transaction_type_id' => $type->id,
+        'drawer_session_id' => $session->id,
+        'branch_id' => $branch->id,
+        'user_id' => $admin->id,
+        'reversal_of_id' => $original->id,
+        'reference' => 'RV260831204259UZRYZ',
+        'amount' => 315000,
+        'charges' => 105000,
+        'balance_after' => 0,
+        'currency' => 'UGX',
+        'description' => 'Reversal of merchant receipt',
+        'status' => 'reversed',
+        'posted_at' => now()->subHours(3),
+    ]);
+    $erroneousReversal = Transaction::create([
+        'organization_id' => $organization->id,
+        'transaction_type_id' => $type->id,
+        'drawer_session_id' => $session->id,
+        'branch_id' => $branch->id,
+        'user_id' => $admin->id,
+        'reversal_of_id' => $firstReversal->id,
+        'reference' => 'RV260831225401OB4H7',
+        'amount' => 315000,
+        'charges' => 105000,
+        'balance_after' => 0,
+        'currency' => 'UGX',
+        'description' => 'Erroneous reversal of the merchant reversal',
+        'status' => 'posted',
+        'posted_at' => now()->subHours(2),
+    ]);
+    $original->update(['reversed_by' => $firstReversal->id, 'reversed_at' => $firstReversal->posted_at]);
+    $firstReversal->update(['reversed_by' => $erroneousReversal->id, 'reversed_at' => $erroneousReversal->posted_at]);
+    DrawerMovement::create([
+        'organization_id' => $organization->id,
+        'drawer_session_id' => $session->id,
+        'user_id' => $admin->id,
+        'type' => 'cash_in',
+        'amount' => 315000,
+        'balance_after' => 316000,
+        'reference' => $original->reference,
+        'created_at' => $original->posted_at,
+        'updated_at' => $original->posted_at,
+    ]);
+    DrawerMovement::create([
+        'organization_id' => $organization->id,
+        'drawer_session_id' => $session->id,
+        'user_id' => $admin->id,
+        'type' => 'cash_out',
+        'amount' => 315000,
+        'balance_after' => 1000,
+        'reference' => 'RV-'.$original->reference,
+        'created_at' => $firstReversal->posted_at,
+        'updated_at' => $firstReversal->posted_at,
+    ]);
+    $journal = JournalEntry::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'created_by' => $admin->id,
+        'posted_by' => $admin->id,
+        'journal_number' => 'ERRONEOUS-MERCHANT-REVERSAL',
+        'journal_date' => today(),
+        'description' => $erroneousReversal->description,
+        'status' => 'posted',
+        'posted_at' => $erroneousReversal->posted_at,
+        'chart_account_id' => $merchant->id,
+        'transaction_id' => $erroneousReversal->id,
+        'reference' => $erroneousReversal->reference,
+        'account_name' => $merchant->name,
+        'entry_type' => 'credit',
+        'amount' => 420000,
+    ]);
+    JournalLine::create(['organization_id' => $organization->id, 'journal_entry_id' => $journal->id, 'chart_account_id' => $cashAccount->id, 'debit' => 315000, 'credit' => 0]);
+    JournalLine::create(['organization_id' => $organization->id, 'journal_entry_id' => $journal->id, 'chart_account_id' => $expenseAccount->id, 'debit' => 105000, 'credit' => 0]);
+    JournalLine::create(['organization_id' => $organization->id, 'journal_entry_id' => $journal->id, 'chart_account_id' => $merchant->id, 'debit' => 0, 'credit' => 420000]);
+
+    $drawerRepair = require database_path('migrations/2026_09_01_213350_repair_reversal_of_reversal_drawer_movements.php');
+    $drawerRepair->up();
+
+    $drawer->decrement('current_balance', 200000);
+    $todayMovement = DrawerMovement::create([
+        'organization_id' => $organization->id,
+        'drawer_session_id' => $session->id,
+        'user_id' => $admin->id,
+        'type' => 'cash_out',
+        'amount' => 200000,
+        'balance_after' => 116000,
+        'reference' => 'TX-TODAY-AFTER-DEPLOYMENT',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $correction = require database_path('migrations/2026_09_02_150955_reverse_erroneous_lukwanga_merchant_reversal.php');
+
+    $correction->up();
+    $correction->up();
+
+    $correctingTransaction = Transaction::query()->where('reversal_of_id', $erroneousReversal->id)->firstOrFail();
+    $correctingJournalIds = JournalEntry::query()->where('transaction_id', $correctingTransaction->id)->pluck('id');
+
+    expect((float) $drawer->fresh()->current_balance)->toBe(-199000.0)
+        ->and($todayMovement->fresh()->reference)->toBe('TX-TODAY-AFTER-DEPLOYMENT')
+        ->and((float) $todayMovement->fresh()->balance_after)->toBe(116000.0)
+        ->and($erroneousReversal->fresh()->status)->toBe('reversed')
+        ->and((float) JournalLine::query()->whereIn('journal_entry_id', $correctingJournalIds)->where('chart_account_id', $merchant->id)->sum('debit'))->toBe(420000.0)
+        ->and((float) JournalLine::query()->whereIn('journal_entry_id', $correctingJournalIds)->where('chart_account_id', $merchant->id)->sum('credit'))->toBe(0.0)
+        ->and(Transaction::query()->where('reversal_of_id', $erroneousReversal->id)->count())->toBe(1)
+        ->and(DrawerMovement::query()->where('reference', 'RV-'.$erroneousReversal->reference)->where('type', 'cash_out')->count())->toBe(1);
+});
+
 it('reopens a closed loan account when its payoff repayment is reversed', function () {
     $branch = Branch::create([
         'code' => '1003',

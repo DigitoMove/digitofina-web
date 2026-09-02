@@ -25,9 +25,9 @@ class TransactionReversalService
         private LedgerReversalRepairService $ledgerReversalRepair,
     ) {}
 
-    public function approve(MakerCheckerRequest $request, User $checker): Transaction
+    public function approve(MakerCheckerRequest $request, User $checker, bool $allowDrawerOverdraft = false): Transaction
     {
-        return DB::transaction(function () use ($request, $checker): Transaction {
+        return DB::transaction(function () use ($request, $checker, $allowDrawerOverdraft): Transaction {
             $original = Transaction::query()
                 ->with(['account.accountType', 'type', 'drawerSession.drawer', 'originalTransaction'])
                 ->whereKey($request->subject_id)
@@ -59,7 +59,7 @@ class TransactionReversalService
                 $this->reverseAccountBalance($original, $account);
             }
 
-            $this->reverseDrawerMovement($original, $checker);
+            $this->reverseDrawerMovement($original, $checker, $allowDrawerOverdraft);
 
             $reversal = Transaction::create([
                 'organization_id' => $original->organization_id,
@@ -120,7 +120,7 @@ class TransactionReversalService
         $account->decrement('balance', $amount);
     }
 
-    private function reverseDrawerMovement(Transaction $transaction, User $checker): void
+    private function reverseDrawerMovement(Transaction $transaction, User $checker, bool $allowDrawerOverdraft): void
     {
         $movements = DrawerMovement::query()
             ->with('session.drawer')
@@ -142,12 +142,14 @@ class TransactionReversalService
             ->get()
             ->keyBy('id');
 
-        foreach ($movements->where('type', 'cash_in')->groupBy(fn (DrawerMovement $movement): ?int => $movement->session?->teller_drawer_id) as $drawerId => $cashInMovements) {
-            $drawer = $drawers->get($drawerId);
-            $requiredCash = (float) $cashInMovements->sum('amount');
+        if (! $allowDrawerOverdraft) {
+            foreach ($movements->where('type', 'cash_in')->groupBy(fn (DrawerMovement $movement): ?int => $movement->session?->teller_drawer_id) as $drawerId => $cashInMovements) {
+                $drawer = $drawers->get($drawerId);
+                $requiredCash = (float) $cashInMovements->sum('amount');
 
-            if (! $drawer || (float) $drawer->current_balance < $requiredCash) {
-                throw new InvalidArgumentException('A destination drawer does not have enough cash to reverse this transaction.');
+                if (! $drawer || (float) $drawer->current_balance < $requiredCash) {
+                    throw new InvalidArgumentException('A destination drawer does not have enough cash to reverse this transaction.');
+                }
             }
         }
 
