@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\ReportExport;
 use App\Models\SavingsAccount;
+use App\Services\ClientStatementService;
 use App\Services\ReportDocumentFormatter;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -31,23 +32,20 @@ class GenerateStatement implements ShouldQueue
             ->with(['branch', 'client', 'organization'])
             ->findOrFail($this->savingsAccountId);
         $filters = $export->filters ?? [];
+        abort_unless($account->organization_id === $export->organization_id && (! $export->branch_id || $account->branch_id === $export->branch_id), 403);
 
         $export->update(['status' => 'processing']);
 
-        $transactions = $account->transactions()
-            ->when($filters['date_from'] ?? null, fn ($query, string $date) => $query->whereDate('transaction_date', '>=', $date))
-            ->when($filters['date_to'] ?? null, fn ($query, string $date) => $query->whereDate('transaction_date', '<=', $date))
-            ->orderBy('transaction_date')
-            ->orderBy('id')
-            ->get(['reference', 'type', 'amount', 'charges', 'balance_before', 'balance_after', 'payment_method', 'status', 'narration', 'transaction_date', 'updated_at'])
-            ->map(fn ($transaction): array => $transaction->only(['reference', 'type', 'amount', 'charges', 'balance_before', 'balance_after', 'payment_method', 'status', 'narration', 'transaction_date', 'updated_at']))
-            ->all();
+        $document = app(ClientStatementService::class)->forAccount($account->client, $account, 'savings:'.$account->id, $filters);
+        $document['title'] = 'Savings Account Transactions';
+        $document['heading'] = 'Savings Account Transactions';
+        $document['rows'][0]['description'] = 'Opening Balance';
 
         $path = "reports/statements/{$account->id}/statement-{$export->id}.{$export->format}";
 
         Storage::disk($export->disk ?? 'local')->put(
             $path,
-            app(ReportDocumentFormatter::class)->renderStatement($export, $account, $transactions)
+            app(ReportDocumentFormatter::class)->renderClientStatement($document, $export->format)
         );
 
         $export->update([

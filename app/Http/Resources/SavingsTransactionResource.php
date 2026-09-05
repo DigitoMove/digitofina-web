@@ -25,6 +25,8 @@ class SavingsTransactionResource extends JsonResource
             'payment_method' => $this->payment_method,
             'narration' => $this->narration,
             'status' => $this->status,
+            'reversal_of_id' => $this->reversal_of_id,
+            'reversed_at' => $this->reversed_at?->toIso8601String(),
             'transaction_date' => $this->transaction_date?->toDateString(),
             'recorded_at' => $this->created_at?->toIso8601String(),
             'account' => $this->whenLoaded('account', fn () => [

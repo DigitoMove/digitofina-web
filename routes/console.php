@@ -2,6 +2,7 @@
 
 use App\Jobs\PostInterest;
 use App\Jobs\RunBackupJob;
+use App\Services\OperationsMonitor;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -9,6 +10,8 @@ use Illuminate\Support\Facades\Schedule;
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Schedule::call(fn () => app(OperationsMonitor::class)->heartbeat())->everyMinute()->name('operations:heartbeat');
 
 Schedule::command('loans:apply-penalties')
     ->dailyAt('00:00')

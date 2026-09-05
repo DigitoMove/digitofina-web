@@ -21,6 +21,7 @@ class SavingsTransaction extends Model
             'balance_after' => 'decimal:2',
             'transaction_date' => 'date',
             'value_date' => 'date',
+            'reversed_at' => 'datetime',
         ];
     }
 

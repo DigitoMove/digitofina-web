@@ -133,6 +133,7 @@ class FinancialControlService
         if ($limit->daily_transaction_limit !== null) {
             $postedToday = SavingsTransaction::query()
                 ->where('teller_id', $user->id)
+                ->whereNull('reversal_of_id')
                 ->whereDate('transaction_date', $businessDate->toDateString())
                 ->where('status', 'successful')
                 ->sum('amount');
@@ -503,7 +504,8 @@ class FinancialControlService
             $lines[] = ['account_code' => '4200', 'credit' => $charge, 'narration' => 'Savings withdrawal charge'];
         }
 
-        $this->journals->post($lines, "Savings withdrawal {$transaction->reference}", $checker, $transaction->branch_id);
+        $journal = $this->journals->post($lines, "Savings withdrawal {$transaction->reference}", $checker, $transaction->branch_id);
+        $transaction->update(['journal_entry_id' => $journal->id]);
         $request->update(['subject_type' => $transaction->getMorphClass(), 'subject_id' => $transaction->id]);
         $this->recordSuspiciousTransaction($checker, $transaction, $amount, 'large_withdrawal', $transaction->branch_id);
     }
@@ -517,16 +519,7 @@ class FinancialControlService
 
     private function performSavingsReversal(MakerCheckerRequest $request, User $checker): void
     {
-        $transaction = SavingsTransaction::query()->whereKey($request->subject_id)->lockForUpdate()->firstOrFail();
-        $account = SavingsAccount::query()->whereKey($transaction->savings_account_id)->lockForUpdate()->firstOrFail();
-
-        if ($transaction->status !== 'successful') {
-            throw new InvalidArgumentException('Only successful transactions can be reversed.');
-        }
-
-        $this->ensureFinancialDayOpen($checker, (int) $transaction->branch_id, today());
-        $account->update(['current_balance' => $transaction->balance_before, 'available_balance' => max(0, (float) $transaction->balance_before - (float) $account->locked_amount)]);
-        $transaction->update(['status' => 'reversed', 'reversed_by' => $checker->id, 'reversal_reason' => $request->reason]);
+        app(SavingsTransactionService::class)->reverse(SavingsTransaction::findOrFail($request->subject_id), $checker, (string) $request->reason);
     }
 
     private function performJournalPosting(MakerCheckerRequest $request, User $checker): void

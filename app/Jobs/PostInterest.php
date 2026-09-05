@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Services\OperationsMonitor;
 use App\Services\SavingsInterestService;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -25,11 +26,10 @@ class PostInterest implements ShouldQueue
 
     public function handle(SavingsInterestService $interest): void
     {
-        $posted = $interest->postDueInterest(
-            $this->organizationId,
-            $this->branchId,
-            $this->asOf ? CarbonImmutable::parse($this->asOf) : null,
-        );
+        $result = app(OperationsMonitor::class)->run($this->asOf ? 'interest-manual' : 'interest', fn (): array => ['posted_accounts' => $interest->postDueInterest(
+            $this->organizationId, $this->branchId, $this->asOf ? CarbonImmutable::parse($this->asOf) : null,
+        )], $this->organizationId, $this->branchId);
+        $posted = $result['posted_accounts'];
 
         Log::info('Queued savings interest posting completed.', [
             'organization_id' => $this->organizationId,

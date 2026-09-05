@@ -18,6 +18,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class ClientDeletionService
 {
@@ -32,7 +33,11 @@ class ClientDeletionService
             $ids = $this->relatedIds($client);
             $counts = [];
 
-            $this->deleteDocumentFiles($ids['client_document_ids']);
+            if (SavingsTransaction::query()->whereIn('id', $ids['savings_transaction_ids'])->whereNotNull('reversal_of_id')->exists()) {
+                throw ValidationException::withMessages(['client' => 'This client has linked financial reversals. Deactivate the client instead of permanently deleting their financial history.']);
+            }
+
+            $documents = ClientDocument::withTrashed()->whereIn('id', $ids['client_document_ids'])->get(['disk', 'path']);
             $this->deleteMorphRows($ids, $counts);
             $this->deletePaymentRows($ids, $counts);
             $this->deleteTransactions($ids, $counts);
@@ -44,6 +49,7 @@ class ClientDeletionService
             $this->deleteAccounts($ids, $counts);
 
             $counts['clients'] = $this->deleteByIds('clients', collect([$client->id]));
+            DB::afterCommit(fn () => $this->deleteDocumentFiles($documents));
 
             return $counts;
         });
@@ -261,22 +267,15 @@ class ClientDeletionService
     }
 
     /**
-     * @param  Collection<int, int|string>  $documentIds
+     * @param  Collection<int, ClientDocument>  $documents
      */
-    private function deleteDocumentFiles(Collection $documentIds): void
+    private function deleteDocumentFiles(Collection $documents): void
     {
-        if (! Schema::hasTable('client_documents') || $documentIds->isEmpty()) {
-            return;
-        }
-
-        ClientDocument::withTrashed()
-            ->whereIn('id', $documentIds)
-            ->get(['disk', 'path'])
-            ->each(function (ClientDocument $document): void {
-                if ($document->path) {
-                    Storage::disk($document->disk ?: 'local')->delete($document->path);
-                }
-            });
+        $documents->each(function (ClientDocument $document): void {
+            if ($document->path) {
+                Storage::disk($document->disk ?: 'local')->delete($document->path);
+            }
+        });
     }
 
     /**

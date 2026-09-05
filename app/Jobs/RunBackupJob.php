@@ -2,11 +2,12 @@
 
 namespace App\Jobs;
 
+use App\Services\OperationsMonitor;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
+use RuntimeException;
 use Throwable;
 
 class RunBackupJob implements ShouldQueue
@@ -21,28 +22,19 @@ class RunBackupJob implements ShouldQueue
 
     public function handle(): void
     {
-        $commands = collect(Artisan::all());
+        app(OperationsMonitor::class)->run('backup', function (): array {
+            if (! $this->preferPackageBackup || ! collect(Artisan::all())->has('backup:run')) {
+                throw new RuntimeException('No application backup provider is configured. A manifest is not a backup. Configure and test database and file backups before retrying.');
+            }
 
-        if ($this->preferPackageBackup && $commands->has('backup:run')) {
-            Artisan::call('backup:run', ['--no-interaction' => true]);
+            if (Artisan::call('backup:run', ['--no-interaction' => true]) !== 0) {
+                throw new RuntimeException('The backup command returned a failure exit code. Check backup logs and storage.');
+            }
 
-            Log::info('Queued application backup command completed.', [
-                'command' => 'backup:run',
-            ]);
+            Log::info('Queued application backup command completed.', ['command' => 'backup:run']);
 
-            return;
-        }
-
-        $path = 'backups/manifests/backup-'.now()->format('Ymd-His').'.json';
-
-        Storage::disk('local')->put($path, json_encode([
-            'generated_at' => now()->toIso8601String(),
-            'app' => config('app.name'),
-            'database' => config('database.default'),
-            'note' => 'Backup package not installed; manifest created for external backup orchestration.',
-        ], JSON_PRETTY_PRINT));
-
-        Log::info('Queued backup manifest created.', ['path' => $path]);
+            return ['command' => 'backup:run', 'restore_verified' => false];
+        });
     }
 
     public function failed(Throwable $exception): void

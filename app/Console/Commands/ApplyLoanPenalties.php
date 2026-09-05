@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\LoanService;
+use App\Services\OperationsMonitor;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -13,7 +14,7 @@ class ApplyLoanPenalties extends Command
 {
     public function handle(LoanService $loanService): int
     {
-        $summary = $loanService->applyOverduePenaltiesWithSummary();
+        $summary = app(OperationsMonitor::class)->run('penalties', fn (): array => $loanService->applyOverduePenaltiesWithSummary());
         $this->info(sprintf(
             'Completed overdue loan penalty posting. Checked %d overdue installment(s), applied UGX %s to %d schedule(s).',
             $summary['checked'],

@@ -57,6 +57,19 @@ class ClientStatementService
             return null;
         }
 
+        return $this->forAccount($client, $account, $key, $filters);
+    }
+
+    /**
+     * Build a document for an account already authorized by the caller.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    public function forAccount(Client $client, Account|SavingsAccount|InvestmentAccount|Loan $account, string $key, array $filters = []): array
+    {
+        abort_unless((int) $account->client_id === (int) $client->id && $account->organization_id === $client->organization_id, 404);
+        $client->loadMissing(['organization', 'branch']);
         $account->loadMissing('branch');
         $currency = $client->organization?->currency ?: 'UGX';
         $isLoan = $account instanceof Loan;
@@ -139,6 +152,7 @@ class ClientStatementService
             ->whereIn('status', $legacy ? ['posted', 'reversed'] : ['successful', 'reversed'])
             ->get();
         $events = collect();
+        $linkedReversals = $transactions->pluck('reversal_of_id')->filter()->flip();
 
         foreach ($transactions as $transaction) {
             $type = $legacy ? ($transaction->type?->name ?? 'Transaction') : Str::headline($transaction->type);
@@ -166,7 +180,7 @@ class ClientStatementService
                 'debit' => $delta < 0 ? abs($delta) : null, 'credit' => $delta > 0 ? $delta : null,
                 'before' => $before, 'balance' => $after,
             ]);
-            if (! $legacy && $transaction->status === 'reversed') {
+            if (! $legacy && $transaction->status === 'reversed' && ! $linkedReversals->has($transaction->id)) {
                 $events->push([
                     'date' => Carbon::parse($transaction->reversed_at ?? $transaction->updated_at), 'order' => $transaction->id,
                     'transaction_type' => 'Reversal', 'description' => 'Reversal of '.$transaction->reference,

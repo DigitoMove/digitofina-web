@@ -41,6 +41,7 @@ use App\Http\Controllers\ModuleManagementController;
 use App\Http\Controllers\NonCashTransactionController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\NylonPaySettingController;
+use App\Http\Controllers\OperationsHealthController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\OrganizationFinancialDefaultsController;
 use App\Http\Controllers\OrganizationHostingFeeController;
@@ -111,6 +112,7 @@ Route::middleware(['tenant', 'guest'])->group(function () {
 Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(function () {
     Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+    Route::get('/operations-health', OperationsHealthController::class)->name('operations-health.index');
     Route::get('/client-directory', [ClientDirectoryController::class, 'index'])->name('client-directory.index');
     Route::get('/client-directory/{client}', [ClientDirectoryController::class, 'show'])->name('client-directory.show');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');

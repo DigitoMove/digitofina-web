@@ -28,6 +28,7 @@ use App\Models\ShareProduct;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
+use App\Services\ClientDeletionService;
 use App\Services\ModuleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -161,6 +162,22 @@ it('lets an admin permanently delete a client and connected records', function (
         ->and(DB::table('client_groups')->whereKey($group->id)->value('chairperson_client_id'))->toBeNull()
         ->and(Client::whereKey($otherClient->id)->exists())->toBeTrue();
     Storage::disk('local')->assertMissing('client-documents/delete-me.txt');
+});
+
+it('keeps document files when an enclosing deletion transaction rolls back', function () {
+    Storage::fake('local');
+    $admin = deletionAdmin();
+    $client = deletionClient($admin);
+    Storage::disk('local')->put('client-documents/keep-on-rollback.txt', 'keep');
+    ClientDocument::create(['client_id' => $client->id, 'type' => 'national_id_front', 'title' => 'ID', 'disk' => 'local', 'path' => 'client-documents/keep-on-rollback.txt']);
+
+    expect(fn () => DB::transaction(function () use ($client): void {
+        app(ClientDeletionService::class)->delete($client);
+        throw new RuntimeException('Enclosing transaction failed');
+    }))->toThrow(RuntimeException::class, 'Enclosing transaction failed');
+
+    expect(Client::whereKey($client->id)->exists())->toBeTrue();
+    Storage::disk('local')->assertExists('client-documents/keep-on-rollback.txt');
 });
 
 it('does not let a non-admin delete a client', function () {

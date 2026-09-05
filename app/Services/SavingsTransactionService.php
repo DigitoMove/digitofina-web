@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\JournalEntry;
+use App\Models\JournalLine;
 use App\Models\SavingsAccount;
 use App\Models\SavingsTransaction;
 use App\Models\User;
@@ -93,37 +95,103 @@ class SavingsTransactionService
 
     public function reverse(SavingsTransaction $transaction, User $user, string $reason): SavingsTransaction
     {
-        if (! $user->canPerform('post-transactions')) {
+        if ($user->isMember() || ! ($user->canPerform('approve-reversals') || $user->canPerform('override-maker-checker'))) {
             throw new InvalidArgumentException('You do not have permission to reverse savings transactions.');
         }
 
-        if ($transaction->status !== 'successful') {
-            throw new InvalidArgumentException('Only successful transactions can be reversed.');
-        }
-
-        if (! in_array($transaction->type, ['deposit', 'withdrawal'], true)) {
-            throw new InvalidArgumentException('Only deposits and withdrawals can be reversed automatically.');
+        if (trim($reason) === '') {
+            throw new InvalidArgumentException('A reversal reason is required.');
         }
 
         return DB::transaction(function () use ($transaction, $user, $reason): SavingsTransaction {
             $transaction = SavingsTransaction::query()->whereKey($transaction->id)->lockForUpdate()->firstOrFail();
+            ApiSecurity::assertTenantAccess($user, $transaction);
+
+            if ($transaction->status !== 'successful' || $transaction->reversal_of_id || SavingsTransaction::query()->where('reversal_of_id', $transaction->id)->exists()) {
+                throw new InvalidArgumentException('Only successful, unreversed transactions can be reversed.');
+            }
+
+            if (! in_array($transaction->type, ['deposit', 'withdrawal'], true)) {
+                throw new InvalidArgumentException('Only deposits and withdrawals can be reversed automatically.');
+            }
+
             $account = SavingsAccount::query()->whereKey($transaction->savings_account_id)->lockForUpdate()->firstOrFail();
+            $this->financialControls->ensureFinancialDayOpen($user, (int) $account->branch_id);
+            $movement = round((float) $transaction->balance_after - (float) $transaction->balance_before, 2);
+            $expectedMovement = $transaction->type === 'deposit'
+                ? round((float) $transaction->amount - (float) $transaction->charges, 2)
+                : -round((float) $transaction->amount + (float) $transaction->charges, 2);
+
+            if ($movement !== $expectedMovement) {
+                throw new InvalidArgumentException('The original savings movement is inconsistent. Reconcile it before reversing.');
+            }
+
+            $before = (float) $account->current_balance;
+            $after = round($before - $movement, 2);
+            $journal = $this->reverseAccounting($transaction, $user, $reason);
+            $reversal = $this->createTransaction($account, $user, 'SR'.now()->format('ymdHis').Str::upper(Str::random(5)), 'reversal', (float) $transaction->amount, (float) $transaction->charges, $before, $after, $transaction->payment_method, 'Reversal of '.$transaction->reference.': '.$reason);
+            $reversal->update(['reversal_of_id' => $transaction->id, 'journal_entry_id' => $journal->id]);
 
             $account->update([
-                'current_balance' => $transaction->balance_before,
-                'available_balance' => max(0, (float) $transaction->balance_before - (float) $account->locked_amount),
+                'current_balance' => $after,
+                'available_balance' => max(0, $after - (float) $account->locked_amount),
+                'last_activity_at' => now(),
             ]);
 
             $transaction->update([
                 'status' => 'reversed',
                 'reversed_by' => $user->id,
                 'reversal_reason' => $reason,
+                'reversed_at' => now(),
             ]);
 
-            $this->auditLogger->record('savings.transaction_reversed', $transaction, ['reason' => $reason]);
+            $this->auditLogger->record('savings.transaction_reversed', $transaction, ['reason' => $reason, 'reversal_id' => $reversal->id, 'journal_entry_id' => $journal->id, 'balance_before' => $before, 'balance_after' => $after], actor: $user);
 
             return $transaction->refresh();
         });
+    }
+
+    private function reverseAccounting(SavingsTransaction $transaction, User $user, string $reason): JournalEntry
+    {
+        $journals = JournalEntry::query()
+            ->where('organization_id', $transaction->organization_id)
+            ->where('branch_id', $transaction->branch_id)
+            ->where('status', 'posted')
+            ->when($transaction->journal_entry_id,
+                fn (Builder $query): Builder => $query->whereKey($transaction->journal_entry_id),
+                fn (Builder $query): Builder => $query->where('description', "Savings {$transaction->type} {$transaction->reference}"))
+            ->lockForUpdate()->get();
+
+        if ($journals->count() !== 1) {
+            throw new InvalidArgumentException('A unique original savings journal could not be found. Reconcile the accounting before reversing.');
+        }
+
+        $original = $journals->first();
+        $lines = $original->lines()->with('chartAccount')->lockForUpdate()->get();
+        $debits = round((float) $lines->sum('debit'), 2);
+        $credits = round((float) $lines->sum('credit'), 2);
+        $liabilityMovement = round((float) $lines->filter(fn (JournalLine $line): bool => $line->chartAccount?->code === '2100')->sum(fn (JournalLine $line): float => (float) $line->credit - (float) $line->debit), 2);
+
+        if ($debits <= 0 || $debits !== $credits || $liabilityMovement !== round((float) $transaction->balance_after - (float) $transaction->balance_before, 2)) {
+            throw new InvalidArgumentException('The original savings journal does not match the transaction. Reconcile it before reversing.');
+        }
+
+        $journal = JournalEntry::create([
+            'organization_id' => $transaction->organization_id, 'branch_id' => $transaction->branch_id,
+            'created_by' => $user->id, 'posted_by' => $user->id,
+            'journal_number' => 'JE'.now()->format('ymdHis').Str::upper(Str::random(6)),
+            'journal_date' => today(), 'posted_at' => now(), 'status' => 'posted',
+            'description' => 'Reversal of '.$transaction->reference.': '.$reason,
+            'reference' => 'SREV-'.$transaction->id, 'account_name' => 'Balanced Journal', 'entry_type' => 'journal', 'amount' => $credits,
+        ]);
+
+        foreach ($lines as $line) {
+            $journal->lines()->create(['chart_account_id' => $line->chart_account_id, 'debit' => $line->credit, 'credit' => $line->debit, 'narration' => 'Reversal of journal '.$original->journal_number]);
+        }
+
+        $transaction->update(['journal_entry_id' => $original->id]);
+
+        return $journal;
     }
 
     /**
@@ -308,6 +376,7 @@ class SavingsTransactionService
             $lines[] = ['account_code' => '4200', 'credit' => $charge, 'narration' => 'Savings transaction charge'];
         }
 
-        $this->journalEntryService->post($lines, "Savings {$type} {$transaction->reference}", $transaction->teller, $transaction->branch_id);
+        $journal = $this->journalEntryService->post($lines, "Savings {$type} {$transaction->reference}", $transaction->teller, $transaction->branch_id);
+        $transaction->update(['journal_entry_id' => $journal->id]);
     }
 }

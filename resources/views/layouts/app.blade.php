@@ -158,6 +158,7 @@
                         return $group;
                     }, $navGroups), fn (array $group): bool => $group['items'] !== []));
                     $adminItems = $user->isMember() ? [] : array_values(array_filter([
+                        $user->hasAnyRole(['super-admin', 'organization-admin']) ? ['label' => 'Operations Health', 'route' => 'operations-health.index', 'icon' => 'M3 12h4l3-7 4 14 3-7h4'] : null,
                         $canManageOrganization ? ['label' => $user->hasRole('super-admin') ? 'Organizations' : 'Organization', 'route' => $organizationRoute, 'icon' => 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5'] : null,
                         $user->hasAnyRole(['super-admin', 'organization-admin']) ? ['label' => 'Billing & Quotes', 'route' => 'commercial-quotes.index', 'icon' => 'M5 5h14v14H5z M8 9h8 M8 13h8 M8 17h5'] : null,
                         $user->hasAnyRole(['super-admin', 'organization-admin']) && ($user->organization_id || $layoutTenantContext->id()) ? ['label' => 'Nylon Pay Collections', 'route' => 'organization.nylon-pay.edit', 'icon' => 'M4 7h16v10H4z M7 12h4'] : null,

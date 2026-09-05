@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\FixedSavingsService;
+use App\Services\OperationsMonitor;
 use Illuminate\Console\Command;
 
 class MarkMaturedFixedSavings extends Command
@@ -13,7 +14,8 @@ class MarkMaturedFixedSavings extends Command
 
     public function handle(FixedSavingsService $fixedSavings): int
     {
-        $count = $fixedSavings->markMatured();
+        $result = app(OperationsMonitor::class)->run('fixed-savings-maturities', fn (): array => ['matured_accounts' => $fixedSavings->markMatured()]);
+        $count = $result['matured_accounts'];
 
         $this->info("Marked {$count} fixed savings account(s) as matured.");
 
