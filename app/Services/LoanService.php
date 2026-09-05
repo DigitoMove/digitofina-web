@@ -1686,7 +1686,12 @@ class LoanService
     /**
      * @return array{allocations:list<array{loan_schedule_id:int, penalty_paid:float, fees_paid:float, interest_paid:float, principal_paid:float, total_paid:float}>, totals:array{penalty:float, fees:float, interest:float, principal:float}, applied:float}
      */
-    private function allocateSchedulePayments(Loan $loan, float $amount): array
+    public function previewSchedulePayments(Loan $loan, float $amount): array
+    {
+        return $this->allocateSchedulePayments($loan, $amount, false);
+    }
+
+    private function allocateSchedulePayments(Loan $loan, float $amount, bool $persist = true): array
     {
         $remaining = $amount;
         $allocations = [];
@@ -1697,7 +1702,12 @@ class LoanService
             'principal' => 0.0,
         ];
 
-        foreach ($loan->schedules()->where('status', '!=', 'paid')->orderBy('due_date')->lockForUpdate()->get() as $schedule) {
+        $schedules = $loan->schedules()->where('status', '!=', 'paid')->orderBy('due_date')->orderBy('id');
+        if ($persist) {
+            $schedules->lockForUpdate();
+        }
+
+        foreach ($schedules->get() as $schedule) {
             if ($remaining <= 0) {
                 break;
             }
@@ -1714,7 +1724,8 @@ class LoanService
 
             $outstanding = max(0, (float) $schedule->outstanding_amount - $totalPaid);
 
-            $schedule->update([
+            if ($persist) {
+                $schedule->update([
                 'principal_paid' => (float) $schedule->principal_paid + $principalPaid,
                 'interest_paid' => (float) $schedule->interest_paid + $interestPaid,
                 'fees_paid' => (float) $schedule->fees_paid + $feesPaid,
@@ -1725,6 +1736,7 @@ class LoanService
                 'balance_due' => $outstanding,
                 'status' => $outstanding <= 0 ? 'paid' : 'partially_paid',
             ]);
+            }
 
             $allocations[] = [
                 'loan_schedule_id' => $schedule->id,

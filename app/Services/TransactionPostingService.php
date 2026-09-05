@@ -735,7 +735,7 @@ class TransactionPostingService
         }
     }
 
-    private function nonCashLedgerAmount(string $entryType, float $amount, float $charges, string $chargeMode): float
+    public function nonCashLedgerAmount(string $entryType, float $amount, float $charges, string $chargeMode): float
     {
         if ($charges <= 0) {
             return $amount;
@@ -759,7 +759,7 @@ class TransactionPostingService
         }
     }
 
-    private function ledgerAmount(string $entryType, float $amount, float $charges, string $chargeMode): float
+    public function ledgerAmount(string $entryType, float $amount, float $charges, string $chargeMode): float
     {
         if ($charges <= 0) {
             return $amount;
@@ -776,7 +776,7 @@ class TransactionPostingService
             : $amount - $charges;
     }
 
-    private function cashImpact(string $entryType, float $amount, float $charges, string $chargeMode): float
+    public function cashImpact(string $entryType, float $amount, float $charges, string $chargeMode): float
     {
         if ($charges <= 0) {
             return $amount;

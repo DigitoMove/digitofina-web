@@ -10,6 +10,13 @@ use Illuminate\Pagination\LengthAwarePaginator;
 
 class LedgerAccountStatementService
 {
+    public function currentBalance(ChartAccount $account, ?int $branchId = null): float
+    {
+        $totals = $this->totals($this->baseQuery($account, $branchId), $account);
+
+        return $this->naturalBalance($account, $totals['debit'], $totals['credit']);
+    }
+
     /**
      * @return array{
      *     from: CarbonImmutable,

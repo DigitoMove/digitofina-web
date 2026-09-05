@@ -60,6 +60,7 @@ use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\TellerDrawerController;
 use App\Http\Controllers\TransactionDeletionController;
 use App\Http\Controllers\TransactionReversalController;
+use App\Http\Controllers\TransactionPreviewController;
 use App\Http\Controllers\UserFormOptionsController;
 use App\Http\Controllers\UserImpersonationController;
 use App\Http\Controllers\UserManagementController;
@@ -113,6 +114,7 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::get('/operations-health', OperationsHealthController::class)->name('operations-health.index');
+    Route::post('/transaction-preview', TransactionPreviewController::class)->middleware('throttle:60,1')->name('transactions.preview');
     Route::get('/client-directory', [ClientDirectoryController::class, 'index'])->name('client-directory.index');
     Route::get('/client-directory/{client}', [ClientDirectoryController::class, 'show'])->name('client-directory.show');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
