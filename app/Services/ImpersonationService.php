@@ -34,6 +34,18 @@ class ImpersonationService
         $this->start($request, $impersonator, $target);
     }
 
+    public function switchUser(Request $request, User $target): void
+    {
+        abort_unless($this->isActive($request), 403, 'No impersonated user session is active.');
+
+        $impersonator = User::query()->with('role')->findOrFail($request->session()->get(self::IMPERSONATOR_SESSION_KEY));
+        abort_unless($impersonator->hasRole(RoleCatalog::SUPER_ADMIN_SLUG), 403, 'Only a Super Admin can switch impersonated users.');
+
+        $this->stop($request);
+        $request->setUserResolver(fn (): User => Auth::user());
+        $this->startUser($request, $target);
+    }
+
     public function startClient(Request $request, Client $client): void
     {
         $impersonator = $request->user();

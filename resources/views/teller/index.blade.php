@@ -759,7 +759,7 @@
     <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div>
             <h2 class="font-semibold text-slate-950">{{ $isCashier ? "Today's Posted Transactions" : 'Drawer Posted Transactions' }}</h2>
-            <p class="df-muted">{{ $isCashier ? 'Search transactions posted by you today.' : 'Search posted transactions by description, reference, client, account, status, or transaction type.' }}</p>
+            <p class="df-muted">{{ $isCashier ? 'Search transactions from your current drawer session.' : 'Search posted transactions by description, reference, client, account, status, or transaction type.' }}</p>
         </div>
         <div class="flex flex-wrap items-center justify-end gap-2">
             <form method="GET" action="{{ route('teller.index') }}" class="flex flex-wrap items-center gap-2">

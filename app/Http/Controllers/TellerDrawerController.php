@@ -145,7 +145,7 @@ class TellerDrawerController extends Controller
                 'type',
                 'reversalRequests' => fn ($query) => $query->where('status', 'pending')->latest(),
             ])
-            ->when($session, function (Builder $query, DrawerSession $session) use ($recentMovementReferences): Builder {
+            ->when($session && ! $isCashier, function (Builder $query, DrawerSession $session) use ($recentMovementReferences): Builder {
                 return $query->where(function (Builder $query) use ($session, $recentMovementReferences): void {
                     $query->where('drawer_session_id', $session->id);
 
@@ -154,20 +154,12 @@ class TellerDrawerController extends Controller
                     }
                 });
             })
-            ->when(! $session, fn (Builder $query): Builder => $query->where('user_id', $request->user()->id))
+            ->when(! $session, fn (Builder $query): Builder => $query->whereRaw('1 = 0'))
             ->when($isCashier, fn (Builder $query): Builder => $query->whereDate('posted_at', $today->toDateString()))
-            ->when($isCashier, function (Builder $query) use ($request, $session, $recentMovementReferences): Builder {
-                return $query->where(function (Builder $query) use ($request, $session, $recentMovementReferences): void {
-                    $query->where('user_id', $request->user()->id);
-
-                    if ($session) {
-                        $query->orWhere('drawer_session_id', $session->id);
-                    }
-
-                    if ($recentMovementReferences->isNotEmpty()) {
-                        $query->orWhereIn('reference', $recentMovementReferences);
-                    }
-                });
+            ->when($isCashier, function (Builder $query) use ($request, $session): Builder {
+                return $query
+                    ->where('user_id', $request->user()->id)
+                    ->when($session, fn (Builder $query): Builder => $query->where('drawer_session_id', $session->id));
             })
             ->when($transactionSearch !== '', fn (Builder $query): Builder => $this->searchPostedTransactions($query, $transactionSearch))
             ->latest('posted_at')
