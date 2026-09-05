@@ -48,7 +48,7 @@
                     <td data-label="Action">
                         <div class="flex flex-wrap gap-2">
                             <x-icon-action :href="route('users.edit', $staff)" label="Edit staff user" icon="edit" />
-                            @if(auth()->user()->hasRole('super-admin') && ! $staff->hasRole('super-admin'))
+                            @if(auth()->user()->hasAnyRole(['super-admin', 'organization-admin']) && ! $staff->hasRole('super-admin') && (auth()->user()->hasGlobalOrganizationAccess() || (int) auth()->user()->organization_id === (int) $staff->organization_id))
                                 <form method="POST" action="{{ route('users.impersonate', $staff) }}">
                                     @csrf
                                     <x-icon-action label="Act as staff user" icon="login" />

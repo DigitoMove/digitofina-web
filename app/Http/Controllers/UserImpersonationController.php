@@ -14,7 +14,8 @@ class UserImpersonationController extends Controller
 
     public function store(Request $request, User $user, ImpersonationService $impersonation): RedirectResponse
     {
-        abort_unless($request->user()->hasRole(RoleCatalog::SUPER_ADMIN_SLUG), 403);
+        abort_unless($request->user()->hasAnyRole([RoleCatalog::SUPER_ADMIN_SLUG, 'organization-admin']), 403);
+        abort_unless($request->user()->hasGlobalOrganizationAccess() || (int) $request->user()->organization_id === (int) $user->organization_id, 403);
         $impersonation->startUser($request, $user);
 
         return redirect()->route('dashboard')->with('status', "You are now acting as {$user->name} ({$user->role?->name}).");

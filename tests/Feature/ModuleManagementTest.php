@@ -1597,7 +1597,7 @@ it('lets an admin turn cashier drawer denomination count on and off', function (
     expect(SystemSetting::value('cashier_drawer_count_enabled', '1', $organization->id))->toBe('0');
 });
 
-it('allows an admin setting to toggle cashier drawer denomination count', function () {
+it('does not allow cashiers to close drawers even when denomination counting is enabled', function () {
     [$organization, $branch] = drawerAdminOrganization();
     enableTellerModule($organization);
     $cashier = drawerAdminUser($organization, $branch->id, 'teller-cashier', ['post-transactions', 'post-repayments', 'request-reversals']);
@@ -1639,30 +1639,16 @@ it('allows an admin setting to toggle cashier drawer denomination count', functi
     $this->actingAs($cashier)
         ->get(route('teller.index'))
         ->assertSuccessful()
-        ->assertSee('Close Drawer')
         ->assertDontSee('End-of-Day Drawer Count')
-        ->assertDontSee('1,000 note');
+        ->assertDontSee('Close Drawer');
 
-    $this->actingAs($cashier)
-        ->post(route('teller.close'), [
-            'closing_balance' => 1000,
-        ])
-        ->assertRedirect()
-        ->assertSessionHasNoErrors();
+    $this->actingAs($cashier)->post(route('teller.close'), ['closing_balance' => 1000]);
 
     $session = DrawerSession::query()->where('user_id', $cashier->id)->orderByDesc('id')->firstOrFail();
 
-    expect($drawer->fresh()->status)->toBe('closed')
-        ->and($session->status)->toBe('closed')
-        ->and((float) $session->closing_balance)->toBe(1000.0)
+    expect($drawer->fresh()->status)->toBe('open')
+        ->and($session->status)->toBe('open')
         ->and(CashDenomination::query()->where('drawer_session_id', $session->id)->exists())->toBeFalse();
-
-    $this->actingAs($cashier)
-        ->get(route('teller.index', ['closed_session_id' => $session->id]))
-        ->assertSuccessful()
-        ->assertSee('End-of-Day Closing Report')
-        ->assertDontSee('1,000 note')
-        ->assertSee('UGX 1,000.00');
 
     SystemSetting::withoutGlobalScope('tenant')->updateOrCreate(
         ['organization_id' => $organization->id, 'key' => 'cashier_drawer_count_enabled'],

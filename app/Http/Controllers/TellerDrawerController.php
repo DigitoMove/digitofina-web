@@ -566,6 +566,8 @@ class TellerDrawerController extends Controller
 
     public function close(Request $request, FinancialControlService $financialControls): RedirectResponse
     {
+        abort_unless(! $request->user()->isTellerCashier(), 403, 'Cashiers cannot close drawers. Ask a drawer administrator to close it.');
+
         $data = $request->validate([
             'closing_balance' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
             'denominations' => ['nullable', 'array'],

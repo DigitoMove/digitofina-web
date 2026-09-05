@@ -1,7 +1,7 @@
 @props([
     'href' => null,
     'label',
-    'icon' => 'view',
+    'icon' => null,
     'tone' => 'default',
     'type' => 'button',
 ])
@@ -20,14 +20,16 @@
         : 'inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-brand-300 hover:bg-brand-50 hover:text-brand-900 focus:outline-none focus:ring-4 focus:ring-brand-100';
 @endphp
 
+@php($hasIcon = filled($icon))
+
 @if($href)
-    <a href="{{ $href }}" aria-label="{{ $label }}" title="{{ $label }}" {{ $attributes->class($classes) }}>
-        <svg class="size-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="{{ $path }}" /></svg>
-        <span class="sr-only">{{ $label }}</span>
+    <a href="{{ $href }}" aria-label="{{ $label }}" title="{{ $label }}" {{ $attributes->class(str_replace('size-9 items-center justify-center', 'min-h-9 items-center justify-center', $classes)) }}>
+        @if($hasIcon)<svg class="size-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="{{ $path }}" /></svg>@endif
+        <span class="text-xs font-semibold">{{ $label }}</span>
     </a>
 @else
     <button type="{{ $type }}" aria-label="{{ $label }}" title="{{ $label }}" {{ $attributes->class($classes) }}>
-        <svg class="size-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="{{ $path }}" /></svg>
-        <span class="sr-only">{{ $label }}</span>
+        @if($hasIcon)<svg class="size-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="{{ $path }}" /></svg>@endif
+        <span class="text-xs font-semibold">{{ $label }}</span>
     </button>
 @endif

@@ -26,7 +26,8 @@ class ImpersonationService
     {
         $impersonator = $request->user();
 
-        abort_unless($impersonator->hasRole(RoleCatalog::SUPER_ADMIN_SLUG), 403);
+        abort_unless($impersonator->hasAnyRole([RoleCatalog::SUPER_ADMIN_SLUG, 'organization-admin']), 403);
+        abort_unless($impersonator->hasGlobalOrganizationAccess() || (int) $impersonator->organization_id === (int) $target->organization_id, 403);
         abort_if($target->hasRole(RoleCatalog::SUPER_ADMIN_SLUG), 422, 'You cannot act as another Super Admin.');
         abort_if($target->isMember(), 422, 'Open the client profile to start a client support session.');
 

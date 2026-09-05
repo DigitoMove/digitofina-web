@@ -196,7 +196,7 @@
     </section>
     @endif
 
-    @if($session)
+    @if($session && ! $isCashier)
         <section class="df-panel p-5 xl:col-span-2">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
