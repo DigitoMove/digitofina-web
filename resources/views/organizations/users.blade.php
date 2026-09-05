@@ -3,10 +3,10 @@
 @section('content')
 <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
     <div>
-        <h1 class="text-2xl font-semibold text-slate-950">{{ $organization->name }} Users</h1>
+        <h1 class="text-2xl font-semibold text-slate-950">{{ $organization->name }} Staff Users</h1>
         <p class="text-sm text-slate-500">Assign existing global users to this organization and review current staff.</p>
     </div>
-    <a href="{{ route('users.create', ['organization_id' => $organization->id]) }}" class="df-action-primary">Create User</a>
+    <a href="{{ route('users.create', ['organization_id' => $organization->id]) }}" class="df-action-primary">Create Staff User</a>
 </div>
 
 <section class="df-panel mb-6 p-5">
@@ -62,7 +62,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="5" class="px-4 py-10 text-center text-slate-500">No users assigned.</td></tr>
+                    <tr><td colspan="5" class="px-4 py-10 text-center text-slate-500">No staff users assigned.</td></tr>
                 @endforelse
             </tbody>
         </table>

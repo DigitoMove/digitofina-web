@@ -30,7 +30,7 @@
                     <th class="px-4 py-3">Organization</th>
                     <th class="px-4 py-3">Package</th>
                     <th class="px-4 py-3">Branches</th>
-                    <th class="px-4 py-3">Users</th>
+                    <th class="px-4 py-3">Staff Users</th>
                     <th class="px-4 py-3">Status</th>
                     <th class="px-4 py-3 text-right">Actions</th>
                 </tr>
@@ -49,7 +49,7 @@
                         <td class="px-4 py-3 text-right">
                             <div class="inline-flex flex-wrap justify-end gap-3">
                                 <a href="{{ route('organization.edit', $organization) }}" class="font-semibold text-brand-700">Edit</a>
-                                <a href="{{ route('organizations.users', $organization) }}" class="font-semibold text-brand-700">Users</a>
+                                <a href="{{ route('organizations.users', $organization) }}" class="font-semibold text-brand-700">Staff Users</a>
                                 <a href="{{ route('modules.index', ['organization_id' => $organization->id]) }}" class="font-semibold text-brand-700">Modules</a>
                                 <a href="{{ route('organizations.financial-defaults.index', $organization) }}" class="font-semibold text-brand-700">Defaults</a>
                                 <form method="POST" action="{{ route('organizations.switch', $organization) }}">@csrf<button class="font-semibold text-brand-700">Switch</button></form>

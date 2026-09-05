@@ -54,6 +54,16 @@ Run this under Supervisor, systemd, or your hosting platform's process manager:
 php artisan queue:work --tries=3 --timeout=90
 ```
 
+## Scheduler
+
+Run Laravel's scheduler every minute from the server cron. The application will apply overdue loan penalties once per day at midnight in the configured `APP_TIMEZONE`.
+
+```cron
+* * * * * cd /path/to/digitofina && php artisan schedule:run >> /dev/null 2>&1
+```
+
+Only add this cron entry on one application server. For a process manager or Laravel Cloud, run `php artisan schedule:work` as the dedicated scheduler process instead.
+
 ## Web Server
 
 The document root must be:

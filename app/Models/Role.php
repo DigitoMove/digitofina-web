@@ -23,7 +23,7 @@ class Role extends Model
     public function scopeAssignableToOrganization(Builder $query, ?int $organizationId): Builder
     {
         return $query
-            ->where('slug', '!=', RoleCatalog::SUPER_ADMIN_SLUG)
+            ->whereNotIn('slug', [RoleCatalog::SUPER_ADMIN_SLUG, RoleCatalog::MEMBER_SLUG])
             ->where(function (Builder $query) use ($organizationId): void {
                 $query->whereNull('organization_id')
                     ->orWhereIn('slug', RoleCatalog::ASSIGNABLE_SLUGS);
@@ -36,7 +36,7 @@ class Role extends Model
 
     public function isAssignableToOrganization(?int $organizationId): bool
     {
-        if ($this->slug === RoleCatalog::SUPER_ADMIN_SLUG) {
+        if (in_array($this->slug, [RoleCatalog::SUPER_ADMIN_SLUG, RoleCatalog::MEMBER_SLUG], true)) {
             return false;
         }
 

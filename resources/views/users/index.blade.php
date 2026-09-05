@@ -3,10 +3,10 @@
 @section('content')
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div>
-        <h1 class="text-2xl font-semibold text-slate-950">User Management</h1>
+        <h1 class="text-2xl font-semibold text-slate-950">Staff User Management</h1>
         <p class="text-sm text-slate-500">Staff accounts, roles, branch assignment, and account status.</p>
     </div>
-    <a href="{{ route('users.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">New User</a>
+    <a href="{{ route('users.create') }}" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">New Staff User</a>
 </div>
 
 <form class="mb-4 grid gap-3 md:grid-cols-2 {{ auth()->user()->hasGlobalOrganizationAccess() ? 'xl:grid-cols-[1fr_14rem_14rem_14rem_12rem_auto]' : 'xl:grid-cols-[1fr_14rem_14rem_12rem_auto]' }}">
@@ -58,7 +58,7 @@
                     </td>
                 </tr>
             @empty
-                <tr><td class="p-4 text-slate-500" colspan="6">No users found.</td></tr>
+                <tr><td class="p-4 text-slate-500" colspan="6">No staff users found.</td></tr>
             @endforelse
         </tbody>
     </table>

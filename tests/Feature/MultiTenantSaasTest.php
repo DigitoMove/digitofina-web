@@ -24,6 +24,49 @@ use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
 
+it('keeps client portal members out of staff user management', function () {
+    [$organization, $branch, $organizationAdmin] = tenantUser(['manage-users']);
+    $organizationAdmin->role->update(['name' => 'Organization Admin', 'slug' => 'organization-admin']);
+    $memberRole = Role::create([
+        'organization_id' => $organization->id,
+        'name' => 'Member',
+        'slug' => 'member',
+    ]);
+    $member = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'role_id' => $memberRole->id,
+        'name' => 'Portal Client Account',
+        'email' => 'portal-client@example.test',
+        'phone' => '+256700000899',
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($organizationAdmin)
+        ->get(route('users.index'))
+        ->assertSuccessful()
+        ->assertSee('Staff User Management')
+        ->assertSee($organizationAdmin->name)
+        ->assertDontSee($member->email)
+        ->assertDontSee('<option value="'.$memberRole->id.'"', false);
+
+    expect($this->actingAs($organizationAdmin)->get(route('users.edit', $member))->isSuccessful())->toBeFalse();
+
+    $this->actingAs($organizationAdmin)
+        ->post(route('users.store'), [
+            'role_id' => $memberRole->id,
+            'branch_id' => $branch->id,
+            'name' => 'Another Portal Client',
+            'email' => 'another-portal-client@example.test',
+            'phone' => '+256700000898',
+            'status' => 'active',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])
+        ->assertSessionHasErrors('role_id');
+});
+
 it('prevents organization admins from assigning or editing super admins', function () {
     [$organization, $branch, $organizationAdmin] = tenantUser(['manage-users']);
     $organizationAdmin->role->update(['name' => 'Organization Admin', 'slug' => 'organization-admin']);

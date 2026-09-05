@@ -4,6 +4,8 @@ namespace App\Support;
 
 final class RoleCatalog
 {
+    public const MEMBER_SLUG = 'member';
+
     /**
      * Roles that may own a loan assignment.
      *

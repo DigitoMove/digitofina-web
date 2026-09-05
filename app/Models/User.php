@@ -6,9 +6,11 @@ namespace App\Models;
 use App\Services\ModuleService;
 use App\Services\TenantContext;
 use App\Support\ModuleCatalog;
+use App\Support\RoleCatalog;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -46,6 +48,15 @@ class User extends Authenticatable
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    /**
+     * @param  Builder<User>  $query
+     * @return Builder<User>
+     */
+    public function scopeStaff(Builder $query): Builder
+    {
+        return $query->whereDoesntHave('role', fn (Builder $query): Builder => $query->where('slug', RoleCatalog::MEMBER_SLUG));
     }
 
     public function organization(): BelongsTo

@@ -14,6 +14,7 @@ use App\Models\SavingsProduct;
 use App\Models\SystemSetting;
 use App\Services\LoanService;
 use App\Services\SavingsInterestService;
+use App\Support\CurrencyDenomination;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
@@ -167,15 +168,16 @@ it('applies organization penalty settings before platform defaults once per over
     $loanService = app(LoanService::class);
     $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-13'), branchId: $branch->id);
     $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-13'), branchId: $branch->id);
+    $dailyPenalty = (float) (ceil((102_500 * 0.01) / CurrencyDenomination::MINIMUM_UNIT) * CurrencyDenomination::MINIMUM_UNIT);
 
     expect(LoanPenalty::where('loan_id', $loan->id)->count())->toBe(1)
-        ->and((float) $loan->fresh()->penalty_balance)->toBe(1050.0)
-        ->and((float) $schedule->fresh()->penalty_due)->toBe(1050.0)
+        ->and((float) $loan->fresh()->penalty_balance)->toBe($dailyPenalty)
+        ->and((float) $schedule->fresh()->penalty_due)->toBe($dailyPenalty)
         ->and((int) $schedule->fresh()->days_overdue)->toBe(1);
 
     $loanService->applyOverduePenalties(asOf: CarbonImmutable::parse('2026-05-14'), branchId: $branch->id);
 
     expect(LoanPenalty::where('loan_id', $loan->id)->count())->toBe(2)
-        ->and((float) $loan->fresh()->penalty_balance)->toBe(2100.0)
-        ->and((float) $schedule->fresh()->penalty_due)->toBe(2100.0);
+        ->and((float) $loan->fresh()->penalty_balance)->toBe($dailyPenalty * 2)
+        ->and((float) $schedule->fresh()->penalty_due)->toBe($dailyPenalty * 2);
 });

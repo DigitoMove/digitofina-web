@@ -71,6 +71,20 @@ it('lets an approved client sign in by phone and forces a temporary password cha
     $this->get(route('member.dashboard'))->assertOk()->assertSee($client->client_number);
 });
 
+it('requires client accounts to use the separate client login', function () {
+    [, , $member] = clientPortalFixture();
+    $member->update(['password' => Hash::make('Client-Password-123!')]);
+
+    $this->post(route('login'), [
+        'login' => $member->email,
+        'password' => 'Client-Password-123!',
+    ])->assertSessionHasErrors([
+        'login' => 'Client accounts must sign in through the client login page.',
+    ]);
+
+    $this->assertGuest();
+});
+
 it('allows only an eligible client without an open loan to request a loan', function () {
     [$organization, , $member, $client, $officer] = clientPortalFixture();
     $product = LoanProduct::create([

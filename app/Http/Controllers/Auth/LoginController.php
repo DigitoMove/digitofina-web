@@ -42,6 +42,15 @@ class LoginController extends Controller
             ]);
         }
 
+        if (Auth::user()->isMember()) {
+            $auditLogger->record('auth.member_staff_login_blocked', Auth::user());
+            Auth::logout();
+
+            throw ValidationException::withMessages([
+                'login' => 'Client accounts must sign in through the client login page.',
+            ]);
+        }
+
         if ($tenant->organization() && (int) Auth::user()->organization_id !== (int) $tenant->id()) {
             $auditLogger->record('auth.cross_tenant_login_blocked', Auth::user(), ['tenant_organization_id' => $tenant->id()]);
             Auth::logout();

@@ -27,7 +27,10 @@ class OrganizationController extends Controller
 
         $organizations = Organization::query()
             ->with('package')
-            ->withCount(['branches', 'users'])
+            ->withCount([
+                'branches',
+                'users as users_count' => fn (Builder $query): Builder => $query->staff(),
+            ])
             ->when($request->search, fn (Builder $query, string $search): Builder => $query->whereAny(['name', 'slug', 'email', 'phone'], 'like', "%{$search}%"))
             ->when($request->status, fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->orderBy('name')
@@ -106,11 +109,13 @@ class OrganizationController extends Controller
         return view('organizations.users', [
             'organization' => $organization,
             'users' => User::query()
+                ->staff()
                 ->with(['role', 'branch'])
                 ->where('organization_id', $organization->id)
                 ->orderBy('name')
                 ->paginate(20),
             'availableUsers' => User::query()
+                ->staff()
                 ->whereNull('organization_id')
                 ->whereDoesntHave('role', fn (Builder $query): Builder => $query->where('slug', 'super-admin'))
                 ->orderBy('name')
@@ -129,6 +134,7 @@ class OrganizationController extends Controller
         ]);
 
         $user = User::query()->findOrFail($data['user_id']);
+        abort_if($user->isMember(), 422, 'Client portal accounts cannot be assigned through staff management.');
         $old = $user->only(['organization_id', 'branch_id']);
         $user->update([
             'organization_id' => $organization->id,

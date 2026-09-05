@@ -68,6 +68,12 @@ class UpdateUserRequest extends FormRequest
                 return;
             }
 
+            if ($roleSlug === RoleCatalog::MEMBER_SLUG) {
+                $validator->errors()->add('role_id', 'Client portal accounts are created and managed from the Clients section.');
+
+                return;
+            }
+
             if ($this->route('user')?->hasRole(RoleCatalog::SUPER_ADMIN_SLUG) && ! $user?->hasRole(RoleCatalog::SUPER_ADMIN_SLUG)) {
                 $validator->errors()->add('role_id', 'Only a super admin can edit a Super Admin account.');
 

@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\TenantContext;
 use App\Support\ApiSecurity;
+use App\Support\RoleCatalog;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -42,6 +43,7 @@ class UserManagementController extends Controller
         $selectedBranchId = filled($filters['branch_id'] ?? null) ? (int) $filters['branch_id'] : null;
 
         $users = User::query()
+            ->staff()
             ->with(['branch.organization', 'organization', 'role'])
             ->when(! $currentUser->hasRole('super-admin'), fn ($query) => $query->whereDoesntHave('role', fn ($query) => $query->where('slug', 'super-admin')))
             ->when($currentUser->hasGlobalOrganizationAccess() && $selectedOrganizationId, fn ($query) => $query->where('organization_id', $selectedOrganizationId))
@@ -58,6 +60,7 @@ class UserManagementController extends Controller
         return view('users.index', [
             'users' => $users,
             'roles' => Role::query()
+                ->where('slug', '!=', RoleCatalog::MEMBER_SLUG)
                 ->when(! $currentUser->hasRole('super-admin'), fn ($query) => $query->where('slug', '!=', 'super-admin'))
                 ->when($currentUser->hasGlobalOrganizationAccess() && $selectedOrganizationId, fn ($query) => $query->where(function ($query) use ($selectedOrganizationId): void {
                     $query->where('organization_id', $selectedOrganizationId)->orWhereNull('organization_id');

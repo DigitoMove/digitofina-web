@@ -201,7 +201,7 @@ class DashboardController extends Controller
             'drawerBalance' => $tellerEnabled ? ($drawer?->current_balance ?? 0) : 0,
             'hasOpenDrawer' => $drawer !== null,
             'branchCount' => $usersEnabled ? Branch::count() : 0,
-            'staffCount' => $usersEnabled ? User::where('status', 'active')->count() : 0,
+            'staffCount' => $usersEnabled ? User::staff()->where('status', 'active')->count() : 0,
             'totalInvestmentBalance' => $investmentsEnabled ? InvestorAccount::sum('current_investment_balance') : 0,
             'topInvestmentPlans' => $investmentsEnabled ? InvestmentPlan::query()
                 ->withSum('investmentAccounts', 'current_balance')
@@ -324,7 +324,7 @@ class DashboardController extends Controller
             'organizationCount' => Organization::query()->count(),
             'activeOrganizationCount' => Organization::query()->where('status', 'active')->count(),
             'suspendedOrganizationCount' => Organization::query()->whereIn('status', ['suspended', 'disabled', 'inactive'])->count(),
-            'staffCount' => (int) $scope(User::query()->where('status', 'active')->whereNotNull('organization_id'))->count(),
+            'staffCount' => (int) $scope(User::query()->staff()->where('status', 'active')->whereNotNull('organization_id'))->count(),
             'activeAccountCount' => (int) $scope(Account::query()->where('status', 'active'))->count(),
             'branchCount' => (int) $scope(Branch::query()->where('status', 'active'))->count(),
             'clientCount' => $scope(Client::query())->count(),

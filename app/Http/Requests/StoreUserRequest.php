@@ -62,6 +62,12 @@ class StoreUserRequest extends FormRequest
                 return;
             }
 
+            if ($roleSlug === RoleCatalog::MEMBER_SLUG) {
+                $validator->errors()->add('role_id', 'Client portal accounts are created and managed from the Clients section.');
+
+                return;
+            }
+
             if ($role && ! $role->isAssignableToOrganization($organizationId)) {
                 $validator->errors()->add('role_id', 'Select a role belonging to the selected organization.');
             }

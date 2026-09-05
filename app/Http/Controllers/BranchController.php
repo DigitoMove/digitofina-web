@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\Organization;
 use App\Models\User;
 use App\Services\AuditLogger;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +33,7 @@ class BranchController extends Controller
 
         $branches = Branch::query()
             ->with(['manager', 'organization'])
-            ->withCount('users')
+            ->withCount(['users' => fn (Builder $query): Builder => $query->staff()])
             ->when($currentUser->hasGlobalOrganizationAccess() && $selectedOrganizationId, fn ($query) => $query->where('organization_id', $selectedOrganizationId))
             ->when(! $currentUser->hasGlobalOrganizationAccess() && $currentUser->organization_id, fn ($query) => $query->where('organization_id', $currentUser->organization_id))
             ->when($filters['search'] ?? null, fn ($query, string $search) => $query->whereAny(['code', 'name', 'phone', 'address'], 'like', "%{$search}%"))
