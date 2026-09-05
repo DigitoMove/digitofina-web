@@ -16,14 +16,14 @@
         default => 'M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6S2.5 12 2.5 12z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
     };
     $classes = $tone === 'danger'
-        ? 'inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 shadow-sm hover:bg-red-50 focus:outline-none focus:ring-4 focus:ring-red-100'
-        : 'inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-brand-300 hover:bg-brand-50 hover:text-brand-900 focus:outline-none focus:ring-4 focus:ring-brand-100';
+        ? 'inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-red-200 bg-white px-3 py-2 text-red-700 shadow-sm hover:bg-red-50 focus:outline-none focus:ring-4 focus:ring-red-100'
+        : 'inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700 shadow-sm hover:border-brand-300 hover:bg-brand-50 hover:text-brand-900 focus:outline-none focus:ring-4 focus:ring-brand-100';
 @endphp
 
 @php($hasIcon = filled($icon))
 
 @if($href)
-    <a href="{{ $href }}" aria-label="{{ $label }}" title="{{ $label }}" {{ $attributes->class(str_replace('size-9 items-center justify-center', 'min-h-9 items-center justify-center', $classes)) }}>
+    <a href="{{ $href }}" aria-label="{{ $label }}" title="{{ $label }}" {{ $attributes->class($classes) }}>
         @if($hasIcon)<svg class="size-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="{{ $path }}" /></svg>@endif
         <span class="text-xs font-semibold">{{ $label }}</span>
     </a>

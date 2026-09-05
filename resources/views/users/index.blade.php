@@ -51,7 +51,7 @@
                             @if(auth()->user()->hasAnyRole(['super-admin', 'organization-admin']) && ! $staff->hasRole('super-admin') && (auth()->user()->hasGlobalOrganizationAccess() || (int) auth()->user()->organization_id === (int) $staff->organization_id))
                                 <form method="POST" action="{{ route('users.impersonate', $staff) }}">
                                     @csrf
-                                    <x-icon-action label="Act as staff user" icon="login" />
+                                    <x-icon-action type="submit" label="Impersonate" icon="login" />
                                 </form>
                             @endif
                         </div>
