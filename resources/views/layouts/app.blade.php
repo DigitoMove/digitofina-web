@@ -179,6 +179,10 @@
                         </span>
                         My Progress
                     </a>
+                    <a href="{{ route('member.statements') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ $isRouteActive('member.statements') ? 'bg-brand-50 text-brand-900 ring-1 ring-brand-200' : 'text-slate-600 hover:bg-slate-50' }}">
+                        <span class="grid h-8 w-8 place-items-center rounded-lg bg-slate-100 text-brand-700"><svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z M9 11h7 M9 15h7 M9 18h4"/></svg></span>
+                        My Statements
+                    </a>
                 @else
                     <a href="{{ route('dashboard') }}" class="group flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition {{ $isRouteActive('dashboard') ? 'bg-brand-50 text-brand-900 ring-1 ring-brand-200 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-brand-900' }}">
                         <span class="grid h-8 w-8 place-items-center rounded-lg transition group-hover:scale-105 {{ $isRouteActive('dashboard') ? 'bg-brand-700 text-white' : 'bg-slate-100 text-brand-700' }}">

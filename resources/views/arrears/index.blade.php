@@ -53,20 +53,14 @@
     </div>
 </form>
 <div class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-    <div class="overflow-x-auto">
-    <table class="min-w-[1180px] w-full text-left text-sm">
+    <div>
+    <table class="w-full text-left text-sm">
         <thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
             <tr>
-                <th class="px-4 py-3">Client</th>
-                <th class="px-4 py-3">Loan</th>
-                <th class="px-4 py-3">Branch</th>
-                <th class="px-4 py-3">Officer</th>
-                <th class="px-4 py-3">Schedules</th>
-                <th class="px-4 py-3">Earliest due</th>
-                <th class="px-4 py-3 text-right">Days</th>
-                <th class="px-4 py-3 text-right">Missed</th>
-                <th class="px-4 py-3 text-right">Penalty</th>
-                <th class="px-4 py-3 text-right">Total</th>
+                <th class="px-4 py-3">Client & Loan</th>
+                <th class="px-4 py-3">Assignment</th>
+                <th class="px-4 py-3">Arrears</th>
+                <th class="px-4 py-3 text-right">Amounts</th>
                 <th class="px-4 py-3">Status</th>
                 <th class="px-4 py-3 text-right">Actions</th>
             </tr>
@@ -82,35 +76,27 @@
                     $totalToPay = $missedAmount + $penaltyToClear;
                 @endphp
                 <tr class="align-top hover:bg-slate-50/70">
-                    <td class="px-4 py-3 font-medium text-slate-900">{{ $loan->client?->full_name ?? 'N/A' }}</td>
                     <td class="px-4 py-3">
+                        <div class="font-medium text-slate-900">{{ $loan->client?->full_name ?? 'N/A' }}</div>
                         <a class="font-semibold text-teal-700 hover:text-teal-900" href="{{ route('loans.show', $loan) }}">{{ $loan->loan_number }}</a>
                         <div class="mt-0.5 text-xs text-slate-500">{{ $loan->product?->name ?? 'N/A' }}</div>
                     </td>
-                    <td class="px-4 py-3 text-slate-700">{{ $loan->branch?->name ?? 'Unassigned' }}</td>
-                    <td class="px-4 py-3 text-slate-700">{{ $loan->officer?->name ?? 'Unassigned' }}</td>
-                    <td class="px-4 py-3">
-                        <div class="font-semibold text-slate-950">{{ number_format((int) $loan->arrears_schedules_count) }}</div>
-                        <div class="text-xs text-slate-500">installment{{ (int) $loan->arrears_schedules_count === 1 ? '' : 's' }} due</div>
-                    </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-slate-700">{{ $earliestSchedule?->due_date?->format('d M Y') ?? 'N/A' }}</td>
-                    <td class="px-4 py-3 text-right text-slate-700">{{ number_format((int) $maxDaysDue) }}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-right font-semibold text-red-700">UGX {{ number_format($missedAmount, 2) }}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-right text-slate-700">UGX {{ number_format($penaltyToClear, 2) }}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-right font-semibold text-slate-950">UGX {{ number_format($totalToPay, 2) }}</td>
+                    <td class="px-4 py-3 text-slate-700"><div>{{ $loan->branch?->name ?? 'Unassigned branch' }}</div><div class="text-xs text-slate-500">{{ $loan->officer?->name ?? 'Unassigned officer' }}</div></td>
+                    <td class="px-4 py-3"><div class="font-semibold text-slate-950">{{ number_format((int) $loan->arrears_schedules_count) }} installment{{ (int) $loan->arrears_schedules_count === 1 ? '' : 's' }} due</div><div class="text-xs text-slate-500">Since {{ $earliestSchedule?->due_date?->format('d M Y') ?? 'N/A' }} · {{ number_format((int) $maxDaysDue) }} days</div></td>
+                    <td class="px-4 py-3 text-right"><div class="font-semibold text-red-700">Missed · UGX {{ number_format($missedAmount, 2) }}</div><div class="text-xs text-slate-600">Penalty · UGX {{ number_format($penaltyToClear, 2) }}</div><div class="text-xs font-semibold text-slate-950">Total · UGX {{ number_format($totalToPay, 2) }}</div></td>
                     <td class="px-4 py-3"><span class="rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">{{ str($loan->status)->headline() }}</span></td>
                     <td class="px-4 py-3 text-right">
                         @if($canRunManualPenalties && $penaltyToClear > 0)
                             <form method="POST" action="{{ route('arrears.clear-penalties') }}" onsubmit="return confirm('Clear all pending penalties for this loan?')">
                                 @csrf
                                 <input type="hidden" name="loan_id" value="{{ $loan->id }}">
-                                <button class="whitespace-nowrap rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50">Clear penalty</button>
+                                <x-icon-action label="Clear loan penalty" icon="delete" tone="danger" />
                             </form>
                         @endif
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="12" class="p-6 text-center text-slate-500">No overdue loans found.</td></tr>
+                <tr><td colspan="6" class="p-6 text-center text-slate-500">No overdue loans found.</td></tr>
             @endforelse
         </tbody>
     </table>

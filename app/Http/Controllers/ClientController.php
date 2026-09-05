@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ClientStatementRequest;
 use App\Http\Requests\StoreClientRequest;
 use App\Http\Requests\UpdateClientRequest;
 use App\Models\Branch;
@@ -9,6 +10,7 @@ use App\Models\Client;
 use App\Models\User;
 use App\Services\ClientDeletionService;
 use App\Services\ClientService;
+use App\Services\ClientStatementService;
 use App\Services\FinancialRelationshipService;
 use App\Services\ModuleService;
 use App\Support\ApiSecurity;
@@ -97,7 +99,7 @@ class ClientController extends Controller
         return redirect()->route('clients.show', $client)->with('status', 'Client registered.');
     }
 
-    public function show(Client $client, FinancialRelationshipService $financialRelationships, ModuleService $modules): View
+    public function show(ClientStatementRequest $request, Client $client, FinancialRelationshipService $financialRelationships, ModuleService $modules, ClientStatementService $statements): View
     {
         Gate::authorize('view', $client);
 
@@ -137,6 +139,9 @@ class ClientController extends Controller
             ->values();
 
         return view('clients.show', [
+            'statement' => $statements->statement($client, $request->validated()),
+            'statementAccounts' => $statements->accounts($client)->map(fn ($account): string => $statements->label($account)),
+            'statementAction' => route('clients.show', $client),
             'client' => $client,
             'enabledModules' => $enabledModules,
             'financialOverview' => $financialRelationships->clientOverview($client, $enabledModules),

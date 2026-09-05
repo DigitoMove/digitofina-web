@@ -44,7 +44,7 @@
                     <td data-label="Staff">{{ number_format($branch->users_count) }}</td>
                     <td data-label="Phone">{{ $branch->phone ?? '-' }}</td>
                     <td data-label="Status"><span class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold">{{ str($branch->status)->headline() }}</span></td>
-                    <td data-label="Action"><a class="font-medium text-blue-700" href="{{ route('branches.edit', $branch) }}">Edit</a></td>
+                    <td data-label="Action"><x-icon-action :href="route('branches.edit', $branch)" label="Edit branch" icon="edit" /></td>
                 </tr>
             @empty
                 <tr><td class="p-4 text-slate-500" colspan="7">No branches found.</td></tr>

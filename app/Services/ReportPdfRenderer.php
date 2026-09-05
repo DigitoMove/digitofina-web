@@ -71,7 +71,7 @@ class ReportPdfRenderer
      */
     private function buildPages(array $document, int $pagesId): array
     {
-        $pageIds = [];
+        $pages = [];
         $columns = $this->columnLayout($document['columns']);
         $rows = $document['rows'] ?: [['message' => 'No records found for the selected period.']];
         $pageNumber = 1;
@@ -79,12 +79,11 @@ class ReportPdfRenderer
         $cursorY = $this->drawHeader($content, $document, $pageNumber);
         $this->drawTableHeader($content, $columns, $cursorY);
 
-        foreach ($rows as $row) {
+        foreach ($this->splitLongRows($rows, $columns) as $row) {
             $rowHeight = $this->rowHeight($row, $columns);
 
-            if ($cursorY + $rowHeight > self::PAGE_HEIGHT - self::MARGIN - 20) {
-                $this->drawFooter($content, $pageNumber);
-                $pageIds[] = $this->addPage($pagesId, $content);
+            if ($cursorY + $rowHeight > self::PAGE_HEIGHT - 85) {
+                $pages[] = $content;
                 $pageNumber++;
                 $content = '';
                 $cursorY = $this->drawHeader($content, $document, $pageNumber);
@@ -95,8 +94,12 @@ class ReportPdfRenderer
             $cursorY += $rowHeight;
         }
 
-        $this->drawFooter($content, $pageNumber);
-        $pageIds[] = $this->addPage($pagesId, $content);
+        $pages[] = $content;
+        $pageIds = [];
+        foreach ($pages as $index => $page) {
+            $this->drawFooter($page, $index + 1, count($pages), $document);
+            $pageIds[] = $this->addPage($pagesId, $page);
+        }
 
         return $pageIds;
     }
@@ -116,36 +119,42 @@ class ReportPdfRenderer
         $brandX = self::MARGIN + 8;
 
         if ($this->logo !== null) {
-            $logoWidth = 128.0;
-            $logoHeight = min(72.0, $logoWidth * ($this->logo['height'] / max(1, $this->logo['width'])));
+            $scale = min(128 / max(1, $this->logo['width']), 60 / max(1, $this->logo['height']));
+            $logoWidth = $this->logo['width'] * $scale;
+            $logoHeight = $this->logo['height'] * $scale;
             $this->image($content, 'Logo', $brandX, $top + 3, $logoWidth, $logoHeight);
-            $this->text($content, $document['organization_name'], $brandX, $top + $logoHeight + 18, 10, 'bold');
-        } else {
-            $this->text($content, $document['organization_name'], $brandX, $top + 30, 18, 'bold');
+        }
+        $nameY = $this->logo !== null ? $top + $logoHeight + 18 : $top + 20;
+        foreach ($this->wrap($document['organization_name'], 340, 14) as $nameLine) {
+            $this->text($content, $nameLine, $brandX, $nameY, 14, 'bold');
+            $nameY += 17;
         }
 
         if ($document['organization_description'] !== '') {
             $descriptionLines = $this->wrap($document['organization_description'], 300, 8);
             foreach (array_slice($descriptionLines, 0, 3) as $lineIndex => $line) {
-                $this->text($content, $line, $brandX, $top + 88 + ($lineIndex * 10), 8);
+                $this->text($content, $line, $brandX, $nameY + 8 + ($lineIndex * 10), 8);
             }
         }
 
-        $metaX = 465.0;
+        $metaX = 420.0;
         $metaY = $top + 3;
         foreach ($document['metadata'] as $label => $value) {
-            $this->text($content, $label.':', $metaX, $metaY, 10, 'mono-bold');
-            $this->text($content, $value, $metaX + 148, $metaY, 10, 'mono');
-            $metaY += 16;
+            $labelLines = $this->wrap($label.':', 135, 9);
+            $valueLines = $this->wrap($value, self::PAGE_WIDTH - self::MARGIN - $metaX - 148, 9);
+            foreach ($labelLines as $index => $line) {
+                $this->text($content, $line, $metaX, $metaY + $index * 11, 9, 'bold');
+            }
+            foreach ($valueLines as $index => $line) {
+                $this->text($content, $line, $metaX + 148, $metaY + $index * 11, 9);
+            }
+            $metaY += max(count($labelLines), count($valueLines)) * 11 + 6;
         }
 
-        if ($pageNumber > 1) {
-            $this->text($content, $document['title'].' continued', self::MARGIN, 118, 9, 'bold');
-        }
+        $headingY = max(143, $metaY + 12, $nameY + 50);
+        $this->text($content, $document['heading'].($pageNumber > 1 ? ' (continued)' : ''), self::PAGE_WIDTH / 2, $headingY, 13, 'bold', 'center');
 
-        $this->text($content, $document['heading'], self::PAGE_WIDTH / 2, 143, 13, 'bold', 'center');
-
-        return 164.0;
+        return $headingY + 21;
     }
 
     /**
@@ -222,7 +231,7 @@ class ReportPdfRenderer
             $lines = max($lines, count($this->wrap($row[$column['key']] ?? '', $column['width'] - 12, 8)));
         }
 
-        return max(22.0, min(62.0, 10.0 + ($lines * 10.0)));
+        return max(22.0, 10.0 + ($lines * 10.0));
     }
 
     /**
@@ -233,7 +242,7 @@ class ReportPdfRenderer
     {
         foreach ($columns as $column) {
             $this->rectangle($content, $column['x'], $y, $column['width'], $height, [0.12, 0.16, 0.22]);
-            $lines = array_slice($this->wrap($row[$column['key']] ?? '', $column['width'] - 12, 8), 0, 5);
+            $lines = $this->wrap($row[$column['key']] ?? '', $column['width'] - 12, 8);
             $textY = $y + 12;
 
             foreach ($lines as $line) {
@@ -244,9 +253,17 @@ class ReportPdfRenderer
         }
     }
 
-    private function drawFooter(string &$content, int $pageNumber): void
+    /** @param array<string, mixed> $document */
+    private function drawFooter(string &$content, int $pageNumber, int $totalPages, array $document): void
     {
-        $this->text($content, 'Page '.$pageNumber, self::PAGE_WIDTH - self::MARGIN, self::PAGE_HEIGHT - 16, 8, 'regular', 'right');
+        foreach (array_slice($this->wrap($document['note'] ?? '', self::PAGE_WIDTH - self::MARGIN * 2, 8), 0, 2) as $index => $line) {
+            $this->text($content, $line, self::MARGIN, self::PAGE_HEIGHT - 66 + $index * 10, 8);
+        }
+        foreach (array_slice($this->wrap($document['organization_description'], self::PAGE_WIDTH - self::MARGIN * 2, 7), 0, 2) as $index => $line) {
+            $this->text($content, $line, self::MARGIN, self::PAGE_HEIGHT - 42 + $index * 9, 7);
+        }
+        $this->text($content, 'Generated '.now()->format('d M Y H:i:s T'), self::MARGIN, self::PAGE_HEIGHT - 20, 8);
+        $this->text($content, 'Page '.$pageNumber.' of '.$totalPages, self::PAGE_WIDTH - self::MARGIN, self::PAGE_HEIGHT - 20, 8, 'regular', 'right');
     }
 
     /**
@@ -297,6 +314,9 @@ class ReportPdfRenderer
      */
     private function wrap(string $text, float $maxWidth, float $size): array
     {
+        if (str_contains($text, "\n")) {
+            return array_merge(...array_map(fn (string $line): array => $this->wrap($line, $maxWidth, $size), explode("\n", $text)));
+        }
         $text = trim(preg_replace('/\s+/', ' ', $text) ?? '');
 
         if ($text === '') {
@@ -328,6 +348,29 @@ class ReportPdfRenderer
         }
 
         return $lines ?: [''];
+    }
+
+    /**
+     * @param  array<int, array<string, string>>  $rows
+     * @param  array<int, array<string, mixed>>  $columns
+     * @return array<int, array<string, string>>
+     */
+    private function splitLongRows(array $rows, array $columns): array
+    {
+        $result = [];
+        foreach ($rows as $row) {
+            $wrapped = [];
+            $chunks = 1;
+            foreach ($columns as $column) {
+                $wrapped[$column['key']] = array_chunk($this->wrap($row[$column['key']] ?? '', $column['width'] - 12, 8), 10);
+                $chunks = max($chunks, count($wrapped[$column['key']]));
+            }
+            for ($index = 0; $index < $chunks; $index++) {
+                $result[] = array_map(fn (array $parts): string => implode("\n", $parts[$index] ?? []), $wrapped);
+            }
+        }
+
+        return $result;
     }
 
     private function textWidth(string $text, float $size, bool $mono = false): float

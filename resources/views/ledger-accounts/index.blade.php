@@ -52,14 +52,11 @@
         <table class="w-full text-left text-sm">
             <thead class="bg-slate-50 text-slate-600">
                 <tr>
-                    <th class="p-3">Branch</th>
-                    <th>Code</th>
-                    <th>Name</th>
-                    <th>Type</th>
-                    <th>Parent</th>
+                    <th class="p-3">Scope</th>
+                    <th>Account</th>
+                    <th>Classification</th>
                     <th>Drawer Impact</th>
-                    <th class="text-right">Current Balance</th>
-                    <th>Status</th>
+                    <th class="text-right">Balance & Status</th>
                     <th class="text-right pr-3">Action</th>
                 </tr>
             </thead>
@@ -72,13 +69,12 @@
                     @endphp
                     <tr class="border-t border-slate-200 align-top">
                         <td class="p-3">{{ $account->branch?->name ?? 'Organization-level' }}</td>
-                        <td><a href="{{ route('ledger-accounts.show', $account) }}" class="font-semibold text-brand-700 hover:underline">{{ $account->code }}</a></td>
                         <td>
+                            <a href="{{ route('ledger-accounts.show', $account) }}" class="font-semibold text-brand-700 hover:underline">{{ $account->code }}</a>
                             <div class="font-medium text-slate-950">{{ $account->name }}</div>
                             <div class="text-xs text-slate-500">{{ $account->is_cash_account ? 'Cash ledger' : 'Operating ledger' }}{{ $account->is_system ? ' · System account' : '' }}</div>
                         </td>
-                        <td>{{ str($account->type)->headline() }} · {{ str($account->normal_balance)->headline() }}</td>
-                        <td>{{ $account->parent ? $account->parent->code.' · '.$account->parent->name : 'No parent' }}</td>
+                        <td><div>{{ str($account->type)->headline() }} · {{ str($account->normal_balance)->headline() }}</div><div class="text-xs text-slate-500">{{ $account->parent ? 'Parent: '.$account->parent->code.' · '.$account->parent->name : 'No parent' }}</div></td>
                         <td>
                             <div>{{ $account->drawer_direction === 'none' ? 'Non-cash only' : str($account->drawer_direction ?: 'both')->headline() }}</div>
                             <div class="text-xs text-slate-500">
@@ -91,8 +87,8 @@
                                 @endif
                             </div>
                         </td>
-                        <td class="text-right font-semibold whitespace-nowrap {{ $currentBalance < 0 ? 'text-red-700' : 'text-slate-950' }}">UGX {{ number_format($currentBalance, 2) }}</td>
-                        <td>
+                        <td class="text-right">
+                            <div class="font-semibold {{ $currentBalance < 0 ? 'text-red-700' : 'text-slate-950' }}">UGX {{ number_format($currentBalance, 2) }}</div>
                             <span class="rounded px-2 py-1 text-xs font-semibold {{ $account->is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700' }}">{{ $account->merged_into_id ? 'Merged' : ($account->is_active ? 'Active' : 'Inactive') }}</span>
                             @if($account->mergedInto)
                                 <a href="{{ route('ledger-accounts.show', $account->mergedInto) }}" class="mt-1 block text-xs font-semibold text-brand-700">Into {{ $account->mergedInto->code }}</a>
@@ -100,18 +96,18 @@
                         </td>
                         <td class="pr-3 text-right">
                             <div class="flex flex-wrap justify-end gap-2">
-                                <a href="{{ route('ledger-accounts.show', $account) }}" class="rounded border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">View flows</a>
+                                <x-icon-action :href="route('ledger-accounts.show', $account)" label="View ledger flows" />
                                 @if(!$account->merged_into_id)
-                                    <button type="button" class="rounded border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" data-ledger-modal-open="ledger-edit-modal-{{ $account->id }}">Edit</button>
+                                    <x-icon-action type="button" label="Edit ledger account" icon="edit" data-ledger-modal-open="ledger-edit-modal-{{ $account->id }}" />
                                 @endif
                                 @if($account->branch_id && !$account->merged_into_id)
-                                    <button type="button" class="rounded border border-brand-200 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50" data-ledger-modal-open="ledger-opening-modal-{{ $account->id }}">Opening balance</button>
+                                    <x-icon-action type="button" label="Set opening balance" icon="settings" data-ledger-modal-open="ledger-opening-modal-{{ $account->id }}" />
                                 @endif
                                 @if($canDeleteLedgerAccounts)
                                     <form method="POST" action="{{ route('ledger-accounts.destroy', $account) }}" data-confirm-title="Delete ledger account" data-confirm-message="Delete this ledger account? Accounts with activity, children, cash status, or system status will be blocked." data-confirm-label="Delete account" data-confirm-tone="danger">
                                         @csrf
                                         @method('DELETE')
-                                        <button class="rounded border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50">Delete</button>
+                                        <x-icon-action label="Delete ledger account" icon="delete" tone="danger" />
                                     </form>
                                 @endif
                             </div>
@@ -119,7 +115,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="9" class="p-8 text-center text-slate-500">No ledger accounts found.</td>
+                        <td colspan="6" class="p-8 text-center text-slate-500">No ledger accounts found.</td>
                     </tr>
                 @endforelse
             </tbody>

@@ -24,7 +24,7 @@
                     <td>{{ number_format($product->interest_rate, 2) }}%<div class="text-slate-500">{{ str($product->interest_posting_frequency)->headline() }}</div></td>
                     <td>Dep {{ number_format($product->deposit_charge, 2) }}<div class="text-slate-500">W/d {{ number_format($product->withdrawal_charge, 2) }}</div></td>
                     <td>{{ $product->accounts_count }}</td>
-                    <td><a href="{{ route('savings-products.edit', $product) }}" class="font-medium text-blue-700">Edit</a></td>
+                    <td><x-icon-action :href="route('savings-products.edit', $product)" label="Edit savings product" icon="edit" /></td>
                 </tr>
             @empty
                 <tr><td class="p-4 text-slate-500" colspan="6">No savings products found.</td></tr>

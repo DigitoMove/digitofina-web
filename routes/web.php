@@ -17,6 +17,7 @@ use App\Http\Controllers\ClientImpersonationController;
 use App\Http\Controllers\ClientKycController;
 use App\Http\Controllers\ClientNoteController;
 use App\Http\Controllers\ClientPortalAccessController;
+use App\Http\Controllers\ClientStatementController;
 use App\Http\Controllers\CommercialQuoteController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DataImportController;
@@ -125,6 +126,8 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password.update');
     Route::get('/member', MemberPortalController::class)->middleware('password.changed')->name('member.dashboard');
+    Route::get('/member/statements', [ClientStatementController::class, 'member'])->middleware('password.changed')->name('member.statements');
+    Route::get('/clients/{client}/statements', [ClientStatementController::class, 'show'])->middleware('password.changed')->name('clients.statements');
     Route::post('/member/loan-applications', [MemberLoanApplicationController::class, 'store'])->middleware(['password.changed', 'module:loans', 'throttle:6,1'])->name('member.loan-applications.store');
     Route::post('/member/loans/{loan}/repayments', [MemberPaymentController::class, 'repayLoan'])->middleware(['password.changed', 'module:loans'])->name('member.loans.repayments.store');
     Route::post('/member/savings-accounts/{savingsAccount}/deposits', [MemberPaymentController::class, 'depositSavings'])->middleware(['password.changed', 'module:savings'])->name('member.savings.deposits.store');

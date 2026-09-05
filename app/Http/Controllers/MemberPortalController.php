@@ -9,6 +9,7 @@ use App\Models\LoanProduct;
 use App\Models\PaymentProvider;
 use App\Models\PaymentRequest;
 use App\Models\SavingsAccount;
+use App\Services\ClientProgressService;
 use App\Services\NylonPayClient;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
@@ -17,7 +18,7 @@ use Illuminate\View\View;
 
 class MemberPortalController extends Controller
 {
-    public function __invoke(NylonPayClient $nylonPay): View|RedirectResponse
+    public function __invoke(NylonPayClient $nylonPay, ClientProgressService $progress): View|RedirectResponse
     {
         $client = Client::query()
             ->with([
@@ -64,6 +65,7 @@ class MemberPortalController extends Controller
         $hasOpenLoan = $loans->contains(fn (Loan $loan): bool => ! in_array($loan->status, ['fully_paid', 'closed', 'rejected', 'cancelled'], true));
 
         return view('member.dashboard', [
+            'progress' => $progress->summarize($loans),
             'client' => $client,
             'savingsAccounts' => $savingsAccounts,
             'investmentAccounts' => $investmentAccounts,
@@ -71,7 +73,7 @@ class MemberPortalController extends Controller
             'paymentProviders' => $this->paymentProviders($client),
             'paymentRequests' => $paymentRequests,
             'defaultPaymentPhone' => $client->phone ?: Auth::user()?->phone,
-            'savingsTotal' => $savingsTotal ?: $legacySavingsTotal,
+            'savingsTotal' => $savingsTotal + $legacySavingsTotal,
             'investmentTotal' => $investmentTotal,
             'investmentGrowth' => $investmentGrowth,
             'loanBreakdown' => $loanBreakdown,

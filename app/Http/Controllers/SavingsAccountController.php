@@ -13,6 +13,7 @@ use App\Services\SavingsTransactionService;
 use App\Support\ApiSecurity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 
 class SavingsAccountController extends Controller
@@ -120,17 +121,13 @@ class SavingsAccountController extends Controller
         return redirect()->route('clients.savings-accounts', $client)->with('status', 'Savings product package removed. The client basic savings account was not deleted.');
     }
 
-    public function statement(Request $request, SavingsAccount $savingsAccount): View
+    public function statement(Request $request, SavingsAccount $savingsAccount): RedirectResponse
     {
-        $transactions = $savingsAccount->transactions()
-            ->when($request->date_from, fn ($query, string $date) => $query->whereDate('transaction_date', '>=', $date))
-            ->when($request->date_to, fn ($query, string $date) => $query->whereDate('transaction_date', '<=', $date))
-            ->orderByDesc('transaction_date')
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->paginate(30)
-            ->withQueryString();
+        Gate::authorize('view', $savingsAccount->client);
+        $parameters = ['account' => 'savings:'.$savingsAccount->id] + $request->only(['date_from', 'date_to', 'format']);
 
-        return view('savings-accounts.statement', ['account' => $savingsAccount->load(['client', 'product', 'branch']), 'transactions' => $transactions]);
+        return $request->user()->isMember()
+            ? redirect()->route('member.statements', $parameters)
+            : redirect()->route('clients.statements', ['client' => $savingsAccount->client_id] + $parameters);
     }
 }

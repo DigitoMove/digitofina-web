@@ -13,7 +13,7 @@
         <thead class="bg-slate-50 text-slate-600"><tr><th class="p-3">Role</th><th>Permissions</th><th>Users</th><th></th></tr></thead>
         <tbody>
             @foreach ($roles as $role)
-                <tr class="border-t"><td class="p-3 font-medium">{{ $role->name }}<div class="text-slate-500">{{ $role->slug }}</div></td><td>{{ $role->permissions_count }}</td><td>{{ $role->users_count }}</td><td><a href="{{ route('roles.edit', $role) }}" class="font-medium text-blue-700">Edit</a></td></tr>
+                <tr class="border-t"><td class="p-3 font-medium">{{ $role->name }}<div class="text-slate-500">{{ $role->slug }}</div></td><td>{{ $role->permissions_count }}</td><td>{{ $role->users_count }}</td><td><x-icon-action :href="route('roles.edit', $role)" label="Edit role" icon="edit" /></td></tr>
             @endforeach
         </tbody>
     </table>

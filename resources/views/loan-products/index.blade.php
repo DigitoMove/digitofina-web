@@ -23,7 +23,7 @@
                     <td>{{ $product->require_guarantors ? $product->minimum_guarantors.' guarantor(s)' : 'No guarantors' }} · {{ $product->require_collateral ? 'Collateral' : 'No collateral' }}</td>
                     <td><span class="rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">{{ str($product->status)->headline() }}</span></td>
                     @if($canManageLoanProducts)
-                        <td class="p-3 text-right"><a class="text-sm font-semibold text-blue-700" href="{{ route('loan-products.edit', $product) }}">Edit</a></td>
+                        <td class="p-3 text-right"><x-icon-action :href="route('loan-products.edit', $product)" label="Edit loan product" icon="edit" /></td>
                     @endif
                 </tr>
             @empty

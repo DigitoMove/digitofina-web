@@ -47,11 +47,11 @@
                     <td data-label="Status"><span class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold">{{ str($staff->status)->headline() }}</span></td>
                     <td data-label="Action">
                         <div class="flex flex-wrap gap-2">
-                            <a href="{{ route('users.edit', $staff) }}" class="font-medium text-blue-700">Edit</a>
+                            <x-icon-action :href="route('users.edit', $staff)" label="Edit staff user" icon="edit" />
                             @if(auth()->user()->hasRole('super-admin') && ! $staff->hasRole('super-admin'))
                                 <form method="POST" action="{{ route('users.impersonate', $staff) }}">
                                     @csrf
-                                    <button class="font-medium text-amber-700">Act as user</button>
+                                    <x-icon-action label="Act as staff user" icon="login" />
                                 </form>
                             @endif
                         </div>

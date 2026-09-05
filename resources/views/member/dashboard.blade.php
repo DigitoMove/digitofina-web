@@ -1,11 +1,8 @@
 @extends('layouts.app')
 
 @php
-    $money = fn ($amount): string => number_format((float) $amount, 2).' UGX';
-    $nextInstallments = $loans
-        ->flatMap(fn ($loan) => $loan->schedules->where('status', '!=', 'paid')->map(fn ($schedule) => ['loan' => $loan, 'schedule' => $schedule]))
-        ->sortBy(fn ($item) => $item['schedule']->due_date?->toDateString())
-        ->take(6);
+    $money = fn ($amount): string => number_format((float) $amount, 2).' '.($client->organization?->currency ?: 'UGX');
+    $nextInstallments = $progress['installments']->take(6);
 @endphp
 
 @section('content')
@@ -17,7 +14,7 @@
     </div>
     <div class="flex flex-wrap gap-2 text-sm">
         <span class="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold text-slate-700">KYC {{ str($client->kyc_status)->headline() }}</span>
-        <span class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 font-semibold text-emerald-800">{{ $client->kyc_completion_percentage }}% complete</span>
+        <span class="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold text-slate-700">Client status · {{ str($client->status)->headline() }}</span>
     </div>
 </div>
 
@@ -40,25 +37,15 @@
     <div class="mb-5 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">You returned from Nylon Pay. Your balance updates after the signed payment confirmation is received.</div>
 @endif
 
-<section class="mb-6 rounded-lg border border-brand-200 bg-brand-50 p-5">
-    <div class="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-        <div>
-            <h2 class="font-semibold text-slate-950">Request a new loan</h2>
-            <p class="mt-1 text-sm text-slate-600">Available only to verified clients with no unpaid loan or application in progress.</p>
-            @unless($canRequestLoan)<p class="mt-2 text-sm font-semibold text-amber-800">You are not currently eligible for another loan request.</p>@endunless
-        </div>
-        <form method="POST" action="{{ route('member.loan-applications.store') }}" class="grid w-full gap-3 lg:max-w-3xl lg:grid-cols-3">
-            @csrf
-            <select name="loan_product_id" @disabled(! $canRequestLoan) required><option value="">Choose loan product</option>@foreach($loanProducts as $product)<option value="{{ $product->id }}">{{ $product->name }} · UGX {{ number_format((float) $product->min_amount) }}–{{ number_format((float) $product->max_amount) }}</option>@endforeach</select>
-            <input name="requested_amount" type="number" min="100" step="100" placeholder="Amount (UGX)" @disabled(! $canRequestLoan) required>
-            <input name="term_periods" type="number" min="1" placeholder="Repayment periods" @disabled(! $canRequestLoan) required>
-            <select name="repayment_frequency" @disabled(! $canRequestLoan) required><option value="monthly">Monthly</option><option value="weekly">Weekly</option><option value="daily">Daily</option></select>
-            <input name="purpose" placeholder="Purpose of the loan" @disabled(! $canRequestLoan) required>
-            <input name="source_of_repayment" placeholder="Source of repayment">
-            <button @disabled(! $canRequestLoan) class="df-action-primary lg:col-span-3 disabled:bg-slate-300">Send request to Loan Officer</button>
-        </form>
-    </div>
-</section>
+<nav class="mb-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap" aria-label="My account navigation">
+    <a class="df-action-primary" href="#repayments">Repayments</a>
+    <a class="df-action-secondary" href="{{ route('member.statements') }}">My statements</a>
+    <a class="df-action-secondary" href="#my-accounts">Savings & investments</a>
+    <a class="df-action-secondary" href="#recent-activity">Recent activity</a>
+    @if($canRequestLoan)<a class="df-action-secondary" href="#loan-request">Request a loan</a>@endif
+</nav>
+
+@include('member.partials.progress')
 
 @unless($nylonPayConfigured)
     <div class="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Online payments are unavailable until your organization configures its Nylon Pay collection account.</div>
@@ -87,7 +74,7 @@
     </div>
 </div>
 
-<div class="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
+<div id="repayments" class="mt-6 grid scroll-mt-6 gap-5 2xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]">
     <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div class="flex flex-col justify-between gap-3 md:flex-row md:items-start">
             <div>
@@ -119,15 +106,19 @@
                 @php
                     $loanBalance = (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance;
                     $canRepay = in_array($loan->status, \App\Models\Loan::OPERATIONAL_STATUSES, true) && $loanBalance > 0;
+                    $unpaidSchedules = $loan->schedules->filter(fn ($schedule) => $schedule->status !== 'paid' && (float) $schedule->outstanding_amount > 0)->sortBy('due_date');
+                    $dueNow = (float) $unpaidSchedules->filter(fn ($schedule) => $schedule->due_date->lte(today()))->sum('outstanding_amount');
+                    $suggestedRepayment = $canRepay ? min($loanBalance, $dueNow ?: (float) ($unpaidSchedules->first()?->outstanding_amount ?? $loanBalance)) : 0;
                 @endphp
-                <div class="rounded-lg border border-slate-200">
-                    <div class="grid gap-4 border-b border-slate-200 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.55fr)]">
+                <div id="repay-loan-{{ $loan->id }}" class="min-w-0 scroll-mt-6 rounded-lg border border-slate-200">
+                    <div class="grid gap-4 border-b border-slate-200 p-4 xl:grid-cols-2">
                         <div>
                             <div class="flex flex-wrap items-center gap-2">
                                 <h3 class="font-semibold text-slate-950">{{ $loan->loan_number }}</h3>
                                 <span class="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">{{ str($loan->status)->headline() }}</span>
                             </div>
                             <p class="mt-1 text-sm text-slate-500">{{ $loan->product?->name ?? 'Loan product' }}</p>
+                            <a class="mt-2 inline-block text-sm font-semibold text-brand-700" href="{{ route('member.statements', ['account' => 'loan:'.$loan->id]) }}">View loan statement →</a>
                             <div class="mt-3 grid gap-2 text-sm sm:grid-cols-4">
                                 <div><span class="block text-slate-400">Principal</span><span class="font-semibold">{{ $money($loan->principal_balance) }}</span></div>
                                 <div><span class="block text-slate-400">Interest</span><span class="font-semibold">{{ $money($loan->interest_balance) }}</span></div>
@@ -140,14 +131,17 @@
                             @csrf
                             <div class="text-sm font-semibold text-slate-800">Repay online</div>
                             <div class="mt-3 grid gap-2">
-                                <input name="amount" type="number" min="0" step="1" value="{{ $canRepay ? $loanBalance : 0 }}" @disabled(! $canRepay) class="w-full rounded-lg border-slate-300 text-sm focus:border-brand-500 focus:ring-brand-500">
-                                <input name="phone" value="{{ old('phone', $defaultPaymentPhone) }}" placeholder="Mobile money phone" @disabled(! $canRepay) class="w-full rounded-lg border-slate-300 text-sm focus:border-brand-500 focus:ring-brand-500">
-                                <button @disabled(! $canRepay || ! $nylonPayConfigured) class="rounded-lg bg-brand-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">Pay {{ $money($loanBalance) }} with Nylon Pay</button>
+                                <label class="grid gap-1 text-xs font-semibold text-slate-600">Repayment amount<input name="amount" type="number" min="100" step="100" value="{{ $suggestedRepayment }}" @disabled(! $canRepay) class="w-full rounded-lg border-slate-300 text-sm focus:border-brand-500 focus:ring-brand-500"></label>
+                                <label class="grid gap-1 text-xs font-semibold text-slate-600">Mobile money phone<input name="phone" value="{{ old('phone', $defaultPaymentPhone) }}" placeholder="Mobile money phone" @disabled(! $canRepay) class="w-full rounded-lg border-slate-300 text-sm focus:border-brand-500 focus:ring-brand-500"></label>
+                                <p class="text-xs text-slate-500">Suggested amount covers due installments or your next installment. Full settlement: {{ $money($loanBalance) }}.</p>
+                                <button @disabled(! $canRepay || ! $nylonPayConfigured) class="rounded-lg bg-brand-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">Pay with Nylon Pay</button>
                             </div>
                         </form>
                     </div>
 
-                    <div class="overflow-x-auto px-4 py-3">
+                    <details class="px-4 py-3">
+                        <summary class="cursor-pointer py-2 text-sm font-semibold text-brand-700">View full repayment schedule · {{ $loan->schedules->count() }} installments</summary>
+                    <div>
                         <table class="min-w-full text-left text-sm">
                             <thead class="text-xs uppercase tracking-wide text-slate-500">
                                 <tr>
@@ -161,7 +155,7 @@
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
-                                @foreach ($loan->schedules->take(8) as $schedule)
+                                @foreach ($loan->schedules->sortBy('installment_number') as $schedule)
                                     <tr class="hover:bg-slate-50">
                                         <td class="px-3 py-3">{{ $schedule->installment_number }}</td>
                                         <td class="px-3 py-3">{{ $schedule->due_date->format('d M Y') }}</td>
@@ -175,6 +169,7 @@
                             </tbody>
                         </table>
                     </div>
+                    </details>
                 </div>
             @empty
                 <div class="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500">No loans found on your client profile.</div>
@@ -227,16 +222,23 @@
     </aside>
 </div>
 
-<div class="mt-6 grid gap-5 xl:grid-cols-2">
+<div id="my-accounts" class="mt-6 grid scroll-mt-6 gap-5 xl:grid-cols-2">
     <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <h2 class="font-semibold text-slate-950">Savings Accounts</h2>
         <div class="mt-4 grid gap-3">
+            @foreach($client->accounts->where('accountType.category', 'savings') as $basicAccount)
+                <div class="rounded-lg border border-slate-200 p-4">
+                    <div class="flex flex-wrap justify-between gap-3"><div><h3 class="font-semibold text-slate-950">{{ $basicAccount->accountType?->name ?? 'Savings account' }}</h3><p class="text-sm text-slate-500">{{ $basicAccount->account_number }} · {{ str($basicAccount->status)->headline() }}</p></div><p class="font-semibold">{{ $money($basicAccount->balance) }}</p></div>
+                    <a class="mt-3 inline-block text-sm font-semibold text-brand-700" href="{{ route('member.statements', ['account' => 'account:'.$basicAccount->id]) }}">View statement →</a>
+                </div>
+            @endforeach
             @forelse ($savingsAccounts as $account)
                 <div class="rounded-lg border border-slate-200 p-4">
                     <div class="flex flex-col justify-between gap-3 sm:flex-row">
                         <div>
                             <div class="font-semibold text-slate-950">{{ $account->product?->name ?? 'Savings account' }}</div>
                             <div class="text-sm text-slate-500">{{ $account->account_number }} · {{ str($account->status)->headline() }}</div>
+                            <a class="mt-2 inline-block text-sm font-semibold text-brand-700" href="{{ route('member.statements', ['account' => 'savings:'.$account->id]) }}">View statement →</a>
                         </div>
                         <div class="text-left sm:text-right">
                             <div class="text-lg font-semibold">{{ $money($account->current_balance) }}</div>
@@ -251,7 +253,7 @@
                     </form>
                 </div>
             @empty
-                <div class="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500">No savings accounts are linked to this client profile yet.</div>
+                @if($client->accounts->where('accountType.category', 'savings')->isEmpty())<div class="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500">No savings accounts are linked to this client profile yet.</div>@endif
             @endforelse
         </div>
     </section>
@@ -268,6 +270,7 @@
                         <div>
                             <div class="font-semibold text-slate-950">{{ $investment->plan?->name ?? 'Investment account' }}</div>
                             <div class="text-sm text-slate-500">{{ $investment->investment_number }} · {{ str($investment->status)->headline() }}</div>
+                            <a class="mt-2 inline-block text-sm font-semibold text-brand-700" href="{{ route('member.statements', ['account' => 'investment:'.$investment->id]) }}">View statement →</a>
                         </div>
                         <div class="text-left sm:text-right">
                             <div class="text-lg font-semibold">{{ $money($investment->current_balance) }}</div>
@@ -291,7 +294,7 @@
     </section>
 </div>
 
-<section class="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+<section id="recent-activity" class="mt-6 scroll-mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
     <h2 class="font-semibold text-slate-950">Recent Activity</h2>
     <div class="mt-4 grid gap-3">
         @forelse ($transactions as $transaction)
@@ -304,6 +307,7 @@
             <div class="flex flex-col justify-between gap-2 rounded-lg border border-slate-200 p-3 text-sm sm:flex-row sm:items-center">
                 <div>
                     <div class="font-semibold text-slate-900">{{ str($transactionType)->headline() }}</div>
+                    <span class="text-xs font-semibold {{ $transaction->status === 'reversed' || $transaction->reversed_at ? 'text-rose-700' : 'text-slate-500' }}">{{ str($transaction->status ?? 'posted')->headline() }}</span>
                     <div class="text-slate-500">{{ $reference }} · {{ $transactionDate->format('d M Y') }}</div>
                 </div>
                 <div class="font-semibold {{ in_array($transactionType, ['interest_posting', 'return_posting'], true) ? 'text-emerald-700' : 'text-slate-800' }}">{{ $money($amount) }}</div>
@@ -313,4 +317,19 @@
         @endforelse
     </div>
 </section>
+<details id="loan-request" class="mt-6 scroll-mt-6 rounded-lg border border-brand-200 bg-brand-50 p-5">
+    <summary class="cursor-pointer font-semibold text-slate-950">Request a new loan</summary>
+    <p class="mt-2 text-sm text-slate-600">Available to verified clients with no unpaid loan or application in progress.</p>
+    @unless($canRequestLoan)<p class="mt-2 text-sm font-semibold text-amber-800">You are not currently eligible for another loan request.</p>@endunless
+    <form method="POST" action="{{ route('member.loan-applications.store') }}" class="mt-4 grid gap-3 lg:grid-cols-3">
+        @csrf
+        <label class="grid gap-1 text-sm">Loan product<select name="loan_product_id" @disabled(! $canRequestLoan) required><option value="">Choose loan product</option>@foreach($loanProducts as $product)<option value="{{ $product->id }}">{{ $product->name }}</option>@endforeach</select></label>
+        <label class="grid gap-1 text-sm">Amount<input name="requested_amount" type="number" min="100" step="100" @disabled(! $canRequestLoan) required></label>
+        <label class="grid gap-1 text-sm">Repayment periods<input name="term_periods" type="number" min="1" @disabled(! $canRequestLoan) required></label>
+        <label class="grid gap-1 text-sm">Frequency<select name="repayment_frequency" @disabled(! $canRequestLoan) required><option value="monthly">Monthly</option><option value="weekly">Weekly</option><option value="daily">Daily</option></select></label>
+        <label class="grid gap-1 text-sm">Purpose<input name="purpose" @disabled(! $canRequestLoan) required></label>
+        <label class="grid gap-1 text-sm">Source of repayment<input name="source_of_repayment" @disabled(! $canRequestLoan)></label>
+        <button @disabled(! $canRequestLoan) class="df-action-primary lg:col-span-3 disabled:bg-slate-300">Send request to Loan Officer</button>
+    </form>
+</details>
 @endsection

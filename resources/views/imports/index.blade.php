@@ -105,7 +105,7 @@
                                     <span class="rounded-full px-3 py-1 text-xs font-semibold {{ $batch->status === 'imported' ? 'bg-emerald-100 text-emerald-700' : ($batch->status === 'invalid' || $batch->status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700') }}">{{ str($batch->status)->headline() }}</span>
                                 </td>
                                 <td class="px-3 py-3 text-slate-600">{{ $batch->created_at->format('d M Y H:i') }}</td>
-                                <td class="px-3 py-3 text-right"><a href="{{ route('imports.show', $batch) }}" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-brand-200 hover:text-brand-800">Open</a></td>
+                                <td class="px-3 py-3 text-right"><x-icon-action :href="route('imports.show', $batch)" label="Open import" icon="open" /></td>
                             </tr>
                         @empty
                             <tr>

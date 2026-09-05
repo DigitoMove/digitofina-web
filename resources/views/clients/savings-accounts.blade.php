@@ -15,6 +15,7 @@
     </div>
     <div class="flex flex-wrap gap-2">
         <a href="{{ route('clients.show', $client) }}" class="df-action-secondary">Client Dashboard</a>
+        <a href="{{ route('clients.statements', $client) }}" class="df-action-secondary">Download Statements</a>
         @if($canRemoveSavingsPackage)
             <a href="{{ route('savings-accounts.create', ['client_id' => $client->id]) }}" class="df-action-primary">Attach Package</a>
         @endif

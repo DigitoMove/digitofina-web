@@ -34,7 +34,7 @@
                     <td>{{ $group->chairperson?->full_name ?? '-' }}</td>
                     <td>{{ number_format($group->members_count) }}</td>
                     <td>{{ str($group->status)->headline() }}</td>
-                    <td><a class="font-medium text-blue-700" href="{{ route('client-groups.show', $group) }}">View</a></td>
+                    <td><x-icon-action :href="route('client-groups.show', $group)" label="View client group" /></td>
                 </tr>
             @empty
                 <tr><td colspan="6" class="p-4 text-slate-500">No groups found.</td></tr>

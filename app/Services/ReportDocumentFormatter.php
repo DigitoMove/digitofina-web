@@ -15,6 +15,12 @@ use ZipArchive;
 
 class ReportDocumentFormatter
 {
+    /** @param array<string, mixed> $document */
+    public function renderClientStatement(array $document, string $format): string
+    {
+        return $this->render($document, $format);
+    }
+
     /**
      * @param  array<int, array<string, mixed>>  $rows
      */
@@ -179,6 +185,7 @@ class ReportDocumentFormatter
             'organization_name' => $document['organization']?->name ?? config('app.name'),
             'organization_description' => $this->organizationDescription($document['organization']),
             'logo_path' => $this->logoPath($document['organization']),
+            'note' => $document['note'] ?? '',
             'metadata' => $document['metadata'],
             'columns' => array_map(fn (string $column): array => [
                 'key' => $column,
@@ -204,7 +211,7 @@ class ReportDocumentFormatter
 
         foreach ($document['rows'] ?: [['message' => 'No records found for the selected period.']] as $row) {
             fputcsv($handle, array_map(
-                fn (string $column): string => $this->displayValue($row[$column] ?? null, $column),
+                fn (string $column): string => $this->csvValue($row[$column] ?? null, $column),
                 $document['columns']
             ));
         }
@@ -212,6 +219,13 @@ class ReportDocumentFormatter
         rewind($handle);
 
         return stream_get_contents($handle) ?: '';
+    }
+
+    private function csvValue(mixed $value, string $column): string
+    {
+        $display = $this->displayValue($value, $column);
+
+        return ! is_numeric($value) && preg_match('/^[\s]*[=+@-]/', $display) ? "'".$display : $display;
     }
 
     /**
@@ -433,7 +447,20 @@ class ReportDocumentFormatter
             $columnDefinitions[] = '<col min="'.$index.'" max="'.$index.'" width="'.$width.'" customWidth="1"/>';
         }
 
-        $mergeCells = '<mergeCells count="1"><mergeCell ref="A'.$titleRow.':'.$lastColumn.$titleRow.'"/></mergeCells>';
+        $merges = ['<mergeCell ref="A'.$titleRow.':'.$lastColumn.$titleRow.'"/>'];
+        if (isset($document['note'])) {
+            foreach ([$document['note'], $this->organizationDescription($document['organization']), 'Generated '.now()->format('d M Y H:i:s T')] as $footer) {
+                $sheetRows[] = '<row r="'.$rowNumber.'" ht="30" customHeight="1">'.$this->textCell('A'.$rowNumber, $footer, 6).'</row>';
+                $merges[] = '<mergeCell ref="A'.$rowNumber.':'.$lastColumn.$rowNumber.'"/>';
+                $rowNumber++;
+            }
+            for ($row = 1; $row < $titleRow; $row++) {
+                if ($tableWidth > 5) {
+                    $merges[] = '<mergeCell ref="E'.$row.':'.$lastColumn.$row.'"/>';
+                }
+            }
+        }
+        $mergeCells = '<mergeCells count="'.count($merges).'">'.implode('', $merges).'</mergeCells>';
         $drawing = $hasImage ? '<drawing r:id="rId1"/>' : '';
         $relationshipsNamespace = $hasImage ? ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"' : '';
 
@@ -812,7 +839,7 @@ class ReportDocumentFormatter
         ])));
     }
 
-    private function logoDataUri(?Organization $organization): ?string
+    public function logoDataUri(?Organization $organization): ?string
     {
         $path = $this->logoPath($organization);
 

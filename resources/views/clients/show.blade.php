@@ -114,6 +114,7 @@
     ]));
     $actionItems = array_filter([
         ['Client Account Dashboard', route('clients.show', $client), 'CD', 0],
+        ['Account Statements', '#account-statement', 'ST', null],
         $canViewAuditLogs ? ['Transaction Authorisation Details', route('audit-logs.index', ['search' => $client->client_number]), 'TA', 0] : null,
         $canUpdateClient ? ['Edit Client Details', route('clients.edit', $client), 'ED', null] : null,
         (($savingsEnabled || $loansEnabled || $investmentsEnabled) && $canOpenAccounts) ? ['Open Account', route('accounts.create', ['client_id' => $client->id]), 'OA', $client->accounts->count()] : null,
@@ -222,8 +223,8 @@
     </div>
 </div>
 
-<div class="grid gap-5 xl:grid-cols-[22rem_1fr]">
-    <aside class="grid gap-5">
+<div class="grid items-start gap-5 xl:grid-cols-[17rem_minmax(0,1fr)]">
+    <aside class="grid content-start gap-5">
         <section class="df-panel p-5">
             <div class="aspect-[4/3] overflow-hidden rounded-card border border-slate-200 bg-slate-100">
                 @if($profilePhotoDocument)
@@ -270,7 +271,8 @@
         </section>
     </aside>
 
-    <main class="grid gap-5">
+    <main class="grid min-w-0 gap-5">
+        @include('clients.partials.statement', ['preview' => true])
         <section class="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
             @foreach($accountTiles as $tile)
                 <a href="{{ $tile['href'] }}" class="df-hover-lift overflow-hidden rounded-card shadow-panel {{ $tile['tone'] }}">

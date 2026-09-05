@@ -43,7 +43,7 @@
                     <td><span class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold">{{ str($client->status)->headline() }}</span></td>
                     <td>
                         {{-- @can('view', $client) --}}
-                            <a class="font-medium text-blue-700" href="{{ route('clients.show', $client) }}">View</a>
+                            <x-icon-action :href="route('clients.show', $client)" label="View client" />
                         {{-- @endcan --}}
                     </td>
                 </tr>

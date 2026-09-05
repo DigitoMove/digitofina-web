@@ -146,7 +146,7 @@
     }
 
     .df-tablist {
-        @apply flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-100 p-1;
+        @apply flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1;
     }
 
     .df-tab {
@@ -245,12 +245,20 @@ main [class*='bg-white'] {
 main table {
     border-collapse: separate;
     border-spacing: 0;
-    min-width: 760px;
-    table-layout: auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0 !important;
+    table-layout: fixed;
 }
 
 main div:has(> table) {
-    overflow-x: auto;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+main .overflow-x-auto {
+    max-width: 100%;
+    overflow-x: hidden !important;
 }
 
 main table thead[class*='bg-slate-50'] {
@@ -260,7 +268,7 @@ main table thead[class*='bg-slate-50'] {
 
 main table th {
     @apply text-xs font-semibold uppercase tracking-wide;
-    white-space: nowrap;
+    white-space: normal;
 }
 
 main table th,
@@ -280,21 +288,38 @@ main table td:last-child {
 }
 
 main table td {
-    min-width: 7.5rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: normal;
 }
 
 main table td:first-child {
-    min-width: 10rem;
+    min-width: 0;
 }
 
 main table td:last-child {
-    min-width: 4.5rem;
+    min-width: 0;
 }
 
 main table td div,
 main table td span,
 main table td a {
     line-height: 1.45;
+}
+
+main table td [class*='flex'] {
+    flex-wrap: wrap;
+}
+
+main table .whitespace-nowrap {
+    white-space: normal !important;
+}
+
+main pre {
+    max-width: 100%;
+    overflow-x: hidden !important;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 main table tbody tr {
@@ -305,48 +330,7 @@ main table tbody tr:hover {
     background-color: #f0fdfa;
 }
 
-@media (max-width: 640px) {
-    body {
-        padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
-    }
-
-    .df-page {
-        width: 100%;
-        padding: 0.85rem;
-    }
-
-    .df-panel,
-    .df-soft-panel,
-    main section.rounded,
-    main form.rounded {
-        border-radius: 0.75rem;
-    }
-
-    .df-panel.p-5,
-    .df-soft-panel.p-5,
-    main .p-5 {
-        padding: 1rem;
-    }
-
-    .df-title {
-        font-size: 1.35rem;
-        line-height: 1.2;
-    }
-
-    .df-action-primary,
-    .df-action-secondary,
-    .df-action-danger {
-        width: 100%;
-        min-height: 3rem;
-        border-radius: 0.85rem;
-        padding-inline: 0.9rem;
-    }
-
-    main form[class*='grid'],
-    main div[class*='grid'] {
-        grid-template-columns: minmax(0, 1fr) !important;
-    }
-
+@media (max-width: 1024px) {
     main table {
         min-width: 0;
         width: 100%;
@@ -422,6 +406,58 @@ main table tbody tr:hover {
 
     main table td > * {
         min-width: 0;
+    }
+
+    main table td[colspan] {
+        display: block;
+        text-align: center;
+    }
+
+    main table td[colspan]::before {
+        display: none;
+    }
+}
+
+@media (max-width: 640px) {
+    body {
+        padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+    }
+
+    .df-page {
+        width: 100%;
+        padding: 0.85rem;
+    }
+
+    .df-panel,
+    .df-soft-panel,
+    main section.rounded,
+    main form.rounded {
+        border-radius: 0.75rem;
+    }
+
+    .df-panel.p-5,
+    .df-soft-panel.p-5,
+    main .p-5 {
+        padding: 1rem;
+    }
+
+    .df-title {
+        font-size: 1.35rem;
+        line-height: 1.2;
+    }
+
+    .df-action-primary,
+    .df-action-secondary,
+    .df-action-danger {
+        width: 100%;
+        min-height: 3rem;
+        border-radius: 0.85rem;
+        padding-inline: 0.9rem;
+    }
+
+    main form[class*='grid'],
+    main div[class*='grid']:not(.df-compact-grid) {
+        grid-template-columns: minmax(0, 1fr) !important;
     }
 }
 

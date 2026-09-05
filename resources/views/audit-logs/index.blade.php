@@ -21,7 +21,7 @@
                     <td>{{ class_basename($log->record_type ?? $log->auditable_type) }} #{{ $log->record_id ?? $log->auditable_id }}</td>
                     <td>{{ $log->ip_address ?? '-' }}</td>
                     <td>{{ $log->created_at->format('d M Y H:i') }}</td>
-                    <td><a href="{{ route('audit-logs.show', $log) }}" class="font-medium text-blue-700">View</a></td>
+                    <td><x-icon-action :href="route('audit-logs.show', $log)" label="View audit log" /></td>
                 </tr>
             @endforeach
         </tbody>

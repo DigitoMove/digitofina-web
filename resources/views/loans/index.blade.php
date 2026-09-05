@@ -28,20 +28,18 @@
 </form>
 <div class="overflow-hidden rounded border bg-white">
     <table class="w-full text-left text-sm">
-        <thead class="bg-slate-50"><tr><th class="p-3">Loan</th><th>Client</th><th>Product</th><th>Type</th><th>Requested</th><th>Outstanding</th><th>Status</th></tr></thead>
+        <thead class="bg-slate-50"><tr><th class="p-3">Loan</th><th>Client</th><th>Product</th><th>Amounts</th><th>Status</th></tr></thead>
         <tbody>
             @forelse($loans as $loan)
                 <tr class="border-t">
                     <td class="p-3"><a class="font-semibold text-blue-700" href="{{ route('loans.show', $loan) }}">{{ $loan->loan_number }}</a><div class="text-slate-500">{{ optional($loan->officer)->name }}</div></td>
                     <td>{{ $loan->client->full_name }}</td>
-                    <td>{{ $loan->product->name }}</td>
-                    <td>{{ str($loan->loan_type ?? 'standard')->headline() }}</td>
-                    <td>UGX {{ number_format($loan->requested_amount, 2) }}</td>
-                    <td>UGX {{ number_format($loan->principal_balance + $loan->interest_balance + $loan->fees_balance + $loan->penalty_balance, 2) }}</td>
+                    <td>{{ $loan->product->name }}<div class="text-xs text-slate-500">{{ str($loan->loan_type ?? 'standard')->headline() }}</div></td>
+                    <td><div>Requested · UGX {{ number_format($loan->requested_amount, 2) }}</div><div class="text-xs font-semibold text-slate-600">Outstanding · UGX {{ number_format($loan->principal_balance + $loan->interest_balance + $loan->fees_balance + $loan->penalty_balance, 2) }}</div></td>
                     <td><span class="rounded bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">{{ str($loan->status)->headline() }}</span></td>
                 </tr>
             @empty
-                <tr><td colspan="7" class="p-6 text-center text-slate-500">{{ $mustSearchLoanDirectory && ! $hasLoanSearch ? 'Search for a client or loan to view loan details.' : 'No loans found for this search.' }}</td></tr>
+                <tr><td colspan="5" class="p-6 text-center text-slate-500">{{ $mustSearchLoanDirectory && ! $hasLoanSearch ? 'Search for a client or loan to view loan details.' : 'No loans found for this search.' }}</td></tr>
             @endforelse
         </tbody>
     </table>

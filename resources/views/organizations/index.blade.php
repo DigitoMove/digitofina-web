@@ -48,11 +48,11 @@
                         <td class="px-4 py-3"><span class="df-badge">{{ str($organization->status)->headline() }}</span></td>
                         <td class="px-4 py-3 text-right">
                             <div class="inline-flex flex-wrap justify-end gap-3">
-                                <a href="{{ route('organization.edit', $organization) }}" class="font-semibold text-brand-700">Edit</a>
-                                <a href="{{ route('organizations.users', $organization) }}" class="font-semibold text-brand-700">Staff Users</a>
-                                <a href="{{ route('modules.index', ['organization_id' => $organization->id]) }}" class="font-semibold text-brand-700">Modules</a>
-                                <a href="{{ route('organizations.financial-defaults.index', $organization) }}" class="font-semibold text-brand-700">Defaults</a>
-                                <form method="POST" action="{{ route('organizations.switch', $organization) }}">@csrf<button class="font-semibold text-brand-700">Switch</button></form>
+                                <x-icon-action :href="route('organization.edit', $organization)" label="Edit organization" icon="edit" />
+                                <x-icon-action :href="route('organizations.users', $organization)" label="Manage staff users" icon="settings" />
+                                <x-icon-action :href="route('modules.index', ['organization_id' => $organization->id])" label="Manage modules" icon="settings" />
+                                <x-icon-action :href="route('organizations.financial-defaults.index', $organization)" label="Financial defaults" icon="settings" />
+                                <form method="POST" action="{{ route('organizations.switch', $organization) }}">@csrf<x-icon-action label="Switch organization" icon="login" /></form>
                             </div>
                         </td>
                     </tr>
