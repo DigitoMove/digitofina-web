@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 
+import 'core/config/api_config.dart';
+
 void main() {
-  runApp(const MyApp());
+  runApp(DigitoFinaApp(apiConfig: ApiConfig.fromEnvironment()));
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class DigitoFinaApp extends StatelessWidget {
+  const DigitoFinaApp({required this.apiConfig, super.key});
+
+  final ApiConfig apiConfig;
 
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'DigitoFina',
       theme: ThemeData(
         // This is the theme of your application.
         //
@@ -30,13 +34,13 @@ class MyApp extends StatelessWidget {
         // tested with just a hot reload.
         colorScheme: .fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: MyHomePage(title: 'DigitoFina Mobile', apiConfig: apiConfig),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+  const MyHomePage({required this.title, required this.apiConfig, super.key});
 
   // This widget is the home page of your application. It is stateful, meaning
   // that it has a State object (defined below) that contains fields that affect
@@ -48,6 +52,7 @@ class MyHomePage extends StatefulWidget {
   // always marked "final".
 
   final String title;
+  final ApiConfig apiConfig;
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();

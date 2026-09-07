@@ -1,0 +1,6 @@
+# Copy this file to key.properties for local/release signing.
+# Keep the real key.properties untracked and outside deployment archives.
+storePassword=REPLACE_WITH_EXISTING_STORE_PASSWORD
+keyPassword=REPLACE_WITH_EXISTING_KEY_PASSWORD
+keyAlias=upload
+storeFile=../../../../../resources/keys/digito-key.jks
