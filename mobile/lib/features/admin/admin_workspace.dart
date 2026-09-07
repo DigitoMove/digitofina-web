@@ -265,6 +265,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
                                   : (constraints.maxWidth - 12) / 2,
                               child: Card(
                                 margin: EdgeInsets.zero,
+                                clipBehavior: Clip.antiAlias,
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(12),
                                   onTap: () => open(
@@ -272,19 +273,31 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
                                       (e) => e['key'] == metric['section'],
                                     ),
                                   ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Icon(
-                                          sectionIcon(
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      border: Border(
+                                        top: BorderSide(
+                                          color: metricColor(
                                             metric['section'].toString(),
                                           ),
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.primary,
+                                          width: 5,
+                                        ),
+                                      ),
+                                    ),
+                                    padding: const EdgeInsets.all(16),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        CircleAvatar(
+                                          backgroundColor: metricColor(
+                                            metric['section'].toString(),
+                                          ).withValues(alpha: .12),
+                                          foregroundColor: metricColor(
+                                            metric['section'].toString(),
+                                          ),
+                                          child: Icon(
+                                            sectionIcon(metric['section'].toString()),
+                                          ),
                                         ),
                                         const SizedBox(height: 12),
                                         Text(metric['label'].toString()),
@@ -734,6 +747,17 @@ IconData sectionIcon(String key) => switch (key) {
   'ledger-accounts' => Icons.menu_book_outlined,
   'investments' => Icons.trending_up,
   _ => Icons.dashboard_outlined,
+};
+
+Color metricColor(String key) => switch (key) {
+  'organizations' => const Color(0xff7e22ce),
+  'users' => const Color(0xff0284c7),
+  'branches' => const Color(0xff475569),
+  'clients' => const Color(0xff0891b2),
+  'loans' => const Color(0xffd97706),
+  'accounts' => const Color(0xff059669),
+  'investments' => const Color(0xff4f46e5),
+  _ => const Color(0xff7e22ce),
 };
 String heading(String value) => value
     .split('_')

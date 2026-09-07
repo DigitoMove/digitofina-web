@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'core/config/api_config.dart';
 import 'core/network/api_client.dart';
 import 'features/admin/admin_workspace.dart';
+import 'features/cashier/cashier_workspace.dart';
 
 void main() => runApp(const DigitoFinaApp());
 
@@ -35,6 +36,18 @@ Widget workspace(
 ) {
   if (['super-admin', 'organization-admin'].contains(user['role'])) {
     return AdminWorkspace(
+      client: client,
+      user: user,
+      onSignedOut: () {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(builder: (_) => LoginPage(client: client)),
+          (_) => false,
+        );
+      },
+    );
+  }
+  if (['teller-cashier', 'cashier', 'teller'].contains(user['role'])) {
+    return CashierWorkspace(
       client: client,
       user: user,
       onSignedOut: () {

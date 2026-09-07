@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AccountingController;
 use App\Http\Controllers\Api\V1\AdminWorkspaceController;
 use App\Http\Controllers\Api\V1\ApiDocumentationController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\CashierWorkspaceController;
 use App\Http\Controllers\Api\V1\ClientController;
 use App\Http\Controllers\Api\V1\ClientDocumentController;
 use App\Http\Controllers\Api\V1\DeviceTokenController;
@@ -42,6 +43,18 @@ Route::post('/webhooks/nylon-pay/organizations/{webhookToken}', OrganizationNylo
 Route::post('/webhooks/{source}/{provider}', [WebhookController::class, 'store'])->middleware('throttle:api')->name('webhooks.store');
 
 Route::middleware(['auth:sanctum', 'tenant', 'demo.active', 'throttle:api', 'module:auto'])->group(function (): void {
+    Route::prefix('cashier')->name('cashier.')->middleware('module:teller')->group(function (): void {
+        Route::get('/dashboard', [CashierWorkspaceController::class, 'dashboard'])->name('dashboard');
+        Route::get('/lookup', [CashierWorkspaceController::class, 'lookup'])->name('lookup');
+        Route::get('/sessions', [CashierWorkspaceController::class, 'sessions'])->name('sessions.index');
+        Route::get('/sessions/{id}', [CashierWorkspaceController::class, 'showSession'])->whereNumber('id')->name('sessions.show');
+        Route::get('/sessions/{id}/transactions', [CashierWorkspaceController::class, 'transactions'])->whereNumber('id')->name('transactions.index');
+        Route::get('/sessions/{id}/transactions/{transaction}', [CashierWorkspaceController::class, 'receipt'])->whereNumber(['id', 'transaction'])->name('transactions.show');
+        Route::get('/sessions/{id}/movements', [CashierWorkspaceController::class, 'movements'])->whereNumber('id')->name('movements.index');
+        Route::post('/open', [CashierWorkspaceController::class, 'open'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('open');
+        Route::post('/preview', [CashierWorkspaceController::class, 'preview'])->middleware('throttle:api-sensitive')->name('preview');
+        Route::post('/transactions', [CashierWorkspaceController::class, 'post'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('transactions.store');
+    });
     Route::get('/admin/dashboard', [AdminWorkspaceController::class, 'dashboard'])->name('admin.dashboard');
     Route::get('/admin/records/{section}', [AdminWorkspaceController::class, 'index'])->name('admin.records.index');
     Route::get('/admin/records/{section}/{id}', [AdminWorkspaceController::class, 'show'])->whereNumber('id')->name('admin.records.show');
