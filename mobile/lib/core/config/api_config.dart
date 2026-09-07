@@ -5,7 +5,9 @@ class ApiConfig {
     const configuredUrl = String.fromEnvironment('API_BASE_URL');
 
     return ApiConfig(
-      baseUrl: configuredUrl.isEmpty ? 'https://digitofina.digitomove.com/api/v1' : configuredUrl,
+      baseUrl: configuredUrl.isEmpty
+          ? 'https://digitofina.digitomove.com/api/v1'
+          : configuredUrl,
     );
   }
 

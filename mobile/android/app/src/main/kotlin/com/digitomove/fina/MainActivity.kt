@@ -1,4 +1,4 @@
-package com.digitofina.mobile
+package com.digitomove.fina
 
 import io.flutter.embedding.android.FlutterActivity
 

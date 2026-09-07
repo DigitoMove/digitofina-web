@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AccountingController;
+use App\Http\Controllers\Api\V1\AdminWorkspaceController;
 use App\Http\Controllers\Api\V1\ApiDocumentationController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\ClientController;
@@ -41,6 +42,9 @@ Route::post('/webhooks/nylon-pay/organizations/{webhookToken}', OrganizationNylo
 Route::post('/webhooks/{source}/{provider}', [WebhookController::class, 'store'])->middleware('throttle:api')->name('webhooks.store');
 
 Route::middleware(['auth:sanctum', 'tenant', 'demo.active', 'throttle:api', 'module:auto'])->group(function (): void {
+    Route::get('/admin/dashboard', [AdminWorkspaceController::class, 'dashboard'])->name('admin.dashboard');
+    Route::get('/admin/records/{section}', [AdminWorkspaceController::class, 'index'])->name('admin.records.index');
+    Route::get('/admin/records/{section}/{id}', [AdminWorkspaceController::class, 'show'])->whereNumber('id')->name('admin.records.show');
     Route::get('/auth/me', [AuthController::class, 'me'])->name('auth.me');
     Route::get('/auth/permissions', [AuthController::class, 'permissions'])->name('auth.permissions');
     Route::post('/auth/refresh', [AuthController::class, 'refresh'])->name('auth.refresh');

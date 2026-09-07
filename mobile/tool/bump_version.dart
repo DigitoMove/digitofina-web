@@ -3,7 +3,10 @@ import 'dart:io';
 void main() {
   final pubspecFile = File('pubspec.yaml');
   final contents = pubspecFile.readAsStringSync();
-  final versionMatch = RegExp(r'^version:\s+(\d+)\.(\d+)\.(\d+)\+(\d+)$', multiLine: true).firstMatch(contents);
+  final versionMatch = RegExp(
+    r'^version:\s+(\d+)\.(\d+)\.(\d+)\+(\d+)$',
+    multiLine: true,
+  ).firstMatch(contents);
 
   if (versionMatch == null) {
     stderr.writeln('Could not find a valid version in pubspec.yaml.');
@@ -15,7 +18,10 @@ void main() {
   final minor = buildNumber ~/ 10;
   final patch = buildNumber % 10;
   final version = '1.$minor.$patch+$buildNumber';
-  final updated = contents.replaceFirst(versionMatch.group(0)!, 'version: $version');
+  final updated = contents.replaceFirst(
+    versionMatch.group(0)!,
+    'version: $version',
+  );
   pubspecFile.writeAsStringSync(updated);
   stdout.writeln(version);
 }
