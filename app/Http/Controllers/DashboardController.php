@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Services\DueRepaymentDemandService;
 use App\Services\LoanVisibilityService;
 use App\Services\ModuleService;
+use App\Services\SystemActivityService;
 use App\Services\TenantContext;
 use App\Support\ApiSecurity;
 use App\Support\ModuleCatalog;
@@ -33,7 +34,7 @@ use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request, LoanVisibilityService $visibility, DueRepaymentDemandService $dueRepayments): View|RedirectResponse
+    public function __invoke(Request $request, LoanVisibilityService $visibility, DueRepaymentDemandService $dueRepayments, SystemActivityService $activity): View|RedirectResponse
     {
         if (Auth::user()->isMember()) {
             return redirect()->route('member.dashboard');
@@ -41,7 +42,7 @@ class DashboardController extends Controller
 
         $user = Auth::user();
         if ($user->hasRole('super-admin')) {
-            return $this->superAdminDashboard($request);
+            return $this->superAdminDashboard($request, $activity);
         }
 
         $depositType = TransactionType::where('code', 'deposit')->first();
@@ -215,6 +216,7 @@ class DashboardController extends Controller
             'cashierRecentTransactions' => $cashierRecentTransactions,
             'calendarDays' => $calendarDays,
             'calendarMonth' => $today,
+            'activitySummary' => $user->hasRole('organization-admin') ? $activity->summary($user->organization_id) : null,
             'canViewRepaymentCalendarAmounts' => $canViewRepaymentCalendarAmounts,
             'showRepaymentScheduleWidgets' => $showRepaymentScheduleWidgets,
             'isLoanRecoveryDashboard' => $isLoanRecoveryDashboard,
@@ -307,7 +309,7 @@ class DashboardController extends Controller
             || $user->canPerform('override-maker-checker');
     }
 
-    private function superAdminDashboard(Request $request): View
+    private function superAdminDashboard(Request $request, SystemActivityService $activity): View
     {
         $selectedOrganization = app(TenantContext::class)->organization();
         $organizationIds = $selectedOrganization ? [$selectedOrganization->id] : null;
@@ -332,6 +334,7 @@ class DashboardController extends Controller
             'savingsBalance' => (float) $scope(SavingsAccount::query())->sum('current_balance'),
             'investmentBalance' => (float) $scope(InvestorAccount::query())->sum('current_investment_balance'),
             'recentOrganizations' => Organization::query()->with('package')->latest()->limit(6)->get(),
+            'activitySummary' => $activity->summary(),
         ]);
     }
 }

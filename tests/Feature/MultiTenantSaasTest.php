@@ -13,6 +13,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Models\UserActivity;
 use App\Services\LoanApplicationFeeService;
 use App\Services\ModuleService;
 use App\Services\TenantContext;
@@ -389,6 +390,122 @@ it('lets a super admin act as an organization user and safely return', function 
 
     expect(AuditLog::query()->withoutGlobalScope('tenant')->where('action', 'auth.impersonation.started')->exists())->toBeTrue()
         ->and(AuditLog::query()->withoutGlobalScope('tenant')->where('action', 'auth.impersonation.stopped')->exists())->toBeTrue();
+});
+
+it('scopes system activity to an organization admin and provides global visibility to super admins', function () {
+    [$organizationA, $branchA, $admin] = tenantUser([]);
+    $admin->role->update(['slug' => 'organization-admin', 'name' => 'Organization Admin']);
+    $staffRoleA = Role::create(['organization_id' => $organizationA->id, 'name' => 'Activity Staff', 'slug' => 'activity-staff']);
+    $staffA = User::factory()->create(['organization_id' => $organizationA->id, 'branch_id' => $branchA->id, 'role_id' => $staffRoleA->id, 'status' => 'active', 'is_active' => true]);
+    UserActivity::create(['organization_id' => $organizationA->id, 'user_id' => $staffA->id, 'session_id' => 'session-a', 'device_key' => 'device-a', 'device_name' => 'Windows · Chrome', 'platform' => 'Windows', 'first_seen_at' => now(), 'last_seen_at' => now()]);
+    [$organizationB, $branchB, $staffB] = tenantUser([]);
+    $staffB->role->update(['slug' => 'other-activity-staff']);
+    UserActivity::create(['organization_id' => $organizationB->id, 'user_id' => $staffB->id, 'session_id' => 'session-b', 'device_key' => 'device-b', 'device_name' => 'Linux · Firefox', 'platform' => 'Linux', 'first_seen_at' => now(), 'last_seen_at' => now()]);
+
+    $this->actingAs($admin)->get(route('system-activity.index'))
+        ->assertSuccessful()
+        ->assertSee($staffA->name)
+        ->assertDontSee($staffB->name);
+});
+
+it('lets the original super admin choose and switch impersonated users across organizations', function () {
+    $superAdmin = superAdminUser();
+    [$previousOrganization] = tenantShell('Previous Context');
+    [$firstOrganization, , $firstUser] = tenantUser([]);
+    [$secondOrganization, , $secondUser] = tenantUser([]);
+
+    $this->actingAs($superAdmin)->withSession(['super_admin_organization_id' => $previousOrganization->id])
+        ->post(route('users.impersonate', $firstUser))->assertRedirect(route('dashboard'));
+    $this->get(route('dashboard'))->assertSuccessful()->assertSee(route('impersonation.users'), false);
+    $this->get(route('impersonation.users', ['search' => $secondUser->email]))
+        ->assertSuccessful()->assertSee($secondUser->email)->assertSee($secondOrganization->name)
+        ->assertSee('type="submit"', false);
+    $this->assertAuthenticatedAs($firstUser);
+
+    $this->post(route('users.impersonate', $secondUser))
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionHas('impersonator_user_id', $superAdmin->id)
+        ->assertSessionHas('impersonator_previous_organization_id', $previousOrganization->id);
+    $this->assertAuthenticatedAs($secondUser);
+    expect(app(TenantContext::class)->id())->toBe($secondOrganization->id);
+    $this->get(route('dashboard'))->assertSuccessful()->assertSee('Acting as '.$secondUser->name);
+
+    $this->delete(route('impersonation.destroy'))->assertRedirect(route('dashboard'))
+        ->assertSessionMissing('impersonator_user_id')
+        ->assertSessionHas('super_admin_organization_id', $previousOrganization->id);
+    $this->assertAuthenticatedAs($superAdmin);
+
+    $actions = AuditLog::withoutGlobalScope('tenant')->whereIn('action', ['auth.impersonation.started', 'auth.impersonation.stopped'])->orderBy('id')->pluck('action')->all();
+    expect($actions)->toBe(['auth.impersonation.started', 'auth.impersonation.stopped', 'auth.impersonation.started', 'auth.impersonation.stopped']);
+});
+
+it('preserves the current impersonation when a switch target is invalid', function (string $invalidTarget) {
+    $superAdmin = superAdminUser();
+    [, , $firstUser] = tenantUser([]);
+    [$organization, , $target] = tenantUser([]);
+    if ($invalidTarget === 'inactive-user') {
+        $target->update(['status' => 'suspended', 'is_active' => false]);
+    } elseif ($invalidTarget === 'inactive-organization') {
+        $organization->update(['status' => 'suspended']);
+    } elseif ($invalidTarget === 'expired-demo') {
+        $organization->update(['is_demo' => true, 'demo_expires_at' => now()->subDay()]);
+    } elseif ($invalidTarget === 'super-admin') {
+        $target = $superAdmin;
+    } else {
+        $target->role->update(['slug' => 'member']);
+    }
+
+    $this->actingAs($superAdmin)->post(route('users.impersonate', $firstUser))->assertRedirect(route('dashboard'));
+    $this->from(route('impersonation.users'))->post(route('users.impersonate', $target))
+        ->assertRedirect(route('impersonation.users'))
+        ->assertSessionHasErrors('impersonation')
+        ->assertSessionHas('impersonator_user_id', $superAdmin->id);
+    $this->assertAuthenticatedAs($firstUser);
+    expect(AuditLog::withoutGlobalScope('tenant')->where('action', 'auth.impersonation.stopped')->count())->toBe(0);
+})->with(['inactive-user', 'inactive-organization', 'expired-demo', 'super-admin', 'member']);
+
+it('preserves organization administrator staff impersonation within their organization', function () {
+    [$organization, $branch, $admin] = tenantUser([]);
+    $admin->role->update(['slug' => 'organization-admin']);
+    $staffRole = Role::create(['organization_id' => $organization->id, 'name' => 'Staff', 'slug' => 'staff']);
+    $staff = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'role_id' => $staffRole->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    [, , $otherStaff] = tenantUser([]);
+    $this->actingAs($admin)->post(route('users.impersonate', $otherStaff))
+        ->assertRedirect()->assertSessionMissing('impersonator_user_id');
+    $this->assertAuthenticatedAs($admin);
+    $this->post(route('users.impersonate', $staff))->assertRedirect(route('dashboard'))
+        ->assertSessionHas('impersonator_user_id', $admin->id);
+    $this->assertAuthenticatedAs($staff);
+    $this->delete(route('impersonation.destroy'))->assertRedirect(route('dashboard'))
+        ->assertSessionMissing('impersonator_user_id');
+    $this->assertAuthenticatedAs($admin);
+});
+
+it('restricts the impersonation chooser and switching to an active original super admin', function () {
+    [, , $staff] = tenantUser([]);
+    [, , $target] = tenantUser([]);
+    $this->actingAs($staff)->get(route('impersonation.users'))->assertRedirect();
+    $this->post(route('users.impersonate', $target))->assertRedirect()->assertSessionMissing('impersonator_user_id');
+    $this->assertAuthenticatedAs($staff);
+
+    [, , $organizationAdmin] = tenantUser([]);
+    $organizationAdmin->role->update(['slug' => 'organization-admin']);
+    $this->actingAs($staff)->withSession(['impersonator_user_id' => $organizationAdmin->id])
+        ->get(route('impersonation.users'))->assertRedirect();
+    $this->post(route('users.impersonate', $target))->assertRedirect();
+    $this->assertAuthenticatedAs($staff);
+
+    $superAdmin = superAdminUser();
+    $superAdmin->update(['is_active' => false, 'status' => 'disabled']);
+    $this->withSession(['impersonator_user_id' => $superAdmin->id])->get(route('impersonation.users'))->assertRedirect();
+    $this->post(route('users.impersonate', $target))->assertRedirect();
+    $this->assertAuthenticatedAs($staff);
 });
 
 it('lets a super admin clear an active demo organization without changing its data', function () {

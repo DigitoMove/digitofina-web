@@ -416,8 +416,89 @@ it('shows incoming drawer transfers in the destination cashier records', functio
         ->assertSee($transaction->reference)
         ->assertDontSee($yesterdayReference);
 
+    $this->get(route('receipts.show', $transaction))->assertSuccessful()->assertSee($transaction->reference)
+        ->assertDontSee('action="'.route('transactions.reversal-requests.store', $transaction).'"', false);
+
+    $unrelated = $transaction->replicate();
+    $unrelated->reference = 'UNRELATED-SOURCE-TRANSACTION';
+    $unrelated->save();
+    $this->from(route('teller.index'))->get(route('receipts.show', $unrelated))
+        ->assertRedirect(route('teller.index'))->assertSessionHas('warning');
+
     expect((float) $sourceDrawer->fresh()->current_balance)->toBe(425000.0)
         ->and((float) $destinationDrawer->fresh()->current_balance)->toBe(175000.0);
+});
+
+it('paginates all current session transactions including older incoming transfers without leaking other sessions', function () {
+    $this->travelTo(today()->setTime(12, 0));
+    [$organization, $branch, $admin] = drawerAccountingContext();
+    drawerAccountingEnableTellerModule($organization);
+    $cashier = drawerAccountingCashier($organization, $branch);
+    [, $sourceSession] = openAccountingDrawer($organization, $branch, $admin, 'PAGE-SRC', 500_000);
+    [$drawer, $session] = openAccountingDrawer($organization, $branch, $cashier, 'PAGE-DST', 100_000);
+    $transfer = app(DrawerTransferService::class)->transfer($sourceSession, $session, 1000, 0, $admin, 'Session pagination incoming transfer', today());
+
+    for ($index = 1; $index <= 55; $index++) {
+        $transaction = $transfer->replicate();
+        $transaction->fill([
+            'drawer_session_id' => $session->id,
+            'reference' => sprintf('SESSION-PAGE-%03d', $index),
+            'description' => 'Session pagination administrator posting',
+        ])->save();
+    }
+
+    $previousSession = DrawerSession::create([
+        'organization_id' => $organization->id,
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $cashier->id,
+        'opening_balance' => 0,
+        'status' => 'closed',
+        'opened_at' => today(),
+        'closed_at' => now()->subHour(),
+    ]);
+    foreach ([$previousSession, $sourceSession] as $excludedSession) {
+        $transaction = $transfer->replicate();
+        $transaction->fill([
+            'drawer_session_id' => $excludedSession->id,
+            'user_id' => $cashier->id,
+            'reference' => 'EXCLUDED-SESSION-'.$excludedSession->id,
+            'description' => 'Session pagination excluded posting',
+        ])->save();
+    }
+
+    $yesterdayTransaction = $transfer->replicate();
+    $yesterdayTransaction->fill([
+        'drawer_session_id' => $session->id,
+        'reference' => 'EXCLUDED-YESTERDAY',
+        'posted_at' => today()->subDay(),
+    ])->save();
+
+    $this->actingAs($cashier)->get(route('teller.index', ['transaction_search' => 'Session pagination']))
+        ->assertSuccessful()
+        ->assertViewHas('recentTransactions', fn ($transactions): bool => $transactions->total() === 56 && $transactions->count() === 50)
+        ->assertSee('transactions_page=2', false)
+        ->assertSee('transaction_search=Session%20pagination', false)
+        ->assertDontSee('EXCLUDED-SESSION-')
+        ->assertDontSee('EXCLUDED-YESTERDAY');
+
+    $this->get(route('teller.index', ['transaction_search' => 'Session pagination', 'transactions_page' => 2]))
+        ->assertSuccessful()
+        ->assertViewHas('recentTransactions', fn ($transactions): bool => $transactions->total() === 56 && $transactions->count() === 6 && $transactions->contains('reference', $transfer->reference))
+        ->assertSee($transfer->reference)
+        ->assertSee('Money came in')
+        ->assertDontSee('EXCLUDED-SESSION-');
+
+    $this->get(route('teller.index', ['transaction_search' => $transfer->reference]))
+        ->assertSuccessful()
+        ->assertViewHas('recentTransactions', fn ($transactions): bool => $transactions->total() === 1);
+
+    $this->actingAs($admin)->post(route('teller.drawers.close', $drawer), ['closing_balance' => 101_000])
+        ->assertSessionHasNoErrors();
+
+    $this->actingAs($cashier)->get(route('teller.index'))
+        ->assertSuccessful()
+        ->assertViewHas('recentTransactions', fn ($transactions): bool => $transactions->total() === 0);
+    expect(Transaction::query()->count())->toBe(59);
 });
 
 it('shows only current-day cashier transactions on the cashier dashboard', function () {

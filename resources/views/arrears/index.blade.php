@@ -90,7 +90,7 @@
                             <form method="POST" action="{{ route('arrears.clear-penalties') }}" onsubmit="return confirm('Clear all pending penalties for this loan?')">
                                 @csrf
                                 <input type="hidden" name="loan_id" value="{{ $loan->id }}">
-                                <x-icon-action label="Clear loan penalty" icon="delete" tone="danger" />
+                                <x-icon-action type="submit" text="Clear" label="Clear loan penalty" icon="delete" tone="danger" />
                             </form>
                         @endif
                     </td>

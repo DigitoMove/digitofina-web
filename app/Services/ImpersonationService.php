@@ -25,25 +25,31 @@ class ImpersonationService
     public function startUser(Request $request, User $target): void
     {
         $impersonator = $request->user();
-
-        abort_unless($impersonator->hasAnyRole([RoleCatalog::SUPER_ADMIN_SLUG, 'organization-admin']), 403);
-        abort_unless($impersonator->hasGlobalOrganizationAccess() || (int) $impersonator->organization_id === (int) $target->organization_id, 403);
-        abort_if($target->hasRole(RoleCatalog::SUPER_ADMIN_SLUG), 422, 'You cannot act as another Super Admin.');
-        abort_if($target->isMember(), 422, 'Open the client profile to start a client support session.');
+        $this->authorizeStaffTarget($impersonator, $target);
 
         $this->start($request, $impersonator, $target);
     }
 
     public function switchUser(Request $request, User $target): void
     {
-        abort_unless($this->isActive($request), 403, 'No impersonated user session is active.');
-
-        $impersonator = User::query()->with('role')->findOrFail($request->session()->get(self::IMPERSONATOR_SESSION_KEY));
-        abort_unless($impersonator->hasRole(RoleCatalog::SUPER_ADMIN_SLUG), 403, 'Only a Super Admin can switch impersonated users.');
+        $impersonator = $this->switchingAdministrator($request);
+        $this->authorizeStaffTarget($impersonator, $target);
+        $this->assertActiveTarget($target);
 
         $this->stop($request);
         $request->setUserResolver(fn (): User => Auth::user());
         $this->startUser($request, $target);
+    }
+
+    public function switchingAdministrator(Request $request): User
+    {
+        abort_unless($this->isActive($request), 403, 'No impersonated user session is active.');
+
+        $impersonator = User::query()->with('role')->findOrFail($request->session()->get(self::IMPERSONATOR_SESSION_KEY));
+        abort_unless($impersonator->hasRole(RoleCatalog::SUPER_ADMIN_SLUG), 403, 'Only a Super Admin can switch impersonated users.');
+        abort_unless($impersonator->is_active && $impersonator->status === 'active', 403, 'The administrator account is no longer active.');
+
+        return $impersonator;
     }
 
     public function startClient(Request $request, Client $client): void
@@ -109,6 +115,12 @@ class ImpersonationService
             $request->session()->put('super_admin_organization_id', $previousOrganizationId);
         }
 
+        $restoredOrganizationId = $request->session()->get('super_admin_organization_id');
+        $this->tenant->set(
+            $restoredOrganizationId ? Organization::query()->find($restoredOrganizationId) : $impersonator->organization,
+            (bool) $restoredOrganizationId,
+        );
+
         return [
             'impersonator' => $impersonator,
             'return_client_id' => $returnClientId ? (int) $returnClientId : null,
@@ -123,9 +135,7 @@ class ImpersonationService
     private function start(Request $request, User $impersonator, User $target, ?Client $client = null): void
     {
         abort_if($this->isActive($request), 409, 'Stop the current support session before acting as another user.');
-        abort_unless($target->is_active && $target->status === 'active', 422, 'You can only act as an active user.');
-        abort_unless($target->organization && $target->organization->status === 'active', 422, 'The selected user must belong to an active organization.');
-        abort_if($target->organization->isDemoExpired(), 422, 'The selected user belongs to an expired demo organization.');
+        $this->assertActiveTarget($target);
 
         $previousOrganizationId = $request->session()->get('super_admin_organization_id');
         $this->auditLogger->record('auth.impersonation.started', $client ?: $target, [
@@ -140,9 +150,25 @@ class ImpersonationService
         $request->session()->put(self::IMPERSONATOR_SESSION_KEY, $impersonator->id);
         $request->session()->put(self::PREVIOUS_ORGANIZATION_SESSION_KEY, $previousOrganizationId);
         $request->session()->forget('super_admin_organization_id');
+        $this->tenant->set($target->organization);
 
         if ($client) {
             $request->session()->put(self::RETURN_CLIENT_SESSION_KEY, $client->id);
         }
+    }
+
+    private function authorizeStaffTarget(User $impersonator, User $target): void
+    {
+        abort_unless($impersonator->hasAnyRole([RoleCatalog::SUPER_ADMIN_SLUG, 'organization-admin']), 403);
+        abort_unless($impersonator->hasGlobalOrganizationAccess() || (int) $impersonator->organization_id === (int) $target->organization_id, 403);
+        abort_if($target->hasRole(RoleCatalog::SUPER_ADMIN_SLUG), 422, 'You cannot act as another Super Admin.');
+        abort_if($target->isMember(), 422, 'Open the client profile to start a client support session.');
+    }
+
+    private function assertActiveTarget(User $target): void
+    {
+        abort_unless($target->is_active && $target->status === 'active', 422, 'You can only act as an active user.');
+        abort_unless($target->organization && $target->organization->status === 'active', 422, 'The selected user must belong to an active organization.');
+        abort_if($target->organization->isDemoExpired(), 422, 'The selected user belongs to an expired demo organization.');
     }
 }

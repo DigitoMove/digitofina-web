@@ -6,6 +6,7 @@
     $canApproveReversal = auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker');
     $canAdminReverse = auth()->user()->hasRole('super-admin') || auth()->user()->hasRole('teller-cashier') || auth()->user()->hasRole('organization-admin') || $canApproveReversal;
     $canRequestReversal = $transaction->status === 'posted'
+        && (! auth()->user()->isTellerCashier() || (int) $transaction->user_id === (int) auth()->id())
         && ! $pendingReversal
         && ! $transaction->reversed_by
         && $canAdminReverse;

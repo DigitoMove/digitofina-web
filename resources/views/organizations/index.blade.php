@@ -52,7 +52,7 @@
                                 <x-icon-action :href="route('organizations.users', $organization)" label="Manage staff users" icon="settings" />
                                 <x-icon-action :href="route('modules.index', ['organization_id' => $organization->id])" label="Manage modules" icon="settings" />
                                 <x-icon-action :href="route('organizations.financial-defaults.index', $organization)" label="Financial defaults" icon="settings" />
-                                <form method="POST" action="{{ route('organizations.switch', $organization) }}">@csrf<x-icon-action label="Switch organization" icon="login" /></form>
+                                <form method="POST" action="{{ route('organizations.switch', $organization) }}">@csrf<x-icon-action type="submit" text="Switch" label="Switch organization" icon="login" /></form>
                             </div>
                         </td>
                     </tr>

@@ -1642,7 +1642,10 @@ it('does not allow cashiers to close drawers even when denomination counting is 
         ->assertDontSee('End-of-Day Drawer Count')
         ->assertDontSee('Close Drawer');
 
-    $this->actingAs($cashier)->post(route('teller.close'), ['closing_balance' => 1000]);
+    $this->actingAs($cashier)->from(route('teller.index'))
+        ->post(route('teller.close'), ['closing_balance' => 1000])
+        ->assertRedirect(route('teller.index'))
+        ->assertSessionHas('warning', 'Cashiers cannot close drawers. Ask a drawer administrator to close it.');
 
     $session = DrawerSession::query()->where('user_id', $cashier->id)->orderByDesc('id')->firstOrFail();
 
@@ -1661,33 +1664,47 @@ it('does not allow cashiers to close drawers even when denomination counting is 
         ],
     );
 
-    $this->actingAs($cashier)
-        ->post(route('teller.open'), [
-            'teller_drawer_id' => $drawer->id,
-            'opening_balance' => 1000,
-        ])
-        ->assertSessionHasNoErrors();
+    foreach (['manage-drawers', 'manage-users'] as $permissionSlug) {
+        $permission = Permission::firstOrCreate(['slug' => $permissionSlug], ['name' => str($permissionSlug)->headline()]);
+        $cashier->role->permissions()->syncWithoutDetaching([$permission->id]);
+    }
+    $cashier->unsetRelation('role');
 
     $this->actingAs($cashier)
         ->get(route('teller.index'))
         ->assertSuccessful()
-        ->assertSee('End-of-Day Drawer Count')
-        ->assertSee('1,000 note');
+        ->assertDontSee('End-of-Day Drawer Count')
+        ->assertDontSee('action="'.route('teller.close').'"', false)
+        ->assertDontSee('action="'.route('teller.drawers.close', $drawer).'"', false);
 
-    $this->actingAs($cashier)
+    $this->actingAs($cashier)->from(route('teller.index'))
         ->post(route('teller.close'), [
             'denominations' => [
                 1000 => 1,
             ],
         ])
-        ->assertRedirect()
+        ->assertRedirect(route('teller.index'))
+        ->assertSessionHas('warning', 'Cashiers cannot close drawers. Ask a drawer administrator to close it.');
+
+    $this->actingAs($cashier)->from(route('teller.index'))
+        ->post(route('teller.drawers.close', $drawer), ['closing_balance' => 1000])
+        ->assertRedirect(route('teller.index'))
+        ->assertSessionHas('warning', 'Cashiers cannot close drawers. Ask a drawer administrator to close it.');
+
+    expect($session->fresh()->status)->toBe('open')
+        ->and($drawer->fresh()->status)->toBe('open')
+        ->and((float) $drawer->current_balance)->toBe(1000.0)
+        ->and(CashDenomination::query()->where('drawer_session_id', $session->id)->exists())->toBeFalse();
+
+    $admin = drawerAdminUser($organization, null, 'organization-admin', ['manage-drawers']);
+    $this->actingAs($admin)->from(route('teller.index'))
+        ->post(route('teller.drawers.close', $drawer), ['closing_balance' => 1000])
+        ->assertRedirect(route('teller.index'))
         ->assertSessionHasNoErrors();
 
-    $enabledSession = DrawerSession::query()->where('user_id', $cashier->id)->orderByDesc('id')->firstOrFail();
-
-    expect($enabledSession->status)->toBe('closed')
-        ->and((float) $enabledSession->closing_balance)->toBe(1000.0)
-        ->and(CashDenomination::query()->where('drawer_session_id', $enabledSession->id)->where('denomination', 1000)->exists())->toBeTrue();
+    expect($session->fresh()->status)->toBe('closed')
+        ->and($drawer->fresh()->status)->toBe('closed')
+        ->and((float) $session->fresh()->closing_balance)->toBe(1000.0);
 });
 
 it('shows selected organization drawers and tellers to a super admin', function () {

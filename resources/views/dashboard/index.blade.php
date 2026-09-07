@@ -100,6 +100,20 @@
     @endforeach
 </div>
 
+@if($dashboardUser->hasRole('organization-admin') && $activitySummary)
+<section class="df-panel mt-6 p-5">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div><h2 class="text-lg font-semibold text-slate-950">Organization activity</h2><p class="text-sm text-slate-500">Staff presence and client visits for your organization.</p></div>
+        <a href="{{ route('system-activity.index') }}" class="df-action-primary">View activity details</a>
+    </div>
+    <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        @foreach([['Online staff', $activitySummary['online_staff']], ['Staff devices', $activitySummary['active_devices']], ['Clients', $activitySummary['total_clients']], ['Client visits', $activitySummary['visiting_clients'].' / '.$activitySummary['visit_days'].'d']] as [$label, $value])
+            <div class="rounded-xl bg-slate-50 p-4"><div class="text-sm text-slate-500">{{ $label }}</div><div class="mt-1 text-xl font-semibold text-slate-950">{{ $value }}</div></div>
+        @endforeach
+    </div>
+</section>
+@endif
+
 @if($isCashierDashboard && $moduleEnabled('teller'))
 <section class="df-panel mt-6 overflow-visible">
     <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">

@@ -35,8 +35,18 @@ class ReceiptController extends Controller
         }
 
         if ($user->isTellerCashier()) {
-            return (int) $transaction->user_id === (int) $user->id
-                && ($transaction->posted_at ?? $transaction->created_at)->isToday();
+            if (! ($transaction->posted_at ?? $transaction->created_at)->isToday()) {
+                return false;
+            }
+
+            if ((int) $transaction->user_id === (int) $user->id) {
+                return true;
+            }
+
+            $session = $user->drawerSessions()->where('status', 'open')->latest()->first();
+
+            return $session && ((int) $transaction->drawer_session_id === (int) $session->id
+                || $transaction->drawerMovements()->where('drawer_session_id', $session->id)->exists());
         }
 
         if ((int) $transaction->user_id === (int) $user->id) {

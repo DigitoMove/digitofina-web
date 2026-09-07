@@ -56,11 +56,12 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SavingsAccountController;
 use App\Http\Controllers\SavingsProductController;
 use App\Http\Controllers\SavingsTransactionController;
+use App\Http\Controllers\SystemActivityController;
 use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\TellerDrawerController;
 use App\Http\Controllers\TransactionDeletionController;
-use App\Http\Controllers\TransactionReversalController;
 use App\Http\Controllers\TransactionPreviewController;
+use App\Http\Controllers\TransactionReversalController;
 use App\Http\Controllers\UserFormOptionsController;
 use App\Http\Controllers\UserImpersonationController;
 use App\Http\Controllers\UserManagementController;
@@ -114,6 +115,8 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::get('/operations-health', OperationsHealthController::class)->name('operations-health.index');
+    Route::get('/system-activity', [SystemActivityController::class, 'index'])->name('system-activity.index');
+    Route::get('/system-activity/users/{user}', [SystemActivityController::class, 'show'])->name('system-activity.users.show');
     Route::post('/transaction-preview', TransactionPreviewController::class)->middleware('throttle:60,1')->name('transactions.preview');
     Route::get('/client-directory', [ClientDirectoryController::class, 'index'])->name('client-directory.index');
     Route::get('/client-directory/{client}', [ClientDirectoryController::class, 'show'])->name('client-directory.show');
@@ -263,5 +266,6 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
 Route::middleware(['auth', 'tenant'])->group(function (): void {
     Route::post('/clients/{client}/impersonate', [ClientImpersonationController::class, 'store'])->middleware('throttle:10,1')->name('clients.impersonate');
     Route::post('/users/{user}/impersonate', [UserImpersonationController::class, 'store'])->name('users.impersonate');
+    Route::get('/impersonation/users', [UserImpersonationController::class, 'index'])->name('impersonation.users');
     Route::delete('/impersonation', [UserImpersonationController::class, 'destroy'])->name('impersonation.destroy');
 });

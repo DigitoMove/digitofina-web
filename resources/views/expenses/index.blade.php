@@ -108,7 +108,7 @@
                             <form method="POST" action="{{ route('expenses.destroy', $expense) }}" data-confirm-title="Delete ledger posting" data-confirm-message="Delete this ledger posting and apply the opposite cash movement to the cashier drawer?" data-confirm-label="Delete posting" data-confirm-tone="danger">
                                 @csrf
                                 @method('DELETE')
-                                <x-icon-action label="Delete ledger posting" icon="delete" tone="danger" />
+                                <x-icon-action type="submit" text="Delete" label="Delete ledger posting" icon="delete" tone="danger" />
                             </form>
                         </td>
                     </tr>

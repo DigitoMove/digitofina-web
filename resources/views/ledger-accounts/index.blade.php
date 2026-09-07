@@ -107,7 +107,7 @@
                                     <form method="POST" action="{{ route('ledger-accounts.destroy', $account) }}" data-confirm-title="Delete ledger account" data-confirm-message="Delete this ledger account? Accounts with activity, children, cash status, or system status will be blocked." data-confirm-label="Delete account" data-confirm-tone="danger">
                                         @csrf
                                         @method('DELETE')
-                                        <x-icon-action label="Delete ledger account" icon="delete" tone="danger" />
+                                        <x-icon-action type="submit" text="Delete" label="Delete ledger account" icon="delete" tone="danger" />
                                     </form>
                                 @endif
                             </div>

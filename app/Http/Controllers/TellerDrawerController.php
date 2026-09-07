@@ -29,6 +29,7 @@ use App\Support\ApiSecurity;
 use App\Support\CurrencyDenomination;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -136,35 +137,31 @@ class TellerDrawerController extends Controller
                 ->limit(50)
                 ->get()
             : collect();
-        $recentMovementReferences = $recentMovements->pluck('reference')->filter()->unique()->values();
         $recentTransactions = $this->transactionHistoryQuery($request)
             ->with([
                 'account.client',
                 'drawerSession.drawer',
+                'drawerMovements' => function (HasMany $query) use ($session): void {
+                    $query->where('drawer_session_id', $session?->id ?? 0);
+                },
                 'journalEntries.chartAccount',
                 'type',
                 'reversalRequests' => fn ($query) => $query->where('status', 'pending')->latest(),
             ])
-            ->when($session && ! $isCashier, function (Builder $query, DrawerSession $session) use ($recentMovementReferences): Builder {
-                return $query->where(function (Builder $query) use ($session, $recentMovementReferences): void {
-                    $query->where('drawer_session_id', $session->id);
-
-                    if ($recentMovementReferences->isNotEmpty()) {
-                        $query->orWhereIn('reference', $recentMovementReferences);
-                    }
+            ->when($session, function (Builder $query, DrawerSession $session): Builder {
+                return $query->where(function (Builder $query) use ($session): void {
+                    $query->where('drawer_session_id', $session->id)
+                        ->orWhereHas('drawerMovements', fn (Builder $query): Builder => $query->where('drawer_session_id', $session->id));
                 });
             })
             ->when(! $session, fn (Builder $query): Builder => $query->whereRaw('1 = 0'))
             ->when($isCashier, fn (Builder $query): Builder => $query->whereDate('posted_at', $today->toDateString()))
-            ->when($isCashier, function (Builder $query) use ($request, $session): Builder {
-                return $query
-                    ->where('user_id', $request->user()->id)
-                    ->when($session, fn (Builder $query): Builder => $query->where('drawer_session_id', $session->id));
-            })
             ->when($transactionSearch !== '', fn (Builder $query): Builder => $this->searchPostedTransactions($query, $transactionSearch))
             ->latest('posted_at')
-            ->limit(50)
-            ->get();
+            ->orderByDesc('id')
+            ->paginate(50, ['*'], 'transactions_page')
+            ->withQueryString()
+            ->fragment('drawer-transactions');
 
         return view('teller.index', [
             'session' => $session,
@@ -558,7 +555,7 @@ class TellerDrawerController extends Controller
 
     public function close(Request $request, FinancialControlService $financialControls): RedirectResponse
     {
-        abort_unless(! $request->user()->isTellerCashier(), 403, 'Cashiers cannot close drawers. Ask a drawer administrator to close it.');
+        abort_if($request->user()->isTellerCashier(), 403, 'Cashiers cannot close drawers. Ask a drawer administrator to close it.');
 
         $data = $request->validate([
             'closing_balance' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
@@ -571,10 +568,6 @@ class TellerDrawerController extends Controller
 
             if (! $session) {
                 throw new InvalidArgumentException('Open your teller drawer before closing it.');
-            }
-
-            if ($request->user()->isTellerCashier() && ! $this->cashierDrawerCountEnabled($request)) {
-                $data['denominations'] = [];
             }
 
             [$closingBalance, $denominations] = $this->closingBalanceFromRequest($data);
@@ -632,6 +625,7 @@ class TellerDrawerController extends Controller
 
     public function closeDrawer(Request $request, TellerDrawer $drawer, FinancialControlService $financialControls): RedirectResponse
     {
+        abort_if($request->user()->isTellerCashier(), 403, 'Cashiers cannot close drawers. Ask a drawer administrator to close it.');
         abort_unless($this->canOpenForTellers($request), 403);
 
         $data = $request->validate(['closing_balance' => ['required', 'numeric', 'min:0', CurrencyDenomination::validationRule()]]);

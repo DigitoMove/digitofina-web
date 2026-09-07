@@ -57,7 +57,7 @@
                         <td class="px-4 py-3">
                             <form method="POST" action="{{ route('users.impersonate', $user) }}">
                                 @csrf
-                                <x-icon-action label="Act as staff user" icon="login" />
+                                <x-icon-action type="submit" label="Impersonate" icon="login" />
                             </form>
                         </td>
                     </tr>

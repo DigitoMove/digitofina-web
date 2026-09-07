@@ -368,11 +368,13 @@
                                     <td class="p-3">
                                         <div class="flex flex-wrap justify-end gap-2">
                                             @if($managedDrawer->status === 'open')
+                                                @unless($isCashier)
                                                 <form method="POST" action="{{ route('teller.drawers.close', $managedDrawer) }}" class="flex gap-2">
                                                     @csrf
                                                     <input name="closing_balance" type="number" min="0" step="100" value="{{ $managedDrawer->current_balance }}" class="w-28 rounded border-slate-300 text-sm" required>
                                                     <button class="rounded bg-red-600 px-3 py-1 text-xs font-semibold text-white">Close</button>
                                                 </form>
+                                                @endunless
                                             @else
                                                 <form method="POST" action="{{ route('teller.open') }}" class="flex flex-wrap justify-end gap-2">
                                                     @csrf
@@ -755,11 +757,11 @@
     </section>
 @endif
 
-<section class="df-panel mt-6 overflow-visible">
+<section id="drawer-transactions" class="df-panel mt-6 overflow-visible">
     <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div>
             <h2 class="font-semibold text-slate-950">{{ $isCashier ? "Today's Posted Transactions" : 'Drawer Posted Transactions' }}</h2>
-            <p class="df-muted">{{ $isCashier ? 'Search transactions from your current drawer session.' : 'Search posted transactions by description, reference, client, account, status, or transaction type.' }}</p>
+            <p class="df-muted">{{ $isCashier ? 'Today’s transactions in your current drawer session, including incoming transfers and administrator postings.' : 'Search posted transactions by description, reference, client, account, status, or transaction type.' }}</p>
         </div>
         <div class="flex flex-wrap items-center justify-end gap-2">
             <form method="GET" action="{{ route('teller.index') }}" class="flex flex-wrap items-center gap-2">
@@ -784,9 +786,7 @@
                     @php
                         $pendingReversal = $transaction->reversalRequests->first();
                         $journalAccount = $transaction->journalEntries->first()?->chartAccount;
-                        $drawerMovement = $transaction->drawerSession
-                            ? $recentMovements->firstWhere('reference', $transaction->reference)
-                            : null;
+                        $drawerMovement = $transaction->drawerMovements->first();
                     @endphp
                     <tr class="border-t border-slate-200 align-top">
                         <td class="p-3 whitespace-nowrap">{{ $transaction->posted_at?->format('d M H:i:s') ?? $transaction->created_at->format('d M H:i:s') }}</td>
@@ -817,7 +817,7 @@
                             @endif
                         </td>
                         <td class="text-right">
-                            @if($transaction->status === 'posted' && ! $pendingReversal && ! $transaction->reversed_by && (auth()->user()->hasRole('super-admin') || auth()->user()->hasRole('organization-admin') || auth()->user()->hasRole('teller-cashier') || auth()->user()->canPerform('request-reversals') || auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker')))
+                            @if((! $isCashier || (int) $transaction->user_id === (int) auth()->id()) && $transaction->status === 'posted' && ! $pendingReversal && ! $transaction->reversed_by && (auth()->user()->hasRole('super-admin') || auth()->user()->hasRole('organization-admin') || auth()->user()->hasRole('teller-cashier') || auth()->user()->canPerform('request-reversals') || auth()->user()->canPerform('approve-reversals') || auth()->user()->canPerform('override-maker-checker')))
                                 <details class="relative inline-block text-left">
                                     <summary class="cursor-pointer list-none rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white">Request reversal</summary>
                                     <form method="POST" action="{{ route('transactions.reversal-requests.store', $transaction) }}" class="absolute right-0 z-20 mt-2 grid w-72 gap-2 rounded-lg border border-amber-200 bg-white p-3 text-left shadow-xl">
@@ -834,12 +834,14 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="8" class="p-8 text-center text-slate-500">No posted transactions yet.</td></tr>
+                    <tr><td colspan="8" class="p-8 text-center text-slate-500">{{ ! $session ? 'Open your assigned drawer to view its transactions.' : ($transactionSearch !== '' ? 'No transactions match your search in this drawer session.' : 'No posted transactions yet.') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
     </div>
 </section>
+
+<div class="mt-4">{{ $recentTransactions->links() }}</div>
 
 <div class="fixed inset-0 z-[90] {{ $hasLookupSearch ? 'grid' : 'hidden' }} place-items-center bg-slate-950/60 p-4" data-teller-lookup-modal data-open="{{ $hasLookupSearch ? '1' : '0' }}">
     <div class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/10">
