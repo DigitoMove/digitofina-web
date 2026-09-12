@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\CurrencyRegistry;
 use App\Models\Organization;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -52,7 +53,7 @@ class UpdateOrganizationRequest extends FormRequest
             'social_links.whatsapp' => ['nullable', 'string', 'max:80'],
             'logo_file' => ['nullable', 'image', 'max:2048'],
             'address' => ['nullable', 'string'],
-            'currency' => ['required', 'string', 'max:10'],
+            'currency' => ['required', 'string', 'size:3', Rule::in(array_keys(CurrencyRegistry::all()))],
             'financial_year_start_month' => ['nullable', 'string', 'max:20'],
             'status' => ['nullable', 'in:active,suspended,disabled'],
         ];

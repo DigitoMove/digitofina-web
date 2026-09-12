@@ -26,7 +26,11 @@
                 <input name="phone" value="{{ old('phone') }}" class="mt-1 w-full rounded border-slate-300">
             </label>
             <label class="block text-sm font-medium text-slate-700">Currency <x-required-badge />
-                <input name="currency" value="{{ old('currency', 'UGX') }}" class="mt-1 w-full rounded border-slate-300" required>
+                <select name="currency" class="mt-1 w-full rounded border-slate-300" required>
+                    @foreach($currencies as $code => $currency)
+                        <option value="{{ $code }}" @selected(old('currency', 'UGX') === $code)>{{ $code }} · {{ $currency['name'] }}</option>
+                    @endforeach
+                </select>
             </label>
             <label class="block text-sm font-medium text-slate-700">Timezone <x-required-badge />
                 <input name="timezone" value="{{ old('timezone', 'Africa/Kampala') }}" class="mt-1 w-full rounded border-slate-300" required>

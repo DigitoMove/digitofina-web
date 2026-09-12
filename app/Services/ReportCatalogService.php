@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\CurrencyRateService;
+use App\CurrencyRegistry;
 use App\Models\Account;
 use App\Models\Branch;
 use App\Models\BranchDailySummary;
@@ -55,9 +57,14 @@ class ReportCatalogService
     /** @var array<string, bool> */
     private array $organizationColumns = [];
 
+    private string $reportCurrency = 'UGX';
+
+    private string $reportBaseCurrency = 'UGX';
+
     public function __construct(
         private BusinessCalendarService $calendar,
         private TenantContext $tenant,
+        private CurrencyRateService $currencyRates,
     ) {}
 
     /**
@@ -223,6 +230,9 @@ class ReportCatalogService
     public function generate(string $slug, array $filters, User $user): array
     {
         $this->reportOrganizationId($user);
+        $this->reportBaseCurrency = strtoupper((string) ($this->tenant->organization()?->currency ?: $user->organization?->currency ?: 'UGX'));
+        $this->reportCurrency = strtoupper((string) ($filters['currency'] ?? $this->reportBaseCurrency));
+        abort_unless(CurrencyRegistry::supports($this->reportCurrency), 422, 'Unsupported report currency.');
         $definition = $this->find($slug, $user);
 
         abort_unless($definition, 404);
@@ -292,7 +302,7 @@ class ReportCatalogService
             default => $this->placeholderRows($definition),
         };
 
-        return compact('definition', 'columns', 'rows', 'summary', 'from', 'to', 'detail', 'branchId', 'chartAccountIds', 'search', 'interestBasis');
+        return compact('definition', 'columns', 'rows', 'summary', 'from', 'to', 'detail', 'branchId', 'chartAccountIds', 'search', 'interestBasis') + ['currency' => $this->reportCurrency, 'baseCurrency' => $this->reportBaseCurrency];
     }
 
     /**
@@ -2722,7 +2732,11 @@ class ReportCatalogService
 
     private function money(float $amount): string
     {
-        return 'UGX '.number_format($amount, 2);
+        $converted = $this->reportCurrency === $this->reportBaseCurrency
+            ? $amount
+            : $this->currencyRates->convert($amount, $this->reportBaseCurrency, $this->reportCurrency);
+
+        return $this->reportCurrency.' '.number_format($converted, 2);
     }
 
     private function amount(float $amount): string

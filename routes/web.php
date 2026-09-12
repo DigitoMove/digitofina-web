@@ -19,6 +19,7 @@ use App\Http\Controllers\ClientNoteController;
 use App\Http\Controllers\ClientPortalAccessController;
 use App\Http\Controllers\ClientStatementController;
 use App\Http\Controllers\CommercialQuoteController;
+use App\Http\Controllers\CurrencyRateController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DataImportController;
 use App\Http\Controllers\DataWipeController;
@@ -146,6 +147,9 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::resource('users', UserManagementController::class)->except(['show', 'destroy'])->middleware('demo.capacity:users');
     Route::resource('roles', RoleController::class)->except(['show', 'destroy']);
     Route::get('/organizations', [OrganizationController::class, 'index'])->name('organizations.index');
+    Route::get('/currency-rates', [CurrencyRateController::class, 'index'])->name('currency-rates.index');
+    Route::post('/currency-rates', [CurrencyRateController::class, 'store'])->name('currency-rates.store');
+    Route::post('/currency-rates/refresh', [CurrencyRateController::class, 'refresh'])->name('currency-rates.refresh');
     Route::get('/organizations/create', [OrganizationController::class, 'create'])->name('organizations.create');
     Route::post('/organizations', [OrganizationController::class, 'store'])->name('organizations.store');
     Route::delete('/organizations/{organization}', [OrganizationController::class, 'destroy'])->name('organizations.destroy');

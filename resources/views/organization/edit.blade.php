@@ -53,7 +53,11 @@
                 <input name="website" type="url" value="{{ old('website', $organization->website) }}" class="mt-1 w-full rounded border-slate-300 disabled:bg-slate-100 disabled:text-slate-500" placeholder="https://example.com" @disabled(! $canUpdateOrganization)>
             </label>
             <label class="block text-sm font-medium text-slate-700">Currency <x-required-badge />
-                <input name="currency" value="{{ old('currency', $organization->currency) }}" class="mt-1 w-full rounded border-slate-300 disabled:bg-slate-100 disabled:text-slate-500" required @disabled(! $canUpdateOrganization)>
+                <select name="currency" class="mt-1 w-full rounded border-slate-300 disabled:bg-slate-100 disabled:text-slate-500" required @disabled(! $canUpdateOrganization)>
+                    @foreach($currencies as $code => $currency)
+                        <option value="{{ $code }}" @selected(old('currency', $organization->currency) === $code)>{{ $code }} · {{ $currency['name'] }}</option>
+                    @endforeach
+                </select>
             </label>
             <label class="block text-sm font-medium text-slate-700">Financial year starts
                 <select name="financial_year_start_month" class="mt-1 w-full rounded border-slate-300 disabled:bg-slate-100 disabled:text-slate-500" @disabled(! $canUpdateOrganization)>

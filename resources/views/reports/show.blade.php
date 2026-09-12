@@ -22,6 +22,19 @@
         </p>
     </div>
     <div class="flex flex-wrap gap-2">
+        <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="flex items-center gap-2">
+            @foreach(request()->except('currency') as $key => $value)
+                @if(is_array($value))
+                    @foreach($value as $item)<input type="hidden" name="{{ $key }}[]" value="{{ $item }}">@endforeach
+                @else<input type="hidden" name="{{ $key }}" value="{{ $value }}">@endif
+            @endforeach
+            <select name="currency" class="rounded border-slate-300 px-2 py-2 text-sm" title="Display report currency">
+                @foreach($currencies as $code => $currencyOption)
+                    <option value="{{ $code }}" @selected(($currency ?? $baseCurrency ?? '') === $code)>{{ $code }}</option>
+                @endforeach
+            </select>
+            <button class="df-action-secondary">View currency</button>
+        </form>
         <a href="{{ route('reports.index') }}" class="rounded border px-4 py-2 text-sm font-semibold">All Reports</a>
         <button type="button" onclick="window.print()" class="df-action-secondary">Print</button>
     </div>

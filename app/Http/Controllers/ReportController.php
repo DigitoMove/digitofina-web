@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\CurrencyRateService;
+use App\CurrencyRegistry;
 use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\User;
@@ -12,6 +14,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class ReportController extends Controller
@@ -27,12 +30,13 @@ class ReportController extends Controller
             'branches' => Branch::query()->where('organization_id', $organizationId)->orderBy('name')->get(),
             'chartAccounts' => $this->ledgerAccountOptions($request, $organizationId),
             'canChooseBranch' => ApiSecurity::hasGlobalBranchAccess($request->user()),
+            'currencies' => CurrencyRegistry::all(),
             'defaultFrom' => today()->toDateString(),
             'defaultTo' => now()->toDateString(),
         ]);
     }
 
-    public function show(Request $request, string $report, ReportCatalogService $reports): View
+    public function show(Request $request, string $report, ReportCatalogService $reports, CurrencyRateService $currencyRates): View
     {
         $this->authorizeReportCatalogAccess($request->user());
 
@@ -47,7 +51,18 @@ class ReportController extends Controller
             'detail' => ['nullable', 'in:brief,detailed'],
             'interest_basis' => ['nullable', 'in:collected,projected'],
             'search' => ['nullable', 'string', 'max:255'],
+            'currency' => ['nullable', 'string', 'size:3', Rule::in(array_keys(CurrencyRegistry::all()))],
         ]);
+
+        $baseCurrency = strtoupper((string) (app(TenantContext::class)->organization()?->currency ?: $request->user()->organization?->currency ?: 'UGX'));
+        $targetCurrency = strtoupper((string) ($data['currency'] ?? $baseCurrency));
+        if ($targetCurrency !== $baseCurrency) {
+            try {
+                $currencyRates->rate($baseCurrency, $targetCurrency);
+            } catch (\RuntimeException $exception) {
+                throw ValidationException::withMessages(['currency' => $exception->getMessage()]);
+            }
+        }
 
         if (! ApiSecurity::hasGlobalBranchAccess($request->user()) && isset($data['branch_id'])) {
             abort_unless((int) $data['branch_id'] === (int) $request->user()->branch_id, 403);
@@ -57,6 +72,7 @@ class ReportController extends Controller
             'branches' => Branch::query()->where('organization_id', $organizationId)->orderBy('name')->get(),
             'chartAccounts' => $this->ledgerAccountOptions($request, $organizationId),
             'canChooseBranch' => ApiSecurity::hasGlobalBranchAccess($request->user()),
+            'currencies' => CurrencyRegistry::all(),
         ]);
     }
 

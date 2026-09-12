@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\CurrencyRegistry;
 use App\Http\Requests\UpdateOrganizationRequest;
 use App\Models\Branch;
 use App\Models\Organization;
@@ -41,6 +42,7 @@ class OrganizationController extends Controller
         return view('organizations.index', [
             'organizations' => $organizations,
             'packages' => Package::query()->where('status', 'active')->orderBy('name')->get(),
+            'currencies' => CurrencyRegistry::all(),
             'selectedOrganizationId' => $request->session()->get('super_admin_organization_id'),
         ]);
     }
@@ -56,6 +58,7 @@ class OrganizationController extends Controller
                 'timezone' => 'Africa/Kampala',
             ]),
             'packages' => Package::query()->where('status', 'active')->orderBy('name')->get(),
+            'currencies' => CurrencyRegistry::all(),
         ]);
     }
 
@@ -198,6 +201,7 @@ class OrganizationController extends Controller
             'organization' => $organization,
             'isCurrentOrganization' => $isCurrentOrganization,
             'canUpdateOrganization' => request()->user()?->can('update', $organization) ?? false,
+            'currencies' => CurrencyRegistry::all(),
         ]);
     }
 
@@ -236,7 +240,7 @@ class OrganizationController extends Controller
             'social_links.whatsapp' => ['nullable', 'string', 'max:80'],
             'phone' => ['nullable', 'string', 'max:40'],
             'address' => ['nullable', 'string'],
-            'currency' => ['required', 'string', 'max:10'],
+            'currency' => ['required', 'string', 'size:3', Rule::in(array_keys(CurrencyRegistry::all()))],
             'timezone' => ['required', 'string', 'max:80'],
             'package_id' => ['nullable', 'exists:packages,id'],
             'status' => ['required', 'in:active,suspended,disabled,inactive'],
