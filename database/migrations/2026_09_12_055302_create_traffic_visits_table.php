@@ -11,6 +11,24 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('traffic_visits')) {
+            Schema::table('traffic_visits', function (Blueprint $table): void {
+                if (! Schema::hasIndex('traffic_visits', 'traffic_visits_started_at_host_index')) {
+                    $table->index(['started_at', 'host'], 'traffic_visits_started_at_host_index');
+                }
+
+                if (! Schema::hasIndex('traffic_visits', 'traffic_visitor_seen')) {
+                    $table->index(['visitor_hash', 'last_seen_at'], 'traffic_visitor_seen');
+                }
+
+                if (! Schema::hasIndex('traffic_visits', 'traffic_visits_organization_id_started_at_index')) {
+                    $table->index(['organization_id', 'started_at'], 'traffic_visits_organization_id_started_at_index');
+                }
+            });
+
+            return;
+        }
+
         Schema::create('traffic_visits', function (Blueprint $table) {
             $table->id();
             $table->foreignId('organization_id')->nullable()->constrained()->nullOnDelete();
@@ -28,9 +46,9 @@ return new class extends Migration
             $table->timestamp('started_at');
             $table->timestamp('last_seen_at');
             $table->timestamps();
-            $table->index(['started_at', 'host']);
+            $table->index(['started_at', 'host'], 'traffic_visits_started_at_host_index');
             $table->index(['visitor_hash', 'last_seen_at'], 'traffic_visitor_seen');
-            $table->index(['organization_id', 'started_at']);
+            $table->index(['organization_id', 'started_at'], 'traffic_visits_organization_id_started_at_index');
         });
     }
 

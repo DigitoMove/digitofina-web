@@ -529,8 +529,9 @@ class _TransactionComposerState extends State<_TransactionComposer> {
         if (error.status == 401) widget.onExpired();
       }
     } finally {
-      if (mounted && version == searchVersion)
+      if (mounted && version == searchVersion) {
         setState(() => searching = false);
+      }
     }
   }
 
@@ -1073,13 +1074,15 @@ class _CashierHistoryPageState extends State<CashierHistoryPage> {
     child: FutureBuilder<Map<String, dynamic>>(
       future: history,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting)
+        if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
-        if (snapshot.hasError)
+        }
+        if (snapshot.hasError) {
           return _CashierError(
             error: snapshot.error!,
             retry: () => setState(() => history = fetch()),
           );
+        }
         final data = snapshot.data!;
         final transactions = (data['transactions'] as List? ?? []).cast<Map>();
         final movements = (data['movements'] as List? ?? []).cast<Map>();
@@ -1318,13 +1321,15 @@ class _CashierSessionsPageState extends State<CashierSessionsPage> {
     child: FutureBuilder<Map<String, dynamic>>(
       future: sessions,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting)
+        if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
-        if (snapshot.hasError)
+        }
+        if (snapshot.hasError) {
           return _CashierError(
             error: snapshot.error!,
             retry: () => reload(page),
           );
+        }
         final rows = (snapshot.data!['data'] as List).cast<Map>();
         return ListView(
           padding: const EdgeInsets.all(16),
