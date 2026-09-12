@@ -103,6 +103,15 @@ class AuditLogger
     {
         $request = request();
 
+        if ($request?->attributes->has('api_impersonator_id')) {
+            $newValues['_impersonation'] = [
+                'impersonator_user_id' => $request->attributes->get('api_impersonator_id'),
+                'impersonated_user_id' => $request->attributes->get('api_impersonated_user_id'),
+            ];
+
+            return $newValues;
+        }
+
         if (! $request?->hasSession() || ! $request->session()->has('impersonator_user_id')) {
             return $newValues;
         }

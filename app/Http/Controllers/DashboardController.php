@@ -20,6 +20,7 @@ use App\Services\LoanVisibilityService;
 use App\Services\ModuleService;
 use App\Services\SystemActivityService;
 use App\Services\TenantContext;
+use App\Services\TrafficAnalyticsService;
 use App\Support\ApiSecurity;
 use App\Support\ModuleCatalog;
 use Carbon\CarbonImmutable;
@@ -334,7 +335,8 @@ class DashboardController extends Controller
             'savingsBalance' => (float) $scope(SavingsAccount::query())->sum('current_balance'),
             'investmentBalance' => (float) $scope(InvestorAccount::query())->sum('current_investment_balance'),
             'recentOrganizations' => Organization::query()->with('package')->latest()->limit(6)->get(),
-            'activitySummary' => $activity->summary(),
+            'activitySummary' => $activity->summary($selectedOrganization?->id),
+            'traffic' => app(TrafficAnalyticsService::class)->dashboard($request, $selectedOrganization?->id),
         ]);
     }
 }

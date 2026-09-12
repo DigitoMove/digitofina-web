@@ -1,3 +1,5 @@
+import './traffic';
+
 const activateTab = (scope, target) => {
     const tabs = scope.querySelectorAll('[data-df-tab-target]');
     const panels = scope.querySelectorAll('[data-df-tab-panel]');

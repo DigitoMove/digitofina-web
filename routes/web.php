@@ -59,6 +59,7 @@ use App\Http\Controllers\SavingsTransactionController;
 use App\Http\Controllers\SystemActivityController;
 use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\TellerDrawerController;
+use App\Http\Controllers\TrafficHeartbeatController;
 use App\Http\Controllers\TransactionDeletionController;
 use App\Http\Controllers\TransactionPreviewController;
 use App\Http\Controllers\TransactionReversalController;
@@ -69,6 +70,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', LandingPageController::class)->middleware('tenant')->name('landing');
+Route::post('/traffic/heartbeat', TrafficHeartbeatController::class)->middleware('throttle:12,1')->name('traffic.heartbeat');
 Route::get('/pricing', PricingController::class)->middleware(['tenant', 'marketing.available'])->name('pricing');
 
 Route::middleware(['tenant', 'guest', 'demo.available'])->group(function (): void {

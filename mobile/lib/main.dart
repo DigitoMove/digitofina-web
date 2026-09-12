@@ -5,28 +5,82 @@ import 'core/config/api_config.dart';
 import 'core/network/api_client.dart';
 import 'features/admin/admin_workspace.dart';
 import 'features/cashier/cashier_workspace.dart';
+import 'features/admin/impersonation_picker.dart';
 
 void main() => runApp(const DigitoFinaApp());
 
-class DigitoFinaApp extends StatelessWidget {
+class DigitoFinaApp extends StatefulWidget {
   const DigitoFinaApp({super.key});
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'DigitoFina',
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff7e22ce)),
-      scaffoldBackgroundColor: const Color(0xfffaf7fd),
-      useMaterial3: true,
-      inputDecorationTheme: const InputDecorationTheme(
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(),
+  State<DigitoFinaApp> createState() => _DigitoFinaAppState();
+}
+
+class _DigitoFinaAppState extends State<DigitoFinaApp> {
+  final client = ApiClient(config: ApiConfig.fromEnvironment());
+  final navigatorKey = GlobalKey<NavigatorState>();
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      navigatorKey: navigatorKey,
+      builder: (context, child) => ValueListenableBuilder<Map<String, dynamic>?>(
+        valueListenable: client.impersonatedUser,
+        builder: (context, user, _) => Column(
+          children: [
+            if (user != null)
+              Material(
+                color: Theme.of(context).colorScheme.tertiaryContainer,
+                child: SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Acting as ${user['name']} · ${user['role_name'] ?? user['role']}',
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            client.stopImpersonating();
+                            navigatorKey.currentState!.pushAndRemoveUntil(
+                              MaterialPageRoute<void>(
+                                builder: (_) => SessionGate(client: client),
+                              ),
+                              (_) => false,
+                            );
+                          },
+                          child: const Text('Return to Super Admin'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            Expanded(child: child!),
+          ],
+        ),
       ),
-    ),
-    home: SessionGate(client: ApiClient(config: ApiConfig.fromEnvironment())),
-  );
+      title: 'DigitoFina',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff7e22ce)),
+        scaffoldBackgroundColor: const Color(0xfffaf7fd),
+        useMaterial3: true,
+        inputDecorationTheme: const InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(),
+        ),
+      ),
+      home: SessionGate(client: client),
+    );
+  }
 }
 
 Widget workspace(
@@ -36,6 +90,26 @@ Widget workspace(
 ) {
   if (['super-admin', 'organization-admin'].contains(user['role'])) {
     return AdminWorkspace(
+      onImpersonate: user['role'] == 'super-admin'
+          ? () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ImpersonationPicker(
+                    client: client,
+                    onSelected: (target) {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute<void>(
+                          builder: (context) =>
+                              workspace(context, target, client),
+                        ),
+                        (_) => false,
+                      );
+                    },
+                  ),
+                ),
+              );
+            }
+          : null,
       client: client,
       user: user,
       onSignedOut: () {

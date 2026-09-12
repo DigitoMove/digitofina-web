@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
@@ -11,13 +12,31 @@ class ApiClient {
     http.Client? transport,
   }) : _storage = storage ?? const FlutterSecureStorage(),
        _transport = transport ?? http.Client();
+  final impersonatedUser = ValueNotifier<Map<String, dynamic>?>(null);
+
+  Future<Map<String, dynamic>> impersonate(Map<String, dynamic> user) async {
+    impersonatedUser.value = user;
+    try {
+      return await me();
+    } catch (_) {
+      impersonatedUser.value = null;
+      rethrow;
+    }
+  }
+
+  void stopImpersonating() => impersonatedUser.value = null;
+
   final ApiConfig config;
   final FlutterSecureStorage _storage;
   final http.Client _transport;
 
   Future<bool> hasSession() async =>
       await _storage.read(key: 'access_token') != null;
-  Future<void> clearSession() => _storage.delete(key: 'access_token');
+  Future<void> clearSession() async {
+    stopImpersonating();
+    await _storage.delete(key: 'access_token');
+  }
+
   Future<Map<String, dynamic>> get(String path, {Map<String, String>? query}) =>
       request('GET', path, query: query);
 
@@ -29,11 +48,13 @@ class ApiClient {
   }) async {
     final base = config.baseUrl.replaceAll(RegExp(r'/+$'), '');
     final uri = Uri.parse('$base/$path').replace(queryParameters: query);
+    final target = impersonatedUser.value;
     final token = await _storage.read(key: 'access_token');
     final req = http.Request(method, uri)
       ..headers.addAll({
         'Accept': 'application/json',
         'Content-Type': 'application/json',
+        if (target != null) 'X-Impersonate-User': target['id'].toString(),
         if (token != null) 'Authorization': 'Bearer $token',
       });
     if (body != null) req.body = jsonEncode(body);
@@ -99,6 +120,7 @@ class ApiClient {
       Map<String, dynamic>.from((await get('auth/me'))['data'] as Map);
 
   Future<void> logout() async {
+    stopImpersonating();
     try {
       if (await hasSession()) await request('POST', 'auth/logout');
     } finally {

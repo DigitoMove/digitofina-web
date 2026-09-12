@@ -1,10 +1,11 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="mb-6 flex flex-wrap items-end justify-between gap-3">
+<div class="mb-6 flex flex-wrap items-end justify-between gap-4 rounded-2xl bg-slate-950 p-6 text-white shadow-lg">
     <div>
-        <h1 class="text-2xl font-semibold text-slate-950">Super Admin Dashboard</h1>
-        <p class="text-sm text-slate-500">
+        <p class="mb-2 text-xs font-semibold uppercase tracking-widest text-cyan-300">DigitoFina • Platform overview</p>
+        <h1 class="text-2xl font-semibold text-white">Super Admin Dashboard</h1>
+        <p class="mt-2 text-sm text-slate-300">
             @if($selectedOrganization)
                 Working inside {{ $selectedOrganization->name }}. Use global view to see every organization again.
             @else
@@ -21,7 +22,7 @@
 <section class="df-panel mb-6 p-5">
     <form method="POST" action="{{ $selectedOrganization ? route('organizations.switch.global') : '#' }}" class="flex flex-wrap items-end gap-3">
         @csrf
-        <label class="block min-w-72 text-sm font-medium text-slate-700">Organization context
+        <label class="block w-full text-sm font-medium text-slate-700 sm:w-80">Organization context
             <select class="mt-1 w-full rounded border-slate-300" onchange="if (this.value) document.getElementById('switch-form-' + this.value).submit()">
                 <option value="">Global Super Admin view</option>
                 @foreach($organizations as $organization)
@@ -61,7 +62,6 @@
 
         return collect($modules)->contains(fn (string $module): bool => $moduleEnabled($module));
     }));
-    $cards = array_slice($cards, 0, 8);
 @endphp
 
 <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -74,9 +74,11 @@
     @endforeach
 </div>
 
+@include('dashboard.traffic')
+
 <section class="df-panel mt-6 p-5">
     <div class="flex flex-wrap items-center justify-between gap-3">
-        <div><h2 class="text-lg font-semibold text-slate-950">Live system activity</h2><p class="text-sm text-slate-500">Global presence across all organizations. Online means active within {{ $activitySummary['online_minutes'] }} minutes.</p></div>
+        <div><h2 class="text-lg font-semibold text-slate-950">Staff & client activity</h2><p class="text-sm text-slate-500">{{ $selectedOrganization ? $selectedOrganization->name : 'All organizations' }}. Online means active within {{ $activitySummary['online_minutes'] }} minutes.</p></div>
         <a href="{{ route('system-activity.index') }}" class="df-action-primary">View activity details</a>
     </div>
     <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\FinancialControlController;
 use App\Http\Controllers\Api\V1\FinancialRelationshipController;
 use App\Http\Controllers\Api\V1\FixedSavingsController;
 use App\Http\Controllers\Api\V1\GroupSavingsController;
+use App\Http\Controllers\Api\V1\ImpersonationController;
 use App\Http\Controllers\Api\V1\InvestmentAccountController;
 use App\Http\Controllers\Api\V1\InvestmentPlanController;
 use App\Http\Controllers\Api\V1\InvestmentTransactionController;
@@ -32,6 +33,7 @@ use App\Http\Controllers\Api\V1\SavingsProductController;
 use App\Http\Controllers\Api\V1\SavingsTransactionController;
 use App\Http\Controllers\Api\V1\SettingController;
 use App\Http\Controllers\Api\V1\WebhookController;
+use App\Http\Middleware\ImpersonateApiUser;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware(['tenant', 'throttle:api'])->name('auth.login');
@@ -42,7 +44,7 @@ Route::post('/webhooks/nylon-pay', NylonPayWebhookController::class)->middleware
 Route::post('/webhooks/nylon-pay/organizations/{webhookToken}', OrganizationNylonPayWebhookController::class)->middleware('throttle:api')->name('webhooks.organization-nylon-pay');
 Route::post('/webhooks/{source}/{provider}', [WebhookController::class, 'store'])->middleware('throttle:api')->name('webhooks.store');
 
-Route::middleware(['auth:sanctum', 'tenant', 'demo.active', 'throttle:api', 'module:auto'])->group(function (): void {
+Route::middleware(['auth:sanctum', ImpersonateApiUser::class, 'tenant', 'demo.active', 'throttle:api', 'module:auto'])->group(function (): void {
     Route::prefix('cashier')->name('cashier.')->middleware('module:teller')->group(function (): void {
         Route::get('/dashboard', [CashierWorkspaceController::class, 'dashboard'])->name('dashboard');
         Route::get('/lookup', [CashierWorkspaceController::class, 'lookup'])->name('lookup');
@@ -55,6 +57,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'demo.active', 'throttle:api', 'mod
         Route::post('/preview', [CashierWorkspaceController::class, 'preview'])->middleware('throttle:api-sensitive')->name('preview');
         Route::post('/transactions', [CashierWorkspaceController::class, 'post'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('transactions.store');
     });
+    Route::get('/admin/impersonation/users', [ImpersonationController::class, 'index'])->name('impersonation.users');
     Route::get('/admin/dashboard', [AdminWorkspaceController::class, 'dashboard'])->name('admin.dashboard');
     Route::get('/admin/records/{section}', [AdminWorkspaceController::class, 'index'])->name('admin.records.index');
     Route::get('/admin/records/{section}/{id}', [AdminWorkspaceController::class, 'show'])->whereNumber('id')->name('admin.records.show');

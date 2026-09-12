@@ -23,6 +23,7 @@ use App\Services\TransactionPreviewService;
 use App\Support\ApiResponse;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -80,6 +81,7 @@ class CashierWorkspaceController extends Controller
             'drawers' => TellerDrawer::query()->where('organization_id', $user->organization_id)->where('branch_id', $user->branch_id)
                 ->where('assigned_user_id', $user->id)->get(['id', 'name', 'code', 'currency', 'current_balance', 'status']),
             'can_close' => false,
+            'can_post_ledger' => $user->canPerform('post-transactions'),
             'business_date' => today()->toDateString(),
             'transaction_types' => TransactionType::query()->where('is_active', true)
                 ->get(['id', 'name', 'code', 'direction'])->filter(fn (TransactionType $type): bool => $user->canPerform($type->code === 'loan_repayment' ? 'post-repayments' : 'post-transactions'))->values(),
@@ -125,7 +127,7 @@ class CashierWorkspaceController extends Controller
 
     private function accountsQuery(User $user, DrawerSession $session): Builder
     {
-        return Account::query()->withoutGlobalScope('tenant')->with(['accountType', 'client'])
+        return Account::query()->withoutGlobalScope('tenant')->with(['accountType', 'client' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant')->where('organization_id', $user->organization_id)])
             ->where('organization_id', $user->organization_id)->where('status', 'active')
             ->where(function (Builder $query) use ($user, $session): void {
                 $query->where('branch_id', $session->drawer->branch_id);
@@ -138,7 +140,7 @@ class CashierWorkspaceController extends Controller
     public function lookup(Request $request): JsonResponse
     {
         $user = $this->cashier($request);
-        $data = $request->validate(['drawer_session_id' => ['required', 'integer', 'min:1'], 'search' => ['required', 'string', 'min:2', 'max:100'], 'scope' => ['required', 'in:client_account,general_ledger']]);
+        $data = $request->validate(['drawer_session_id' => ['required', 'integer', 'min:1'], 'search' => ['required', 'string', 'min:2', 'max:100'], 'scope' => ['required', 'in:client_account,general_ledger'], 'category' => ['nullable', 'in:savings,loan']]);
         $session = $this->session($request, $data['drawer_session_id'], true);
         $search = '%'.$data['search'].'%';
         if ($data['scope'] === 'general_ledger') {
@@ -146,13 +148,18 @@ class CashierWorkspaceController extends Controller
             $rows = $this->ledgersQuery($user, $session)->whereAny(['name', 'code'], 'like', $search)->orderBy('code')->limit(30)
                 ->get(['id', 'code', 'name', 'type', 'drawer_direction']);
         } else {
-            $rows = $this->accountsQuery($user, $session)->where(function (Builder $query) use ($search): void {
-                $query->whereAny(['account_number', 'account_name'], 'like', $search)
-                    ->orWhereHas('client', fn (Builder $query): Builder => $query->whereAny(['client_number', 'first_name', 'last_name', 'business_name', 'phone'], 'like', $search));
-            })->orderBy('account_number')->limit(30)->get()->map(fn (Account $account): array => [
-                'id' => $account->id, 'account_number' => $account->account_number, 'name' => $account->account_name ?: $account->client?->full_name,
-                'category' => $account->accountType?->category, 'balance' => $account->balance,
-            ]);
+            $rows = $this->accountsQuery($user, $session)
+                ->when($data['category'] ?? null, fn (Builder $query, string $category): Builder => $query->whereHas('accountType', fn (Builder $query): Builder => $query->where('category', $category)))
+                ->where(function (Builder $query) use ($search, $user): void {
+                    $query->whereAny(['account_number', 'account_name'], 'like', $search)
+                        ->orWhereHas('client', fn (Builder $query): Builder => $query->withoutGlobalScope('tenant')->where('organization_id', $user->organization_id)->whereAny(['client_number', 'first_name', 'last_name', 'business_name', 'phone'], 'like', $search));
+                })->orderBy('account_number')->limit(30)->get()->map(fn (Account $account): array => [
+                    'id' => $account->id, 'account_number' => $account->account_number, 'name' => $account->account_name ?: $account->client?->full_name,
+                    'category' => $account->accountType?->category, 'balance' => $account->balance,
+                    'client_id' => $account->client_id, 'client_name' => $account->client?->full_name,
+                    'client_number' => $account->client?->client_number, 'client_phone' => $account->client?->phone,
+                    'currency' => $session->drawer->currency,
+                ]);
         }
 
         return ApiResponse::data($rows, 'Up to 30 matches. Refine your search if needed.');

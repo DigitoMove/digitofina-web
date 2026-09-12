@@ -23,7 +23,8 @@ class SystemActivityService
         $activities = $this->activities($organizationId);
         $onlineCutoff = now()->subMinutes(self::ONLINE_MINUTES);
         $visitCutoff = now()->subDays(self::CLIENT_VISIT_DAYS);
-        $staff = User::query()->withoutGlobalScopes()->staff()->where('status', 'active')->where('is_active', true);
+        $staff = User::query()->withoutGlobalScopes()->staff()->where('status', 'active')->where('is_active', true)
+            ->when($organizationId, fn (Builder $query): Builder => $query->where('organization_id', $organizationId));
         $clients = Client::query()->withoutGlobalScopes()->when($organizationId, fn ($query) => $query->where('organization_id', $organizationId));
         $staffIds = $staff->pluck('id');
         $onlineStaff = (clone $activities)->whereIn('user_id', $staffIds)->where('last_seen_at', '>=', $onlineCutoff)->distinct()->count('user_id');

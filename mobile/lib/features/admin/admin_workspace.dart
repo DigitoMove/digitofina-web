@@ -8,10 +8,12 @@ class AdminWorkspace extends StatefulWidget {
     required this.client,
     required this.user,
     required this.onSignedOut,
+    this.onImpersonate,
   });
   final ApiClient client;
   final Map<String, dynamic> user;
   final VoidCallback onSignedOut;
+  final VoidCallback? onImpersonate;
   @override
   State<AdminWorkspace> createState() => _AdminWorkspaceState();
 }
@@ -100,6 +102,12 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
         appBar: AppBar(
           title: const BrandTitle(title: 'DigitoFina'),
           actions: [
+            if (widget.onImpersonate != null)
+              IconButton(
+                tooltip: 'Act as a user',
+                onPressed: widget.onImpersonate,
+                icon: const Icon(Icons.switch_account),
+              ),
             IconButton(
               tooltip: 'Refresh',
               onPressed: () {
@@ -286,7 +294,8 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
                                     ),
                                     padding: const EdgeInsets.all(16),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         CircleAvatar(
                                           backgroundColor: metricColor(
@@ -296,7 +305,9 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
                                             metric['section'].toString(),
                                           ),
                                           child: Icon(
-                                            sectionIcon(metric['section'].toString()),
+                                            sectionIcon(
+                                              metric['section'].toString(),
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(height: 12),

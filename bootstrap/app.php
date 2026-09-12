@@ -8,6 +8,7 @@ use App\Http\Middleware\EnsureIdempotentFinancialRequest;
 use App\Http\Middleware\EnsureModuleEnabled;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\ResolveTenant;
+use App\Http\Middleware\TrackSiteTraffic;
 use App\Http\Middleware\TrackUserActivity;
 use App\Support\ApiResponse;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -41,7 +42,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->web(append: [TrackUserActivity::class]);
+        $middleware->web(append: [TrackUserActivity::class, TrackSiteTraffic::class]);
         $middleware->alias([
             'audit.api' => AuditApiMutation::class,
             'demo.active' => EnsureDemoActive::class,
