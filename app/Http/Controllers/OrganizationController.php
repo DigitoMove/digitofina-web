@@ -9,6 +9,7 @@ use App\Models\Package;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\DataWipeService;
 use App\Services\FinancialDefaultsService;
 use App\Services\ModuleService;
 use Illuminate\Database\Eloquent\Builder;
@@ -144,6 +145,31 @@ class OrganizationController extends Controller
         $auditLogger->record('organization.user_assigned', $user, $user->fresh()->only(['organization_id', 'branch_id']), $old, $request->user());
 
         return back()->with('status', 'User assigned to organization.');
+    }
+
+    public function destroy(Request $request, Organization $organization, DataWipeService $wipes, AuditLogger $auditLogger): RedirectResponse
+    {
+        abort_unless($request->user()->hasRole('super-admin'), 403);
+
+        if ($request->input('confirmation') !== 'DELETE') {
+            return back()->withErrors(['organization' => 'Type DELETE to permanently remove the organization and all of its data.']);
+        }
+
+        $snapshot = $organization->toArray();
+        $organizationId = $organization->id;
+
+        DB::transaction(function () use ($organization, $organizationId, $request, $wipes): void {
+            $wipes->wipeOrganization($organization, $request->user());
+            $request->session()->forget('super_admin_organization_id');
+            Organization::withTrashed()->whereKey($organizationId)->forceDelete();
+        });
+
+        $auditLogger->record('organization.deleted', null, [
+            'organization_id' => $organizationId,
+            'organization' => $snapshot,
+        ], actor: $request->user());
+
+        return redirect()->route('organizations.index')->with('status', 'Organization permanently deleted.');
     }
 
     public function editCurrent(Request $request): View

@@ -113,8 +113,8 @@ class DataWipeService
     {
         $preview = $this->preview($scopeType, $targetId, $categories, $actor);
 
-        return DB::transaction(function () use ($preview): array {
-            $ids = $this->resolveIds($preview['context'], $preview['categories'], auth()->user());
+        return DB::transaction(function () use ($preview, $actor): array {
+            $ids = $this->resolveIds($preview['context'], $preview['categories'], $actor);
 
             foreach ($this->deleteOrder($ids) as $table => $definition) {
                 $this->deleteQuery($table, $definition, $ids)->delete();
@@ -122,6 +122,16 @@ class DataWipeService
 
             return $preview;
         });
+    }
+
+    /**
+     * Permanently removes all tenant data selected by the organization scope.
+     *
+     * @return array{context: array<string, mixed>, categories: array<int, string>, tables: array<string, array{label: string, category: string, count: int}>, total: int}
+     */
+    public function wipeOrganization(Organization $organization, User $actor): array
+    {
+        return $this->wipe('organization', $organization->id, array_keys($this->categories()), $actor);
     }
 
     /**
@@ -392,6 +402,7 @@ class DataWipeService
             'audit_logs' => ['label' => 'Audit logs', 'category' => 'communications', 'user_columns' => ['user_id'], 'refs' => ['user_id' => 'users']],
             'report_exports' => ['label' => 'Report exports', 'category' => 'communications', 'user_columns' => ['created_by'], 'refs' => ['created_by' => 'users']],
             'webhook_events' => ['label' => 'Webhook events', 'category' => 'communications', 'refs' => ['webhook_provider_id' => 'webhook_providers']],
+            'traffic_visits' => ['label' => 'Traffic visits', 'category' => 'communications'],
             'payment_callbacks' => ['label' => 'Payment callbacks', 'category' => 'communications', 'refs' => ['payment_provider_id' => 'payment_providers', 'payment_request_id' => 'payment_requests']],
             'payment_requests' => ['label' => 'Payment requests', 'category' => 'communications', 'refs' => ['payment_provider_id' => 'payment_providers']],
             'mobile_money_transactions' => ['label' => 'Mobile money transactions', 'category' => 'communications', 'refs' => ['payment_provider_id' => 'payment_providers']],
@@ -472,6 +483,10 @@ class DataWipeService
             'system_settings' => ['label' => 'System settings', 'category' => 'access_setup', 'user_columns' => ['updated_by'], 'refs' => ['updated_by' => 'users']],
             'organization_modules' => ['label' => 'Organization modules', 'category' => 'access_setup'],
             'organization_domains' => ['label' => 'Organization domains', 'category' => 'access_setup'],
+            'organization_subscriptions' => ['label' => 'Organization subscriptions', 'category' => 'access_setup'],
+            'organization_hosting_fees' => ['label' => 'Organization hosting fees', 'category' => 'access_setup'],
+            'commercial_quotes' => ['label' => 'Commercial quotes', 'category' => 'access_setup'],
+            'nylon_pay_credentials' => ['label' => 'Nylon Pay credentials', 'category' => 'access_setup'],
             'payment_providers' => ['label' => 'Payment providers', 'category' => 'access_setup'],
             'sms_providers' => ['label' => 'SMS providers', 'category' => 'access_setup'],
             'webhook_providers' => ['label' => 'Webhook providers', 'category' => 'access_setup'],
