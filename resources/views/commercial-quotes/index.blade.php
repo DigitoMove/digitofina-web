@@ -154,6 +154,25 @@
     </section>
 @endif
 
+@if($isSuperAdmin)
+    <section class="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        @foreach([
+            ['label' => 'Total quotes', 'value' => number_format($quoteStats['total']), 'tone' => 'slate'],
+            ['label' => 'Awaiting pricing', 'value' => number_format($quoteStats['requested']), 'tone' => 'amber'],
+            ['label' => 'Issued / pending', 'value' => number_format($quoteStats['issued']), 'tone' => 'blue'],
+            ['label' => 'Paid', 'value' => number_format($quoteStats['paid']), 'tone' => 'emerald'],
+            ['label' => 'Paid value', 'value' => 'UGX '.number_format($quoteStats['paidValue']), 'tone' => 'violet'],
+        ] as $item)
+            <div class="df-panel p-4"><div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $item['label'] }}</div><div class="mt-2 text-2xl font-bold text-{{ $item['tone'] }}-700">{{ $item['value'] }}</div></div>
+        @endforeach
+    </section>
+    <section class="df-panel mb-6 p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3"><div><h2 class="font-semibold text-slate-950">Quote pipeline</h2><p class="text-sm text-slate-500">Last six months · {{ $quoteStats['total'] }} quotes · UGX {{ number_format($quoteStats['value']) }} total value</p><p class="mt-1 text-xs text-slate-500">Hosting fees and direct plan assignments are managed separately and do not appear here.</p></div><form method="GET" class="flex flex-wrap gap-2"><input name="search" value="{{ request('search') }}" class="rounded border-slate-300 text-sm" placeholder="Search quote or organization"><select name="status" class="rounded border-slate-300 text-sm"><option value="">All statuses</option>@foreach(['requested','issued','payment_pending','paid'] as $status)<option value="{{ $status }}" @selected(request('status') === $status)>{{ str($status)->headline() }}</option>@endforeach</select><button class="df-action-secondary">Filter</button></form></div>
+        <div class="mt-5 grid grid-cols-6 items-end gap-2" aria-label="Quote value by month">@php($maxMonthly = max(1, $monthlyQuotes->max('total')))<div class="col-span-6 flex h-28 items-end gap-2">@foreach($monthlyQuotes as $month)<div class="flex min-w-0 flex-1 flex-col items-center gap-1"><div class="w-full rounded-t bg-violet-400" style="height: {{ max(8, ($month['total'] / $maxMonthly) * 100) }}%" title="UGX {{ number_format($month['total']) }} · {{ $month['count'] }} quotes"></div><span class="text-[11px] text-slate-500">{{ $month['label'] }}</span></div>@endforeach</div></div>
+    </section>
+    <section class="df-panel mb-6 overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-4 py-3">Quote</th><th class="px-4 py-3">Organization</th><th class="px-4 py-3">Amount</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Created</th><th class="px-4 py-3 text-right">Actions</th></tr></thead><tbody class="divide-y divide-slate-100">@forelse($quotes as $quote)<tr class="hover:bg-slate-50"><td class="px-4 py-3 font-semibold">{{ $quote->quote_number }}<div class="text-xs font-normal text-slate-500">{{ str($quote->billing_type)->headline() }}</div></td><td class="px-4 py-3">{{ $quote->organization->name }}</td><td class="px-4 py-3 font-semibold">{{ $quote->currency }} {{ number_format((float) $quote->amount) }}</td><td class="px-4 py-3"><span class="df-badge">{{ str($quote->status)->headline() }}</span></td><td class="px-4 py-3 text-slate-500">{{ $quote->created_at->format('d M Y') }}</td><td class="px-4 py-3"><div class="flex justify-end gap-2">@if(in_array($quote->status, ['requested','issued'], true))<details class="relative"><summary class="cursor-pointer list-none rounded border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 [&::-webkit-details-marker]:hidden">Issue</summary><form method="POST" action="{{ route('commercial-quotes.issue', $quote) }}" class="absolute right-0 z-20 mt-2 grid w-64 gap-2 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xl">@csrf @method('PUT')<input type="hidden" name="billing_type" value="{{ $quote->billing_type === 'hosting' ? 'one_time' : $quote->billing_type }}"><input type="hidden" name="subscription_months" value="{{ $quote->subscription_months ?: 1 }}"><label class="text-xs font-semibold">Amount<input name="amount" type="number" min="500" step="100" value="{{ $quote->amount ?: 200000 }}" class="mt-1 w-full rounded border-slate-300 text-sm" required></label><input type="hidden" name="currency" value="UGX"><label class="text-xs font-semibold">Valid until<input name="valid_until" type="date" min="{{ today()->toDateString() }}" value="{{ $quote->valid_until?->toDateString() ?: today()->addDays(14)->toDateString() }}" class="mt-1 w-full rounded border-slate-300 text-sm" required></label><textarea name="terms" rows="2" class="rounded border-slate-300 text-sm" placeholder="Terms">{{ $quote->terms }}</textarea><button class="df-action-primary text-xs">Issue quote</button></form></details>@endif @if(in_array($quote->status, ['issued','payment_pending'], true))<form method="POST" action="{{ route('commercial-quotes.paid', $quote) }}" data-confirm-title="Mark quote paid" data-confirm-message="Activate this organization’s access and mark the quote paid?" data-confirm-label="Mark paid">@csrf<button class="df-action-primary px-3 py-1.5 text-xs">Mark paid</button></form>@endif @if($quote->status !== 'paid' && ! $quote->subscription && ! $quote->hostingFee)<form method="POST" action="{{ route('commercial-quotes.destroy', $quote) }}" data-confirm-title="Delete quote" data-confirm-message="Delete this quote permanently?" data-confirm-label="Delete quote" data-confirm-tone="danger">@csrf @method('DELETE')<button class="df-action-danger px-3 py-1.5 text-xs">Delete</button></form>@endif</div></td></tr>@empty<tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">No quotes match the selected filters.</td></tr>@endforelse</tbody></table></div></section>
+@endif
+
 @unless($isSuperAdmin)
     <section class="df-panel mb-6 p-5">
         <h2 class="text-lg font-semibold text-slate-950">Request a quote</h2>
@@ -178,6 +197,7 @@
     </section>
 @endunless
 
+@unless($isSuperAdmin)
 <section class="mb-4">
     <h2 class="text-lg font-semibold text-slate-950">{{ $isSuperAdmin ? 'Organization quote requests and sent quotes' : 'Your quote requests and responses' }}</h2>
     <p class="mt-1 text-sm text-slate-500">{{ $isSuperAdmin ? 'Hosting fees and direct plan assignments are managed separately and do not appear here.' : 'Track requests, agreed pricing, payment, and activation here.' }}</p>
@@ -272,4 +292,5 @@
 </div>
 
 <div class="mt-5">{{ $quotes->links() }}</div>
+@endunless
 @endsection

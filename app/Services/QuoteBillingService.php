@@ -146,6 +146,18 @@ class QuoteBillingService
         return $invoice['url'];
     }
 
+    public function markPaid(CommercialQuote $quote, User $actor): CommercialQuote
+    {
+        return DB::transaction(function () use ($quote): CommercialQuote {
+            $quote = CommercialQuote::query()->whereKey($quote->id)->lockForUpdate()->firstOrFail();
+            abort_if($quote->status === 'paid', 422, 'This quote is already paid.');
+            abort_unless(in_array($quote->status, ['issued', 'payment_pending'], true), 422, 'Only issued quotes can be marked paid.');
+            $this->activate($quote, 'manual-admin-'.Str::uuid());
+
+            return $quote->fresh();
+        }, 3);
+    }
+
     /** @param array<string, mixed> $payload */
     public function processWebhook(array $payload): ?CommercialQuote
     {

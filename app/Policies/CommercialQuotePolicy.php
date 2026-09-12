@@ -45,7 +45,7 @@ class CommercialQuotePolicy
      */
     public function delete(User $user, CommercialQuote $commercialQuote): bool
     {
-        return false;
+        return $user->hasRole('super-admin') && $commercialQuote->status !== 'paid';
     }
 
     public function pay(User $user, CommercialQuote $commercialQuote): bool
@@ -68,7 +68,7 @@ class CommercialQuotePolicy
      */
     public function forceDelete(User $user, CommercialQuote $commercialQuote): bool
     {
-        return false;
+        return $this->delete($user, $commercialQuote);
     }
 
     private function isQuoteAdministrator(User $user): bool

@@ -93,6 +93,8 @@ Route::middleware(['auth', 'tenant'])->group(function (): void {
     Route::post('/billing/quotes', [CommercialQuoteController::class, 'store'])->middleware('throttle:6,1')->name('commercial-quotes.store');
     Route::post('/billing/quotes/organizations', [CommercialQuoteController::class, 'storeForOrganization'])->middleware('throttle:6,1')->name('commercial-quotes.organizations.store');
     Route::put('/billing/quotes/{commercialQuote}', [CommercialQuoteController::class, 'issue'])->name('commercial-quotes.issue');
+    Route::post('/billing/quotes/{commercialQuote}/paid', [CommercialQuoteController::class, 'markPaid'])->name('commercial-quotes.paid');
+    Route::delete('/billing/quotes/{commercialQuote}', [CommercialQuoteController::class, 'destroy'])->name('commercial-quotes.destroy');
     Route::post('/billing/quotes/{commercialQuote}/payment', [QuotePaymentController::class, 'store'])->middleware('throttle:6,1')->name('commercial-quotes.pay');
     Route::put('/billing/nylon-pay', NylonPaySettingController::class)->name('nylon-pay.settings.update');
     Route::post('/billing/subscriptions', [OrganizationSubscriptionController::class, 'store'])->name('organization-subscriptions.store');
