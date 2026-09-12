@@ -6,6 +6,7 @@ import 'core/network/api_client.dart';
 import 'features/admin/admin_workspace.dart';
 import 'features/cashier/cashier_workspace.dart';
 import 'features/admin/impersonation_picker.dart';
+import 'features/roles/role_workspaces.dart';
 
 void main() => runApp(const DigitoFinaApp());
 
@@ -122,6 +123,18 @@ Widget workspace(
   }
   if (['teller-cashier', 'cashier', 'teller'].contains(user['role'])) {
     return CashierWorkspace(
+      client: client,
+      user: user,
+      onSignedOut: () {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(builder: (_) => LoginPage(client: client)),
+          (_) => false,
+        );
+      },
+    );
+  }
+  if (user['role'] == 'loan-recovery-officer') {
+    return RecoveryWorkspace(
       client: client,
       user: user,
       onSignedOut: () {

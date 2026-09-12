@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../core/network/api_client.dart';
+import '../roles/role_workspaces.dart';
 
 class AdminWorkspace extends StatefulWidget {
   const AdminWorkspace({
@@ -107,6 +108,20 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
                 tooltip: 'Act as a user',
                 onPressed: widget.onImpersonate,
                 icon: const Icon(Icons.switch_account),
+              ),
+            if (!isSuper)
+              IconButton(
+                tooltip: 'Loan approvals and reports',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => OrganizationAdminTools(
+                      client: widget.client,
+                      user: widget.user,
+                      onSignedOut: widget.onSignedOut,
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.analytics_outlined),
               ),
             IconButton(
               tooltip: 'Refresh',
