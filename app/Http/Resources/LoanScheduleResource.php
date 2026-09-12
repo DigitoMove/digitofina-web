@@ -33,6 +33,17 @@ class LoanScheduleResource extends JsonResource
             'status' => $this->status,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
+            'loan' => $this->whenLoaded('loan', fn (): ?array => $this->loan ? [
+                'id' => $this->loan->id,
+                'loan_number' => $this->loan->loan_number,
+                'status' => $this->loan->status,
+                'client' => $this->loan->relationLoaded('client') && $this->loan->client ? [
+                    'id' => $this->loan->client->id,
+                    'name' => $this->loan->client->full_name,
+                    'client_number' => $this->loan->client->client_number,
+                    'phone' => $this->loan->client->phone,
+                ] : null,
+            ] : null),
         ];
     }
 }

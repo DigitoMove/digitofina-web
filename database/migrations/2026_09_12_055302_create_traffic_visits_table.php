@@ -14,9 +14,11 @@ return new class extends Migration
         Schema::create('traffic_visits', function (Blueprint $table) {
             $table->id();
             $table->foreignId('organization_id')->nullable()->constrained()->nullOnDelete();
-            $table->string('host', 253);
-            $table->string('domain', 253);
-            $table->string('subdomain', 253)->nullable();
+            // Keep DNS values within the indexed length supported by MySQL
+            // installations configured with utf8mb4 and a 1000-byte key limit.
+            $table->string('host', 191);
+            $table->string('domain', 191);
+            $table->string('subdomain', 191)->nullable();
             $table->string('visitor_hash', 64);
             $table->boolean('is_demo')->default(false);
             $table->string('audience', 20)->default('guest');
@@ -27,7 +29,7 @@ return new class extends Migration
             $table->timestamp('last_seen_at');
             $table->timestamps();
             $table->index(['started_at', 'host']);
-            $table->index(['visitor_hash', 'host', 'last_seen_at'], 'traffic_visitor_host_seen');
+            $table->index(['visitor_hash', 'last_seen_at'], 'traffic_visitor_seen');
             $table->index(['organization_id', 'started_at']);
         });
     }

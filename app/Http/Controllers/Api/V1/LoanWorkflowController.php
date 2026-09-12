@@ -257,7 +257,7 @@ class LoanWorkflowController extends Controller
         abort_if($request->user()->isTellerCashier(), 403);
 
         $arrearsQuery = LoanSchedule::query()
-            ->with('loan')
+            ->with('loan.client')
             ->excludingCancelledLoans()
             ->eligibleForArrears(now())
             ->whereHas('loan', fn ($query) => $visibility->scopeRepaymentCalendar(ApiSecurity::scopeTenant($query, $request->user()), $request->user()));
