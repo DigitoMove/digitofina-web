@@ -63,6 +63,9 @@ class AdminWorkspaceController extends Controller
         $user = $request->user();
         abort_unless($user->hasAnyRole(['super-admin', 'organization-admin']), 403);
         $data = $request->validate(['organization_id' => ['nullable', 'integer', 'min:1']]);
+        if ($request->hasHeader('X-Organization-Id') && isset($data['organization_id'])) {
+            abort_unless((string) $data['organization_id'] === $request->header('X-Organization-Id'), 422, 'Organization query and request scope must agree.');
+        }
         if (! $user->hasRole('super-admin')) {
             abort_unless($user->organization_id, 403);
             abort_if(isset($data['organization_id']) && (int) $data['organization_id'] !== (int) $user->organization_id, 403);

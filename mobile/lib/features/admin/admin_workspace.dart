@@ -31,6 +31,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
   @override
   void initState() {
     super.initState();
+    organizationId = widget.client.organizationId;
     summary = fetch();
   }
 
@@ -38,6 +39,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
     (await widget.client.get('admin/dashboard', query: query))['data'] as Map,
   );
   Future<void> refresh() async {
+    await widget.client.me();
     final next = fetch();
     setState(() => summary = next);
     await next;
@@ -70,6 +72,15 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
       ),
     );
     if (!mounted || selected == null) return;
+    try {
+      await widget.client.selectOrganization(selected);
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       organizationId = selected;
       summary = fetch();
@@ -254,7 +265,16 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
                                 ),
                                 if (organizationId != null)
                                   TextButton(
-                                    onPressed: () {
+                                    onPressed: () async {
+                                      try {
+                                        await widget.client.selectOrganization(null);
+                                      } on ApiException catch (error) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+                                        }
+                                        return;
+                                      }
+                                      if (!mounted) return;
                                       setState(() {
                                         organizationId = null;
                                         summary = fetch();

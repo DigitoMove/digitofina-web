@@ -7,7 +7,10 @@ use App\Http\Requests\ChangePasswordRequest;
 use App\Http\Resources\ClientResource;
 use App\Services\ApiTokenService;
 use App\Services\AuditLogger;
+use App\Services\ModuleService;
+use App\Services\TenantContext;
 use App\Support\ApiResponse;
+use App\Support\ApiSecurity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -44,6 +47,7 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         $user = $request->user()->load(['role.permissions', 'branch', 'organization', 'client']);
+        $organization = app(TenantContext::class)->organization();
 
         return ApiResponse::data([
             'id' => $user->id,
@@ -51,7 +55,25 @@ class AuthController extends Controller
             'email' => $user->email,
             'phone' => $user->phone,
             'role' => $user->role?->slug,
+            'context' => [
+                'organization_id' => $organization?->id,
+                'organization_name' => $organization?->name,
+                'currency' => $organization?->currency,
+                'branch_id' => $user->branch_id,
+                'can_choose_company' => $user->hasRole('super-admin'),
+                'can_choose_branch' => ApiSecurity::hasGlobalBranchAccess($user),
+                'impersonator_id' => $request->attributes->get('api_impersonator_id'),
+                'enabled_modules' => $organization ? app(ModuleService::class)->enabledSlugs($organization) : [],
+                'is_global' => $organization === null && $user->hasRole('super-admin'),
+            ],
             'permissions' => $user->role?->permissions->pluck('slug')->values() ?? [],
+            'effective_permissions' => $user->role?->permissions->pluck('slug')->filter(fn (string $permission): bool => $user->canPerform($permission))->values() ?? [],
+            'capabilities' => [
+                'create_clients' => ! $user->isMember() && ! $user->isTellerCashier() && $user->canPerform('manage-clients'),
+                'create_loans' => $user->canCreateLoanApplications(),
+                'view_reports' => ! $user->isMember() && ! $user->isLoanOfficer() && ! $user->isLoanRecoveryOfficer() && $user->canPerform('view-reports'),
+                'post_transactions' => $user->canPerform('post-transactions'),
+            ],
             'branch' => $user->branch ? [
                 'id' => $user->branch->id,
                 'name' => $user->branch->name,

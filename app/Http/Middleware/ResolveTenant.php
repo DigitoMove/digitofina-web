@@ -21,7 +21,26 @@ class ResolveTenant
         $user = $request->user();
 
         if ($user) {
+            if ($request->is('api/*')) {
+                abort_unless($user->is_active && $user->status === 'active', 401, 'This user account is not active.');
+            }
+            $apiScope = $request->is('api/*') ? $request->header('X-Organization-Id') : null;
+            if ($apiScope !== null) {
+                abort_unless($apiScope === 'global' || (ctype_digit($apiScope) && (int) $apiScope > 0), 422, 'Choose a valid organization scope.');
+                if (! $user->hasRole('super-admin')) {
+                    abort_unless($apiScope !== 'global' && (int) $apiScope === (int) $user->organization_id, 403, 'You cannot access another organization tenant.');
+                }
+                if ($organization) {
+                    abort_unless($apiScope !== 'global' && (int) $apiScope === (int) $organization->id, 403, 'This host belongs to another organization tenant.');
+                }
+            }
             if ($user->hasRole('super-admin')) {
+                if ($apiScope !== null) {
+                    $selectedOrganization = $apiScope === 'global' ? null : Organization::query()->findOrFail((int) $apiScope);
+                    $this->tenant->set($selectedOrganization, $selectedOrganization !== null);
+
+                    return $next($request);
+                }
                 $selectedOrganization = $request->hasSession() && $request->session()->has('super_admin_organization_id')
                     ? Organization::query()->find($request->session()->get('super_admin_organization_id'))
                     : null;

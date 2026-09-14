@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -69,6 +70,84 @@ void main() {
       expect(profile['permissions'], ['manage-users']);
     },
   );
+
+  test('company scope follows requests and is suspended during impersonation', () async {
+    FlutterSecureStorage.setMockInitialValues({'access_token': 'admin'});
+    final scopes = <String?>[];
+    final client = ApiClient(config: config, transport: MockClient((request) async {
+      scopes.add(request.headers['X-Organization-Id']);
+      return success({'id': 1});
+    }));
+    await client.selectOrganization(10);
+    await client.get('loans');
+    await client.impersonate({'id': 2});
+    client.stopImpersonating();
+    await client.me();
+    await client.selectOrganization(null);
+    expect(scopes, ['10', '10', null, '10', 'global']);
+    await client.clearSession();
+    expect(client.organizationId, isNull);
+    expect(client.profile.value, isNull);
+  });
+
+  test('old unauthorized responses cannot clear a changed workspace session', () async {
+    FlutterSecureStorage.setMockInitialValues({'access_token': 'admin'});
+    final started = Completer<void>();
+    final pending = Completer<http.Response>();
+    final client = ApiClient(config: config, transport: MockClient((request) async {
+      if (request.url.path.endsWith('/slow')) {
+        started.complete();
+        return pending.future;
+      }
+      return success({'id': 1});
+    }));
+    final old = client.get('slow');
+    await started.future;
+    await client.selectOrganization(20);
+    final assertion = expectLater(old, throwsA(isA<ApiException>().having((e) => e.message, 'message', contains('workspace changed'))));
+    pending.complete(http.Response('{}', 401));
+    await assertion;
+    expect(await client.hasSession(), isTrue);
+    expect(client.organizationId, 20);
+  });
+
+  test('failed scope changes restore the previous company', () async {
+    FlutterSecureStorage.setMockInitialValues({'access_token': 'admin'});
+    final client = ApiClient(config: config, transport: MockClient((request) async {
+      if (request.headers['X-Organization-Id'] == '99') {
+        return http.Response(jsonEncode({'message': 'Forbidden'}), 403);
+      }
+      return success({'id': 1});
+    }));
+    await client.selectOrganization(10);
+    await expectLater(client.selectOrganization(99), throwsA(isA<ApiException>()));
+    expect(client.organizationId, 10);
+    expect(await client.hasSession(), isTrue);
+  });
+
+  test('financial requests promote the stable body key to the idempotency header', () async {
+    FlutterSecureStorage.setMockInitialValues({'access_token': 'admin'});
+    final client = ApiClient(config: config, transport: MockClient((request) async {
+      expect(request.headers['Idempotency-Key'], 'stable-operation-001');
+      return success({'accepted': true});
+    }));
+
+    await client.request('POST', 'savings/accounts/1/deposit', body: {
+      'amount': 1000,
+      'idempotency_key': 'stable-operation-001',
+    });
+  });
+
+  test('a denied profile after login does not leave a stored session', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final client = ApiClient(config: config, transport: MockClient((request) async {
+      return request.url.path.endsWith('/login')
+          ? success({'access_token': 'new-token'})
+          : http.Response(jsonEncode({'message': 'Organization unavailable'}), 403);
+    }));
+    await expectLater(client.login('user', 'password'), throwsA(isA<ApiException>()));
+    expect(await client.hasSession(), isFalse);
+  });
 
   test(
     'expired sessions are cleared and non-JSON responses are explained',

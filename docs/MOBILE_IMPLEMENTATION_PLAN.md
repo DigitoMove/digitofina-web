@@ -1,6 +1,6 @@
 # Mobile application implementation plan
 
-Status: Phase 1 complete; Phase 2 package P2-A complete; P2-B next
+Status: Phase 1 complete; Phase 2 packages P2-A and P2-B complete; P2-C in progress
 Created: 2026-09-14
 Scope: DigitoFina Flutter application, shared Laravel services, and API v1.
 
@@ -194,7 +194,9 @@ Exit: every parity item is verified complete or has an explicitly agreed scope e
 | 2026-09-14 | Planning | Saved implementation sequence, acceptance criteria, and completion gates. No implementation phase is marked complete. | Execute Phase 1: route/action inventory and parity matrix. |
 | 2026-09-14 | Phase 1 | Saved capability matrix, 230 non-API routes, 153 API routes, 94 named reports, role/scoping evidence, and prioritized estimates. Flutter analysis clean; 10 mobile tests pass. API baseline: 30/38 tests pass, 8 existing failures recorded. Static OpenAPI omits 69 operations. No runtime code changed. | P2-A: resolve baseline fixtures/contracts, then P2-B context and P2-C financial retries. |
 | 2026-09-14 | P2-A | Resolved all eight baseline failures through valid tenant/module fixtures and assertions matching current API contracts. Expanded suite: 42 tests pass, 1,148 assertions. Added unassigned-staff and disabled-module denial cases, positive/negative branch/permission checks, and all-route documentation metadata checks. Runtime access controls unchanged. | P2-B: context, permission and session contracts. Static OpenAPI regeneration remains P2-D. |
+| 2026-09-14 | P2-B | Added explicit API organization scope (`X-Organization-Id`) with validated super-admin company/global selection, query/header agreement checks, tenant and inactive-user guards, effective permission/capability context, and mobile scope propagation. Mobile now clears profile/cache markers on scope/impersonation changes, rejects stale responses, restores failed scope changes, and clears failed login sessions. API context suite: 18 tests pass; Flutter suite: 14 tests pass; Pint passed. | P2-C: reusable financial retry/recovery and persisted pending-operation handling. |
+| 2026-09-14 | P2-C | In progress: mobile `ApiClient.request` now accepts an explicit idempotency key and automatically promotes existing financial body keys to the `Idempotency-Key` header. Added Flutter coverage for stable key propagation. Existing cashier keys remain stable for drawer opening and pending transaction retries. Persisted pending operations and server verification after ambiguous responses remain open. | Finish P2-C with persisted pending state, verification recovery, changed-payload protection, and financial mutation coverage. |
 
 ## Immediate next work session
 
-Execute P2-B from the parity matrix: define and test company/branch context, allowed actions and module navigation, session lifecycle, and impersonation restoration. Verify the current behavior where unassigned staff can obtain a login token but tenant-protected profile access is denied; decide the appropriate login contract before changing it. Then execute P2-C financial retry/recovery. P2-D retains static OpenAPI regeneration and upload/download/export contract work.
+Continue P2-C: persist pending financial operations safely, recover ambiguous responses by verification, prevent changed-payload reuse, and cover every mobile financial mutation. The header promotion is complete; persisted pending state and verification recovery remain. P2-D retains static OpenAPI regeneration and upload/download/export contract work.

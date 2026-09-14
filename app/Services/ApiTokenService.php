@@ -31,11 +31,15 @@ class ApiTokenService
             throw ValidationException::withMessages(['login' => 'This user account is not active.']);
         }
 
+        if (! $user->hasRole('super-admin') && ! $user->organization_id) {
+            throw ValidationException::withMessages(['login' => 'Your account is not assigned to an organization.']);
+        }
+
         if ($this->tenant->organization() && (int) $user->organization_id !== (int) $this->tenant->id()) {
             throw ValidationException::withMessages(['login' => 'This account cannot access this organization tenant.']);
         }
 
-        if ($user->organization?->status === 'suspended' || $user->organization?->status === 'inactive') {
+        if ($user->organization && $user->organization->status !== 'active') {
             throw ValidationException::withMessages(['login' => 'This organization account is not active.']);
         }
 

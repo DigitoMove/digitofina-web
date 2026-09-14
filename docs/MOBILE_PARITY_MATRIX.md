@@ -136,7 +136,13 @@ The same 11 feature files now pass with **42 tests and 1,148 assertions**, inclu
 - D05: preserve the existing SMS/notification module gate and enable it in the positive device fixture. Added disabled-module denial and verified no device record is created. Separating push entitlement from SMS would be an explicit future product/API change, not a test-fixture shortcut.
 - D06: enable API access (plus core defaults) for sync fixtures. Capture/replay and stale-copy conflict cases pass. Added disabled-sync denial with no sync batch creation.
 
-Next package: P2-B. Historical report semantics, company credential fallback, and static OpenAPI drift remain open as previously recorded.
+### P2-B results — 2026-09-14
+
+- F01/F03/F04/F06: API now validates `X-Organization-Id` for explicit company/global scope, requires query/header agreement for admin records, returns context/effective permissions/capabilities from `auth/me`, rejects inactive users on protected API requests, and prevents unassigned staff login from creating a token. Mobile propagates scope on requests, clears profile markers when switching scope or impersonating, rejects stale responses, restores failed scope changes, and clears failed login sessions.
+- Added `ApiContextTest`: 18 tests and 175 assertions pass, covering platform selection, global return, staff override denial, malformed scopes, unassigned login, deactivated tokens, custom permissions and branch context.
+- Extended mobile admin tests: company scope, stale responses, failed scope restoration, and denied login session cleanup. Full Flutter suite: 14 tests pass. Laravel Pint passed.
+
+Next package: P2-C. Historical report semantics, company credential fallback, static OpenAPI drift, and persisted financial retry state remain open as previously recorded.
 
 ## Shared risks and corrections before parity certification
 
