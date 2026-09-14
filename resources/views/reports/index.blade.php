@@ -108,6 +108,12 @@
             </label>
         </div>
 
+        <label class="mt-3 hidden items-center gap-2 text-sm font-medium text-slate-700" data-report-lifetime-field>
+            <input name="lifetime" type="checkbox" value="1" class="rounded border-slate-300">
+            Use the lifetime of the business
+            <span class="font-normal text-slate-500">(include every disbursed loan)</span>
+        </label>
+
         <div class="mt-4 grid gap-4 md:grid-cols-2">
             <label class="text-sm font-medium text-slate-700" data-report-detail-field>Report type
                 <select name="detail" class="mt-1 w-full rounded border-slate-300">

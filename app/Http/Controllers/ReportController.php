@@ -55,6 +55,7 @@ class ReportController extends Controller
             'interest_basis' => ['nullable', 'in:collected,projected'],
             'search' => ['nullable', 'string', 'max:255'],
             'posted_by_user_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where('organization_id', $organizationId)],
+            'lifetime' => ['nullable', 'boolean'],
             'currency' => ['nullable', 'string', 'size:3', Rule::in(array_keys(CurrencyRegistry::all()))],
         ]);
 

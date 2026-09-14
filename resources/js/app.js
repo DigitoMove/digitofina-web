@@ -828,6 +828,7 @@ const initReportLauncher = () => {
     const ledgerSingleField = document.querySelector('[data-report-ledger-single-field]');
     const ledgerMultipleField = document.querySelector('[data-report-ledger-multiple-field]');
     const postedByField = document.querySelector('[data-report-posted-by-field]');
+    const lifetimeField = document.querySelector('[data-report-lifetime-field]');
 
     if (!modal || !form) {
         return;
@@ -863,6 +864,19 @@ const initReportLauncher = () => {
                         input.value = button.dataset.reportTo || input.value;
                     }
                 });
+            }
+
+            if (lifetimeField) {
+                const isArrearsRate = button.dataset.reportArrearsRate === '1';
+                lifetimeField.classList.toggle('hidden', !isArrearsRate);
+                lifetimeField.classList.toggle('flex', isArrearsRate);
+                const lifetime = lifetimeField.querySelector('input');
+                if (lifetime) {
+                    lifetime.checked = false;
+                    lifetime.addEventListener('change', () => {
+                        if (dateFields) dateFields.querySelectorAll('input').forEach((input) => { input.disabled = lifetime.checked; });
+                    }, { once: true });
+                }
             }
 
             if (postedByField) {

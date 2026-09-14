@@ -301,7 +301,7 @@ class ReportCatalogService
             'investment_officer_performance' => $this->investmentOfficerPerformance($branchId, $user),
             'settings' => $this->settings($payload),
             'general_income_statement' => $this->generalIncomeStatement($from, $to, $branchId, $user, $interestBasis),
-            'arrears_rate' => $this->arrearsRate($branchId, $user),
+            'arrears_rate' => $this->arrearsRate($from, $to, $branchId, $user, (bool) ($filters['lifetime'] ?? false)),
             default => $this->placeholderRows($definition),
         };
 
@@ -1269,9 +1269,10 @@ class ReportCatalogService
         ]];
     }
 
-    private function arrearsRate(?int $branchId, User $user): array
+    private function arrearsRate(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, bool $lifetime = false): array
     {
         $loans = Loan::query()->with(['officer', 'schedules'])->whereIn('status', Loan::LISTING_STATUSES)
+            ->when(! $lifetime, fn (Builder $query): Builder => $query->whereBetween('disbursed_at', [$from, $to]))
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->get();
@@ -1285,7 +1286,7 @@ class ReportCatalogService
                 $scheduledInterest = (float) $loan->schedules->sum('interest_due');
                 $portfolio += (float) ($loan->approved_amount ?: $loan->requested_amount) + $scheduledInterest;
                 $principal += (float) ($loan->approved_amount ?: $loan->requested_amount);
-                $arrears += (float) $loan->schedules->filter(fn ($schedule): bool => $schedule->due_date?->isPast() && (float) $schedule->outstanding_amount > 0)->sum('outstanding_amount');
+                $arrears += (float) $loan->schedules->filter(fn ($schedule): bool => $schedule->due_date?->lte($to) && (float) $schedule->outstanding_amount > 0)->sum('outstanding_amount');
                 $paid += (float) $loan->schedules->sum('amount_paid');
                 $balance += (float) $loan->principal_balance + (float) $loan->interest_balance;
             }
@@ -1297,7 +1298,7 @@ class ReportCatalogService
                 $carry[$key] = ($carry[$key] ?? 0) + $value;
             }
 
-return $carry;
+            return $carry;
         }, []);
 
         return [['Officer', 'Total Loan Portfolio', 'Principal Given Out', 'Amount In Arrears', 'Total Paid', 'Total Balance', 'Arrears Rate'], $rows, ['Officer' => 'Company / Branch Total', 'Total Loan Portfolio' => $this->money($totals['portfolio'] ?? 0), 'Principal Given Out' => $this->money($totals['principal'] ?? 0), 'Amount In Arrears' => $this->money($totals['arrears'] ?? 0), 'Total Paid' => $this->money($totals['paid'] ?? 0), 'Total Balance' => $this->money($totals['balance'] ?? 0), 'Arrears Rate' => number_format(($totals['portfolio'] ?? 0) > 0 ? (($totals['arrears'] ?? 0) / $totals['portfolio']) * 100 : 0, 2).'%', '_is_total' => true]];
