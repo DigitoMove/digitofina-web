@@ -138,6 +138,35 @@ void main() {
     });
   });
 
+  test('financial failures persist and retry pending operations with the same key', () async {
+    FlutterSecureStorage.setMockInitialValues({'access_token': 'admin'});
+    var failed = true;
+    final keys = <String?>[];
+    final client = ApiClient(config: config, transport: MockClient((request) async {
+      keys.add(request.headers['Idempotency-Key']);
+      if (failed) {
+        return http.Response(jsonEncode({'message': 'Unavailable'}), 503);
+      }
+      return success({'accepted': true});
+    }));
+
+    await expectLater(
+      client.requestFinancial(
+        'POST',
+        'cashier/transactions',
+        operationId: 'cashier-tx-001',
+        body: {'amount': 1000, 'idempotency_key': 'stable-operation-001'},
+      ),
+      throwsA(isA<ApiException>()),
+    );
+    expect((await client.pendingFinancialOperations()).single['id'], 'cashier-tx-001');
+
+    failed = false;
+    await client.retryPendingFinancial('cashier-tx-001');
+    expect(keys, ['stable-operation-001', 'stable-operation-001']);
+    expect(await client.pendingFinancialOperations(), isEmpty);
+  });
+
   test('a denied profile after login does not leave a stored session', () async {
     FlutterSecureStorage.setMockInitialValues({});
     final client = ApiClient(config: config, transport: MockClient((request) async {

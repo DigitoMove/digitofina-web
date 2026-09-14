@@ -74,6 +74,92 @@ class ApiClient {
   Future<Map<String, dynamic>> get(String path, {Map<String, String>? query}) =>
       request('GET', path, query: query);
 
+  Future<List<Map<String, dynamic>>> pendingFinancialOperations() async {
+    final encoded = await _storage.read(key: 'pending_financial_operations');
+    if (encoded == null || encoded.isEmpty) return [];
+    try {
+      return (jsonDecode(encoded) as List)
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+    } catch (_) {
+      await _storage.delete(key: 'pending_financial_operations');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> requestFinancial(
+    String method,
+    String path, {
+    required String operationId,
+    Map<String, String>? query,
+    required Map<String, dynamic> body,
+  }) async {
+    final operations = await pendingFinancialOperations();
+    final key = body['idempotency_key']?.toString() ?? operationId;
+    final record = <String, dynamic>{
+      'id': operationId,
+      'method': method,
+      'path': path,
+      'query': query ?? <String, String>{},
+      'body': body,
+      'idempotency_key': key,
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+    };
+    operations.removeWhere((item) => item['id'] == operationId);
+    operations.add(record);
+    await _storage.write(
+      key: 'pending_financial_operations',
+      value: jsonEncode(operations),
+    );
+    try {
+      final response = await request(
+        method,
+        path,
+        query: query,
+        body: body,
+        idempotencyKey: key,
+      );
+      await _removePendingFinancialOperation(operationId);
+      return response;
+    } catch (_) {
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> retryPendingFinancial(String operationId) async {
+    final operations = await pendingFinancialOperations();
+    Map<String, dynamic>? record;
+    for (final item in operations) {
+      if (item['id'] == operationId) {
+        record = item;
+        break;
+      }
+    }
+    if (record == null) {
+      throw const ApiException('The pending financial operation was not found.');
+    }
+    return requestFinancial(
+      record['method'].toString(),
+      record['path'].toString(),
+      operationId: operationId,
+      query: Map<String, String>.from(record['query'] as Map? ?? {}),
+      body: Map<String, dynamic>.from(record['body'] as Map),
+    );
+  }
+
+  Future<void> _removePendingFinancialOperation(String operationId) async {
+    final operations = await pendingFinancialOperations();
+    operations.removeWhere((item) => item['id'] == operationId);
+    if (operations.isEmpty) {
+      await _storage.delete(key: 'pending_financial_operations');
+    } else {
+      await _storage.write(
+        key: 'pending_financial_operations',
+        value: jsonEncode(operations),
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> request(
     String method,
     String path, {

@@ -57,9 +57,10 @@ class _CashierWorkspaceState extends State<CashierWorkspace> {
     if (openingDrawer) return;
     setState(() => openingDrawer = true);
     try {
-      await widget.client.request(
+      await widget.client.requestFinancial(
         'POST',
         'cashier/open',
+        operationId: 'cashier-open-${drawer['id']}',
         body: {
           'drawer_id': drawer['id'],
           'idempotency_key': openingKeys.putIfAbsent(
@@ -665,9 +666,10 @@ class _TransactionComposerState extends State<_TransactionComposer> {
   Future<void> post() async {
     setState(() => busy = true);
     try {
-      final response = await widget.client.request(
+      final response = await widget.client.requestFinancial(
         'POST',
         'cashier/transactions',
+        operationId: pending!['idempotency_key'].toString(),
         body: pending!,
       );
       pending = null;
