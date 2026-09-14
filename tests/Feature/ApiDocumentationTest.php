@@ -10,8 +10,8 @@ it('serves openapi documentation for every versioned api route', function () {
         ->assertJsonPath('openapi', '3.1.0')
         ->assertJsonPath('info.title', 'DigitoFina API')
         ->assertJsonPath('paths./clients.get.x-required-permissions.0', 'manage-clients')
-        ->assertJsonPath('paths./savings/accounts/{savingsAccount}/deposit.post.x-idempotency-required', true)
-        ->assertJsonPath('paths./savings/accounts/{savingsAccount}/deposit.post.parameters.1.name', 'Idempotency-Key')
+        ->assertJsonPath('paths./savings/accounts/{savingsAccountId}/deposit.post.x-idempotency-required', true)
+        ->assertJsonPath('paths./savings/accounts/{savingsAccountId}/deposit.post.parameters.1.name', 'Idempotency-Key')
         ->assertJsonPath('paths./sync/clients.post.x-required-permissions.0', 'manage-clients')
         ->assertJsonPath('components.securitySchemes.sanctumBearer.scheme', 'bearer');
 

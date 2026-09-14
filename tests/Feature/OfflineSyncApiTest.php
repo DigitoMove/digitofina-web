@@ -2,11 +2,13 @@
 
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\Module;
 use App\Models\OfflineSyncBatch;
 use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\ModuleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 
@@ -126,7 +128,7 @@ it('detects conflicts when a mobile update is based on an old server copy', func
  * @param  array<int, string>  $permissions
  * @return array{0: User, 1: string, 2: Branch}
  */
-function offlineSyncApiUser(array $permissions): array
+function offlineSyncApiUser(array $permissions, bool $enableSync = true): array
 {
     $organization = Organization::create(['name' => 'Offline SACCO', 'slug' => fake()->unique()->slug()]);
     $branch = Branch::create(['organization_id' => $organization->id, 'code' => fake()->unique()->numerify('####'), 'name' => 'Offline Branch', 'is_active' => true, 'status' => 'active']);
@@ -145,6 +147,11 @@ function offlineSyncApiUser(array $permissions): array
         'status' => 'active',
         'is_active' => true,
     ]);
+    $modules = app(ModuleService::class);
+    $modules->syncDefaults($organization);
+    if ($enableSync) {
+        $modules->enable($organization, Module::where('slug', 'api-access')->firstOrFail(), $user);
+    }
 
     $token = test()->postJson('/api/v1/auth/login', [
         'login' => $user->email,
