@@ -78,6 +78,19 @@ it('rejects reused idempotency keys when the request payload changes', function 
         ->and((float) $account->refresh()->current_balance)->toBe(10000.0);
 });
 
+it('blocks deposits when the company savings module is disabled without moving money', function () {
+    [$user, $account] = idempotencySavingsFixture(false);
+
+    $this->withToken(idempotencyTokenFor($user))
+        ->withHeader('Idempotency-Key', 'disabled-savings')
+        ->postJson("/api/v1/savings/accounts/{$account->id}/deposit", ['amount' => 10000, 'payment_method' => 'cash'])
+        ->assertForbidden()
+        ->assertJsonPath('errors.module', 'savings');
+
+    expect(SavingsTransaction::count())->toBe(0)
+        ->and((float) $account->fresh()->current_balance)->toBe(0.0);
+});
+
 /**
  * @return array{0: User, 1: SavingsAccount}
  */

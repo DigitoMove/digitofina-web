@@ -2,12 +2,14 @@
 
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\Module;
 use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
 use App\Models\User;
+use App\Services\ModuleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -45,6 +47,9 @@ it('blocks branch level access to savings accounts outside the authenticated use
     $homeBranch = Branch::create(['organization_id' => $organization->id, 'code' => '1001', 'name' => 'Home', 'is_active' => true, 'status' => 'active']);
     $otherBranch = Branch::create(['organization_id' => $organization->id, 'code' => '2001', 'name' => 'Other', 'is_active' => true, 'status' => 'active']);
     $user = securedUser(['manage-accounts'], $organization, $homeBranch);
+    $modules = app(ModuleService::class);
+    $modules->syncDefaults($organization);
+    $modules->enable($organization, Module::where('slug', 'savings')->firstOrFail(), $user);
     $product = SavingsProduct::create([
         'organization_id' => $organization->id,
         'name' => 'Regular Savings',
@@ -82,16 +87,32 @@ it('blocks branch level access to savings accounts outside the authenticated use
         'available_balance' => 100000,
         'status' => 'active',
     ]);
+    $homeClient = $client->replicate();
+    $homeClient->fill(['branch_id' => $homeBranch->id, 'client_number' => '1001-C000002'])->save();
+    $homeAccount = $account->replicate();
+    $homeAccount->fill(['branch_id' => $homeBranch->id, 'client_id' => $homeClient->id, 'account_number' => '1001-SAV-000002'])->save();
 
     $token = $this->postJson('/api/v1/auth/login', [
         'login' => $user->email,
         'password' => 'password',
-    ])->json('data.access_token');
+    ])->assertSuccessful()->json('data.access_token');
+
+    $this->withToken($token)
+        ->getJson("/api/v1/savings/accounts/{$homeAccount->id}")
+        ->assertSuccessful()
+        ->assertJsonPath('data.account_number', $homeAccount->account_number);
 
     $this->withToken($token)
         ->getJson("/api/v1/savings/accounts/{$account->id}")
-        ->assertForbidden()
-        ->assertJsonPath('success', false);
+        ->assertNotFound()
+        ->assertJsonPath('success', false)
+        ->assertJsonMissingPath('data.account_number');
+
+    $role = Role::create(['organization_id' => $organization->id, 'name' => 'No account access', 'slug' => 'no-account-access']);
+    $user->update(['role_id' => $role->id]);
+    $this->app['auth']->forgetGuards();
+    $this->withToken($token)->getJson("/api/v1/savings/accounts/{$homeAccount->id}")
+        ->assertForbidden();
 });
 
 function securedUser(array $permissions, ?Organization $organization = null, ?Branch $branch = null): User

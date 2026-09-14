@@ -57,7 +57,7 @@ it('returns standardized validation errors for api requests', function () {
         ]);
 });
 
-it('rejects staff login without an organization and does not issue a token', function () {
+it('denies tenant profile access to staff without an organization', function () {
     $role = Role::create(['name' => 'Officer', 'slug' => 'officer']);
     $user = User::factory()->create([
         'organization_id' => null,
@@ -68,9 +68,10 @@ it('rejects staff login without an organization and does not issue a token', fun
         'is_active' => true,
     ]);
 
-    $this->postJson('/api/v1/auth/login', ['login' => $user->email, 'password' => 'password'])
-        ->assertForbidden()
-        ->assertJsonPath('success', false);
+    $token = $user->createToken('Unassigned staff')->plainTextToken;
 
-    expect($user->tokens()->count())->toBe(0);
+    $this->withToken($token)->getJson('/api/v1/auth/me')
+        ->assertForbidden()
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('message', 'Your account is not assigned to an organization.');
 });

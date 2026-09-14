@@ -106,6 +106,18 @@ it('registers and revokes push notification device tokens', function () {
     expect($revokedAt)->toBeString()->not->toBeEmpty();
 });
 
+it('keeps notification device registration gated by the company notification module', function () {
+    [$user, $token] = mobileApiUser(['manage-clients']);
+
+    $this->withToken($token)->postJson('/api/v1/notifications/devices', [
+        'device_id' => 'disabled-device',
+        'platform' => 'android',
+        'push_token' => 'disabled-token',
+    ])->assertForbidden()->assertJsonPath('errors.module', 'sms');
+
+    expect($user->deviceTokens()->count())->toBe(0);
+});
+
 /**
  * @param  array<int, string>  $permissions
  * @return array{0: User, 1: string, 2: Branch}

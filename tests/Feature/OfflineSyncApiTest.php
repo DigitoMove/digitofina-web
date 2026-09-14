@@ -124,6 +124,17 @@ it('detects conflicts when a mobile update is based on an old server copy', func
     expect($client->fresh()->phone)->toBe('+256700900002');
 });
 
+it('blocks offline sync without the company API access module', function () {
+    [, $token] = offlineSyncApiUser(['manage-clients'], false);
+
+    $this->withToken($token)->postJson('/api/v1/sync/clients', [
+        'client_batch_id' => 'disabled-sync',
+        'records' => [],
+    ])->assertForbidden()->assertJsonPath('errors.module', 'api-access');
+
+    expect(OfflineSyncBatch::count())->toBe(0);
+});
+
 /**
  * @param  array<int, string>  $permissions
  * @return array{0: User, 1: string, 2: Branch}

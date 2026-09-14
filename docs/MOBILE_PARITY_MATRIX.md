@@ -112,7 +112,7 @@ Laravel command:
 php artisan test --compact tests/Feature/ApiAuthenticationTest.php tests/Feature/ApiSecurityTest.php tests/Feature/ApiIdempotencyTest.php tests/Feature/ApiDocumentationTest.php tests/Feature/MobileApiSupportTest.php tests/Feature/MobileAdminWorkspaceTest.php tests/Feature/MobileCashierWorkspaceTest.php tests/Feature/MobileImpersonationTest.php tests/Feature/OfflineSyncApiTest.php tests/Feature/PaymentCallbackApiTest.php tests/Feature/ReportTenantIsolationTest.php
 ```
 
-### Existing failures to resolve in Phase 2
+### Phase 1 baseline failures (resolved in P2-A)
 
 | ID | Test / failing scenario | Observed failure | Next investigation |
 | --- | --- | --- | --- |
@@ -123,7 +123,20 @@ php artisan test --compact tests/Feature/ApiAuthenticationTest.php tests/Feature
 | D05 | MobileApiSupportTest: device token registration/revocation | 403, SMS module disabled | Decide whether push registration should depend on SMS entitlement; align fixtures with intended policy. |
 | D06 | OfflineSyncApiTest: capture and stale-update conflict (2) | 403, API-access module disabled | Establish enabled sync fixture; retest capture and conflict logic. |
 
-No failures were repaired during this inventory. Several appear to be fixture/contract drift; that is a diagnosis to verify, not evidence that production logic is correct.
+No failures were repaired during the initial inventory. P2-A resolution is recorded below; the original observations remain as baseline evidence.
+
+### P2-A results — 2026-09-14
+
+The same 11 feature files now pass with **42 tests and 1,148 assertions**, including the original 38 scenarios and four added negative cases. Laravel Pint passed. No runtime middleware, financial service, or dependency changes were needed.
+
+- D01: give the successful auth fixture an explicit organization and company branch. Added a tenant-profile denial case for unassigned staff. Existing login can still issue such a user a token; rejection occurs on tenant-protected requests. P2-B will address login/session consistency.
+- D02: enable savings legitimately and prove same-branch read succeeds, cross-branch read is concealed with 404, and an accessible record without permission returns 403.
+- D03: enable only savings (plus core defaults) through ModuleService. Replay and changed-payload idempotency cases now reach financial posting and pass. Added disabled-savings denial with no transaction or balance change.
+- D04: update documentation assertions to the registered `{savingsAccountId}` parameter. Check every dynamic documented operation against actual route methods, path parameters, idempotency flags, and key headers. Static specification regeneration/schema improvements remain P2-D.
+- D05: preserve the existing SMS/notification module gate and enable it in the positive device fixture. Added disabled-module denial and verified no device record is created. Separating push entitlement from SMS would be an explicit future product/API change, not a test-fixture shortcut.
+- D06: enable API access (plus core defaults) for sync fixtures. Capture/replay and stale-copy conflict cases pass. Added disabled-sync denial with no sync batch creation.
+
+Next package: P2-B. Historical report semantics, company credential fallback, and static OpenAPI drift remain open as previously recorded.
 
 ## Shared risks and corrections before parity certification
 

@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
 
 uses(RefreshDatabase::class);
 
@@ -22,4 +23,25 @@ it('serves openapi documentation for every versioned api route', function () {
         ->and($paths)->toHaveKey('/loans/{loan}/repayments')
         ->and($paths)->toHaveKey('/webhooks/{source}/{provider}')
         ->and($paths)->toHaveKey('/docs/openapi.json');
+
+    foreach (Route::getRoutes() as $route) {
+        if (! str_starts_with((string) $route->getName(), 'api.v1.')) {
+            continue;
+        }
+
+        $path = '/'.ltrim(substr($route->uri(), strlen('api/v1')), '/');
+        foreach (array_diff($route->methods(), ['HEAD', 'OPTIONS']) as $method) {
+            $operation = $paths[$path][strtolower($method)] ?? null;
+            expect($operation)->not->toBeNull();
+            $pathParameters = collect($operation['parameters'] ?? [])->where('in', 'path')->pluck('name')->all();
+            expect($pathParameters)->toBe($route->parameterNames());
+
+            $idempotent = in_array('idempotent.financial', $route->gatherMiddleware(), true);
+            expect($operation['x-idempotency-required'])->toBe($idempotent);
+            if ($idempotent) {
+                expect(collect($operation['parameters'])->where('in', 'header')->pluck('name')->all())
+                    ->toContain('Idempotency-Key');
+            }
+        }
+    }
 });

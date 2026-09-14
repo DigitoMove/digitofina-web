@@ -13,6 +13,14 @@ This directory contains OpenAPI 3.1 documentation for DigitoFina v1 APIs.
 
 Import `docs/api/openapi.json` into Swagger UI, Stoplight, Postman, Insomnia, or a Flutter/OpenAPI client generator.
 
+## Access and documentation contracts
+
+- Tenant-protected API requests require staff to be assigned to an organization, except authorized platform administrators. A login token alone does not grant tenant access.
+- Resource lookup can return 404 when company/branch scoping hides a record. An accessible record can return 403 when the actor lacks permission. Clients must handle both without assuming the record is available.
+- Optional company modules remain enforced independently of role permissions: savings requires the savings module, offline sync requires API access, and notification device endpoints currently require the SMS/notification module.
+- The dynamic `/api/v1/docs/openapi.json` reflects registered operations and exact path parameter names. The deposit parameter is `{savingsAccountId}`. The saved specification and endpoint index below remain an older snapshot; regeneration and schema reconciliation are tracked in mobile package P2-D.
+- Financial middleware accepts `Idempotency-Key` or `idempotency_key` in the body. Callers should retain the same key for retries of the same operation; omission currently generates a server key and does not establish reliable client retry protection.
+
 ## Endpoint Index
 
 | Method | URL | Module | Required permissions |
