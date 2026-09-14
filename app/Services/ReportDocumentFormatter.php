@@ -42,6 +42,8 @@ class ReportDocumentFormatter
                 'Currency' => $this->currencyLabel($organization?->currency),
                 'Branch' => $this->branchLabel($branch),
                 'Period' => $this->periodLabel($filters),
+                ...$this->organizationMetadata($organization),
+                'Generated' => now()->format('d-m-Y H:i:s T'),
             ],
             'columns' => $this->columns($rows),
             'rows' => $rows,
@@ -83,6 +85,8 @@ class ReportDocumentFormatter
                 'Currency' => $this->currencyLabel($organization?->currency),
                 'Account Branch' => $this->branchLabel($branch),
                 'Period' => $this->periodLabel($filters),
+                ...$this->organizationMetadata($organization),
+                'Generated' => now()->format('d-m-Y H:i:s T'),
             ],
             'columns' => ['date', 'narration', 'debit', 'credit', 'balance'],
             'rows' => $rows,
@@ -629,8 +633,8 @@ class ReportDocumentFormatter
      */
     private function constrainedLogoDimensions(int $width, int $height): array
     {
-        $maxWidth = 170;
-        $maxHeight = 70;
+        $maxWidth = 190;
+        $maxHeight = 78;
         $scale = min($maxWidth / max(1, $width), $maxHeight / max(1, $height), 1);
         $displayWidth = max(40, (int) round($width * $scale));
         $displayHeight = max(24, (int) round($height * $scale));
@@ -837,6 +841,22 @@ class ReportDocumentFormatter
             $organization->email,
             $organization->website,
         ])));
+    }
+
+    /** @return array<string, string> */
+    private function organizationMetadata(?Organization $organization): array
+    {
+        if (! $organization) {
+            return [];
+        }
+
+        return array_filter([
+            'Address' => $organization->address,
+            'Phone' => $organization->phone,
+            'Email' => $organization->email,
+            'Website' => $organization->website,
+            'Registration' => $organization->registration_number,
+        ], fn (mixed $value): bool => filled($value));
     }
 
     public function logoDataUri(?Organization $organization): ?string

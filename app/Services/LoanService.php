@@ -206,8 +206,7 @@ class LoanService
 
     private function collectRejectedLoanApplicationFee(Loan $loan, User $user): float
     {
-        $requestedAmountForFee = (float) $loan->requested_amount;
-        $fee = round($this->applicationFees->feeFor($requestedAmountForFee, $loan->organization_id ? (int) $loan->organization_id : null), 2);
+        $fee = round($this->applicationFees->feeForLoan($loan), 2);
 
         if ($fee <= 0) {
             return 0.0;
@@ -792,11 +791,13 @@ class LoanService
                 throw new InvalidArgumentException('Client needs a savings account before disbursement.');
             }
 
+            $savings = Account::query()->whereKey($savings->id)->lockForUpdate()->firstOrFail();
+
             $loanAccount = $loan->loanAccount ?: $this->generateLoanAccount($loan, $user);
             $loanAccount->update(['balance' => $loan->approved_amount]);
 
             $requestedAmountForFee = (float) $loan->requested_amount;
-            $fees = round($this->applicationFees->feeFor($requestedAmountForFee, $loan->organization_id ? (int) $loan->organization_id : null), 2);
+            $fees = round($this->applicationFees->feeForLoan($loan), 2);
             CurrencyDenomination::assertValid((float) $loan->approved_amount, 'Approved amount');
 
             if ($fees > 0) {
@@ -1504,6 +1505,10 @@ class LoanService
 
     private function ensureMinimumGuarantorsAttached(Loan $loan): void
     {
+        if (! $loan->product->require_guarantors) {
+            return;
+        }
+
         $hasGuarantor = $loan->loanGuarantors()
             ->whereNotIn('status', ['rejected', 'released'])
             ->exists();
@@ -1726,16 +1731,16 @@ class LoanService
 
             if ($persist) {
                 $schedule->update([
-                'principal_paid' => (float) $schedule->principal_paid + $principalPaid,
-                'interest_paid' => (float) $schedule->interest_paid + $interestPaid,
-                'fees_paid' => (float) $schedule->fees_paid + $feesPaid,
-                'penalty_paid' => (float) $schedule->penalty_paid + $penaltyPaid,
-                'total_paid' => (float) $schedule->total_paid + $totalPaid,
-                'amount_paid' => (float) $schedule->amount_paid + $totalPaid,
-                'outstanding_amount' => $outstanding,
-                'balance_due' => $outstanding,
-                'status' => $outstanding <= 0 ? 'paid' : 'partially_paid',
-            ]);
+                    'principal_paid' => (float) $schedule->principal_paid + $principalPaid,
+                    'interest_paid' => (float) $schedule->interest_paid + $interestPaid,
+                    'fees_paid' => (float) $schedule->fees_paid + $feesPaid,
+                    'penalty_paid' => (float) $schedule->penalty_paid + $penaltyPaid,
+                    'total_paid' => (float) $schedule->total_paid + $totalPaid,
+                    'amount_paid' => (float) $schedule->amount_paid + $totalPaid,
+                    'outstanding_amount' => $outstanding,
+                    'balance_due' => $outstanding,
+                    'status' => $outstanding <= 0 ? 'paid' : 'partially_paid',
+                ]);
             }
 
             $allocations[] = [

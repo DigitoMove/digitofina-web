@@ -6,6 +6,7 @@ use App\CurrencyRateService;
 use App\CurrencyRegistry;
 use App\Models\Branch;
 use App\Models\ChartAccount;
+use App\Models\Organization;
 use App\Models\User;
 use App\Services\ReportCatalogService;
 use App\Services\TenantContext;
@@ -28,6 +29,8 @@ class ReportController extends Controller
             'groups' => $reports->grouped($request->user()),
             'priorityReports' => $reports->priorityReports($request->user()),
             'branches' => Branch::query()->where('organization_id', $organizationId)->orderBy('name')->get(),
+            'organization' => Organization::query()->find($organizationId),
+            'staffUsers' => User::query()->where('organization_id', $organizationId)->where('status', 'active')->where('is_active', true)->with('role')->orderBy('name')->get(),
             'chartAccounts' => $this->ledgerAccountOptions($request, $organizationId),
             'canChooseBranch' => ApiSecurity::hasGlobalBranchAccess($request->user()),
             'currencies' => CurrencyRegistry::all(),
@@ -51,6 +54,7 @@ class ReportController extends Controller
             'detail' => ['nullable', 'in:brief,detailed'],
             'interest_basis' => ['nullable', 'in:collected,projected'],
             'search' => ['nullable', 'string', 'max:255'],
+            'posted_by_user_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where('organization_id', $organizationId)],
             'currency' => ['nullable', 'string', 'size:3', Rule::in(array_keys(CurrencyRegistry::all()))],
         ]);
 
@@ -70,6 +74,8 @@ class ReportController extends Controller
 
         return view('reports.show', $reports->generate($report, $data, $request->user()) + [
             'branches' => Branch::query()->where('organization_id', $organizationId)->orderBy('name')->get(),
+            'organization' => Organization::query()->find($organizationId),
+            'staffUsers' => User::query()->where('organization_id', $organizationId)->where('status', 'active')->where('is_active', true)->with('role')->orderBy('name')->get(),
             'chartAccounts' => $this->ledgerAccountOptions($request, $organizationId),
             'canChooseBranch' => ApiSecurity::hasGlobalBranchAccess($request->user()),
             'currencies' => CurrencyRegistry::all(),

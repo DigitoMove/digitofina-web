@@ -258,6 +258,7 @@ class ReportCatalogService
         }
 
         $search = trim((string) ($filters['search'] ?? ''));
+        $postedByUserId = isset($filters['posted_by_user_id']) && $filters['posted_by_user_id'] !== '' ? (int) $filters['posted_by_user_id'] : null;
         $payload = $definition['payload'];
         $interestBasis = in_array(($filters['interest_basis'] ?? $payload['interest_basis'] ?? 'collected'), ['collected', 'projected'], true)
             ? (string) ($filters['interest_basis'] ?? $payload['interest_basis'] ?? 'collected')
@@ -265,7 +266,7 @@ class ReportCatalogService
         $limit = $detail === 'brief' ? 25 : 200;
 
         [$columns, $rows, $summary] = match ($definition['kind']) {
-            'transactions' => $this->transactions($payload, $from, $to, $branchId, $limit, $user, $search),
+            'transactions' => $this->transactions($payload, $from, $to, $branchId, $limit, $user, $search, $postedByUserId),
             'teller_transactions' => $this->tellerTransactions($from, $to, $branchId, $limit, $user, $search),
             'non_cash_transactions' => $this->nonCashTransactions($from, $to, $branchId, $limit, $user, $chartAccountId, $search),
             'cash_balances' => $this->cashBalances($branchId, $user),
@@ -302,7 +303,7 @@ class ReportCatalogService
             default => $this->placeholderRows($definition),
         };
 
-        return compact('definition', 'columns', 'rows', 'summary', 'from', 'to', 'detail', 'branchId', 'chartAccountIds', 'search', 'interestBasis') + ['currency' => $this->reportCurrency, 'baseCurrency' => $this->reportBaseCurrency];
+        return compact('definition', 'columns', 'rows', 'summary', 'from', 'to', 'detail', 'branchId', 'chartAccountIds', 'search', 'interestBasis', 'postedByUserId') + ['currency' => $this->reportCurrency, 'baseCurrency' => $this->reportBaseCurrency];
     }
 
     /**
@@ -545,13 +546,14 @@ class ReportCatalogService
     /**
      * @return array{0: array<int, string>, 1: Collection<int, array<string, mixed>>, 2: array<string, mixed>}
      */
-    private function transactions(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user, string $search = ''): array
+    private function transactions(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user, string $search = '', ?int $postedByUserId = null): array
     {
         $query = Transaction::query()
             ->with(['account.client', 'account.branch', 'type', 'user'])
             ->whereBetween('posted_at', [$from, $to])
             ->when(($payload['posted_by'] ?? null) === 'user', fn (Builder $query): Builder => $query->whereNotNull('user_id'))
             ->when(($payload['posted_by'] ?? null) === 'system', fn (Builder $query): Builder => $query->whereNull('user_id'))
+            ->when($postedByUserId, fn (Builder $query): Builder => $query->where('user_id', $postedByUserId))
             ->when($search !== '', fn (Builder $query): Builder => $this->searchTransactions($query, $search))
             ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
 
@@ -643,6 +645,9 @@ class ReportCatalogService
                 })
                 ->orWhereHas('type', function (Builder $query) use ($likeSearch): void {
                     $query->whereAny(['name', 'code'], 'like', $likeSearch);
+                })
+                ->orWhereHas('user', function (Builder $query) use ($likeSearch): void {
+                    $query->whereAny(['name', 'email'], 'like', $likeSearch);
                 })
                 ->orWhereHas('journalEntries', function (Builder $query) use ($likeSearch): void {
                     $query->whereAny(['description', 'reference', 'memo', 'account_name'], 'like', $likeSearch)
@@ -1293,7 +1298,7 @@ class ReportCatalogService
         $incomeAccounts = $this->ledgerBalances(['income'], $from, $to, $branchId, $user, false);
         $expenseAccounts = $this->ledgerBalances(['expense'], $from, $to, $branchId, $user, false);
         $applicationFees = max(
-            $this->applicationFeeAccountBalance($incomeAccounts),
+            $this->applicationFeeLedgerIncomeTotal($from, $to, $branchId, $user),
             $this->applicationFeeOperationalTotal($from, $to, $branchId, $user),
         );
         $penalties = (float) (clone $repayments)->sum('penalty_paid');
@@ -1482,13 +1487,32 @@ class ReportCatalogService
                 ]),
         )->take($limit)->values();
 
+        $refundQuery = $this->applicationFeeRefundTransactionsQuery($from, $to, $branchId, $user);
+        $refunds = (clone $refundQuery)->with(['branch', 'account.client', 'user', 'applicationFeeDisbursement.loan'])->latest('posted_at')->get();
+        $refundTotal = (float) $refunds->sum(fn (Transaction $refund): float => $refund->reversal_of_id ? -(float) $refund->amount : (float) $refund->amount);
+        $rows = $rows->map(fn (array $row): array => $row + ['Application Fee Refunded' => $this->money(0), 'Reference / Reason' => ''])
+            ->concat($refunds->map(fn (Transaction $refund): array => [
+                'Date' => $refund->posted_at?->format('d M Y'),
+                'Branch' => $refund->branch?->name ?? 'N/A',
+                'Loan' => $refund->applicationFeeDisbursement?->loan?->loan_number ?? 'N/A',
+                'Client' => $refund->account?->client?->full_name ?? 'N/A',
+                'Gross Principal' => $this->money(0),
+                'Application Fee Charged' => $this->money(0),
+                'Net Credited' => $this->money($refund->reversal_of_id ? -(float) $refund->amount : (float) $refund->amount),
+                'Disbursed By' => $refund->user?->name ?? 'N/A',
+                'Application Fee Refunded' => $this->money($refund->reversal_of_id ? -(float) $refund->amount : (float) $refund->amount),
+                'Reference / Reason' => $refund->reference.' / '.$refund->description,
+            ]))->sortByDesc(fn (array $row): int => Carbon::parse($row['Date'])->getTimestamp())->take($limit)->values();
+
         $rejectedFees = (float) $this->rejectedApplicationFeeTransactionsQuery($from, $to, $branchId, $user)->sum('amount');
 
         return [
-            ['Date', 'Branch', 'Loan', 'Client', 'Gross Principal', 'Application Fee Charged', 'Net Credited', 'Disbursed By'],
+            ['Date', 'Branch', 'Loan', 'Client', 'Gross Principal', 'Application Fee Charged', 'Net Credited', 'Disbursed By', 'Application Fee Refunded', 'Reference / Reason'],
             $rows,
             [
                 'Application fees charged' => $this->money((float) (clone $query)->sum('fees_deducted') + $rejectedFees),
+                'Application fees refunded' => $this->money($refundTotal),
+                'Net application fee income' => $this->money((float) (clone $query)->sum('fees_deducted') + $rejectedFees - $refundTotal),
                 'Loans disbursed' => number_format((clone $query)->count()),
                 'Gross principal disbursed' => $this->money((float) (clone $query)->sum('disbursed_amount')),
                 'Net credited to savings' => $this->money((float) (clone $query)->sum('net_amount')),
@@ -1514,7 +1538,10 @@ class ReportCatalogService
         $rejectedFees = (float) $this->rejectedApplicationFeeTransactionsQuery($from, $to, $branchId, $user)
             ->sum('amount');
 
-        return $disbursementFees + $rejectedFees;
+        $refunds = (float) $this->applicationFeeRefundTransactionsQuery($from, $to, $branchId, $user)->get()
+            ->sum(fn (Transaction $refund): float => $refund->reversal_of_id ? -(float) $refund->amount : (float) $refund->amount);
+
+        return $disbursementFees + $rejectedFees - $refunds;
     }
 
     private function applicationFeeLedgerIncomeTotal(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): float
@@ -1524,7 +1551,8 @@ class ReportCatalogService
             ->whereBetween(DB::raw('coalesce(posted_at, created_at)'), [$from, $to])
             ->whereHas('chartAccount', fn (Builder $query): Builder => $query->where('type', 'income'))
             ->where(function (Builder $query): void {
-                $query->where('memo', 'like', '%application fee%')
+                $query->whereHas('chartAccount', fn (Builder $account): Builder => $account->where('name', 'like', '%application fee%'))
+                    ->orWhere('memo', 'like', '%application fee%')
                     ->orWhere('description', 'like', '%application fee%');
             })
             ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
@@ -1544,6 +1572,17 @@ class ReportCatalogService
                 ->withoutGlobalScope('tenant')
                 ->where('organization_id', $organizationId))
             ->whereBetween('disbursement_date', [$from, $to])
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
+    }
+
+    private function applicationFeeRefundTransactionsQuery(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): Builder
+    {
+        return Transaction::query()->withoutGlobalScope('tenant')
+            ->where('organization_id', $this->reportOrganizationId($user))
+            ->whereNotNull('application_fee_disbursement_id')
+            ->whereIn('status', ['posted', 'reversed'])
+            ->whereBetween('posted_at', [$from, $to])
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
     }

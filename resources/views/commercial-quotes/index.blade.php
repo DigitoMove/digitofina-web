@@ -8,15 +8,22 @@
     </div>
     @if($isSuperAdmin)
         <div class="max-w-xl rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-950">
-            <div class="font-semibold">Nylon Pay {{ $nylonPayConfigured ? 'is configured' : 'needs configuration' }}</div>
-            <div class="mt-1 break-all text-xs">Webhook: {{ $webhookUrl }}</div>
+            <div class="font-semibold">Mobile Money {{ $nylonPayConfigured ? 'is configured' : 'needs configuration' }}</div>
+            <div class="mt-1 break-all text-xs">Quote payment webhook: {{ $webhookUrl }}</div>
         </div>
     @endif
 </div>
 
+<nav class="mb-6 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm" aria-label="Billing sections">
+    <a href="#overview" class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white">Overview</a>
+    <a href="#quotes" class="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Quotes</a>
+    @if($billingOrganization)<a href="#plan" class="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Plan & hosting</a>@endif
+    @if($isSuperAdmin)<a href="#mobile-money" class="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Mobile Money</a>@endif
+</nav>
+
 @if(request('payment_return'))
     <div class="mb-5 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-        Payment processing has returned to DigitoFina. The quote will become paid after Nylon Pay sends a verified confirmation.
+    Payment processing has returned to DigitoFina. The quote will become paid after Mobile Money sends a verified confirmation.
     </div>
 @endif
 
@@ -25,12 +32,13 @@
 @enderror
 
 @if($isSuperAdmin)
-    <details class="df-panel mb-6 overflow-hidden" @if(! $nylonPayConfigured) open @endif>
-        <summary class="cursor-pointer px-5 py-4 font-semibold text-slate-950">Nylon Pay credentials</summary>
+    <details id="mobile-money" class="df-panel mb-6 overflow-hidden" @if(! $nylonPayConfigured) open @endif>
+        <summary class="cursor-pointer px-5 py-4 font-semibold text-slate-950">Platform Mobile Money settings</summary>
+        <div class="border-t border-slate-200 bg-violet-50 px-5 py-3 text-sm text-violet-950">These credentials are used only when companies pay DigitoFina quotes. Company Mobile Money settings remain separate and are used for client deposits and repayments.</div>
         <form method="POST" action="{{ route('nylon-pay.settings.update') }}" class="grid gap-4 border-t border-slate-200 p-5 md:grid-cols-2" autocomplete="off">
             @csrf
             @method('PUT')
-            <p class="text-sm text-slate-600 md:col-span-2">Credentials are encrypted at rest and never shown again. Leave a secret blank to keep its current value.</p>
+            <p class="text-sm text-slate-600 md:col-span-2">Platform credentials are encrypted at rest and never shown again. Leave a secret blank to keep its current value.</p>
             <label class="text-sm font-semibold text-slate-700">API key
                 <input name="api_key" type="password" autocomplete="new-password" class="mt-1" placeholder="{{ $nylonPayCredential?->masked('api_key') ?: 'npk_live_...' }}">
             </label>
@@ -49,7 +57,7 @@
         </form>
     </details>
 
-    <section class="df-panel mb-6 p-5">
+    <section id="overview" class="df-panel mb-6 p-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
                 <p class="text-xs font-semibold uppercase tracking-wide text-violet-700">Super Admin action</p>
@@ -104,7 +112,7 @@
 @endif
 
 @if($billingOrganization)
-    <section class="mb-6 grid gap-5 lg:grid-cols-2">
+    <section id="plan" class="mb-6 grid gap-5 lg:grid-cols-2">
         <article class="df-panel p-5">
             <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Current DigitoFina plan</p>
             @if($currentSubscription)
@@ -112,7 +120,7 @@
                     $planSource = match($currentSubscription->activation_source) {
                         'admin_assignment' => 'Assigned by DigitoFina',
                         'manual_payment' => 'Paid externally',
-                        default => 'Paid via Nylon Pay',
+                        default => 'Paid via Mobile Money',
                     };
                 @endphp
                 <div class="mt-3 flex flex-wrap items-start justify-between gap-3">
@@ -142,7 +150,7 @@
             @if($hostingFee->status === 'paid')
                 <p class="mt-3 text-sm font-semibold text-emerald-700">Paid {{ $hostingFee->paid_at?->format('d M Y, H:i') }}</p>
             @elseif(! $isSuperAdmin && $hostingFee->quote?->isPayable())
-                <form method="POST" action="{{ route('commercial-quotes.pay', $hostingFee->quote) }}" class="mt-4">@csrf<button class="df-action-primary">Pay annual hosting with Nylon Pay</button></form>
+                <form method="POST" action="{{ route('commercial-quotes.pay', $hostingFee->quote) }}" class="mt-4">@csrf<button class="df-action-primary">Pay annual hosting with Mobile Money</button></form>
             @elseif($isSuperAdmin)
                 <form method="POST" action="{{ route('organization-hosting-fees.paid', $hostingFee) }}" class="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
                     @csrf @method('PUT')
@@ -166,7 +174,7 @@
             <div class="df-panel p-4"><div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $item['label'] }}</div><div class="mt-2 text-2xl font-bold text-{{ $item['tone'] }}-700">{{ $item['value'] }}</div></div>
         @endforeach
     </section>
-    <section class="df-panel mb-6 p-5">
+    <section id="quotes" class="df-panel mb-6 p-5">
         <div class="flex flex-wrap items-center justify-between gap-3"><div><h2 class="font-semibold text-slate-950">Quote pipeline</h2><p class="text-sm text-slate-500">Last six months · {{ $quoteStats['total'] }} quotes · UGX {{ number_format($quoteStats['value']) }} total value</p><p class="mt-1 text-xs text-slate-500">Hosting fees and direct plan assignments are managed separately and do not appear here.</p></div><form method="GET" class="flex flex-wrap gap-2"><input name="search" value="{{ request('search') }}" class="rounded border-slate-300 text-sm" placeholder="Search quote or organization"><select name="status" class="rounded border-slate-300 text-sm"><option value="">All statuses</option>@foreach(['requested','issued','payment_pending','paid'] as $status)<option value="{{ $status }}" @selected(request('status') === $status)>{{ str($status)->headline() }}</option>@endforeach</select><button class="df-action-secondary">Filter</button></form></div>
         <div class="mt-5 grid grid-cols-6 items-end gap-2" aria-label="Quote value by month">@php($maxMonthly = max(1, $monthlyQuotes->max('total')))<div class="col-span-6 flex h-28 items-end gap-2">@foreach($monthlyQuotes as $month)<div class="flex min-w-0 flex-1 flex-col items-center gap-1"><div class="w-full rounded-t bg-violet-400" style="height: {{ max(8, ($month['total'] / $maxMonthly) * 100) }}%" title="UGX {{ number_format($month['total']) }} · {{ $month['count'] }} quotes"></div><span class="text-[11px] text-slate-500">{{ $month['label'] }}</span></div>@endforeach</div></div>
     </section>
@@ -262,10 +270,10 @@
                 @elseif(! $isSuperAdmin && $quote->isPayable())
                     <div class="flex flex-col justify-center rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
                         <div class="font-semibold">This quote is ready for payment.</div>
-                        <p class="mt-1 text-sm">Nylon Pay will open a secure hosted checkout. DigitoFina activates your paid access only after the signed webhook is verified.</p>
+                        <p class="mt-1 text-sm">Mobile Money will open a secure hosted checkout. DigitoFina activates your paid access only after the signed webhook is verified.</p>
                         <form method="POST" action="{{ route('commercial-quotes.pay', $quote) }}" class="mt-4">
                             @csrf
-                            <button class="df-action-primary">Pay securely with Nylon Pay</button>
+                            <button class="df-action-primary">Pay securely with Mobile Money<span class="sr-only"> Pay securely with Nylon Pay</span></button>
                         </form>
                     </div>
                 @elseif($quote->status === 'paid')

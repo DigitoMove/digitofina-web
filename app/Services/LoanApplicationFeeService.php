@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Loan;
 use App\Models\SystemSetting;
 use App\Support\CurrencyDenomination;
 use Illuminate\Support\Collection;
@@ -9,6 +10,13 @@ use InvalidArgumentException;
 
 class LoanApplicationFeeService
 {
+    public function feeForLoan(Loan $loan): float
+    {
+        return $loan->application_fee_override !== null
+            ? (float) $loan->application_fee_override
+            : $this->feeFor((float) $loan->requested_amount, $loan->organization_id);
+    }
+
     public function feeFor(float $amount, ?int $organizationId = null): float
     {
         CurrencyDenomination::assertValid($amount, 'Loan amount');
@@ -17,6 +25,10 @@ class LoanApplicationFeeService
             ->first(fn (array $range): bool => $amount >= (float) $range['min'] && ($range['max'] === null || $amount <= (float) $range['max']));
 
         if ($range) {
+            if ($range['fee_type'] === 'percentage') {
+                return round($amount * $range['fee'] / CurrencyDenomination::MINIMUM_UNIT, 0, PHP_ROUND_HALF_UP) * CurrencyDenomination::MINIMUM_UNIT;
+            }
+
             return (float) $range['fee'];
         }
 
@@ -24,7 +36,7 @@ class LoanApplicationFeeService
     }
 
     /**
-     * @return Collection<int, array{min:float,max:float|null,fee:float}>
+     * @return Collection<int, array{min:float,max:float|null,fee:float,fee_type:string}>
      */
     public function ranges(?int $organizationId = null): Collection
     {
@@ -41,6 +53,7 @@ class LoanApplicationFeeService
                 'min' => (float) $range['min'],
                 'max' => array_key_exists('max', $range) && $range['max'] !== null && $range['max'] !== '' ? (float) $range['max'] : null,
                 'fee' => (float) $range['fee'],
+                'fee_type' => $range['fee_type'] ?? 'fixed',
             ])
             ->sortBy('min')
             ->values();
@@ -54,8 +67,8 @@ class LoanApplicationFeeService
 
         $ranges = json_decode($value, true);
 
-        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($ranges)) {
-            throw new InvalidArgumentException('Loan application fee ranges must be valid JSON.');
+        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($ranges) || ! array_is_list($ranges)) {
+            throw new InvalidArgumentException('Loan application fee ranges must be a JSON list of ranges.');
         }
 
         $normalized = collect();
@@ -70,7 +83,19 @@ class LoanApplicationFeeService
             }
 
             CurrencyDenomination::assertValid($range['min'], 'Fee range #'.($index + 1).' minimum amount');
-            CurrencyDenomination::assertValid($range['fee'], 'Fee range #'.($index + 1).' fee');
+            $feeType = array_key_exists('fee_type', $range) ? $range['fee_type'] : 'fixed';
+
+            if (! in_array($feeType, ['fixed', 'percentage'], true)) {
+                throw new InvalidArgumentException('Fee range #'.($index + 1).' fee_type must be fixed or percentage.');
+            }
+
+            if ($feeType === 'percentage') {
+                if ((float) $range['fee'] < 0 || (float) $range['fee'] > 1) {
+                    throw new InvalidArgumentException('Fee range #'.($index + 1).' percentage fee must be between 0 and 1 (use 0.01 for 1%).');
+                }
+            } elseif ((float) $range['fee'] !== 0.0) {
+                CurrencyDenomination::assertValid($range['fee'], 'Fee range #'.($index + 1).' fee');
+            }
 
             $max = null;
             if (array_key_exists('max', $range) && filled($range['max'])) {

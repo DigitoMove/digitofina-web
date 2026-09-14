@@ -44,6 +44,8 @@ class StoreLoanApplicationRequest extends FormRequest
             'assigned_officer_id' => ['nullable', Rule::exists('users', 'id')->where(fn ($query) => $query->where('organization_id', $organizationId)->where('status', 'active'))],
             'savings_account_id' => ['nullable', Rule::exists('accounts', 'id')->where('organization_id', $organizationId)],
             'application_date' => ['nullable', 'date', 'before_or_equal:today'],
+            'application_fee_override' => [Rule::prohibitedIf(! $this->user()?->canPerform('disburse-loans')), 'nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
+            'application_fee_override_reason' => ['required_with:application_fee_override', 'nullable', 'string', 'max:1000'],
             'requested_amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
             'term_periods' => ['required', 'integer', 'min:1'],
             'repayment_frequency' => ['required', Rule::in(['daily', 'weekly', 'monthly'])],

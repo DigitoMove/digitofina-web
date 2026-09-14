@@ -124,6 +124,14 @@
                     </select>
                 </label>
             @endif
+            <label class="text-sm font-medium text-slate-700">Posted by
+                <select name="posted_by_user_id" class="mt-1 w-full rounded border-slate-300">
+                    <option value="">All staff users</option>
+                    @foreach($staffUsers as $staffUser)
+                        <option value="{{ $staffUser->id }}">{{ $staffUser->name }}{{ $staffUser->role ? ' · '.$staffUser->role->name : '' }}</option>
+                    @endforeach
+                </select>
+            </label>
         </div>
 
         <div class="mt-4" data-report-ledger-field hidden>

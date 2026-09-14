@@ -159,6 +159,7 @@ class LoanController extends Controller
                 'collaterals',
                 'approvals.approver',
                 'disbursements.disbursedBy',
+                'disbursements.applicationFeeRefunds.user',
                 'repayments' => fn ($query) => $query
                     ->with('receivedBy')
                     ->orderByDesc('paid_at')

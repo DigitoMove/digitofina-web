@@ -126,7 +126,7 @@ it('downloads complete branded statements as real PDF and Excel files and safe C
     $statementPage->assertSee('data:image/png;base64,', false);
     Storage::disk('local')->put('statement-layout-qa.html', $statementPage->getContent());
     $pdf = $this->get(route('member.statements', ['format' => 'pdf', 'page' => 2]))->assertOk()->assertDownload('st-sav-001-statement.pdf')->streamedContent();
-    expect($pdf)->toStartWith('%PDF-')->toContain('/Subtype /Image', 'ROW-042', 'END-OF-DESCRIPTION', 'Opening balance', 'Closing balance', 'Example Finance Company', 'Current Balance', 'Generated ', 'Page 1 of ');
+    expect($pdf)->toStartWith('%PDF-')->toContain('/Subtype /Image', 'ROW-042', 'END-OF-DESCRIPTION', 'Opening balance', 'Closing balance', 'Example Finance Company', 'Sentema Road', '+256 700 000 000', 'info@example.test', 'Current Balance', 'Generated ', 'Page 1 of ');
     Storage::disk('local')->put('statement-layout-qa.pdf', $pdf);
     $xlsx = $this->get(route('member.statements', ['format' => 'xlsx']))->assertOk()->assertDownload('st-sav-001-statement.xlsx')->streamedContent();
     expect($xlsx)->toStartWith('PK');
@@ -134,7 +134,7 @@ it('downloads complete branded statements as real PDF and Excel files and safe C
     file_put_contents($path, $xlsx);
     $zip = new ZipArchive;
     expect($zip->open($path))->toBeTrue();
-    expect($zip->getFromName('xl/worksheets/sheet1.xml'))->toContain('ROW-042', 'Example Finance Company', 'Current Balance', 'Generated ');
+    expect($zip->getFromName('xl/worksheets/sheet1.xml'))->toContain('ROW-042', 'Example Finance Company', 'Sentema Road', '+256 700 000 000', 'info@example.test', 'Current Balance', 'Generated ');
     expect($zip->getFromName('xl/media/logo.png'))->toBe($logoBytes);
     $zip->close();
     unlink($path);

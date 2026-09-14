@@ -445,6 +445,7 @@
         </section>
 
         @unless($isLoanRecoveryView && ! $canManageCreatedApplication)
+            @include('loans.partials.application-fees')
             @include('loans.partials.workflow-actions')
         @endunless
 

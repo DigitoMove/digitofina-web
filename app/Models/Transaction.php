@@ -26,6 +26,11 @@ class Transaction extends Model
         ];
     }
 
+    public function applicationFeeDisbursement(): BelongsTo
+    {
+        return $this->belongsTo(LoanDisbursement::class, 'application_fee_disbursement_id');
+    }
+
     public function account(): BelongsTo
     {
         return $this->belongsTo(Account::class);

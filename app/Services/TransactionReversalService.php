@@ -42,6 +42,18 @@ class TransactionReversalService
                 throw new InvalidArgumentException('This transaction has already been reversed.');
             }
 
+            if ($original->application_fee_disbursement_id && $original->reversal_of_id) {
+                throw new InvalidArgumentException('Create a new application fee refund from the loan instead of reversing a refund reversal.');
+            }
+
+            if (Transaction::query()->where('fee_refund_of_id', $original->id)->where('status', 'posted')->whereNull('reversal_of_id')->whereNull('reversed_by')->exists()) {
+                throw new InvalidArgumentException('Reverse the application fee refunds before reversing the original charge.');
+            }
+
+            if (Transaction::query()->whereHas('applicationFeeDisbursement', fn ($query) => $query->where('transaction_reference', $original->reference))->where('status', 'posted')->whereNull('reversal_of_id')->whereNull('reversed_by')->exists()) {
+                throw new InvalidArgumentException('Reverse the application fee refunds before reversing the disbursement.');
+            }
+
             $account = $original->account_id
                 ? Account::query()->with('accountType')->whereKey($original->account_id)->lockForUpdate()->first()
                 : null;
@@ -69,6 +81,8 @@ class TransactionReversalService
                 'branch_id' => $original->branch_id,
                 'user_id' => $checker->id,
                 'reversal_of_id' => $original->id,
+                'application_fee_disbursement_id' => $original->application_fee_disbursement_id,
+                'fee_refund_of_id' => $original->fee_refund_of_id,
                 'reference' => $this->reference(),
                 'cheque_number' => $original->cheque_number,
                 'amount' => $original->amount,
@@ -355,7 +369,7 @@ class TransactionReversalService
                 'account_name' => $journal->account_name,
                 'entry_type' => $journal->entry_type === 'debit' ? 'credit' : 'debit',
                 'amount' => $journal->amount,
-                'memo' => $reason ?: 'Transaction reversal',
+                'memo' => $original->application_fee_disbursement_id ? 'Application fee refund reversal: '.$reason : ($reason ?: 'Transaction reversal'),
             ];
 
             if (Schema::hasColumn('journal_entries', 'reversed_entry_id')) {

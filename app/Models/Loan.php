@@ -26,6 +26,7 @@ class Loan extends Model
     {
         return [
             'requested_amount' => 'decimal:2',
+            'application_fee_override' => 'decimal:2',
             'approved_amount' => 'decimal:2',
             'principal_balance' => 'decimal:2',
             'interest_balance' => 'decimal:2',

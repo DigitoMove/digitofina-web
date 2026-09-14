@@ -27,6 +27,10 @@ class LoanApplicationService
      */
     public function submit(array $data, User $officer): Loan
     {
+        if (isset($data['application_fee_override'])) {
+            app(LoanFeeAdjustmentService::class)->validateOverride($officer, (float) $data['application_fee_override'], $data['application_fee_override_reason'] ?? '');
+        }
+
         $client = Client::with('branch')->findOrFail($data['client_id']);
         $product = LoanProduct::findOrFail($data['loan_product_id']);
         $savings = Account::where('client_id', $client->id)->whereHas('accountType', fn ($query) => $query->where('category', 'savings'))->first();

@@ -49,6 +49,17 @@
         </div>
     </section>
 
+    @if(auth()->user()->canPerform('disburse-loans'))
+        <section class="rounded border bg-white p-4 sm:p-5">
+            <h2 class="font-semibold text-slate-950">Special application fee</h2>
+            <p class="mt-1 text-sm text-slate-500">Leave blank for the normal fee, enter a custom amount, or enter 0 to waive it for this loan.</p>
+            <div class="mt-3 grid gap-3 md:grid-cols-2">
+                <label class="text-sm font-medium">Application fee (UGX)<input name="application_fee_override" type="number" min="0" step="100" value="{{ old('application_fee_override') }}" class="mt-1 w-full rounded border-slate-300"></label>
+                <label class="text-sm font-medium">Reason for custom fee or waiver<input name="application_fee_override_reason" maxlength="1000" value="{{ old('application_fee_override_reason') }}" class="mt-1 w-full rounded border-slate-300"></label>
+            </div>
+        </section>
+    @endif
+
     <section class="rounded border bg-white p-4 sm:p-5">
         <div class="mb-4 border-b border-slate-200 pb-3">
             <h2 class="font-semibold text-slate-950">Assessment notes</h2>

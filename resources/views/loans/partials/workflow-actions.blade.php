@@ -16,7 +16,7 @@
         && $loan->loanAccount;
     $clientBioComplete = $loan->client?->client_type !== 'individual'
         || (filled($loan->client?->national_id) && filled($loan->client?->date_of_birth) && filled($loan->client?->gender));
-    $hasAttachedGuarantor = $loan->loanGuarantors
+    $meetsGuarantorRequirement = ! $loan->product->require_guarantors || $loan->loanGuarantors
         ->whereNotIn('status', ['rejected', 'released'])
         ->isNotEmpty();
     $hasVisibleWorkflowAction = $canAssignOfficer
@@ -115,15 +115,15 @@
             @csrf
             <div>
                 <div class="text-sm font-semibold text-slate-950">Approval queue</div>
-                <div class="text-sm text-slate-500">Send the appraised application to the approver after biodata and guarantor checks are complete.</div>
+                <div class="text-sm text-slate-500">Send the appraised application to the approver after biodata and any required guarantor checks are complete.</div>
                 @unless($clientBioComplete)
                     <div class="mt-2 text-xs font-semibold text-coral-700">Client NIN, date of birth, and gender are required.</div>
                 @endunless
-                @unless($hasAttachedGuarantor)
+                @unless($meetsGuarantorRequirement)
                     <div class="mt-2 text-xs font-semibold text-coral-700">Attach at least one guarantor before approval submission.</div>
                 @endunless
             </div>
-            <button @disabled(! $clientBioComplete || ! $hasAttachedGuarantor) class="df-action-primary disabled:pointer-events-none disabled:bg-slate-300">Submit for Approval</button>
+            <button @disabled(! $clientBioComplete || ! $meetsGuarantorRequirement) class="df-action-primary disabled:pointer-events-none disabled:bg-slate-300">Submit for Approval</button>
         </form>
     @endif
 
@@ -147,7 +147,7 @@
         <form method="POST" action="{{ route('loans.disburse', $loan) }}" class="mt-4 grid gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 md:grid-cols-[240px_1fr_auto]">
             @csrf
             <label class="text-sm font-semibold text-slate-700">Payment method <x-required-badge /><select name="payment_method" class="mt-1" required><option value="transfer_to_savings">Transfer to savings</option><option value="cash">Cash</option><option value="mobile_money">Mobile money</option><option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option></select></label>
-            <div class="text-sm text-slate-600">Application fee is calculated from the requested amount and deducted from the disbursement proceeds.</div>
+            <div class="text-sm text-slate-600">The saved application fee setting applies. The fee is paid from savings when available, otherwise from the loan proceeds.</div>
             <button class="df-action-primary">Disburse</button>
         </form>
     @endif

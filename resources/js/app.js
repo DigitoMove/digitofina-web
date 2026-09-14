@@ -1329,6 +1329,7 @@ const initTableExports = () => {
         URL.revokeObjectURL(url);
     };
     const exportBrand = (title) => {
+        const reportOrganization = document.querySelector('[data-report-organization]');
         const sidebarLogo = document.querySelector('#app-sidebar img');
         const sidebarName = document.querySelector('#app-sidebar .font-semibold');
         const branchLabel = document.querySelector('header span.text-slate-500');
@@ -1337,8 +1338,14 @@ const initTableExports = () => {
         const stamp = now.toISOString().replace(/[-:T.Z]/g, '').slice(0, 12);
 
         return {
-            logo: sidebarLogo?.getAttribute('src') || '/brand/digitofina-logo.svg',
-            organization: sidebarLogo?.getAttribute('alt') || sidebarName?.textContent?.trim() || 'DigitoFina',
+            logo: reportOrganization?.dataset.reportLogo
+                ? (/^(https?:|data:|\/)/.test(reportOrganization.dataset.reportLogo) ? reportOrganization.dataset.reportLogo : `/storage/${reportOrganization.dataset.reportLogo.replace(/^storage\//, '')}`)
+                : sidebarLogo?.getAttribute('src') || '/brand/digitofina-logo.svg',
+            organization: reportOrganization?.dataset.reportOrganization || sidebarLogo?.getAttribute('alt') || sidebarName?.textContent?.trim() || 'DigitoFina',
+            address: reportOrganization?.dataset.reportAddress || '',
+            phone: reportOrganization?.dataset.reportPhone || '',
+            email: reportOrganization?.dataset.reportEmail || '',
+            website: reportOrganization?.dataset.reportWebsite || '',
             reportNumber: `WEB-${stamp}`,
             branch: branchLabel?.textContent?.trim() || 'Current branch',
             currency: 'Uganda Shilling - UGX',
@@ -1351,7 +1358,12 @@ const initTableExports = () => {
         ['Report Number', brand.reportNumber],
         ['Currency', brand.currency],
         ['Branch', brand.branch],
-        ['Period', brand.period],
+            ['Period', brand.period],
+            ...(brand.address ? [['Address', brand.address]] : []),
+            ...(brand.phone ? [['Phone', brand.phone]] : []),
+            ...(brand.email ? [['Email', brand.email]] : []),
+            ...(brand.website ? [['Website', brand.website]] : []),
+            ['Generated', now.toLocaleString()],
     ];
     const excelFor = (title, rows) => {
         const brand = exportBrand(title);

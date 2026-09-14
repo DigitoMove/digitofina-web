@@ -249,6 +249,27 @@ it('links listed posted transactions to their receipt details', function () {
         ->assertSee('href="'.route('receipts.show', $transaction).'"', false);
 });
 
+it('filters user posted transactions by posting staff member and branch', function () {
+    [$admin, $branch, $type] = transactionDeletionContext();
+    $staffRole = Role::create(['organization_id' => $branch->organization_id, 'name' => 'Cashier', 'slug' => 'cashier']);
+    $staffRole->permissions()->sync(Permission::where('slug', 'view-reports')->pluck('id'));
+    $second = User::factory()->create(['organization_id' => $branch->organization_id, 'branch_id' => $branch->id, 'role_id' => $staffRole->id, 'name' => 'Second Poster', 'status' => 'active', 'is_active' => true]);
+    $firstTransaction = transactionDeletionPosting($branch, $admin, $type, ['reference' => 'TX-POSTER-FIRST']);
+    $secondTransaction = transactionDeletionPosting($branch, $second, $type, ['reference' => 'TX-POSTER-SECOND']);
+
+    $this->actingAs($admin)
+        ->get(route('reports.show', ['report' => 'user-posted-transactions', 'posted_by_user_id' => $second->id, 'branch_id' => $branch->id]))
+        ->assertSuccessful()
+        ->assertSee('TX-POSTER-SECOND')
+        ->assertSee('Second Poster')
+        ->assertDontSee('TX-POSTER-FIRST');
+
+    $this->get(route('reports.index'))
+        ->assertSuccessful()
+        ->assertSee('All staff users')
+        ->assertSee('Second Poster');
+});
+
 it('filters posted transaction reports by description', function () {
     $branch = Branch::create([
         'code' => '1004',

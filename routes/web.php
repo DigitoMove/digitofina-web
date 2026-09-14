@@ -32,6 +32,7 @@ use App\Http\Controllers\LedgerAccountController;
 use App\Http\Controllers\LinkPreviewController;
 use App\Http\Controllers\LoanCollateralController;
 use App\Http\Controllers\LoanController;
+use App\Http\Controllers\LoanFeeController;
 use App\Http\Controllers\LoanGuarantorController;
 use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\LoanRepaymentController;
@@ -217,6 +218,8 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::post('/loans/{loan}/close-with-coverage', [LoanController::class, 'closeWithCoverage'])->middleware('module:loans')->name('loans.close-with-coverage');
     Route::post('/loans/{loan}/reopen', [LoanController::class, 'reopen'])->middleware('module:loans')->name('loans.reopen');
     Route::post('/loans/{loan}/assign-officer', [LoanController::class, 'assignOfficer'])->middleware('module:loans')->name('loans.assign-officer');
+    Route::put('/loans/{loan}/application-fee', [LoanFeeController::class, 'update'])->middleware('module:loans')->name('loans.application-fee.update');
+    Route::post('/loans/{loan}/disbursements/{disbursement}/application-fee-refund', [LoanFeeController::class, 'refund'])->middleware('module:loans')->name('loans.application-fee.refund');
     Route::post('/loans/{loan}/disburse', [LoanController::class, 'disburse'])->middleware('module:loans')->name('loans.disburse');
     Route::post('/loans/{loan}/guarantors', [LoanGuarantorController::class, 'store'])->middleware('module:loans')->name('loans.guarantors.store');
     Route::put('/loans/{loan}/guarantors/{guarantor}', [LoanGuarantorController::class, 'updateStatus'])->middleware('module:loans')->name('loans.guarantors.status');

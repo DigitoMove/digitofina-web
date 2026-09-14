@@ -8,6 +8,7 @@ use App\Models\ChartAccount;
 use App\Models\Client;
 use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
+use App\Models\FinancialDay;
 use App\Models\Guarantor;
 use App\Models\Loan;
 use App\Models\LoanDisbursement;
@@ -16,6 +17,7 @@ use App\Models\LoanProduct;
 use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
 use App\Models\LoanWriteOff;
+use App\Models\MakerCheckerRequest;
 use App\Models\Module;
 use App\Models\Organization;
 use App\Models\Permission;
@@ -28,12 +30,16 @@ use App\Models\TransactionType;
 use App\Models\User;
 use App\Policies\ClientPolicy;
 use App\Services\BusinessCalendarService;
+use App\Services\LoanApplicationFeeService;
 use App\Services\LoanApplicationService;
+use App\Services\LoanFeeAdjustmentService;
 use App\Services\LoanService;
 use App\Services\ModuleService;
 use App\Services\ReportCatalogService;
 use App\Services\TransactionPostingService;
+use App\Services\TransactionReversalService;
 use App\Support\CurrencyDenomination;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\ViewErrorBag;
@@ -1074,10 +1080,10 @@ it('requires complete individual client biodata before creating a loan', functio
     expect(Loan::query()->count())->toBe(0);
 });
 
-it('requires at least one guarantor before submitting a loan for approval', function () {
+it('follows product security requirements during submission and approval', function (bool $requiresGuarantors, bool $requiresCollateral) {
     $user = loanWorkflowUser();
     $client = loanWorkflowClient($user);
-    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product = loanWorkflowProduct(['require_guarantors' => $requiresGuarantors, 'minimum_guarantors' => 1, 'require_collateral' => $requiresCollateral]);
     $savings = loanWorkflowSavingsAccount($user, $client);
     $loanAccount = Account::create([
         'client_id' => $client->id,
@@ -1106,11 +1112,46 @@ it('requires at least one guarantor before submitting a loan for approval', func
         'status' => 'under_review',
     ]);
 
-    expect(fn () => app(LoanService::class)->submitForApproval($loan, $user))
-        ->toThrow(InvalidArgumentException::class, 'Attach at least one guarantor before sending this loan for approval.');
+    $this->actingAs($user);
+    $html = view('loans.partials.workflow-actions', [
+        'loan' => $loan->load(['client', 'product', 'loanGuarantors']),
+        'canAssignOfficer' => false,
+        'canCancel' => false,
+        'statusTone' => '',
+        'statusLabel' => 'Under review',
+        'errors' => new ViewErrorBag,
+    ])->render();
 
-    expect($loan->fresh()->status)->toBe('under_review');
-});
+    expect($html)->toMatch('/<button\s+'.($requiresGuarantors ? 'disabled' : 'class=').'[^>]*>Submit for Approval<\/button>/');
+
+    if ($requiresGuarantors) {
+        expect(fn () => app(LoanService::class)->submitForApproval($loan, $user))
+            ->toThrow(InvalidArgumentException::class, 'Attach at least one guarantor before sending this loan for approval.');
+        expect($loan->fresh()->status)->toBe('under_review');
+
+        return;
+    }
+
+    app(LoanService::class)->submitForApproval($loan, $user);
+
+    expect($loan->fresh()->status)->toBe($requiresCollateral ? 'pending_collateral_verification' : 'submitted');
+
+    if ($requiresCollateral) {
+        expect(fn () => app(LoanService::class)->approve($loan, $user, 500_000))
+            ->toThrow(InvalidArgumentException::class, 'This product requires verified collateral before approval.');
+
+        return;
+    }
+
+    app(LoanService::class)->approve($loan, $user, 500_000);
+
+    expect($loan->fresh()->status)->toBe('approved');
+})->with([
+    'no security required' => [false, false],
+    'guarantor required' => [true, false],
+    'collateral required' => [false, true],
+    'both required' => [true, true],
+]);
 
 it('deducts the requested amount application fee from savings when rejecting a loan', function () {
     $user = loanWorkflowUser();
@@ -2693,3 +2734,197 @@ it('backfills legacy client ownership and allows same-branch loan officer takeov
         ->and($otherRecentClient->fresh()->officer_id)->toBe($secondOfficer->id)
         ->and($unownedClient->fresh()->officer_id)->toBe($firstOfficer->id);
 });
+
+/** @return array{User, Loan, Account} */
+function loanWorkflowFeeAdjustmentLoan(): array
+{
+    $user = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($user, ['loans', 'reports', 'accounting']);
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['organization_id' => $organization->id, 'require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $savings = loanWorkflowSavingsAccount($user, $client);
+    $loan = loanWorkflowTrackedLoan($user, $client, $product, 'FEE-ADJUST-001', 'approved');
+    $loan->update(['savings_account_id' => $savings->id, 'application_date' => today()]);
+    SystemSetting::withoutGlobalScope('tenant')->create([
+        'organization_id' => $organization->id,
+        'key' => 'loan_application_fee_ranges', 'label' => 'Application fees',
+        'value' => json_encode([['min' => 1, 'max' => null, 'fee' => 15_000]]),
+        'type' => 'json', 'group' => 'loans',
+    ]);
+
+    return [$user, $loan, $savings];
+}
+
+it('saves a special application fee before disbursement and charges the selected amount', function (?int $fee, int $expected) {
+    [$user, $loan, $savings] = loanWorkflowFeeAdjustmentLoan();
+    $loan->update(['application_fee_override' => 20_000]);
+
+    $this->actingAs($user)->put(route('loans.application-fee.update', $loan), [
+        'application_fee_override' => $fee,
+        'application_fee_override_reason' => 'Special client arrangement',
+    ])->assertSessionHasNoErrors();
+    $this->post(route('loans.disburse', $loan), ['payment_method' => 'transfer_to_savings'])->assertSessionHasNoErrors();
+
+    expect((float) $loan->disbursements()->firstOrFail()->fees_deducted)->toBe((float) $expected)
+        ->and((float) $savings->fresh()->balance)->toBe(550_000.0 - $expected);
+    $this->put(route('loans.application-fee.update', $loan), [
+        'application_fee_override' => 0, 'application_fee_override_reason' => 'Too late',
+    ])->assertSessionHasErrors('application_fee_override');
+})->with(['waiver' => [0, 0], 'custom fee' => [5000, 5000], 'restore default' => [null, 15000]]);
+
+it('accepts an application fee exception at loan creation', function (int $fee) {
+    [$user, $existingLoan] = loanWorkflowFeeAdjustmentLoan();
+    $this->actingAs($user)->post(route('loans.store'), [
+        'client_id' => $existingLoan->client_id,
+        'loan_product_id' => $existingLoan->loan_product_id,
+        'requested_amount' => 300_000, 'term_periods' => 2, 'repayment_frequency' => 'monthly',
+        'application_fee_override' => $fee, 'application_fee_override_reason' => 'Loyal client exception',
+    ])->assertSessionHasNoErrors()->assertRedirect();
+
+    $loan = Loan::query()->latest('id')->firstOrFail();
+    expect((float) $loan->application_fee_override)->toBe((float) $fee)
+        ->and($loan->application_fee_override_reason)->toBe('Loyal client exception')
+        ->and(app(LoanApplicationFeeService::class)->feeForLoan($loan))->toBe((float) $fee);
+})->with([0, 5000]);
+
+it('refunds partial and remaining application fees with balanced records and net income', function (int $startingSavings) {
+    [$user, $loan, $savings] = loanWorkflowFeeAdjustmentLoan();
+    $savings->update(['balance' => $startingSavings]);
+    $this->actingAs($user);
+    app(LoanService::class)->disburseToSavings($loan, $user);
+    $disbursement = $loan->disbursements()->firstOrFail();
+    $originalNet = (float) $disbursement->net_amount;
+    $balanceAfterCharge = (float) $savings->fresh()->balance;
+    $refundRoute = route('loans.application-fee.refund', [$loan, $disbursement->id]);
+
+    $this->post($refundRoute, ['amount' => 5000, 'reason' => 'Fee charged in error'])->assertSessionHasNoErrors();
+    $refund = $disbursement->applicationFeeRefunds()->firstOrFail();
+    $original = Transaction::findOrFail($refund->fee_refund_of_id);
+
+    expect((float) $savings->fresh()->balance)->toBe($balanceAfterCharge + 5000)
+        ->and($original->status)->toBe('posted')
+        ->and((float) $disbursement->fresh()->fees_deducted)->toBe(15000.0)
+        ->and((float) $disbursement->net_amount)->toBe($originalNet)
+        ->and((float) $loan->fresh()->principal_balance)->toBe(300000.0)
+        ->and((float) $refund->journalEntries()->where('entry_type', 'debit')->sum('amount'))->toBe(5000.0)
+        ->and((float) $refund->journalEntries()->where('entry_type', 'credit')->sum('amount'))->toBe(5000.0);
+
+    $report = app(ReportCatalogService::class)->generate('application-fees-income', ['from' => today()->toDateString(), 'to' => today()->toDateString()], $user);
+    expect($report['summary']['Application fees charged'])->toBe('UGX 15,000.00')
+        ->and($report['summary']['Application fees refunded'])->toBe('UGX 5,000.00')
+        ->and($report['summary']['Net application fee income'])->toBe('UGX 10,000.00');
+    $income = app(ReportCatalogService::class)->generate('income-statement', ['from' => today()->toDateString(), 'to' => today()->toDateString()], $user);
+    expect($income['summary']['Net income'])->toBe('UGX 10,000.00');
+
+    $this->post($refundRoute, ['amount' => 10100, 'reason' => 'Too much'])->assertSessionHasErrors('application_fee_refund');
+    $this->post($refundRoute, ['amount' => 10000, 'reason' => 'Refund remainder'])->assertSessionHasNoErrors();
+    $this->post($refundRoute, ['amount' => 100, 'reason' => 'Duplicate refund'])->assertSessionHasErrors('application_fee_refund');
+    expect((float) $savings->fresh()->balance)->toBe($startingSavings + 300000.0)
+        ->and($disbursement->applicationFeeRefunds()->count())->toBe(2);
+
+    $this->get(route('loans.show', $loan))->assertSuccessful()->assertSee('Fee charged in error')->assertSee('Refund remainder');
+})->with(['from savings' => 250000, 'from proceeds' => 0]);
+
+it('validates and authorizes application fee changes and refunds', function () {
+    [$user, $loan] = loanWorkflowFeeAdjustmentLoan();
+    $this->actingAs($user);
+    $route = route('loans.application-fee.update', $loan);
+    foreach ([-100, 150, 'invalid'] as $amount) {
+        $this->put($route, ['application_fee_override' => $amount, 'application_fee_override_reason' => 'Invalid'])->assertSessionHasErrors('application_fee_override');
+    }
+    $this->put($route, ['application_fee_override' => 0])->assertSessionHasErrors('application_fee_override_reason');
+    app(LoanService::class)->disburseToSavings($loan, $user);
+    $disbursement = $loan->disbursements()->firstOrFail();
+    $refundRoute = route('loans.application-fee.refund', [$loan, $disbursement->id]);
+    foreach ([0, -100, 150] as $amount) {
+        $this->post($refundRoute, ['amount' => $amount, 'reason' => 'Invalid'])->assertSessionHasErrors('amount');
+    }
+    $this->post($refundRoute, ['amount' => 1000])->assertSessionHasErrors('reason');
+
+    $role = Role::create(['name' => 'Fee Viewer', 'slug' => 'fee-viewer']);
+    $role->permissions()->sync(Permission::where('slug', 'manage-loans')->pluck('id'));
+    $user->update(['role_id' => $role->id]);
+    $this->actingAs($user->fresh());
+    $this->put($route, ['application_fee_override' => 0, 'application_fee_override_reason' => 'Unauthorized'])->assertRedirect(route('dashboard'))->assertSessionHas('warning', 'This action is unauthorized.');
+    $this->post($refundRoute, ['amount' => 1000, 'reason' => 'Unauthorized'])->assertRedirect(route('dashboard'))->assertSessionHas('warning', 'This action is unauthorized.');
+});
+
+it('records refunds in their posting period and supports reversing a refund before the charge', function () {
+    [$user, $loan, $savings] = loanWorkflowFeeAdjustmentLoan();
+    $this->actingAs($user);
+    app(LoanService::class)->disburseToSavings($loan, $user);
+    $disbursement = $loan->disbursements()->firstOrFail();
+    $this->travel(1)->days();
+    $refund = app(LoanFeeAdjustmentService::class)->refund($loan, $disbursement->id, $user, 5000, 'Later refund');
+    $report = app(ReportCatalogService::class)->generate('application-fees-income', ['from' => today()->toDateString(), 'to' => today()->toDateString()], $user);
+    expect($report['summary']['Application fees charged'])->toBe('UGX 0.00')
+        ->and($report['summary']['Net application fee income'])->toBe('UGX -5,000.00');
+
+    $simplified = app(ReportCatalogService::class)->generate('general-income-statement', ['from' => today()->toDateString(), 'to' => today()->toDateString()], $user);
+    expect($simplified['rows']->keyBy('Source')['Application Fees']['Amount'])->toBe('UGX -5,000.00');
+
+    $request = new MakerCheckerRequest(['subject_id' => $refund->fee_refund_of_id, 'reason' => 'Reverse charge']);
+    expect(fn () => app(TransactionReversalService::class)->approve($request, $user))
+        ->toThrow(InvalidArgumentException::class, 'Reverse the application fee refunds before reversing the original charge.');
+    $request = new MakerCheckerRequest(['subject_id' => $refund->id, 'reason' => 'Refund was incorrect']);
+    app(TransactionReversalService::class)->approve($request, $user);
+    $report = app(ReportCatalogService::class)->generate('application-fees-income', ['from' => today()->toDateString(), 'to' => today()->toDateString()], $user);
+    expect($report['summary']['Net application fee income'])->toBe('UGX 0.00');
+    app(LoanFeeAdjustmentService::class)->refund($loan, $disbursement->id, $user, 15000, 'Full corrected refund');
+    expect((float) $savings->fresh()->balance)->toBe(550000.0);
+    $this->travelBack();
+});
+
+it('keeps fee refunds within their loan organization and an open financial day', function () {
+    [$user, $loan, $savings] = loanWorkflowFeeAdjustmentLoan();
+    $this->actingAs($user);
+    app(LoanService::class)->disburseToSavings($loan, $user);
+    $disbursement = $loan->disbursements()->firstOrFail();
+    $originalBalance = (float) $savings->fresh()->balance;
+    $otherLoan = loanWorkflowTrackedLoan($user, $loan->client, $loan->product, 'FEE-OTHER', 'approved');
+    $this->post(route('loans.application-fee.refund', [$otherLoan, $disbursement->id]), ['amount' => 5000, 'reason' => 'Wrong loan'])->assertNotFound();
+
+    $day = FinancialDay::create(['organization_id' => $user->organization_id, 'branch_id' => $user->branch_id, 'business_date' => today(), 'status' => 'closed']);
+    $this->post(route('loans.application-fee.refund', [$loan, $disbursement->id]), ['amount' => 5000, 'reason' => 'Closed day'])->assertSessionHasErrors('application_fee_refund');
+    expect((float) $savings->fresh()->balance)->toBe($originalBalance);
+    $day->update(['status' => 'open']);
+
+    $otherOrganization = Organization::create(['name' => 'Other lender', 'slug' => 'other-fee-lender', 'status' => 'active']);
+    $otherBranch = Branch::create(['organization_id' => $otherOrganization->id, 'code' => '9999', 'name' => 'Other lender branch', 'status' => 'active', 'is_active' => true]);
+    $otherUser = User::factory()->create(['organization_id' => $otherOrganization->id, 'branch_id' => $otherBranch->id, 'role_id' => $user->role_id, 'status' => 'active', 'is_active' => true]);
+    expect(fn () => app(LoanFeeAdjustmentService::class)->refund($loan, $disbursement->id, $otherUser, 5000, 'Wrong organization'))
+        ->toThrow(AuthorizationException::class);
+    expect($disbursement->applicationFeeRefunds()->count())->toBe(0);
+});
+
+it('does not refund waived fees or fees whose charge was reversed', function (bool $waived) {
+    [$user, $loan, $savings] = loanWorkflowFeeAdjustmentLoan();
+    $this->actingAs($user);
+    if ($waived) {
+        $loan->update(['application_fee_override' => 0]);
+    }
+    app(LoanService::class)->disburseToSavings($loan, $user);
+    $disbursement = $loan->disbursements()->firstOrFail();
+    if (! $waived) {
+        $charge = Transaction::whereHas('type', fn ($query) => $query->where('code', 'loan_application_fee'))->firstOrFail();
+        app(TransactionReversalService::class)->approve(new MakerCheckerRequest(['subject_id' => $charge->id, 'reason' => 'Already returned']), $user);
+    }
+    $balance = (float) $savings->fresh()->balance;
+    $this->post(route('loans.application-fee.refund', [$loan, $disbursement->id]), ['amount' => 5000, 'reason' => 'No remaining fee'])->assertSessionHasErrors('application_fee_refund');
+    expect((float) $savings->fresh()->balance)->toBe($balance);
+})->with([true, false]);
+
+it('automatically charges a percentage application fee on requested principal at disbursement', function (int $startingSavings) {
+    [$user, $loan, $savings] = loanWorkflowFeeAdjustmentLoan();
+    $loan->update(['requested_amount' => 1000000, 'approved_amount' => 800000, 'principal_balance' => 800000]);
+    $savings->update(['balance' => $startingSavings]);
+    SystemSetting::withoutGlobalScope('tenant')->where('organization_id', $user->organization_id)->where('key', 'loan_application_fee_ranges')->update([
+        'value' => json_encode([['min' => 950100, 'max' => null, 'fee_type' => 'percentage', 'fee' => 0.01]]),
+    ]);
+
+    $this->actingAs($user)->post(route('loans.disburse', $loan), ['payment_method' => 'transfer_to_savings'])->assertSessionHasNoErrors();
+    $disbursement = $loan->disbursements()->firstOrFail();
+    expect((float) $disbursement->fees_deducted)->toBe(10000.0)
+        ->and((float) $savings->fresh()->balance)->toBe($startingSavings + 790000.0)
+        ->and((float) $disbursement->net_amount)->toBe($startingSavings >= 10000 ? 800000.0 : 790000.0);
+})->with(['paid from savings' => 250000, 'deducted from proceeds' => 0]);

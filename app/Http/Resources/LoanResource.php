@@ -22,6 +22,8 @@ class LoanResource extends JsonResource
             'approved_amount' => $this->approved_amount !== null ? (float) $this->approved_amount : null,
             'principal_balance' => (float) $this->principal_balance,
             'interest_balance' => (float) $this->interest_balance,
+            'application_fee_override' => $this->application_fee_override !== null ? (float) $this->application_fee_override : null,
+            'application_fee_override_reason' => $this->application_fee_override_reason,
             'fees_balance' => (float) $this->fees_balance,
             'penalty_balance' => (float) $this->penalty_balance,
             'interest_rate' => (float) $this->interest_rate,

@@ -1,6 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
+<div hidden data-report-organization="{{ $organization?->name }}" data-report-address="{{ $organization?->address }}" data-report-phone="{{ $organization?->phone }}" data-report-email="{{ $organization?->email }}" data-report-website="{{ $organization?->website }}" data-report-logo="{{ $organization?->logo ?: $organization?->logo_path }}"></div>
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div>
         <div class="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
@@ -18,6 +19,11 @@
                 · Branch filtered
             @elseif($canChooseBranch)
                 · All branches
+            @endif
+            @if($postedByUserId)
+                · Posted by {{ $staffUsers->firstWhere('id', $postedByUserId)?->name ?? 'Selected staff user' }}
+            @elseif($definition['slug'] === 'user-posted-transactions')
+                · All staff users
             @endif
         </p>
     </div>
@@ -95,13 +101,26 @@
                 <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="flex flex-wrap items-center justify-end gap-2">
                     <input type="hidden" name="from" value="{{ request('from') }}">
                     <input type="hidden" name="to" value="{{ request('to') }}">
-                    <input type="hidden" name="branch_id" value="{{ $branchId }}">
+                    @if($canChooseBranch)
+                        <select name="branch_id" class="rounded border-slate-300 text-sm">
+                            <option value="">All branches</option>
+                            @foreach($branches as $branch)
+                                <option value="{{ $branch->id }}" @selected((int) $branchId === (int) $branch->id)>{{ $branch->name }}</option>
+                            @endforeach
+                        </select>
+                    @endif
+                    <select name="posted_by_user_id" class="rounded border-slate-300 text-sm">
+                        <option value="">All staff users</option>
+                        @foreach($staffUsers as $staffUser)
+                            <option value="{{ $staffUser->id }}" @selected((int) ($postedByUserId ?? 0) === (int) $staffUser->id)>{{ $staffUser->name }}</option>
+                        @endforeach
+                    </select>
                     <input type="hidden" name="chart_account_id" value="{{ request('chart_account_id') }}">
                     <input type="hidden" name="detail" value="{{ $detail }}">
-                    <input name="search" value="{{ $search }}" class="min-w-64 rounded border-slate-300 text-sm" placeholder="Search description, memo, reference, client, or account">
+                    <input name="search" value="{{ $search }}" class="min-w-64 rounded border-slate-300 text-sm" placeholder="Search description, memo, reference, client, account, or posting user">
                     <button class="df-action-secondary">Search</button>
                     @if($search !== '')
-                        <a href="{{ route('reports.show', ['report' => $definition['slug'], 'from' => request('from'), 'to' => request('to'), 'branch_id' => $branchId, 'chart_account_id' => request('chart_account_id'), 'detail' => $detail]) }}" class="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Clear</a>
+                        <a href="{{ route('reports.show', ['report' => $definition['slug'], 'from' => request('from'), 'to' => request('to'), 'branch_id' => $branchId, 'posted_by_user_id' => $postedByUserId, 'chart_account_id' => request('chart_account_id'), 'detail' => $detail]) }}" class="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Clear</a>
                     @endif
                 </form>
                 @if($definition['kind'] === 'transactions')

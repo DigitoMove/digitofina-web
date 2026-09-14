@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class LoanDisbursement extends Model
 {
@@ -20,6 +21,11 @@ class LoanDisbursement extends Model
             'net_amount' => 'decimal:2',
             'disbursement_date' => 'date',
         ];
+    }
+
+    public function applicationFeeRefunds(): HasMany
+    {
+        return $this->hasMany(Transaction::class, 'application_fee_disbursement_id');
     }
 
     public function loan(): BelongsTo

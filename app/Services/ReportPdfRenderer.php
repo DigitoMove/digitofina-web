@@ -119,7 +119,7 @@ class ReportPdfRenderer
         $brandX = self::MARGIN + 8;
 
         if ($this->logo !== null) {
-            $scale = min(128 / max(1, $this->logo['width']), 60 / max(1, $this->logo['height']));
+            $scale = min(150 / max(1, $this->logo['width']), 72 / max(1, $this->logo['height']));
             $logoWidth = $this->logo['width'] * $scale;
             $logoHeight = $this->logo['height'] * $scale;
             $this->image($content, 'Logo', $brandX, $top + 3, $logoWidth, $logoHeight);

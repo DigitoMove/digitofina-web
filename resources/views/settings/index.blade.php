@@ -51,6 +51,13 @@
                         @else
                             <input name="settings[{{ $setting->key }}]" value="{{ old('settings.'.$setting->key, $setting->value) }}" @if($setting->type === 'money') type="number" min="0" step="100" @elseif($setting->type === 'number') type="number" min="0" step="0.0001" @endif class="mt-1 w-full rounded border-slate-300">
                         @endif
+                        @if($setting->key === 'loan_application_fee_ranges')
+                            <span class="mt-2 block text-xs font-normal text-slate-600">Mix fixed and percentage ranges. Omit fee_type for a fixed UGX amount. For 1% of the requested amount, use fee_type: "percentage" and fee: 0.01. A null max means no upper limit.</span>
+                            <code class="mt-1 block whitespace-pre-wrap text-xs">[{"min":100,"max":500000,"fee":10000},
+{"min":500100,"max":950000,"fee":20000},
+{"min":950100,"max":null,"fee_type":"percentage","fee":0.01}]</code>
+                            <span class="mt-1 block text-xs font-normal text-slate-500">Percentage fees are rounded to the nearest UGX 100 (half rounds up) at disbursement. Company ranges override platform defaults; a special fee saved on the loan overrides these ranges.</span>
+                        @endif
                         @if ($setting->description)
                             <span class="mt-1 block text-xs font-normal text-slate-500">{{ $setting->description }}</span>
                         @endif

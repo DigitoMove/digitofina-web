@@ -1176,3 +1176,26 @@ function superAdminUser(): User
         'is_active' => true,
     ]);
 }
+
+it('saves mixed application fee bands in platform and company settings', function (bool $companyScope) {
+    [$organization, , $companyUser] = tenantUser(['manage-settings']);
+    $user = $companyScope ? $companyUser : superAdminUser();
+    app(ModuleService::class)->enable($organization, Module::where('slug', 'loans')->firstOrFail(), $companyUser);
+    $ranges = json_encode([
+        ['min' => 100, 'max' => 950000, 'fee' => 10000],
+        ['min' => 950100, 'max' => null, 'fee_type' => 'percentage', 'fee' => 0.01],
+    ]);
+    SystemSetting::forPlatform()->updateOrCreate(['key' => 'loan_application_fee_ranges'], [
+        'label' => 'Loan application fee ranges', 'type' => 'json', 'group' => 'loans', 'value' => '[]',
+    ]);
+    $this->actingAs($user)->put(route('settings.update'), ['settings' => ['loan_application_fee_ranges' => $ranges]])
+        ->assertSessionHasNoErrors()->assertRedirect(route('settings.index'));
+
+    $scopeId = $companyScope ? $organization->id : null;
+    expect(SystemSetting::withoutGlobalScope('tenant')->where('organization_id', $scopeId)->where('key', 'loan_application_fee_ranges')->value('value'))->toBe($ranges);
+    $this->get(route('settings.index'))->assertSuccessful()->assertSee('fee_type')->assertSee('nearest UGX 100');
+    $invalid = json_encode([['min' => 100, 'fee_type' => 'percentage', 'fee' => 10]]);
+    $this->put(route('settings.update'), ['settings' => ['loan_application_fee_ranges' => $invalid]])
+        ->assertSessionHasErrors('settings.loan_application_fee_ranges');
+    expect(SystemSetting::withoutGlobalScope('tenant')->where('organization_id', $scopeId)->where('key', 'loan_application_fee_ranges')->value('value'))->toBe($ranges);
+})->with(['platform defaults' => false, 'company specific' => true]);
