@@ -78,6 +78,50 @@ it('rejects reused idempotency keys when the request payload changes', function 
         ->and((float) $account->refresh()->current_balance)->toBe(10000.0);
 });
 
+it('allows the authenticated owner to verify a completed operation', function () {
+    [$user] = idempotencySavingsFixture();
+    IdempotencyKey::create([
+        'key' => 'verify-0001',
+        'endpoint' => 'POST savings.accounts.deposit',
+        'user_id' => $user->id,
+        'organization_id' => $user->organization_id,
+        'request_hash' => hash('sha256', 'verify'),
+        'response_body' => ['success' => true, 'data' => ['id' => 7]],
+        'response_status' => 201,
+        'status' => 'completed',
+    ]);
+
+    $this->withToken(idempotencyTokenFor($user))
+        ->getJson('/api/v1/financial/idempotency/verify-0001')
+        ->assertOk()
+        ->assertJsonPath('data.completed', true)
+        ->assertJsonPath('data.response.data.id', 7);
+});
+
+it('does not reveal another user’s idempotency operation', function () {
+    [$owner] = idempotencySavingsFixture();
+    $other = User::factory()->create([
+        'organization_id' => $owner->organization_id,
+        'branch_id' => $owner->branch_id,
+        'role_id' => $owner->role_id,
+        'password' => Hash::make('password'),
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    IdempotencyKey::create([
+        'key' => 'verify-private-0001',
+        'endpoint' => 'POST savings.accounts.deposit',
+        'user_id' => $owner->id,
+        'organization_id' => $owner->organization_id,
+        'request_hash' => hash('sha256', 'verify-private'),
+        'status' => 'processing',
+    ]);
+
+    $this->withToken(idempotencyTokenFor($other))
+        ->getJson('/api/v1/financial/idempotency/verify-private-0001')
+        ->assertNotFound();
+});
+
 it('blocks deposits when the company savings module is disabled without moving money', function () {
     [$user, $account] = idempotencySavingsFixture(false);
 
@@ -101,7 +145,7 @@ function idempotencySavingsFixture(bool $enableSavings = true): array
     ChartAccount::create(['organization_id' => $organization->id, 'code' => '1000', 'name' => 'Cash on Hand', 'type' => 'asset', 'normal_balance' => 'debit', 'is_cash_account' => true, 'is_active' => true]);
     ChartAccount::create(['organization_id' => $organization->id, 'code' => '2100', 'name' => 'Client Savings Liability', 'type' => 'liability', 'normal_balance' => 'credit', 'is_cash_account' => false, 'is_active' => true]);
     $permission = Permission::firstOrCreate(['slug' => 'post-transactions'], ['organization_id' => $organization->id, 'name' => 'Post Transactions']);
-    $role = Role::create(['organization_id' => $organization->id, 'name' => 'Cashier', 'slug' => fake()->unique()->slug()]);
+    $role = Role::create(['organization_id' => $organization->id, 'name' => 'Cashier '.$organization->id, 'slug' => fake()->unique()->slug()]);
     $role->permissions()->sync([$permission->id]);
     $user = User::factory()->create([
         'organization_id' => $organization->id,
@@ -119,7 +163,7 @@ function idempotencySavingsFixture(bool $enableSavings = true): array
     $product = SavingsProduct::create([
         'organization_id' => $organization->id,
         'name' => 'Regular Savings',
-        'code' => 'REG',
+        'code' => 'REG'.$organization->id,
         'minimum_opening_balance' => 0,
         'minimum_balance' => 0,
         'interest_rate' => 0,

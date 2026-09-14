@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\FinancialControlController;
 use App\Http\Controllers\Api\V1\FinancialRelationshipController;
 use App\Http\Controllers\Api\V1\FixedSavingsController;
 use App\Http\Controllers\Api\V1\GroupSavingsController;
+use App\Http\Controllers\Api\V1\IdempotencyController;
 use App\Http\Controllers\Api\V1\ImpersonationController;
 use App\Http\Controllers\Api\V1\InvestmentAccountController;
 use App\Http\Controllers\Api\V1\InvestmentPlanController;
@@ -63,6 +64,7 @@ Route::middleware(['auth:sanctum', ImpersonateApiUser::class, 'tenant', 'demo.ac
     Route::get('/admin/records/{section}/{id}', [AdminWorkspaceController::class, 'show'])->whereNumber('id')->name('admin.records.show');
     Route::get('/auth/me', [AuthController::class, 'me'])->name('auth.me');
     Route::get('/auth/permissions', [AuthController::class, 'permissions'])->name('auth.permissions');
+    Route::get('/financial/idempotency/{key}', [IdempotencyController::class, 'show'])->name('financial.idempotency.show');
     Route::post('/auth/refresh', [AuthController::class, 'refresh'])->name('auth.refresh');
     Route::put('/auth/password', [AuthController::class, 'changePassword'])->name('auth.password.change');
     Route::post('/auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
