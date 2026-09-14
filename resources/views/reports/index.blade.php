@@ -67,6 +67,7 @@
                         data-report-description="{{ $report['description'] }}"
                         data-report-url="{{ route('reports.show', $report['slug']) }}"
                         data-report-dates="{{ $report['usesDates'] ? '1' : '0' }}"
+                        data-report-arrears-rate="{{ $report['slug'] === 'arrears-rate' ? '1' : '0' }}"
                         data-report-detail="{{ $report['hasDetail'] ? '1' : '0' }}"
                         data-report-profitability="{{ $report['category'] === 'Profitability' ? '1' : '0' }}"
                         data-report-interest-basis="{{ $report['payload']['interest_basis'] ?? 'collected' }}"
@@ -124,7 +125,7 @@
                     </select>
                 </label>
             @endif
-            <label class="text-sm font-medium text-slate-700">Posted by
+            <label class="text-sm font-medium text-slate-700" data-report-posted-by-field>Posted by
                 <select name="posted_by_user_id" class="mt-1 w-full rounded border-slate-300">
                     <option value="">All staff users</option>
                     @foreach($staffUsers as $staffUser)

@@ -827,6 +827,7 @@ const initReportLauncher = () => {
     const ledgerField = document.querySelector('[data-report-ledger-field]');
     const ledgerSingleField = document.querySelector('[data-report-ledger-single-field]');
     const ledgerMultipleField = document.querySelector('[data-report-ledger-multiple-field]');
+    const postedByField = document.querySelector('[data-report-posted-by-field]');
 
     if (!modal || !form) {
         return;
@@ -861,6 +862,15 @@ const initReportLauncher = () => {
                     if (input.name === 'to') {
                         input.value = button.dataset.reportTo || input.value;
                     }
+                });
+            }
+
+            if (postedByField) {
+                const isArrearsRate = button.dataset.reportArrearsRate === '1';
+                postedByField.hidden = isArrearsRate;
+                postedByField.querySelectorAll('select').forEach((select) => {
+                    select.disabled = isArrearsRate;
+                    if (isArrearsRate) select.value = '';
                 });
             }
 

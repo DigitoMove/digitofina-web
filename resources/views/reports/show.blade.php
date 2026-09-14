@@ -13,7 +13,7 @@
             {{ $definition['description'] ?? 'Generated report results.' }}
         </p>
         <p class="mt-1 text-sm text-slate-500">
-            {{ $definition['usesDates'] ? $from->format('d M Y').' to '.$to->format('d M Y') : 'Point-in-time report' }}
+            {{ $definition['slug'] === 'arrears-rate' ? 'Current portfolio position' : ($definition['usesDates'] ? $from->format('d M Y').' to '.$to->format('d M Y') : 'Point-in-time report') }}
             · {{ str($detail)->headline() }}
             @if($branchId)
                 · Branch filtered
@@ -65,8 +65,10 @@
         </div>
         @if($definition['kind'] === 'general_income_statement')
             <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:grid-cols-4">
+                @if($definition['slug'] !== 'arrears-rate')
                 <input name="from" type="date" value="{{ $from->toDateString() }}" class="rounded border-slate-300 text-sm">
                 <input name="to" type="date" value="{{ $to->toDateString() }}" class="rounded border-slate-300 text-sm">
+                @endif
                 @if($canChooseBranch)
                     <select name="branch_id" class="rounded border-slate-300 text-sm">
                         <option value="">All branches</option>
@@ -79,8 +81,10 @@
             </form>
         @elseif($definition['kind'] === 'daily_ledger_summary')
             <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-[9rem_9rem_12rem_minmax(18rem,26rem)_auto]">
+                @if($definition['slug'] !== 'arrears-rate')
                 <input name="from" type="date" value="{{ $from->toDateString() }}" class="rounded border-slate-300 text-sm">
                 <input name="to" type="date" value="{{ $to->toDateString() }}" class="rounded border-slate-300 text-sm">
+                @endif
                 @if($canChooseBranch)
                     <select name="branch_id" class="rounded border-slate-300 text-sm">
                         <option value="">All branches</option>
@@ -109,7 +113,7 @@
                             @endforeach
                         </select>
                     @endif
-                    <select name="posted_by_user_id" class="rounded border-slate-300 text-sm">
+                    <select name="posted_by_user_id" class="rounded border-slate-300 text-sm" @disabled($definition['slug'] === 'arrears-rate')>
                         <option value="">All staff users</option>
                         @foreach($staffUsers as $staffUser)
                             <option value="{{ $staffUser->id }}" @selected((int) ($postedByUserId ?? 0) === (int) $staffUser->id)>{{ $staffUser->name }}</option>
