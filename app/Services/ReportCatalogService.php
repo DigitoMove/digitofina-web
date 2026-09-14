@@ -104,6 +104,7 @@ class ReportCatalogService
         $definitions = [
             $this->report('general-income-statement', 'General Reports', 'Simplified Income Statement', 'general_income_statement', ['default_period' => 'full_month']),
             $this->report('projected-general-income-statement', 'General Reports', 'Simplified Income Statement - Projected', 'general_income_statement', ['default_period' => 'full_month', 'interest_basis' => 'projected']),
+            $this->report('arrears-rate', 'General Reports', 'Arrears Rate', 'arrears_rate', [], true),
             $this->report('all-posted-transactions', 'Posted Transactions', 'All Posted Transactions', 'transactions'),
             $this->report('user-posted-transactions', 'Posted Transactions', 'User Posted Transactions', 'transactions', ['posted_by' => 'user']),
             $this->report('system-posted-transactions', 'Posted Transactions', 'System Posted Transactions', 'transactions', ['posted_by' => 'system']),
@@ -300,6 +301,7 @@ class ReportCatalogService
             'investment_officer_performance' => $this->investmentOfficerPerformance($branchId, $user),
             'settings' => $this->settings($payload),
             'general_income_statement' => $this->generalIncomeStatement($from, $to, $branchId, $user, $interestBasis),
+            'arrears_rate' => $this->arrearsRate($branchId, $user),
             default => $this->placeholderRows($definition),
         };
 
@@ -1265,6 +1267,40 @@ class ReportCatalogService
             'Net income' => $this->money($netIncome),
             'Expense ratio' => $totalIncome > 0 ? number_format(($totalExpenses / $totalIncome) * 100, 2).'%' : '0.00%',
         ]];
+    }
+
+    private function arrearsRate(?int $branchId, User $user): array
+    {
+        $loans = Loan::query()->with(['officer', 'schedules'])->whereIn('status', Loan::LISTING_STATUSES)
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->get();
+        $rows = $loans->groupBy(fn (Loan $loan): string => $loan->officer?->name ?: 'Unassigned')->map(function ($officerLoans, string $officer): array {
+            $portfolio = 0.0;
+            $principal = 0.0;
+            $arrears = 0.0;
+            $paid = 0.0;
+            $balance = 0.0;
+            foreach ($officerLoans as $loan) {
+                $scheduledInterest = (float) $loan->schedules->sum('interest_due');
+                $portfolio += (float) ($loan->approved_amount ?: $loan->requested_amount) + $scheduledInterest;
+                $principal += (float) ($loan->approved_amount ?: $loan->requested_amount);
+                $arrears += (float) $loan->schedules->filter(fn ($schedule): bool => $schedule->due_date?->isPast() && (float) $schedule->outstanding_amount > 0)->sum('outstanding_amount');
+                $paid += (float) $loan->schedules->sum('amount_paid');
+                $balance += (float) $loan->principal_balance + (float) $loan->interest_balance;
+            }
+
+            return ['Officer' => $officer, 'Total Loan Portfolio' => $this->money($portfolio), 'Principal Given Out' => $this->money($principal), 'Amount In Arrears' => $this->money($arrears), 'Total Paid' => $this->money($paid), 'Total Balance' => $this->money($balance), 'Arrears Rate' => number_format($portfolio > 0 ? ($arrears / $portfolio) * 100 : 0, 2).'%', '_metrics' => compact('portfolio', 'principal', 'arrears', 'paid', 'balance')];
+        })->values();
+        $totals = $rows->reduce(function (array $carry, array $row): array {
+            foreach ($row['_metrics'] as $key => $value) {
+                $carry[$key] = ($carry[$key] ?? 0) + $value;
+            }
+
+return $carry;
+        }, []);
+
+        return [['Officer', 'Total Loan Portfolio', 'Principal Given Out', 'Amount In Arrears', 'Total Paid', 'Total Balance', 'Arrears Rate'], $rows, ['Officer' => 'Company / Branch Total', 'Total Loan Portfolio' => $this->money($totals['portfolio'] ?? 0), 'Principal Given Out' => $this->money($totals['principal'] ?? 0), 'Amount In Arrears' => $this->money($totals['arrears'] ?? 0), 'Total Paid' => $this->money($totals['paid'] ?? 0), 'Total Balance' => $this->money($totals['balance'] ?? 0), 'Arrears Rate' => number_format(($totals['portfolio'] ?? 0) > 0 ? (($totals['arrears'] ?? 0) / $totals['portfolio']) * 100 : 0, 2).'%', '_is_total' => true]];
     }
 
     private function generalIncomeStatement(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, string $interestBasis): array
