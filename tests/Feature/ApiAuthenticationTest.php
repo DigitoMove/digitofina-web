@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Branch;
+use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -10,12 +11,14 @@ use Illuminate\Support\Facades\Hash;
 uses(RefreshDatabase::class);
 
 it('issues a sanctum token and returns the authenticated user profile', function () {
-    $branch = Branch::create(['code' => '1001', 'name' => 'Luweero', 'is_active' => true, 'status' => 'active']);
+    $organization = Organization::create(['name' => 'Authentication SACCO', 'slug' => 'authentication-sacco']);
+    $branch = Branch::create(['organization_id' => $organization->id, 'code' => '1001', 'name' => 'Luweero', 'is_active' => true, 'status' => 'active']);
     $permission = Permission::create(['name' => 'Manage Clients', 'slug' => 'manage-clients']);
     $role = Role::create(['name' => 'Officer', 'slug' => 'officer']);
     $role->permissions()->sync([$permission->id]);
 
     $user = User::factory()->create([
+        'organization_id' => $organization->id,
         'branch_id' => $branch->id,
         'role_id' => $role->id,
         'email' => 'api@digitofina.test',
@@ -52,4 +55,22 @@ it('returns standardized validation errors for api requests', function () {
             'message',
             'errors' => ['login', 'password'],
         ]);
+});
+
+it('rejects staff login without an organization and does not issue a token', function () {
+    $role = Role::create(['name' => 'Officer', 'slug' => 'officer']);
+    $user = User::factory()->create([
+        'organization_id' => null,
+        'branch_id' => null,
+        'role_id' => $role->id,
+        'password' => Hash::make('password'),
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+
+    $this->postJson('/api/v1/auth/login', ['login' => $user->email, 'password' => 'password'])
+        ->assertForbidden()
+        ->assertJsonPath('success', false);
+
+    expect($user->tokens()->count())->toBe(0);
 });

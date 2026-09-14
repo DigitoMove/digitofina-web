@@ -2,10 +2,12 @@
 
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\Module;
 use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\ModuleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 
@@ -65,7 +67,10 @@ it('returns mobile friendly paginated and syncable list responses', function () 
 });
 
 it('registers and revokes push notification device tokens', function () {
-    [, $token] = mobileApiUser(['manage-clients']);
+    [$user, $token] = mobileApiUser(['manage-clients']);
+    $modules = app(ModuleService::class);
+    $modules->syncDefaults($user->organization);
+    $modules->enable($user->organization, Module::where('slug', 'sms')->firstOrFail(), $user);
 
     $deviceId = $this->withToken($token)
         ->postJson('/api/v1/notifications/devices', [

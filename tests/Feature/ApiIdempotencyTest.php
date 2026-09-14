@@ -4,6 +4,7 @@ use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\Client;
 use App\Models\IdempotencyKey;
+use App\Models\Module;
 use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
@@ -11,6 +12,7 @@ use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
 use App\Models\SavingsTransaction;
 use App\Models\User;
+use App\Services\ModuleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 
@@ -79,7 +81,7 @@ it('rejects reused idempotency keys when the request payload changes', function 
 /**
  * @return array{0: User, 1: SavingsAccount}
  */
-function idempotencySavingsFixture(): array
+function idempotencySavingsFixture(bool $enableSavings = true): array
 {
     $organization = Organization::create(['name' => 'Idempotency SACCO', 'slug' => fake()->unique()->slug()]);
     $branch = Branch::create(['organization_id' => $organization->id, 'code' => fake()->unique()->numerify('####'), 'name' => 'Main', 'is_active' => true, 'status' => 'active']);
@@ -96,6 +98,11 @@ function idempotencySavingsFixture(): array
         'status' => 'active',
         'is_active' => true,
     ]);
+    $modules = app(ModuleService::class);
+    $modules->syncDefaults($organization);
+    if ($enableSavings) {
+        $modules->enable($organization, Module::where('slug', 'savings')->firstOrFail(), $user);
+    }
     $product = SavingsProduct::create([
         'organization_id' => $organization->id,
         'name' => 'Regular Savings',
