@@ -1276,7 +1276,7 @@ class ReportCatalogService
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
             ->get();
-        $rows = $loans->groupBy(fn (Loan $loan): string => $loan->officer?->name ?: 'Unassigned')->map(function ($officerLoans, string $officer): array {
+        $rows = $loans->groupBy(fn (Loan $loan): string => $loan->officer?->name ?: 'Unassigned')->map(function ($officerLoans, string $officer) use ($to): array {
             $portfolio = 0.0;
             $principal = 0.0;
             $arrears = 0.0;
