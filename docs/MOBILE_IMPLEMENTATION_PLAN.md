@@ -199,4 +199,4 @@ Exit: every parity item is verified complete or has an explicitly agreed scope e
 
 ## Immediate next work session
 
-Continue P2-C: recover ambiguous responses by verification, prevent changed-payload reuse, and cover every mobile financial mutation. Header promotion and secure pending-operation persistence are complete. P2-D retains static OpenAPI regeneration and upload/download/export contract work.
+Continue P2-C: bind verification to the exact original request before integrating it into mobile recovery, and cover every mobile financial mutation. Mobile pending requests now reject changed payloads, destinations, keys, companies, impersonation targets, and login sessions; unchanged retries survive an app restart. Legacy pending records without context remain stored but cannot be automatically retried. Recovery after signing out still requires a reconciliation flow. Header promotion and secure pending-operation persistence are implemented. P2-D retains static OpenAPI regeneration and upload/download/export contract work.

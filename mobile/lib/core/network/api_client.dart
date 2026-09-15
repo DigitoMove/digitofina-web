@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -69,6 +70,7 @@ class ApiClient {
     _organizationId = null;
     _hasExplicitScope = false;
     await _storage.delete(key: 'access_token');
+    await _storage.delete(key: 'financial_session');
   }
 
   Future<Map<String, dynamic>> get(String path, {Map<String, String>? query}) =>
@@ -94,8 +96,27 @@ class ApiClient {
     Map<String, String>? query,
     required Map<String, dynamic> body,
   }) async {
+    final revision = _contextRevision;
+    final context = await _financialContext();
     final operations = await pendingFinancialOperations();
     final key = body['idempotency_key']?.toString() ?? operationId;
+    if (operationId.isEmpty || key.isEmpty) {
+      throw const ApiException('A financial operation requires a unique key.');
+    }
+    for (final existing in operations) {
+      if (existing['id'] == operationId || existing['idempotency_key'] == key) {
+        if (existing['context'] != context ||
+            existing['method'] != method ||
+            existing['path'] != path ||
+            existing['idempotency_key'] != key ||
+            _canonicalJson(existing['query']) != _canonicalJson(query ?? {}) ||
+            _canonicalJson(existing['body']) != _canonicalJson(body)) {
+          throw const ApiException(
+            'This pending transaction belongs to a different workspace or has changed. Recover the original transaction before starting another.',
+          );
+        }
+      }
+    }
     final record = <String, dynamic>{
       'id': operationId,
       'method': method,
@@ -103,6 +124,7 @@ class ApiClient {
       'query': query ?? <String, String>{},
       'body': body,
       'idempotency_key': key,
+      'context': context,
       'created_at': DateTime.now().toUtc().toIso8601String(),
     };
     operations.removeWhere((item) => item['id'] == operationId);
@@ -111,6 +133,9 @@ class ApiClient {
       key: 'pending_financial_operations',
       value: jsonEncode(operations),
     );
+    if (revision != _contextRevision) {
+      throw const ApiException('Your workspace changed. Reload to continue.');
+    }
     try {
       final response = await request(
         method,
@@ -124,6 +149,36 @@ class ApiClient {
     } catch (_) {
       rethrow;
     }
+  }
+
+  String _canonicalJson(dynamic value) {
+    if (value is Map) {
+      final keys = value.keys.map((key) => key.toString()).toList()..sort();
+      return '{${keys.map((key) => '${jsonEncode(key)}:${_canonicalJson(value[key])}').join(',')}}';
+    }
+    if (value is List) {
+      return '[${value.map(_canonicalJson).join(',')}]';
+    }
+    return jsonEncode(value);
+  }
+
+  Future<String> _financialContext() async {
+    if (!await hasSession()) {
+      throw const ApiException('Sign in before recovering a transaction.');
+    }
+    var session = await _storage.read(key: 'financial_session');
+    if (session == null) {
+      final random = Random.secure();
+      session = base64UrlEncode(List.generate(32, (_) => random.nextInt(256)));
+      await _storage.write(key: 'financial_session', value: session);
+    }
+    return jsonEncode([
+      config.baseUrl,
+      session,
+      _hasExplicitScope,
+      _organizationId,
+      impersonatedUser.value?['id'],
+    ]);
   }
 
   Future<Map<String, dynamic>> retryPendingFinancial(String operationId) async {

@@ -167,6 +167,48 @@ void main() {
     expect(await client.pendingFinancialOperations(), isEmpty);
   });
 
+  test('pending transactions reject changed amounts and workspace changes', () async {
+    FlutterSecureStorage.setMockInitialValues({'access_token': 'admin'});
+    var posts = 0;
+    final client = ApiClient(config: config, transport: MockClient((request) async {
+      if (request.method == 'GET') return success({'id': 1});
+      posts++;
+      return http.Response(jsonEncode({'message': 'Unavailable'}), 503);
+    }));
+    await expectLater(client.requestFinancial('POST', 'cashier/transactions',
+      operationId: 'pending-1', body: {'amount': 1000}), throwsA(isA<ApiException>()));
+    await expectLater(client.requestFinancial('POST', 'cashier/transactions',
+      operationId: 'pending-1', body: {'amount': 2000}), throwsA(isA<ApiException>()));
+    expect((await client.pendingFinancialOperations()).single['body']['amount'], 1000);
+    await client.selectOrganization(20);
+    await expectLater(client.retryPendingFinancial('pending-1'), throwsA(isA<ApiException>()));
+    expect(posts, 1);
+  });
+
+  test('pending recovery survives restart but rejects a different login session', () async {
+    FlutterSecureStorage.setMockInitialValues({'access_token': 'admin'});
+    final failing = ApiClient(config: config, transport: MockClient((_) async =>
+      http.Response(jsonEncode({'message': 'Unavailable'}), 503)));
+    await expectLater(failing.requestFinancial('POST', 'cashier/transactions',
+      operationId: 'restart-1', body: {'amount': 1000}), throwsA(isA<ApiException>()));
+    var posts = 0;
+    final restarted = ApiClient(config: config, transport: MockClient((request) async {
+      posts++;
+      expect(request.headers['Idempotency-Key'], 'restart-1');
+      return success({'accepted': true});
+    }));
+    await restarted.retryPendingFinancial('restart-1');
+    expect(posts, 1);
+    expect(await restarted.pendingFinancialOperations(), isEmpty);
+
+    await expectLater(failing.requestFinancial('POST', 'cashier/transactions',
+      operationId: 'restart-2', body: {'amount': 1000}), throwsA(isA<ApiException>()));
+    await restarted.clearSession();
+    await const FlutterSecureStorage().write(key: 'access_token', value: 'other');
+    await expectLater(restarted.retryPendingFinancial('restart-2'), throwsA(isA<ApiException>()));
+    expect(posts, 1);
+  });
+
   test('a denied profile after login does not leave a stored session', () async {
     FlutterSecureStorage.setMockInitialValues({});
     final client = ApiClient(config: config, transport: MockClient((request) async {
