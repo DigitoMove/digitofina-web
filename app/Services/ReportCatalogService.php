@@ -246,6 +246,12 @@ class ReportCatalogService
             : Carbon::parse('2999-12-31')->endOfDay();
         $detail = (string) ($filters['detail'] ?? 'detailed');
         $branchId = isset($filters['branch_id']) && $filters['branch_id'] !== '' ? (int) $filters['branch_id'] : null;
+        if ($branchId !== null) {
+            abort_unless(ApiSecurity::scopeTenant(Branch::query(), $user)
+                ->where('organization_id', $this->reportOrganizationId($user))
+                ->whereKey($branchId)->exists(), 403, 'You cannot access reports for this branch.');
+        }
+        $branchId = $this->effectiveBranchId($branchId, $user);
         $chartAccountId = isset($filters['chart_account_id']) && $filters['chart_account_id'] !== '' ? (int) $filters['chart_account_id'] : null;
         $chartAccountIds = collect($filters['chart_account_ids'] ?? [])
             ->map(fn (mixed $id): int => (int) $id)
@@ -1605,6 +1611,7 @@ class ReportCatalogService
 
         return LoanDisbursement::query()
             ->withoutGlobalScope('tenant')
+            ->where(fn (Builder $query): Builder => $query->where('organization_id', $organizationId)->orWhereNull('organization_id'))
             ->whereHas('branch', fn (Builder $query): Builder => $query
                 ->withoutGlobalScope('tenant')
                 ->where('organization_id', $organizationId))
@@ -1630,6 +1637,7 @@ class ReportCatalogService
 
         return Transaction::query()
             ->withoutGlobalScope('tenant')
+            ->where(fn (Builder $query): Builder => $query->where('organization_id', $organizationId)->orWhereNull('organization_id'))
             ->whereHas('branch', fn (Builder $query): Builder => $query
                 ->withoutGlobalScope('tenant')
                 ->where('organization_id', $organizationId))
@@ -2720,7 +2728,9 @@ class ReportCatalogService
 
     private function reportOrganizationId(User $user): int
     {
-        $organizationId = $this->tenant->id() ?: $user->organization_id;
+        $organizationId = $user->hasGlobalOrganizationAccess()
+            ? ($this->tenant->id() ?: $user->organization_id)
+            : $user->organization_id;
 
         abort_unless($organizationId, 422, 'Select an active organization before generating a report.');
 

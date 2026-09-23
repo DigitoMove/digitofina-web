@@ -17,6 +17,7 @@ use App\Models\SavingsTransaction;
 use App\Models\SuspiciousTransactionAlert;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Support\ApiSecurity;
 use App\Support\CurrencyDenomination;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -155,6 +156,8 @@ class FinancialControlService
 
     public function approveMakerChecker(MakerCheckerRequest $request, User $checker, ?string $comments = null): MakerCheckerRequest
     {
+        ApiSecurity::assertTenantAccess($checker, $request);
+
         return DB::transaction(function () use ($request, $checker, $comments): MakerCheckerRequest {
             $request = MakerCheckerRequest::query()->whereKey($request->id)->lockForUpdate()->firstOrFail();
 
@@ -190,6 +193,8 @@ class FinancialControlService
 
     public function rejectMakerChecker(MakerCheckerRequest $request, User $checker, string $comments): MakerCheckerRequest
     {
+        ApiSecurity::assertTenantAccess($checker, $request);
+
         if ($request->status !== 'pending') {
             throw new InvalidArgumentException('Only pending maker-checker requests can be rejected.');
         }

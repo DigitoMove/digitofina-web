@@ -34,6 +34,9 @@ class EnsureIdempotentFinancialRequest
                 ->first();
 
             if (! $record) {
+                if ($request->header('Idempotency-Verify-Only') === 'true') {
+                    return ApiResponse::error('No matching financial operation exists.', ['verification' => ['not_found']], 404);
+                }
                 $record = IdempotencyKey::create([
                     'key' => $key,
                     'endpoint' => $endpoint,
@@ -55,6 +58,10 @@ class EnsureIdempotentFinancialRequest
                 return response()->json($record->response_body, $record->response_status ?? 200)
                     ->header('Idempotency-Key', $record->key)
                     ->header('Idempotency-Replayed', 'true');
+            }
+
+            if ($request->header('Idempotency-Verify-Only') === 'true') {
+                return ApiResponse::error('The financial operation has not completed. Please verify again later.', [], 409);
             }
 
             $response = $next($request);

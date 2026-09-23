@@ -45,7 +45,7 @@ class ResolveTenant
                     ? Organization::query()->find($request->session()->get('super_admin_organization_id'))
                     : null;
 
-                $this->tenant->set($selectedOrganization ?: $organization, (bool) $selectedOrganization);
+                $this->tenant->set($selectedOrganization ?: $organization, (bool) ($selectedOrganization ?: $organization));
 
                 return $next($request);
             }

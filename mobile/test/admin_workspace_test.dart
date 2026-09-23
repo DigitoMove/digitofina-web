@@ -209,6 +209,26 @@ void main() {
     expect(posts, 1);
   });
 
+  test('recovery verifies first and reposts only when the exact operation is absent', () async {
+    FlutterSecureStorage.setMockInitialValues({'access_token': 'admin'});
+    final attempts = <String?>[];
+    final client = ApiClient(config: config, transport: MockClient((request) async {
+      attempts.add(request.headers['Idempotency-Verify-Only']);
+      expect(request.headers['Idempotency-Key'], 'verify-retry');
+      if (attempts.length == 1) return http.Response('{"message":"Unavailable"}', 503);
+      if (request.headers['Idempotency-Verify-Only'] == 'true') {
+        return http.Response('{"errors":{"verification":["not_found"]}}', 404);
+      }
+      return success({'id': 9});
+    }));
+    await expectLater(client.requestFinancial('POST', 'cashier/transactions',
+      operationId: 'verify-retry', body: {'amount': 1000}), throwsA(isA<ApiException>()));
+    final recovered = await client.retryPendingFinancial('verify-retry');
+    expect(recovered['data']['id'], 9);
+    expect(attempts, [null, 'true', null]);
+    expect(await client.pendingFinancialOperations(), isEmpty);
+  });
+
   test('a denied profile after login does not leave a stored session', () async {
     FlutterSecureStorage.setMockInitialValues({});
     final client = ApiClient(config: config, transport: MockClient((request) async {

@@ -289,6 +289,10 @@ class ReportController extends Controller
 
         abort_unless($organizationId, 422, 'Select an active organization before generating a report.');
 
+        if ($request->user()->hasGlobalOrganizationAccess() && app(TenantContext::class)->id() === null) {
+            app(TenantContext::class)->set($request->user()->organization, true);
+        }
+
         return (int) $organizationId;
     }
 }

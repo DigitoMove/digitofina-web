@@ -28,9 +28,9 @@ class ReportController extends Controller
         return view('reports.index', [
             'groups' => $reports->grouped($request->user()),
             'priorityReports' => $reports->priorityReports($request->user()),
-            'branches' => Branch::query()->where('organization_id', $organizationId)->orderBy('name')->get(),
+            'branches' => ApiSecurity::scopeTenant(Branch::query(), $request->user())->where('organization_id', $organizationId)->orderBy('name')->get(),
             'organization' => Organization::query()->find($organizationId),
-            'staffUsers' => User::query()->where('organization_id', $organizationId)->where('status', 'active')->where('is_active', true)->whereHas('role', fn (Builder $query): Builder => $query->where('slug', '!=', 'member'))->with('role')->orderBy('name')->get(),
+            'staffUsers' => ApiSecurity::scopeTenant(User::query(), $request->user())->where('organization_id', $organizationId)->where('status', 'active')->where('is_active', true)->whereHas('role', fn (Builder $query): Builder => $query->where('slug', '!=', 'member'))->with('role')->orderBy('name')->get(),
             'chartAccounts' => $this->ledgerAccountOptions($request, $organizationId),
             'canChooseBranch' => ApiSecurity::hasGlobalBranchAccess($request->user()),
             'currencies' => CurrencyRegistry::all(),
@@ -74,9 +74,9 @@ class ReportController extends Controller
         }
 
         return view('reports.show', $reports->generate($report, $data, $request->user()) + [
-            'branches' => Branch::query()->where('organization_id', $organizationId)->orderBy('name')->get(),
+            'branches' => ApiSecurity::scopeTenant(Branch::query(), $request->user())->where('organization_id', $organizationId)->orderBy('name')->get(),
             'organization' => Organization::query()->find($organizationId),
-            'staffUsers' => User::query()->where('organization_id', $organizationId)->where('status', 'active')->where('is_active', true)->whereHas('role', fn (Builder $query): Builder => $query->where('slug', '!=', 'member'))->with('role')->orderBy('name')->get(),
+            'staffUsers' => ApiSecurity::scopeTenant(User::query(), $request->user())->where('organization_id', $organizationId)->where('status', 'active')->where('is_active', true)->whereHas('role', fn (Builder $query): Builder => $query->where('slug', '!=', 'member'))->with('role')->orderBy('name')->get(),
             'chartAccounts' => $this->ledgerAccountOptions($request, $organizationId),
             'canChooseBranch' => ApiSecurity::hasGlobalBranchAccess($request->user()),
             'currencies' => CurrencyRegistry::all(),

@@ -269,3 +269,46 @@ function reportTenantLedgerEntry(Organization $organization, Branch $branch, str
         'posted_at' => now(),
     ]);
 }
+
+it('keeps every report row and total unchanged when inaccessible organizations and branches gain activity', function (string $roleSlug) {
+    [$organization, $branch, $user] = reportTenantFixture('Boundary Report Organization', 'BOUNDARY', 2000, 100, 150, 350, 60);
+    if ($roleSlug === 'branch-manager') {
+        $role = Role::firstOrCreate(['slug' => $roleSlug], ['name' => 'Branch Manager']);
+        $role->permissions()->syncWithoutDetaching(Permission::where('slug', 'view-reports')->pluck('id'));
+        $user->update(['role_id' => $role->id, 'branch_id' => $branch->id]);
+        $user->unsetRelation('role');
+    }
+    $this->actingAs($user);
+    $reports = app(ReportCatalogService::class);
+    $filters = ['from' => today()->toDateString(), 'to' => today()->toDateString()];
+    $snapshots = [];
+    foreach ($reports->definitions($user) as $definition) {
+        $report = $reports->generate($definition['slug'], $filters, $user);
+        $snapshots[$definition['slug']] = [$report['rows']->all(), $report['summary']];
+    }
+
+    auth()->forgetGuards();
+    app(TenantContext::class)->clear();
+    [$otherOrganization] = reportTenantFixture('Inaccessible Report Organization', 'INACCESSIBLE', 9_000_000, 500_000, 400_000, 600_000, 300_000);
+    if ($roleSlug === 'branch-manager') {
+        foreach ([Branch::class, User::class, Client::class, LoanProduct::class, Loan::class, LoanDisbursement::class, LoanRepayment::class, ChartAccount::class, JournalEntry::class] as $model) {
+            $model::withoutGlobalScopes()->where('organization_id', $otherOrganization->id)->update(['organization_id' => $organization->id]);
+        }
+    }
+    $this->actingAs($user);
+    foreach ($snapshots as $slug => $snapshot) {
+        $report = $reports->generate($slug, $filters, $user);
+        expect([$report['rows']->all(), $report['summary']], "Report [{$slug}] changed after inaccessible activity.")->toBe($snapshot);
+    }
+})->with(['organization-admin', 'branch-manager']);
+
+it('scopes loan disbursement reversals even when a foreign record references an accessible branch', function () {
+    [$organization, $branch, $admin, $ownLoan] = reportTenantFixture('Reversal Organization', 'OWNREV', 2000, 100, 150, 350, 60);
+    [, , , $foreignLoan] = reportTenantFixture('Foreign Reversal Organization', 'FOREIGNREV', 9_000_000, 500_000, 400_000, 600_000, 300_000);
+    LoanDisbursement::query()->update(['status' => 'reversed']);
+    LoanDisbursement::where('loan_id', $foreignLoan->id)->update(['branch_id' => $branch->id]);
+    $this->actingAs($admin);
+    $report = app(ReportCatalogService::class)->generate('loan-disbursement-reversals', [], $admin);
+    expect($report['rows']->pluck('Loan')->all())->toBe([$ownLoan->loan_number])
+        ->and($report['summary']['Gross principal disbursed'])->toBe('UGX 2,000.00');
+});

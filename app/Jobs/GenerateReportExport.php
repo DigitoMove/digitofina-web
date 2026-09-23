@@ -105,6 +105,7 @@ class GenerateReportExport implements ShouldQueue
             'arrears', 'arrears_report' => $this->arrearsLoanRows($export),
             'branch_performance' => Branch::query()
                 ->where('organization_id', $export->organization_id)
+                ->when($export->branch_id, fn ($query, int $branchId) => $query->whereKey($branchId))
                 ->withCount('clients')
                 ->withSum('savingsAccounts', 'current_balance')
                 ->get()

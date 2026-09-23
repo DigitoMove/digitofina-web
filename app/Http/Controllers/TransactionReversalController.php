@@ -23,7 +23,7 @@ class TransactionReversalController extends Controller
             : 'pending';
         $search = $request->string('search')->trim()->toString();
 
-        $requests = MakerCheckerRequest::query()
+        $requests = ApiSecurity::scopeTenant(MakerCheckerRequest::query(), $request->user())
             ->with(['requestedBy', 'checkedBy', 'branch', 'subject.account.client', 'subject.type'])
             ->where('action', 'transaction_reversal')
             ->where('status', $status)
@@ -139,7 +139,7 @@ class TransactionReversalController extends Controller
     {
         $user = $request->user();
 
-        if ($user->isLoanOfficer() || $user->isLoanRecoveryOfficer()) {
+        if (! ApiSecurity::canAccessTenant($user, $transaction) || $user->isLoanOfficer() || $user->isLoanRecoveryOfficer()) {
             return false;
         }
 
@@ -163,13 +163,12 @@ class TransactionReversalController extends Controller
     {
         $user = $request->user();
 
-        if (! $this->canApproveReversals($request)) {
+        if (! ApiSecurity::canAccessTenant($user, $makerCheckerRequest) || ! $this->canApproveReversals($request)) {
             return false;
         }
 
         return (int) $makerCheckerRequest->branch_id === (int) $user->branch_id
-            || ApiSecurity::hasGlobalBranchAccess($user)
-            || $user->canPerform('override-maker-checker');
+            || ApiSecurity::hasGlobalBranchAccess($user);
     }
 
     private function canApproveReversals(Request $request): bool

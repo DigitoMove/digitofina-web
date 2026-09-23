@@ -53,6 +53,22 @@ it('replays deposits submitted with the same idempotency key without duplicating
         ->status->toBe('completed');
 });
 
+it('verifies the exact original request without creating another movement', function () {
+    [$user, $account] = idempotencySavingsFixture();
+    $this->withToken(idempotencyTokenFor($user))->withHeader('Idempotency-Key', 'verify-exact');
+    $path = "/api/v1/savings/accounts/{$account->id}/deposit";
+    $body = ['amount' => 10000, 'payment_method' => 'cash'];
+    $this->withHeader('Idempotency-Verify-Only', 'true')->postJson($path, $body)->assertNotFound();
+    expect(IdempotencyKey::count())->toBe(0);
+    expect(SavingsTransaction::count())->toBe(0);
+    $original = $this->withHeader('Idempotency-Verify-Only', 'false')->postJson($path, $body)->assertCreated()->json();
+    $this->withHeader('Idempotency-Verify-Only', 'true')->postJson($path, $body)
+        ->assertCreated()->assertHeader('Idempotency-Replayed', 'true')->assertExactJson($original);
+    $this->postJson($path, ['amount' => 20000, 'payment_method' => 'cash'])->assertConflict();
+    expect(SavingsTransaction::count())->toBe(1);
+    expect((float) $account->fresh()->current_balance)->toBe(10000.0);
+});
+
 it('rejects reused idempotency keys when the request payload changes', function () {
     [$user, $account] = idempotencySavingsFixture();
     $token = idempotencyTokenFor($user);

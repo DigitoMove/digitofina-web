@@ -193,6 +193,27 @@ class ApiClient {
     if (record == null) {
       throw const ApiException('The pending financial operation was not found.');
     }
+    final revision = _contextRevision;
+    if (record['context'] != await _financialContext() || revision != _contextRevision) {
+      throw const ApiException('Return to the original workspace to recover this transaction.');
+    }
+    try {
+      final verified = await request(
+        record['method'].toString(),
+        record['path'].toString(),
+        query: Map<String, String>.from(record['query'] as Map? ?? {}),
+        body: Map<String, dynamic>.from(record['body'] as Map),
+        idempotencyKey: record['idempotency_key'].toString(),
+        verifyFinancialOnly: true,
+      );
+      await _removePendingFinancialOperation(operationId);
+      return verified;
+    } on ApiException catch (error) {
+      if (error.status != 404 || error.message != 'not_found') rethrow;
+    }
+    if (revision != _contextRevision) {
+      throw const ApiException('Your workspace changed. Reload to continue.');
+    }
     return requestFinancial(
       record['method'].toString(),
       record['path'].toString(),
@@ -221,6 +242,7 @@ class ApiClient {
     Map<String, String>? query,
     Map<String, dynamic>? body,
     String? idempotencyKey,
+    bool verifyFinancialOnly = false,
   }) async {
     final revision = _contextRevision;
     final base = config.baseUrl.replaceAll(RegExp(r'/+$'), '');
@@ -235,6 +257,7 @@ class ApiClient {
       ..headers.addAll({
         'Accept': 'application/json',
         'Content-Type': 'application/json',
+        if (verifyFinancialOnly) 'Idempotency-Verify-Only': 'true',
         if (target != null) 'X-Impersonate-User': target['id'].toString(),
         if (target == null && _hasExplicitScope)
           'X-Organization-Id': _organizationId?.toString() ?? 'global',
