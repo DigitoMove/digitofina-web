@@ -27,10 +27,17 @@ class GenerateStatement implements ShouldQueue
 
     public function handle(): void
     {
-        $export = ReportExport::query()->findOrFail($this->reportExport->id);
+        $export = ReportExport::query()->withoutGlobalScope('tenant')
+            ->whereKey($this->reportExport->id)
+            ->where('organization_id', $this->reportExport->organization_id)
+            ->firstOrFail();
         $account = SavingsAccount::query()
+            ->withoutGlobalScope('tenant')
             ->with(['branch', 'client', 'organization'])
-            ->findOrFail($this->savingsAccountId);
+            ->whereKey($this->savingsAccountId)
+            ->where('organization_id', $export->organization_id)
+            ->when($export->branch_id, fn ($query, int $branchId) => $query->where('branch_id', $branchId))
+            ->firstOrFail();
         $filters = $export->filters ?? [];
         abort_unless($account->organization_id === $export->organization_id && (! $export->branch_id || $account->branch_id === $export->branch_id), 403);
 

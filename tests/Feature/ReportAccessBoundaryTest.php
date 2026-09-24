@@ -145,6 +145,30 @@ it('keeps queued branch performance exports scoped without a logged in user', fu
         ->not->toContain('Sibling branch')->not->toContain('Foreign branch');
 });
 
+it('only allows the owning tenant and branch to download completed exports', function () {
+    Storage::fake('local');
+    $siblingStaff = boundaryUser($this->organization, $this->siblingBranch, 'branch-manager');
+    $export = ReportExport::create([
+        'organization_id' => $this->organization->id,
+        'branch_id' => $this->branch->id,
+        'requested_by' => $this->staff->id,
+        'report_type' => 'clients',
+        'format' => 'csv',
+        'status' => 'completed',
+        'path' => 'reports/exports/owned.csv',
+    ]);
+    Storage::disk('local')->put($export->path, "client_number\nOWN-001\n");
+
+    $this->actingAs($this->staff)
+        ->getJson('/api/v1/reports/exports/'.$export->id.'/download?signature=invalid')
+        ->assertForbidden();
+
+    $url = URL::temporarySignedRoute('api.v1.reports.exports.download', now()->addMinutes(10), ['reportExport' => $export->id]);
+    $this->actingAs($this->staff)->get($url)->assertSuccessful()->assertDownload('owned.csv');
+
+    $this->actingAs($siblingStaff)->get($url)->assertStatus(404);
+});
+
 function boundaryUser(?Organization $organization, ?Branch $branch, string $roleSlug): User
 {
     $role = Role::firstOrCreate(['slug' => $roleSlug], ['name' => $roleSlug]);

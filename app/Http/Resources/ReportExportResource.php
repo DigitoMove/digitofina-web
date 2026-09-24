@@ -20,7 +20,9 @@ class ReportExportResource extends JsonResource
             'format' => $this->format,
             'filters' => $this->filters,
             'status' => $this->status,
-            'file_path' => $this->path,
+            'download_url' => $this->status === 'completed' && $this->path
+                ? \URL::temporarySignedRoute('api.v1.reports.exports.download', now()->addMinutes(10), ['reportExport' => $this->id])
+                : null,
             'completed_at' => $this->completed_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
         ];

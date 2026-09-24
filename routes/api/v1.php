@@ -175,6 +175,7 @@ Route::middleware(['auth:sanctum', ImpersonateApiUser::class, 'tenant', 'demo.ac
     Route::get('/reports/investments', [ReportController::class, 'investments'])->name('reports.investments');
     Route::get('/reports/savings-analytics', [ReportController::class, 'savingsAnalytics'])->name('reports.savings-analytics');
     Route::post('/reports/exports', [ReportController::class, 'export'])->middleware('throttle:api-sensitive')->name('reports.exports.store');
+    Route::get('/reports/exports/{reportExport}/download', [ReportController::class, 'downloadExport'])->middleware('signed')->name('reports.exports.download');
 
     Route::get('/settings', [SettingController::class, 'index'])->name('settings.index');
     Route::put('/settings', [SettingController::class, 'update'])->middleware('throttle:api-sensitive')->name('settings.update');

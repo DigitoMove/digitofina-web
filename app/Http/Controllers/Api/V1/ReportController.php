@@ -30,6 +30,8 @@ use App\Support\ApiResponse;
 use App\Support\ApiSecurity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReportController extends Controller
 {
@@ -261,6 +263,17 @@ class ReportController extends Controller
         GenerateReportExport::dispatch($export)->afterCommit();
 
         return ApiResponse::resource(new ReportExportResource($export), 'Report export queued.', 202);
+    }
+
+    public function downloadExport(Request $request, ReportExport $reportExport): StreamedResponse
+    {
+        ApiSecurity::assertTenantAccess($request->user(), $reportExport);
+        abort_unless($reportExport->status === 'completed' && filled($reportExport->path), 404, 'This export is not ready.');
+
+        $disk = Storage::disk($reportExport->disk ?? 'local');
+        abort_unless($disk->exists($reportExport->path), 404, 'The export file is no longer available.');
+
+        return $disk->download($reportExport->path, basename($reportExport->path));
     }
 
     private function moduleEnabled(Request $request, string $module): bool

@@ -29,7 +29,10 @@ class GenerateReportExport implements ShouldQueue
 
     public function handle(): void
     {
-        $export = ReportExport::query()->findOrFail($this->reportExport->id);
+        $export = ReportExport::query()->withoutGlobalScope('tenant')
+            ->whereKey($this->reportExport->id)
+            ->where('organization_id', $this->reportExport->organization_id)
+            ->firstOrFail();
 
         if ($export->status === 'completed') {
             return;
