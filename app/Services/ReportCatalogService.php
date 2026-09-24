@@ -156,7 +156,10 @@ class ReportCatalogService
             $this->report('loans-application-by-date', 'Loan Application', 'Loans Application By Date', 'loans', ['date_column' => 'application_date']),
             $this->report('appraisal-loan-applications', 'Loan Application', 'Appraisal Loan Applications', 'loans', ['status' => 'under_review']),
             $this->report('approval-loan-applications', 'Loan Application', 'Approval Loan Applications', 'loans', ['status' => 'submitted']),
-            $this->report('approved-loan-applications', 'Loan Application', 'Approved Loan Applications', 'loans', ['status' => 'approved']),
+            $this->report('approved-loan-applications', 'Loan Application', 'Approved Loan Applications', 'loans', [
+                'status_in' => ['approved', 'disbursed', 'active', 'in_arrears', 'restructured', 'fully_paid', 'closed'],
+                'date_column' => 'approved_at',
+            ]),
             $this->report('cancelled-loan-applications', 'Loan Application', 'Cancelled Loan Applications', 'loans', ['status' => 'cancelled']),
             $this->report('rejected-loan-applications', 'Loan Application', 'Rejected Loan Applications', 'loans', ['status' => 'rejected']),
             $this->report('created-loan-accounts', 'Loan Accounts', 'Created Loan Accounts', 'accounts', ['category' => 'loan']),

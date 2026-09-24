@@ -54,6 +54,19 @@ it('isolates every profitability source to the active organization', function ()
         ->and($branches['rows']->pluck('Branch'))->not->toContain('OTHER Branch');
 });
 
+it('includes approved loans after they move beyond the approved status', function () {
+    [, , $admin, $loan] = reportTenantFixture('Approved Loan Organization', 'APPROVED', 1000, 50, 120, 200, 40);
+    $loan->update(['approved_at' => today(), 'status' => 'active']);
+
+    $report = app(ReportCatalogService::class)->generate('approved-loan-applications', [
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+    ], $admin);
+
+    expect($report['rows']->map(fn (array $row): string => $row['Loan No.'])->all())->toBe([$loan->loan_number])
+        ->and($report['summary']['Loans'])->toBe('1');
+});
+
 it('uses the selected organization when a super admin generates reports', function () {
     [$organizationA, , , $loanA] = reportTenantFixture('Selected Organization', 'SELECTED', 1500, 75, 100, 250, 25);
     [, , , $loanB] = reportTenantFixture('Unselected Organization', 'UNSELECTED', 8_000_000, 300_000, 200_000, 700_000, 400_000);
