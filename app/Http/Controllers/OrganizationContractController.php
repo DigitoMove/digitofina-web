@@ -92,6 +92,34 @@ class OrganizationContractController extends Controller
         return view('contracts.show', compact('organization', 'contract'));
     }
 
+    public function edit(Request $request, Organization $organization, OrganizationContract $contract): View
+    {
+        $this->authorizeSuperAdmin($request);
+        abort_unless($contract->organization_id === $organization->id, 404);
+
+        return view('contracts.form', [
+            'organization' => $organization,
+            'contract' => $contract,
+            'modules' => Module::query()->orderBy('name')->get(['slug', 'name']),
+            'selectedModules' => collect(explode(',', (string) $contract->included_modules))->map(fn (string $module): string => trim($module))->filter()->values()->all(),
+            'organizationModuleMap' => [],
+        ]);
+    }
+
+    public function update(Request $request, Organization $organization, OrganizationContract $contract): RedirectResponse
+    {
+        $this->authorizeSuperAdmin($request);
+        abort_unless($contract->organization_id === $organization->id, 404);
+        $data = $this->validated($request);
+        $data['balance_due'] = max(0, (float) $data['total_fee'] - (float) $data['paid_amount']);
+        $data['included_modules'] = is_array($data['included_modules'] ?? null)
+            ? implode(', ', array_filter($data['included_modules']))
+            : ($data['included_modules'] ?? null);
+        $contract->update($data);
+
+        return redirect()->route('organizations.contracts.show', [$organization, $contract])->with('status', 'Contract updated.');
+    }
+
     public function share(Request $request, Organization $organization, OrganizationContract $contract): RedirectResponse
     {
         $this->authorizeSuperAdmin($request);

@@ -135,6 +135,8 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
         Route::get('/organizations/{organization}/contracts/create', [OrganizationContractController::class, 'create'])->name('organizations.contracts.create');
         Route::post('/organizations/{organization}/contracts', [OrganizationContractController::class, 'store'])->name('organizations.contracts.store');
         Route::get('/organizations/{organization}/contracts/{contract}', [OrganizationContractController::class, 'show'])->name('organizations.contracts.show');
+        Route::get('/organizations/{organization}/contracts/{contract}/edit', [OrganizationContractController::class, 'edit'])->name('organizations.contracts.edit');
+        Route::put('/organizations/{organization}/contracts/{contract}', [OrganizationContractController::class, 'update'])->name('organizations.contracts.update');
         Route::post('/organizations/{organization}/contracts/{contract}/share', [OrganizationContractController::class, 'share'])->name('organizations.contracts.share');
     });
     Route::get('/operations-health', OperationsHealthController::class)->name('operations-health.index');
