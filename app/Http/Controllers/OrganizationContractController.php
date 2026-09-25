@@ -75,6 +75,7 @@ class OrganizationContractController extends Controller
         $data['version'] = ((int) $organization->contracts()->max('version')) + 1;
         $data['title'] = $data['title'] ?: 'Software Services Agreement';
         $data['public_token'] = Str::random(64);
+        $data['paid_amount'] = (float) ($data['paid_amount'] ?? 0);
         $data['balance_due'] = max(0, (float) $data['total_fee'] - (float) $data['paid_amount']);
         $data['included_modules'] = is_array($data['included_modules'] ?? null)
             ? implode(', ', array_filter($data['included_modules']))
@@ -111,6 +112,7 @@ class OrganizationContractController extends Controller
         $this->authorizeSuperAdmin($request);
         abort_unless($contract->organization_id === $organization->id, 404);
         $data = $this->validated($request);
+        $data['paid_amount'] = (float) ($data['paid_amount'] ?? 0);
         $data['balance_due'] = max(0, (float) $data['total_fee'] - (float) $data['paid_amount']);
         $data['included_modules'] = is_array($data['included_modules'] ?? null)
             ? implode(', ', array_filter($data['included_modules']))
@@ -136,7 +138,7 @@ class OrganizationContractController extends Controller
             'term_type' => ['required', 'in:fixed_term,perpetual'],
             'term_months' => ['nullable', 'required_if:term_type,fixed_term', 'integer', 'min:1', 'max:120'],
             'total_fee' => ['required', 'numeric', 'min:0'],
-            'paid_amount' => ['required', 'numeric', 'min:0'],
+            'paid_amount' => ['nullable', 'numeric', 'min:0'],
             'annual_hosting_fee' => ['required', 'numeric', 'min:0'],
             'included_branches' => ['nullable', 'integer', 'min:0'],
             'included_users' => ['nullable', 'integer', 'min:0'],

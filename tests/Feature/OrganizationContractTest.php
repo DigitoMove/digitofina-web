@@ -13,6 +13,12 @@ it('lets a super administrator create and share organization contract versions',
     $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
     $admin = User::factory()->create(['organization_id' => null, 'role_id' => $role->id, 'status' => 'active', 'is_active' => true]);
 
+    $this->actingAs($admin)->get(route('organizations.contracts.create', $organization))
+        ->assertSuccessful()
+        ->assertSee('value="1500000"', false)
+        ->assertDontSee('value="750000"', false)
+        ->assertDontSee('value="300000"', false);
+
     $this->actingAs($admin)->post(route('organizations.contracts.store', $organization), [
         'title' => 'Software Services Agreement',
         'term_type' => 'fixed_term',
@@ -20,11 +26,22 @@ it('lets a super administrator create and share organization contract versions',
         'total_fee' => 750000,
         'paid_amount' => 300000,
         'annual_hosting_fee' => 200000,
+        'included_branches' => 3,
+        'included_users' => 15,
+        'included_clients' => 350,
+        'review_date' => '2028-09-01',
         'included_modules' => 'Loans, savings, accounting',
     ])->assertRedirect();
 
     $contract = OrganizationContract::firstOrFail();
     expect($contract->balance_due)->toBe('450000.00');
+
+    $this->actingAs($admin)->get(route('organizations.contracts.edit', [$organization, $contract]))
+        ->assertSuccessful()
+        ->assertSee('value="3"', false)
+        ->assertSee('value="15"', false)
+        ->assertSee('value="350"', false)
+        ->assertSee('value="2028-09-01"', false);
 
     $this->actingAs($admin)->post(route('organizations.contracts.share', [$organization, $contract]))
         ->assertRedirect();
