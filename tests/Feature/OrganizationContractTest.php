@@ -80,6 +80,10 @@ it('accepts customer comments through the public contract review link', function
         ->assertSee('Included users')
         ->assertSee('Included clients')
         ->assertSee('Platform operation and data flow')
+        ->assertSee('DigitoMove Co. LTD')
+        ->assertSee('https://digitomove.com')
+        ->assertSee('+256 701 822 382')
+        ->assertSee('digitofina@digitomove.com')
         ->assertSee('Accept these terms');
 
     $this->post(route('contracts.review.accept', [$contract, $contract->public_token]), [

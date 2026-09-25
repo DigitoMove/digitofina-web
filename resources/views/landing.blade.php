@@ -43,8 +43,14 @@
                     </div>
                 </div>
 
-                <div class="relative min-h-[28rem] overflow-hidden rounded-[2rem] border border-white/15 bg-white/10 shadow-2xl shadow-fuchsia-950/40 lg:min-h-[38rem]">
-                    <img src="{{ asset('marketing/digitofina-flyers/landscape-repayment-background.png') }}" alt="A client making a mobile-money payment while a DigitoFina user monitors the collection" class="absolute inset-0 h-full w-full object-cover object-center">
+                <div class="relative min-h-[28rem] overflow-hidden rounded-[2rem] border border-white/15 bg-black shadow-2xl shadow-fuchsia-950/40 lg:min-h-[38rem]">
+                    <video autoplay muted loop playsinline controls preload="metadata" poster="{{ asset('marketing/digitofina-flyers/landscape-repayment-background.png') }}" class="absolute inset-0 h-full w-full object-cover object-center" aria-label="DigitoFina advertisement">
+                        <source src="{{ asset('marketing/digitofina-ad.mp4') }}" type="video/mp4">
+                        Your browser does not support embedded video. <a href="{{ asset('marketing/digitofina-ad.mp4') }}" class="underline">Watch the DigitoFina advertisement</a>.
+                    </video>
+                    <div class="pointer-events-none absolute inset-x-5 top-5 sm:inset-x-8 sm:top-8">
+                        <span class="inline-flex rounded-full border border-white/25 bg-violet-950/80 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-amber-200 backdrop-blur">DigitoFina in action</span>
+                    </div>
                     <div class="absolute inset-x-5 bottom-5 grid grid-cols-2 gap-3 sm:inset-x-8 sm:bottom-8">
                         <div class="rounded-2xl border border-white/25 bg-violet-950/80 p-4 backdrop-blur">
                             <div class="text-xs font-semibold uppercase tracking-wider text-violet-200">Loan repayments</div>
