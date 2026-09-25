@@ -29,4 +29,25 @@ class ContractReviewController extends Controller
 
         return back()->with('status', 'Your comments were submitted for review.');
     }
+
+    public function accept(Request $request, OrganizationContract $contract, string $token): RedirectResponse
+    {
+        abort_unless(hash_equals($contract->public_token, $token), 404);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['nullable', 'email', 'max:190'],
+            'acceptance' => ['accepted'],
+        ]);
+
+        $contract->update([
+            'status' => 'accepted',
+            'reviewed_at' => now(),
+            'approved_at' => now(),
+            'accepted_at' => now(),
+            'accepted_by_name' => $data['name'],
+            'accepted_by_email' => $data['email'] ?? null,
+        ]);
+
+        return back()->with('status', 'The contract was marked as accepted. Please proceed with the final signature process.');
+    }
 }

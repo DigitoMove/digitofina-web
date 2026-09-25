@@ -96,6 +96,7 @@ Route::middleware(['auth', 'tenant'])->group(function (): void {
 });
 Route::get('/contracts/{contract}/review/{token}', [ContractReviewController::class, 'show'])->name('contracts.review');
 Route::post('/contracts/{contract}/review/{token}', [ContractReviewController::class, 'comment'])->name('contracts.review.comment');
+Route::post('/contracts/{contract}/review/{token}/accept', [ContractReviewController::class, 'accept'])->name('contracts.review.accept');
 
 Route::get('/link-preview.png', LinkPreviewController::class)->name('link-preview');
 

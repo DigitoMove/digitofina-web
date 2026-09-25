@@ -30,6 +30,8 @@ it('lets a super administrator create and share organization contract versions',
         'included_users' => 15,
         'included_clients' => 350,
         'review_date' => '2028-09-01',
+        'balance_due_date' => '2026-10-15',
+        'balance_due_after_days' => 30,
         'included_modules' => 'Loans, savings, accounting',
     ])->assertRedirect();
 
@@ -41,7 +43,9 @@ it('lets a super administrator create and share organization contract versions',
         ->assertSee('value="3"', false)
         ->assertSee('value="15"', false)
         ->assertSee('value="350"', false)
-        ->assertSee('value="2028-09-01"', false);
+        ->assertSee('value="2028-09-01"', false)
+        ->assertSee('value="2026-10-15"', false)
+        ->assertSee('value="30"', false);
 
     $this->actingAs($admin)->post(route('organizations.contracts.share', [$organization, $contract]))
         ->assertRedirect();
@@ -69,6 +73,22 @@ it('accepts customer comments through the public contract review link', function
         'comment' => 'Please clarify the renewal review date.',
     ])->assertRedirect();
 
-    expect($contract->fresh()->status)->toBe('changes_requested')
+    $this->get(route('contracts.review', [$contract, $contract->public_token]))
+        ->assertSuccessful()
+        ->assertSee('Commercial terms')
+        ->assertSee('Included branches')
+        ->assertSee('Included users')
+        ->assertSee('Included clients')
+        ->assertSee('Platform operation and data flow')
+        ->assertSee('Accept these terms');
+
+    $this->post(route('contracts.review.accept', [$contract, $contract->public_token]), [
+        'name' => 'Customer approver',
+        'email' => 'approver@example.test',
+        'acceptance' => '1',
+    ])->assertRedirect();
+
+    expect($contract->fresh()->status)->toBe('accepted')
+        ->and($contract->fresh()->accepted_by_name)->toBe('Customer approver')
         ->and($contract->comments()->count())->toBe(1);
 });

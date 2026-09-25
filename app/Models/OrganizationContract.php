@@ -16,11 +16,14 @@ class OrganizationContract extends Model
             'total_fee' => 'decimal:2',
             'paid_amount' => 'decimal:2',
             'balance_due' => 'decimal:2',
+            'balance_due_date' => 'date',
+            'balance_due_after_days' => 'integer',
             'annual_hosting_fee' => 'decimal:2',
             'review_date' => 'date',
             'sent_at' => 'datetime',
             'reviewed_at' => 'datetime',
             'approved_at' => 'datetime',
+            'accepted_at' => 'datetime',
         ];
     }
 
