@@ -44,6 +44,11 @@ class Organization extends Model
         return $this->hasMany(User::class);
     }
 
+    public function contracts(): HasMany
+    {
+        return $this->hasMany(OrganizationContract::class);
+    }
+
     public function nylonPayCredential(): HasOne
     {
         return $this->hasOne(NylonPayCredential::class);

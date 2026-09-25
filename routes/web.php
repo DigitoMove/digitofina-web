@@ -19,6 +19,7 @@ use App\Http\Controllers\ClientNoteController;
 use App\Http\Controllers\ClientPortalAccessController;
 use App\Http\Controllers\ClientStatementController;
 use App\Http\Controllers\CommercialQuoteController;
+use App\Http\Controllers\ContractReviewController;
 use App\Http\Controllers\CurrencyRateController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DataImportController;
@@ -44,6 +45,7 @@ use App\Http\Controllers\NonCashTransactionController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\NylonPaySettingController;
 use App\Http\Controllers\OperationsHealthController;
+use App\Http\Controllers\OrganizationContractController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\OrganizationFinancialDefaultsController;
 use App\Http\Controllers\OrganizationHostingFeeController;
@@ -87,6 +89,9 @@ Route::get('/health', fn () => response()->json([
     'time' => now()->toIso8601String(),
 ]))->name('health');
 
+Route::get('/contracts/{contract}/review/{token}', [ContractReviewController::class, 'show'])->name('contracts.review');
+Route::post('/contracts/{contract}/review/{token}', [ContractReviewController::class, 'comment'])->name('contracts.review.comment');
+
 Route::get('/link-preview.png', LinkPreviewController::class)->name('link-preview');
 
 Route::middleware(['auth', 'tenant'])->group(function (): void {
@@ -120,6 +125,13 @@ Route::middleware(['tenant', 'guest'])->group(function () {
 Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(function () {
     Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+    Route::middleware('auth')->group(function (): void {
+        Route::get('/organizations/{organization}/contracts', [OrganizationContractController::class, 'index'])->name('organizations.contracts.index');
+        Route::get('/organizations/{organization}/contracts/create', [OrganizationContractController::class, 'create'])->name('organizations.contracts.create');
+        Route::post('/organizations/{organization}/contracts', [OrganizationContractController::class, 'store'])->name('organizations.contracts.store');
+        Route::get('/organizations/{organization}/contracts/{contract}', [OrganizationContractController::class, 'show'])->name('organizations.contracts.show');
+        Route::post('/organizations/{organization}/contracts/{contract}/share', [OrganizationContractController::class, 'share'])->name('organizations.contracts.share');
+    });
     Route::get('/operations-health', OperationsHealthController::class)->name('operations-health.index');
     Route::get('/system-activity', [SystemActivityController::class, 'index'])->name('system-activity.index');
     Route::get('/system-activity/users/{user}', [SystemActivityController::class, 'show'])->name('system-activity.users.show');

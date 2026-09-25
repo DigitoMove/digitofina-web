@@ -117,6 +117,8 @@
                             <a href="{{ route('organizations.users', $organization) }}" class="font-semibold text-brand-700">Users</a>
                             <span class="mx-2 text-slate-300">/</span>
                             <a href="{{ route('modules.index', ['organization_id' => $organization->id]) }}" class="font-semibold text-brand-700">Modules</a>
+                            <span class="mx-2 text-slate-300">/</span>
+                            <a href="{{ route('organizations.contracts.index', $organization) }}" class="font-semibold text-brand-700">Contracts</a>
                         </td>
                     </tr>
                 @endforeach
