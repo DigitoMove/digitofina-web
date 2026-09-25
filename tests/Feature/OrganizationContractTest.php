@@ -48,7 +48,8 @@ it('lets a super administrator create and share organization contract versions',
         ->assertSee('value="30"', false);
 
     $this->actingAs($admin)->post(route('organizations.contracts.share', [$organization, $contract]))
-        ->assertRedirect();
+        ->assertRedirect(route('organizations.contracts.show', [$organization, $contract]))
+        ->assertSessionHas('share_url', route('contracts.review', [$contract, $contract->public_token]));
     expect($contract->fresh()->status)->toBe('shared');
 });
 

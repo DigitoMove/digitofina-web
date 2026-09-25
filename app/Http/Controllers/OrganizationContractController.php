@@ -128,7 +128,10 @@ class OrganizationContractController extends Controller
         abort_unless($contract->organization_id === $organization->id, 404);
         $contract->update(['status' => 'shared', 'sent_at' => now()]);
 
-        return back()->with('status', 'Contract is ready to share with the customer.');
+        return redirect()->route('organizations.contracts.show', [$organization, $contract])->with([
+            'status' => 'Contract is ready to share with the customer.',
+            'share_url' => route('contracts.review', [$contract, $contract->public_token]),
+        ]);
     }
 
     private function validated(Request $request): array
