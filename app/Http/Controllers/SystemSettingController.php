@@ -44,7 +44,7 @@ class SystemSettingController extends Controller
             ->orderBy('group')
             ->orderBy('key')
             ->get()
-            ->filter(fn (SystemSetting $setting): bool => $this->settingIsVisible($setting, $enabledModules))
+            ->filter(fn (SystemSetting $setting): bool => $this->settingIsVisible($setting, $enabledModules) && ($setting->key !== 'backup_mail_to' || $isSuperAdminGlobal))
             ->groupBy('group');
 
         return view('settings.index', [
@@ -82,6 +82,10 @@ class SystemSettingController extends Controller
             : SystemSetting::ensureForOrganization(Organization::query()->findOrFail($organizationId));
 
         foreach ($request->validated('settings', []) as $key => $value) {
+            if ($key === 'backup_mail_to') {
+                abort_unless($request->user()->hasRole('super-admin') && ! app(TenantContext::class)->isScoped(), 403);
+            }
+
             $setting = SystemSetting::forOrganization($organizationId)->where('key', $key)->firstOrFail();
 
             if ($setting->type === 'boolean') {

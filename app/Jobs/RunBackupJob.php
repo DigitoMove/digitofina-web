@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\SystemSetting;
 use App\Services\OperationsMonitor;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -33,7 +34,8 @@ class RunBackupJob implements ShouldQueue
                 throw new RuntimeException('The backup command returned a failure exit code. Check backup logs and storage.');
             }
 
-            $recipients = array_values(array_filter(array_map('trim', explode(',', (string) env('BACKUP_MAIL_TO', '')))));
+            $recipientSetting = SystemSetting::forPlatform()->where('key', 'backup_mail_to')->value('value');
+            $recipients = array_values(array_filter(array_map('trim', explode(',', (string) ($recipientSetting ?: env('BACKUP_MAIL_TO', ''))))));
             $disk = Storage::disk('local');
             $backupPath = collect($disk->allFiles())
                 ->filter(fn (string $path): bool => str_ends_with(strtolower($path), '.zip'))
