@@ -9,6 +9,8 @@ use App\Services\TenantContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -79,10 +81,23 @@ class LoginController extends Controller
         }
 
         $request->session()->regenerate();
+        $this->invalidateOtherSessions($request, (int) Auth::id());
         Auth::user()->forceFill(['last_login_at' => now()])->save();
         $auditLogger->record('auth.login', Auth::user());
 
         return redirect()->intended(route('dashboard'));
+    }
+
+    private function invalidateOtherSessions(Request $request, int $userId): void
+    {
+        if (config('session.driver') !== 'database' || ! Schema::hasTable(config('session.table', 'sessions'))) {
+            return;
+        }
+
+        DB::table(config('session.table', 'sessions'))
+            ->where('user_id', $userId)
+            ->where('id', '!=', $request->session()->getId())
+            ->delete();
     }
 
     public function destroy(Request $request, AuditLogger $auditLogger): RedirectResponse

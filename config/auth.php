@@ -4,6 +4,8 @@ use App\Models\User;
 
 return [
 
+    'idle_timeout' => (int) env('AUTH_IDLE_TIMEOUT', 900),
+
     /*
     |--------------------------------------------------------------------------
     | Authentication Defaults

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AuditApiMutation;
+use App\Http\Middleware\EnforceIdleTimeout;
 use App\Http\Middleware\EnsureDemoActive;
 use App\Http\Middleware\EnsureDemoAvailable;
 use App\Http\Middleware\EnsureDemoCapacity;
@@ -42,7 +43,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->web(append: [TrackUserActivity::class, TrackSiteTraffic::class]);
+        $middleware->web(append: [EnforceIdleTimeout::class, TrackUserActivity::class, TrackSiteTraffic::class]);
         $middleware->alias([
             'audit.api' => AuditApiMutation::class,
             'demo.active' => EnsureDemoActive::class,
