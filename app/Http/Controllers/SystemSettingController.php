@@ -37,6 +37,7 @@ class SystemSettingController extends Controller
         $enabledModules = $user?->hasRole('super-admin') || ! $selectedOrganization
             ? null
             : $modules->enabledSlugs($selectedOrganization);
+        $isSuperAdminGlobal = $user?->hasRole('super-admin') && ! $tenant->isScoped();
 
         $settings = ($selectedOrganization
             ? SystemSetting::forOrganization($selectedOrganization->id)
@@ -51,7 +52,7 @@ class SystemSettingController extends Controller
             'settings' => $settings,
             'selectedOrganization' => $selectedOrganization,
             'organizations' => $user?->hasRole('super-admin') ? Organization::query()->orderBy('name')->get() : collect(),
-            'isSuperAdminGlobal' => $user?->hasRole('super-admin') && ! $tenant->isScoped(),
+            'isSuperAdminGlobal' => $isSuperAdminGlobal,
         ]);
     }
 
