@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Module;
 use App\Models\Organization;
 use App\Models\OrganizationContract;
 use Illuminate\Http\RedirectResponse;
@@ -11,6 +12,38 @@ use Illuminate\View\View;
 
 class OrganizationContractController extends Controller
 {
+    public function all(Request $request): View
+    {
+        $this->authorizeSuperAdmin($request);
+
+        return view('contracts.all', [
+            'contracts' => OrganizationContract::query()->with('organization')->latest()->paginate(20),
+        ]);
+    }
+
+    public function createForAny(Request $request): View
+    {
+        $this->authorizeSuperAdmin($request);
+
+        return view('contracts.form', [
+            'organization' => null,
+            'organizations' => Organization::query()->where('status', 'active')->orderBy('name')->get(),
+            'modules' => Module::query()->orderBy('name')->get(['slug', 'name']),
+            'selectedModules' => [],
+            'organizationModuleMap' => Organization::query()->where('status', 'active')->with('modules')->get()->mapWithKeys(fn (Organization $organization): array => [
+                $organization->id => $organization->modules->filter(fn (Module $module): bool => (bool) $module->pivot->is_enabled)->pluck('slug')->values()->all(),
+            ])->all(),
+        ]);
+    }
+
+    public function storeForAny(Request $request): RedirectResponse
+    {
+        $this->authorizeSuperAdmin($request);
+        $organization = Organization::query()->findOrFail($request->integer('organization_id'));
+
+        return $this->store($request, $organization);
+    }
+
     public function index(Request $request, Organization $organization): View
     {
         $this->authorizeSuperAdmin($request);
@@ -25,7 +58,12 @@ class OrganizationContractController extends Controller
     {
         $this->authorizeSuperAdmin($request);
 
-        return view('contracts.form', compact('organization'));
+        return view('contracts.form', [
+            'organization' => $organization,
+            'modules' => Module::query()->orderBy('name')->get(['slug', 'name']),
+            'selectedModules' => $organization->modules()->wherePivot('is_enabled', true)->pluck('slug')->all(),
+            'organizationModuleMap' => [],
+        ]);
     }
 
     public function store(Request $request, Organization $organization): RedirectResponse
@@ -38,6 +76,9 @@ class OrganizationContractController extends Controller
         $data['title'] = $data['title'] ?: 'Software Services Agreement';
         $data['public_token'] = Str::random(64);
         $data['balance_due'] = max(0, (float) $data['total_fee'] - (float) $data['paid_amount']);
+        $data['included_modules'] = is_array($data['included_modules'] ?? null)
+            ? implode(', ', array_filter($data['included_modules']))
+            : ($data['included_modules'] ?? null);
         $contract = OrganizationContract::create($data);
 
         return redirect()->route('organizations.contracts.show', [$organization, $contract])->with('status', 'Contract created.');
@@ -64,14 +105,15 @@ class OrganizationContractController extends Controller
     {
         return $request->validate([
             'title' => ['nullable', 'string', 'max:190'],
-            'term_months' => ['required', 'integer', 'min:1', 'max:120'],
+            'term_type' => ['required', 'in:fixed_term,perpetual'],
+            'term_months' => ['nullable', 'required_if:term_type,fixed_term', 'integer', 'min:1', 'max:120'],
             'total_fee' => ['required', 'numeric', 'min:0'],
             'paid_amount' => ['required', 'numeric', 'min:0'],
             'annual_hosting_fee' => ['required', 'numeric', 'min:0'],
             'included_branches' => ['nullable', 'integer', 'min:0'],
             'included_users' => ['nullable', 'integer', 'min:0'],
             'included_clients' => ['nullable', 'integer', 'min:0'],
-            'included_modules' => ['nullable', 'string'],
+            'included_modules' => ['nullable'],
             'review_date' => ['nullable', 'date'],
             'special_terms' => ['nullable', 'string'],
             'provider_responsibilities' => ['nullable', 'string'],

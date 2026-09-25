@@ -168,6 +168,7 @@
                         $user->canPerform('manage-roles') && $moduleEnabled('roles') ? ['label' => 'Roles', 'route' => 'roles.index', 'icon' => 'M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-9V7z'] : null,
                         $user->hasRole('super-admin') ? ['label' => 'Modules', 'route' => 'modules.index', 'icon' => 'M4 6h16M4 12h16M4 18h16'] : null,
                         $user->hasRole('super-admin') ? ['label' => 'Currency Rates', 'route' => 'currency-rates.index', 'icon' => 'M12 3v18 M3 12h18 M7 7h.01 M17 17h.01'] : null,
+                        $user->hasRole('super-admin') ? ['label' => 'Contracts', 'route' => 'contracts.index', 'icon' => 'M6 3h12v18H6z M9 7h6 M9 11h6 M9 15h4'] : null,
                         (! $user->hasRole('super-admin') && ($user->hasRole('organization-admin') || $user->canPerform('manage-organization'))) ? ['label' => 'Module Visibility', 'route' => 'modules.visibility', 'icon' => 'M5 12h14 M12 5v14'] : null,
                         $user->canPerform('manage-settings') && $moduleEnabled('settings') ? ['label' => 'Company Settings', 'route' => 'settings.index', 'icon' => 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M4 12h2 M18 12h2 M12 4v2 M12 18v2'] : null,
                         ($user->hasRole('super-admin') || $user->hasRole('organization-admin')) ? ['label' => 'Branch Data Reset', 'route' => 'data-wipe.index', 'icon' => 'M5 6h14 M8 6V4h8v2 M7 10v9h10v-9 M10 13v3 M14 13v3'] : null,

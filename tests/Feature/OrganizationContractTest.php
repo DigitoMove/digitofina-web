@@ -15,6 +15,7 @@ it('lets a super administrator create and share organization contract versions',
 
     $this->actingAs($admin)->post(route('organizations.contracts.store', $organization), [
         'title' => 'Software Services Agreement',
+        'term_type' => 'fixed_term',
         'term_months' => 24,
         'total_fee' => 750000,
         'paid_amount' => 300000,
@@ -37,6 +38,7 @@ it('accepts customer comments through the public contract review link', function
         'title' => 'Software Services Agreement',
         'public_token' => str()->random(64),
         'status' => 'shared',
+        'term_type' => 'fixed_term',
         'term_months' => 24,
         'total_fee' => 750000,
         'paid_amount' => 300000,

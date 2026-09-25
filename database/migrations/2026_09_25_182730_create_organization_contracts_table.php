@@ -19,7 +19,8 @@ return new class extends Migration
             $table->string('title');
             $table->string('status', 30)->default('draft')->index();
             $table->string('public_token', 64)->unique();
-            $table->unsignedInteger('term_months')->default(24);
+            $table->string('term_type', 20)->default('fixed_term');
+            $table->unsignedInteger('term_months')->nullable();
             $table->decimal('total_fee', 18, 2)->default(0);
             $table->decimal('paid_amount', 18, 2)->default(0);
             $table->decimal('balance_due', 18, 2)->default(0);

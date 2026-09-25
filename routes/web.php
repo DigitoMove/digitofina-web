@@ -89,6 +89,11 @@ Route::get('/health', fn () => response()->json([
     'time' => now()->toIso8601String(),
 ]))->name('health');
 
+Route::middleware(['auth', 'tenant'])->group(function (): void {
+    Route::get('/contracts', [OrganizationContractController::class, 'all'])->name('contracts.index');
+    Route::get('/contracts/create', [OrganizationContractController::class, 'createForAny'])->name('contracts.create');
+    Route::post('/contracts', [OrganizationContractController::class, 'storeForAny'])->name('contracts.store');
+});
 Route::get('/contracts/{contract}/review/{token}', [ContractReviewController::class, 'show'])->name('contracts.review');
 Route::post('/contracts/{contract}/review/{token}', [ContractReviewController::class, 'comment'])->name('contracts.review.comment');
 
