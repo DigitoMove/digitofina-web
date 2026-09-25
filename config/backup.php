@@ -1,6 +1,18 @@
 <?php
 
-$config = require base_path('vendor/spatie/laravel-backup/config/backup.php');
+$packageConfig = base_path('vendor/spatie/laravel-backup/config/backup.php');
+
+if (! is_file($packageConfig)) {
+    return [
+        'backup' => [
+            'source' => ['files' => ['include' => []], 'databases' => [env('DB_CONNECTION', 'mysql')]],
+            'destination' => ['disks' => ['local']],
+        ],
+        'notifications' => ['mail' => ['to' => []]],
+    ];
+}
+
+$config = require $packageConfig;
 
 $config['backup']['source']['files']['include'] = [];
 $config['backup']['source']['databases'] = [env('DB_CONNECTION', 'mysql')];
