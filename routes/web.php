@@ -141,6 +141,7 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
         Route::post('/organizations/{organization}/contracts/{contract}/share', [OrganizationContractController::class, 'share'])->name('organizations.contracts.share');
     });
     Route::get('/operations-health', OperationsHealthController::class)->name('operations-health.index');
+    Route::post('/operations-health/backup', [OperationsHealthController::class, 'backup'])->name('operations-health.backup');
     Route::get('/system-activity', [SystemActivityController::class, 'index'])->name('system-activity.index');
     Route::get('/system-activity/users/{user}', [SystemActivityController::class, 'show'])->name('system-activity.users.show');
     Route::post('/transaction-preview', TransactionPreviewController::class)->middleware('throttle:60,1')->name('transactions.preview');

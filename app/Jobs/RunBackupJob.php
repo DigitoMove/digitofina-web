@@ -30,7 +30,9 @@ class RunBackupJob implements ShouldQueue
                 throw new RuntimeException('No application backup provider is configured. A manifest is not a backup. Configure and test database and file backups before retrying.');
             }
 
-            if (Artisan::call('backup:run', ['--only-db' => true, '--no-interaction' => true]) !== 0) {
+            // The configured backup source is database-only, so the provider
+            // command does not need a separate --only-db flag.
+            if (Artisan::call('backup:run', ['--no-interaction' => true]) !== 0) {
                 throw new RuntimeException('The backup command returned a failure exit code. Check backup logs and storage.');
             }
 

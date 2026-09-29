@@ -76,7 +76,26 @@ it('shows system health and explicit backup warnings to super administrators', f
     $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
     $admin = User::factory()->create(['role_id' => $role->id, 'status' => 'active', 'is_active' => true]);
     app(OperationsMonitor::class)->heartbeat();
-    $this->actingAs($admin)->get(route('operations-health.index'))->assertOk()->assertSee('Recent heartbeat received')->assertSee('no application backup command is installed')->assertSee('Not verified');
+    $this->actingAs($admin)->get(route('operations-health.index'))->assertOk()->assertSee('Recent heartbeat received')->assertSee('Backup command available')->assertSee('Run backup now')->assertSee('Not verified');
+});
+
+it('allows only a global super administrator to run a manual backup', function () {
+    $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $admin = User::factory()->create(['role_id' => $role->id, 'status' => 'active', 'is_active' => true]);
+    $job = Mockery::mock(RunBackupJob::class);
+    $job->shouldReceive('handle')->once();
+    $this->app->instance(RunBackupJob::class, $job);
+
+    $this->actingAs($admin)->post(route('operations-health.backup'))
+        ->assertRedirect()
+        ->assertSessionHas('status', 'Database backup completed and was sent to the configured recipient emails.');
+
+    $organization = Organization::create(['name' => 'Private Org', 'slug' => 'private-org', 'status' => 'active']);
+    $organizationRole = Role::create(['name' => 'Organization Admin', 'slug' => 'organization-admin']);
+    $organizationAdmin = User::factory()->create(['role_id' => $organizationRole->id, 'organization_id' => $organization->id, 'status' => 'active', 'is_active' => true]);
+    $this->actingAs($organizationAdmin)->post(route('operations-health.backup'))
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionHas('warning');
 });
 
 it('returns an unhealthy read-only command result when the scheduler has not reported', function () {

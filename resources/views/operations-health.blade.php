@@ -6,6 +6,20 @@
     <section class="df-panel p-5">
         <h1 class="text-xl font-bold text-slate-950">Operations Health</h1>
         <p class="df-muted">Recorded task outcomes and cash reconciliation exceptions. Times are {{ config('app.timezone') }}. This page does not change balances or retry financial postings.</p>
+        @if($global)
+            <div class="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                <div class="min-w-0 flex-1">
+                    <h2 class="font-semibold text-blue-950">Database backup</h2>
+                    <p class="text-sm text-blue-900">Run the encrypted database backup now and email it to the configured backup recipients.</p>
+                </div>
+                <form method="POST" action="{{ route('operations-health.backup') }}">
+                    @csrf
+                    <button type="submit" class="df-action-primary">Run backup now</button>
+                </form>
+            </div>
+            @error('backup')<p class="mt-2 text-sm text-red-700">{{ $message }}</p>@enderror
+            @if(session('status'))<p class="mt-2 text-sm text-green-700">{{ session('status') }}</p>@endif
+        @endif
         <div class="mt-4 grid gap-4 md:grid-cols-2">
             <div class="rounded-lg border p-4">
                 <h2 class="font-semibold">Scheduler heartbeat</h2>
@@ -36,7 +50,7 @@
     @endif
     <section class="df-panel p-5">
         <h2 class="font-semibold">Recent task runs</h2>
-        <p class="df-muted">Queued jobs are recorded when execution starts, not when they are dispatched. End-of-day outcomes are recorded per branch.</p>
+        <p class="df-muted">Scheduled operations are recorded when execution starts. End-of-day outcomes are recorded per branch.</p>
         <div class="mt-4 space-y-3">
             @forelse($runs as $run)
                 <article class="rounded-lg border p-4">

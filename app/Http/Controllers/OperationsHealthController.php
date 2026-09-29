@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\RunBackupJob;
 use App\Models\BranchCashReconciliation;
 use App\Models\OperationalRun;
 use App\Services\OperationsMonitor;
 use App\Services\TenantContext;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
+use Throwable;
 
 class OperationsHealthController extends Controller
 {
@@ -41,5 +44,22 @@ class OperationsHealthController extends Controller
             'failedJobs' => $global && in_array(config('queue.failed.driver'), ['database', 'database-uuids'], true)
                 ? DB::connection(config('queue.failed.database'))->table(config('queue.failed.table', 'failed_jobs'))->count() : null,
         ]);
+    }
+
+    public function backup(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+        $global = $user->hasRole('super-admin') && ! app(TenantContext::class)->isScoped();
+        abort_unless($global, 403);
+
+        try {
+            app(RunBackupJob::class)->handle();
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return back()->withErrors(['backup' => 'The database backup failed. Check the backup status and server logs for details.']);
+        }
+
+        return back()->with('status', 'Database backup completed and was sent to the configured recipient emails.');
     }
 }
