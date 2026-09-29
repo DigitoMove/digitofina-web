@@ -1387,7 +1387,7 @@ const initTableExports = () => {
             ...(brand.phone ? [['Phone', brand.phone]] : []),
             ...(brand.email ? [['Email', brand.email]] : []),
             ...(brand.website ? [['Website', brand.website]] : []),
-            ['Generated', now.toLocaleString()],
+            ['Generated', new Date().toLocaleString()],
     ];
     const excelFor = (title, rows) => {
         const brand = exportBrand(title);
@@ -1399,7 +1399,7 @@ const initTableExports = () => {
             <meta charset="utf-8">
             <style>
                 body { font-family: Arial, sans-serif; color: #111827; }
-                .brand-logo { max-height: 82px; max-width: 280px; }
+                .brand-logo { height: 82px; max-width: 280px; object-fit: contain; width: 220px; }
                 .brand-name { font-size: 16px; font-weight: 700; text-transform: uppercase; }
                 .meta-label { font-family: "Courier New", monospace; font-weight: 700; }
                 .meta-value { font-family: "Courier New", monospace; }
@@ -1444,7 +1444,7 @@ const initTableExports = () => {
                     * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                     body { font-family: Arial, sans-serif; color: #0f172a; margin: 24px; }
                     .document-header { align-items: flex-start; display: grid; gap: 24px; grid-template-columns: 1fr 1fr; margin-bottom: 14px; }
-                    .brand img { display: block; max-height: 82px; max-width: 280px; object-fit: contain; }
+                    .brand img { display: block; height: 82px; max-width: 280px; object-fit: contain; width: 220px; }
                     .brand-name { color: #111827; font-size: 16px; font-weight: 700; margin-top: 6px; text-transform: uppercase; }
                     .metadata { display: grid; font-family: "Courier New", monospace; font-size: 13px; gap: 6px 14px; grid-template-columns: 160px minmax(220px, 1fr); justify-content: end; }
                     .meta-label { font-weight: 700; }
