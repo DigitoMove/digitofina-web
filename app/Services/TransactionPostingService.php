@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Support\CurrencyDenomination;
 use App\Support\TransactionTimestamp;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -37,14 +38,15 @@ class TransactionPostingService
             $drawer = $session->drawer()->with('branch')->lockForUpdate()->firstOrFail();
             $account = Account::query()
                 ->withoutGlobalScope('tenant')
-                ->with(['accountType', 'client.loans'])
+                ->with(['accountType', 'client' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant')->with(['loans', 'user.role'])])
                 ->where('organization_id', $drawer->branch->organization_id)
                 ->whereKey($account->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
             if ((int) $account->branch_id !== (int) $drawer->branch_id
-                && ($account->accountType?->category !== 'savings' || ! $user->canPerform('transact-savings-across-branches'))) {
+                && ($account->accountType?->category !== 'savings'
+                    || (! $user->canPerform('transact-savings-across-branches') && ! $account->isOrganizationWideSavings()))) {
                 throw new InvalidArgumentException('This account belongs to a different branch from your open drawer.');
             }
 

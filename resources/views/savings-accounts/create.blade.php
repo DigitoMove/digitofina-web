@@ -18,6 +18,13 @@
         <label class="text-sm font-medium text-slate-700">Opening date <x-required-badge /><input type="date" name="opening_date" value="{{ old('opening_date', today()->toDateString()) }}" class="mt-1 w-full rounded border-slate-300" required></label>
         <label class="text-sm font-medium text-slate-700">Status<select name="status" class="mt-1 w-full rounded border-slate-300"><option value="active" @selected(old('status', 'active') === 'active')>Active</option><option value="pending" @selected(old('status') === 'pending')>Pending</option><option value="frozen" @selected(old('status') === 'frozen')>Frozen</option></select></label>
         <label class="text-sm font-medium text-slate-700">Opening deposit<input type="number" min="0" step="100" name="opening_deposit" value="{{ old('opening_deposit', 0) }}" class="mt-1 w-full rounded border-slate-300"></label>
+        @if($canMarkOrganizationWide)
+            <label class="flex items-start gap-3 rounded border border-slate-200 p-3 text-sm font-medium text-slate-700 md:col-span-2">
+                <input type="hidden" name="is_organization_wide" value="0">
+                <input type="checkbox" name="is_organization_wide" value="1" @checked(old('is_organization_wide')) class="mt-1">
+                <span><span class="block">Available across all organization branches</span><span class="font-normal text-slate-500">Authorized cashiers can deposit and withdraw this account from any branch.</span></span>
+            </label>
+        @endif
     </div>
     <div class="mt-6 flex justify-end gap-3"><a href="{{ $cancelUrl }}" class="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</a><button class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Open Account</button></div>
 </form>

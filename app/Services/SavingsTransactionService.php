@@ -40,6 +40,7 @@ class SavingsTransactionService
         return $this->transactionAccountQuery($staff)
             ->with([
                 'client' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant'),
+                'client.user.role',
                 'product' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant'),
             ])
             ->findOrFail($accountId);
@@ -70,7 +71,10 @@ class SavingsTransactionService
             ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
             ->when(
                 ! ApiSecurity::hasGlobalBranchAccess($staff) && ! $staff->canPerform('transact-savings-across-branches'),
-                fn (Builder $query): Builder => $query->where('branch_id', $staff->branch_id),
+                fn (Builder $query): Builder => $query->where(function (Builder $query) use ($staff): void {
+                    $query->where('branch_id', $staff->branch_id)
+                        ->orWhere(fn (Builder $query): Builder => $query->organizationWide());
+                }),
             )
             ->findOrFail($transactionId);
     }
@@ -89,7 +93,10 @@ class SavingsTransactionService
             ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
             ->when(
                 ! ApiSecurity::hasGlobalBranchAccess($staff) && ! $staff->canPerform('transact-savings-across-branches'),
-                fn (Builder $query): Builder => $query->where('branch_id', $staff->branch_id),
+                fn (Builder $query): Builder => $query->where(function (Builder $query) use ($staff): void {
+                    $query->where('branch_id', $staff->branch_id)
+                        ->orWhere(fn (Builder $query): Builder => $query->organizationWide());
+                }),
             );
     }
 

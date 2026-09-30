@@ -357,6 +357,73 @@ it('allows permitted cashiers to find and transact on savings accounts from anot
         ->and(Transaction::query()->withoutGlobalScope('tenant')->where('account_id', $account->id)->count())->toBe(2);
 });
 
+it('allows every branch cashier to use an organization administrator savings account', function () {
+    [$organization, $homeBranch, $superAdmin] = drawerAccountingContext();
+    drawerAccountingEnableTellerModule($organization);
+    $cashier = drawerAccountingCashier($organization, $homeBranch, 'organization-wide');
+    [$drawer] = openAccountingDrawer($organization, $homeBranch, $cashier, 'ORG-WIDE-01', 100_000);
+    $otherBranch = Branch::create([
+        'organization_id' => $organization->id,
+        'code' => 'BR-ORG',
+        'name' => 'Organization Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    $adminRole = Role::create(['organization_id' => $organization->id, 'name' => 'Organization Admin', 'slug' => 'organization-admin']);
+    $organizationAdmin = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => $otherBranch->id,
+        'role_id' => $adminRole->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $client = drawerAccountingClient($organization, $otherBranch, $superAdmin);
+    $client->update(['user_id' => $organizationAdmin->id]);
+    $accountType = AccountType::create([
+        'organization_id' => $organization->id,
+        'name' => 'Organization Savings',
+        'code' => 'SAV-ORG-WIDE',
+        'category' => 'savings',
+        'is_active' => true,
+    ]);
+    $account = Account::create([
+        'organization_id' => $organization->id,
+        'client_id' => $client->id,
+        'branch_id' => $otherBranch->id,
+        'account_type_id' => $accountType->id,
+        'account_number' => 'ORG-WIDE-SAV-01',
+        'account_name' => 'Organization administrator savings',
+        'status' => 'active',
+        'balance' => 50_000,
+        'opened_at' => today(),
+    ]);
+    $depositType = TransactionType::create([
+        'organization_id' => $organization->id,
+        'name' => 'Organization Savings Deposit',
+        'code' => 'org_savings_deposit',
+        'direction' => 'credit',
+        'is_active' => true,
+    ]);
+
+    $response = $this->actingAs($cashier)->get(route('teller.index', [
+        'lookup_scope' => 'account_type:'.$accountType->id,
+        'account_search' => $account->account_number,
+    ]));
+
+    expect($response->getContent())->toContain($account->account_number);
+    $this->actingAs($cashier)->post(route('teller.post'), [
+        'account_scope' => 'client_account',
+        'account_number' => $account->account_number,
+        'transaction_type_id' => $depositType->id,
+        'amount' => 10_000,
+        'charges' => 0,
+        'transaction_date' => today()->toDateString(),
+    ])->assertSessionHasNoErrors();
+
+    expect((float) $account->fresh()->balance)->toBe(60_000.0)
+        ->and((float) $drawer->fresh()->current_balance)->toBe(110_000.0);
+});
+
 it('shows incoming drawer transfers in the destination cashier records', function () {
     [$organization, $branch, $sourceUser] = drawerAccountingContext();
     drawerAccountingEnableTellerModule($organization);

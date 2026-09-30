@@ -133,6 +133,8 @@ class CashierWorkspaceController extends Controller
                 $query->where('branch_id', $session->drawer->branch_id);
                 if ($user->canPerform('transact-savings-across-branches')) {
                     $query->orWhereHas('accountType', fn (Builder $query): Builder => $query->where('category', 'savings'));
+                } else {
+                    $query->orWhere(fn (Builder $query): Builder => $query->organizationWideSavings());
                 }
             });
     }

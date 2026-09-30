@@ -15,6 +15,8 @@ use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Support\ApiSecurity;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use InvalidArgumentException;
 
 class TransactionPreviewService
@@ -67,6 +69,7 @@ class TransactionPreviewService
                 $notes[] = 'Product charges are included in the account movement. This savings-product workflow posts the cash and savings-liability journal; it does not update a teller drawer session.';
                 $notes[] = 'Journal: cash '.($deposit ? 'debit' : 'credit').' '.number_format($amount, 2).'; savings liability '.($deposit ? 'credit' : 'debit').' '.number_format(abs($delta), 2).'; fee income credit '.number_format($charges, 2).'.';
             }
+
             return $this->document($rows, $notes, $amount, $charges, $user);
         }
 
@@ -80,7 +83,9 @@ class TransactionPreviewService
         if ($cash && ($data['account_scope'] ?? '') === 'general_ledger') {
             abort_unless($user->canPerform('post-transactions'), 403);
             $ledger = $this->ledger((int) ($data['chart_account_id'] ?? 0), $user, (int) $session->drawer->branch_id, $session->drawer->organization_id);
-            $entry = match ($ledger->drawer_direction) {'cash_in' => 'credit', 'cash_out' => 'debit', default => $data['gl_entry_type'] ?? null};
+            $entry = match ($ledger->drawer_direction) {
+                'cash_in' => 'credit', 'cash_out' => 'debit', default => $data['gl_entry_type'] ?? null
+            };
             if (! in_array($entry, ['debit', 'credit'], true) || $ledger->drawer_direction === 'none') {
                 throw new InvalidArgumentException('Choose a valid drawer money direction for this ledger.');
             }
@@ -92,7 +97,7 @@ class TransactionPreviewService
             $cashDelta = ($entry === 'credit' ? 1 : -1) * $this->posting->cashImpact($entry, $amount, $charges, $mode);
             $rows[] = $this->ledgerRow($ledger, (int) $session->drawer->branch_id, $entry, $movement);
         } else {
-            $accountQuery = Account::query()->withoutGlobalScope('tenant')->with(['accountType', 'client']);
+            $accountQuery = Account::query()->withoutGlobalScope('tenant')->with(['accountType', 'client' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant')->with('user.role')]);
             $organizationId = app(TenantContext::class)->id() ?: $user->organization_id;
             $accountQuery->when($organizationId, fn ($query) => $query->where('organization_id', $organizationId));
             if (! ApiSecurity::hasGlobalBranchAccess($user)) {
@@ -100,12 +105,14 @@ class TransactionPreviewService
                     $query->where('branch_id', $user->branch_id);
                     if ($cash && $user->canPerform('transact-savings-across-branches')) {
                         $query->orWhereHas('accountType', fn ($type) => $type->where('category', 'savings'));
+                    } elseif ($cash) {
+                        $query->orWhere(fn (Builder $query): Builder => $query->organizationWideSavings());
                     }
                 });
             }
             $account = isset($data['account_id']) ? $accountQuery->findOrFail($data['account_id']) : $accountQuery->where('account_number', $data['account_number'] ?? '')->firstOrFail();
             $this->active($account->status);
-            if ($cash && ((int) $account->organization_id !== (int) $session->drawer->organization_id || ((int) $account->branch_id !== (int) $session->drawer->branch_id && ($account->accountType?->category !== 'savings' || ! $user->canPerform('transact-savings-across-branches'))))) {
+            if ($cash && ((int) $account->organization_id !== (int) $session->drawer->organization_id || ((int) $account->branch_id !== (int) $session->drawer->branch_id && ($account->accountType?->category !== 'savings' || (! $user->canPerform('transact-savings-across-branches') && ! $account->isOrganizationWideSavings()))))) {
                 throw new InvalidArgumentException('The selected account cannot be posted through this drawer.');
             }
             $type = TransactionType::findOrFail($data['transaction_type_id'] ?? 0);
@@ -155,6 +162,7 @@ class TransactionPreviewService
             }
             $rows[] = $this->row('Drawer '.$session->drawer->code, (float) $session->drawer->current_balance, $cashDelta);
         }
+
         return $this->document($rows, $notes, $amount, $charges, $user);
     }
 
@@ -170,6 +178,7 @@ class TransactionPreviewService
             $rows[] = $this->row($label.' outstanding', (float) $loan->{$key.'_balance'}, -min((float) $loan->{$key.'_balance'}, $allocation['totals'][$key]));
         }
         $rows[] = $this->row('Total loan outstanding', array_sum(array_column($rows, 'before')), array_sum(array_column($rows, 'change')));
+
         return $rows;
     }
 
@@ -180,6 +189,7 @@ class TransactionPreviewService
         if (! $ledger->is_active || $ledger->is_cash_account) {
             throw new InvalidArgumentException('Select an active non-cash ledger.');
         }
+
         return $ledger;
     }
 
@@ -215,7 +225,7 @@ class TransactionPreviewService
     }
 
     /** @param array<int, array<string, mixed>> $rows
-     * @param array<int, string> $notes
+     * @param  array<int, string>  $notes
      * @return array<string, mixed>
      */
     private function document(array $rows, array $notes, float $amount, float $charges, User $user): array
@@ -285,6 +295,7 @@ class TransactionPreviewService
         if ($movements->isEmpty()) {
             $notes[] = 'No linked drawer movements: drawer cash will remain unchanged.';
         }
+
         return $this->document($rows, $notes, (float) $original->amount, (float) $original->charges, $user);
     }
 }

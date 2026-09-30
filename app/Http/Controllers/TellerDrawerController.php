@@ -29,6 +29,7 @@ use App\Support\ApiSecurity;
 use App\Support\CurrencyDenomination;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -498,7 +499,7 @@ class TellerDrawerController extends Controller
             }
 
             $account = $this->clientAccountQuery($request, (int) $session->drawer->branch_id, (int) $session->drawer->organization_id)
-                ->with('accountType')
+                ->with(['accountType', 'client' => fn (BelongsTo $query): BelongsTo => $query->withoutGlobalScope('tenant')->with('user.role')])
                 ->where('account_number', $data['account_number'])
                 ->first();
             $type = TransactionType::query()->find($data['transaction_type_id']);
@@ -508,7 +509,8 @@ class TellerDrawerController extends Controller
             }
 
             if ((int) $account->branch_id !== (int) $session->drawer->branch_id
-                && ($account->accountType?->category !== 'savings' || ! $request->user()->canPerform('transact-savings-across-branches'))) {
+                && ($account->accountType?->category !== 'savings'
+                    || (! $request->user()->canPerform('transact-savings-across-branches') && ! $account->isOrganizationWideSavings()))) {
                 throw new InvalidArgumentException('This account belongs to a different branch from your open drawer.');
             }
 
@@ -924,9 +926,7 @@ class TellerDrawerController extends Controller
     private function clientAccountQuery(Request $request, ?int $branchId, ?int $organizationId): Builder
     {
         $canTransactAcrossBranches = $request->user()->canPerform('transact-savings-across-branches');
-        $query = $canTransactAcrossBranches
-            ? Account::query()->withoutGlobalScope('tenant')
-            : Account::query();
+        $query = Account::query()->withoutGlobalScope('tenant');
 
         return $query
             ->when($organizationId, fn (Builder $query, int $organizationId): Builder => $query->where('organization_id', $organizationId))
@@ -939,6 +939,8 @@ class TellerDrawerController extends Controller
                             ->withoutGlobalScope('tenant')
                             ->where('category', 'savings')
                             ->select('id'));
+                    } else {
+                        $query->orWhere(fn (Builder $query): Builder => $query->organizationWideSavings());
                     }
                 });
             });

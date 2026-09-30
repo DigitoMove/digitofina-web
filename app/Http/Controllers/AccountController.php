@@ -35,6 +35,7 @@ class AccountController extends Controller
             'types' => AccountType::where('is_active', true)->get(),
             'branches' => Branch::where('is_active', true)->get(),
             'selectedClient' => $request->integer('client_id'),
+            'canMarkOrganizationWide' => $request->user()->hasAnyRole(['super-admin', 'organization-admin']),
         ]);
     }
 
@@ -47,6 +48,7 @@ class AccountController extends Controller
             'branch_id' => ['required', 'exists:branches,id'],
             'account_type_id' => ['required', 'exists:account_types,id'],
             'account_name' => ['required', 'string', 'max:191'],
+            'is_organization_wide' => ['sometimes', 'boolean'],
         ]);
 
         $branch = Branch::findOrFail($data['branch_id']);
@@ -59,6 +61,10 @@ class AccountController extends Controller
                 throw ValidationException::withMessages(['account_type_id' => 'This client already has a savings account. Each client can only have one savings account.']);
             }
         }
+
+        $data['is_organization_wide'] = $type->category === 'savings'
+            && ($data['is_organization_wide'] ?? false)
+            && auth()->user()->hasAnyRole(['super-admin', 'organization-admin']);
 
         $account = Account::create($data + [
             'organization_id' => auth()->user()->organization_id,

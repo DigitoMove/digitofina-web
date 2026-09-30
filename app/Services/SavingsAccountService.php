@@ -52,6 +52,7 @@ class SavingsAccountService
             $account = SavingsAccount::create([
                 'organization_id' => $user->organization_id,
                 'branch_id' => $data['branch_id'],
+                'is_organization_wide' => ($data['is_organization_wide'] ?? false) && $user->hasAnyRole(['super-admin', 'organization-admin']),
                 'client_id' => $data['client_id'],
                 'savings_product_id' => $product->id,
                 'savings_type' => $data['savings_type'] ?? $product->savings_type ?? 'ordinary',

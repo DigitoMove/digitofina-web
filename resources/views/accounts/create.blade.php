@@ -29,6 +29,13 @@
         <label class="text-sm font-medium">Account name <x-required-badge />
             <input name="account_name" class="mt-1 w-full rounded border-slate-300" required>
         </label>
+        @if($canMarkOrganizationWide)
+            <label class="flex items-start gap-3 rounded border border-slate-200 p-3 text-sm font-medium md:col-span-2">
+                <input type="hidden" name="is_organization_wide" value="0">
+                <input type="checkbox" name="is_organization_wide" value="1" class="mt-1">
+                <span><span class="block">Available across all organization branches</span><span class="font-normal text-slate-500">Authorized cashiers can deposit and withdraw this savings account from any branch.</span></span>
+            </label>
+        @endif
     </div>
     <button class="mt-6 rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Open account</button>
 </form>

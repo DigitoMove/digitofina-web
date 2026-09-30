@@ -79,6 +79,7 @@ class SavingsAccountController extends Controller
             'products' => SavingsProduct::where('status', 'active')->orderBy('name')->get(),
             'selectedClient' => $selectedClientId,
             'selectedBranch' => $selectedClient->branch_id ?? null,
+            'canMarkOrganizationWide' => $request->user()->hasAnyRole(['super-admin', 'organization-admin']),
         ]);
     }
 

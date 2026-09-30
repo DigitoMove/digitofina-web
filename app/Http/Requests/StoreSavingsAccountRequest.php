@@ -27,6 +27,7 @@ class StoreSavingsAccountRequest extends FormRequest
         return [
             'client_id' => ['required', 'exists:clients,id'],
             'branch_id' => ['required', 'exists:branches,id'],
+            'is_organization_wide' => ['sometimes', 'boolean'],
             'savings_product_id' => ['required', 'exists:savings_products,id'],
             'savings_type' => ['nullable', 'in:ordinary,target,fixed,group,emergency,child_student,business'],
             'opening_date' => ['required', 'date'],
