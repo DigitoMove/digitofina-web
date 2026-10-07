@@ -4,16 +4,19 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreNonCashTransactionRequest;
 use App\Http\Requests\StoreSavingsLoanRepaymentRequest;
+use App\Http\Requests\StoreScheduledLoanSavingsDeductionRequest;
 use App\Models\Account;
 use App\Models\AccountType;
 use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\Loan;
+use App\Models\LoanSavingsDeductionSchedule;
 use App\Models\SavingsAccount;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Services\FinancialRelationshipService;
 use App\Services\LedgerChargeService;
+use App\Services\ScheduledSavingsLoanDeductionService;
 use App\Services\TransactionPostingService;
 use App\Support\ApiSecurity;
 use Carbon\CarbonImmutable;
@@ -156,6 +159,15 @@ class NonCashTransactionController extends Controller
                 ->when($selectedRepaymentSavings, fn (Builder $query, SavingsAccount $account): Builder => $query->where('client_id', $account->client_id))
                 ->orderBy('loan_number')
                 ->get(),
+            'scheduledDeductionSchedules' => LoanSavingsDeductionSchedule::query()
+                ->with(['client', 'loan.product', 'savingsAccount', 'creator', 'activator', 'runs' => fn ($query) => $query->latest('due_at')->limit(5)])
+                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->whereIn('status', LoanSavingsDeductionSchedule::STATUSES)
+                ->latest('id')
+                ->limit(50)
+                ->get(),
+            'canConfigureScheduledDeductions' => $request->user()->canPerform('post-repayments'),
+            'canAdministerScheduledDeductions' => $request->user()->hasAnyRole(['super-admin', 'organization-admin']),
         ]);
     }
 
@@ -184,6 +196,67 @@ class NonCashTransactionController extends Controller
             ->route('non-cash.index')
             ->with('status', 'Savings funds transferred to the selected loan as a non-cash repayment.')
             ->with('repayment_id', $repayment->id);
+    }
+
+    public function storeScheduledDeduction(StoreScheduledLoanSavingsDeductionRequest $request, ScheduledSavingsLoanDeductionService $deductions): RedirectResponse
+    {
+        $branchId = $this->branchId($request);
+        $savingsAccount = SavingsAccount::query()
+            ->where('status', 'active')
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->findOrFail($request->integer('savings_account_id'));
+        $loan = Loan::query()
+            ->whereIn('status', Loan::OPERATIONAL_STATUSES)
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->findOrFail($request->integer('loan_id'));
+
+        try {
+            $schedule = $deductions->create(
+                $savingsAccount,
+                $loan,
+                (float) $request->validated('amount'),
+                (string) $request->validated('frequency'),
+                CarbonImmutable::parse($request->validated('next_run_at')),
+                $request->user(),
+            );
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['amount' => $exception->getMessage()])->withInput();
+        }
+
+        return redirect()->route('non-cash.index')->with('status', 'Scheduled UGX '.number_format((float) $schedule->amount, 2).' savings deduction created. An administrator must activate it before it can run.');
+    }
+
+    public function activateScheduledDeduction(LoanSavingsDeductionSchedule $schedule, Request $request, ScheduledSavingsLoanDeductionService $deductions): RedirectResponse
+    {
+        try {
+            $deductions->activate($schedule, $request->user());
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['schedule' => $exception->getMessage()]);
+        }
+
+        return back()->with('status', 'Scheduled savings deduction activated.');
+    }
+
+    public function disableScheduledDeduction(LoanSavingsDeductionSchedule $schedule, Request $request, ScheduledSavingsLoanDeductionService $deductions): RedirectResponse
+    {
+        try {
+            $deductions->disable($schedule, $request->user());
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['schedule' => $exception->getMessage()]);
+        }
+
+        return back()->with('status', 'Scheduled savings deduction disabled.');
+    }
+
+    public function cancelScheduledDeduction(LoanSavingsDeductionSchedule $schedule, Request $request, ScheduledSavingsLoanDeductionService $deductions): RedirectResponse
+    {
+        try {
+            $deductions->disable($schedule, $request->user(), 'cancelled');
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['schedule' => $exception->getMessage()]);
+        }
+
+        return back()->with('status', 'Scheduled savings deduction cancelled.');
     }
 
     public function store(StoreNonCashTransactionRequest $request, TransactionPostingService $posting): RedirectResponse

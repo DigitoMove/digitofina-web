@@ -56,6 +56,7 @@ class ReportController extends Controller
             'search' => ['nullable', 'string', 'max:255'],
             'posted_by_user_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where('organization_id', $organizationId)],
             'lifetime' => ['nullable', 'boolean'],
+            'period' => ['nullable', 'in:monthly,quarterly,half_yearly,yearly'],
             'currency' => ['nullable', 'string', 'size:3', Rule::in(array_keys(CurrencyRegistry::all()))],
         ]);
 

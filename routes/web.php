@@ -276,6 +276,10 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::get('/non-cash-transactions', [NonCashTransactionController::class, 'index'])->middleware('module:teller')->name('non-cash.index');
     Route::post('/non-cash-transactions', [NonCashTransactionController::class, 'store'])->middleware('module:teller')->name('non-cash.store');
     Route::post('/non-cash-transactions/loan-repayment-from-savings', [NonCashTransactionController::class, 'repayLoanFromSavings'])->middleware('module:teller')->name('non-cash.repay-loan-from-savings');
+    Route::post('/non-cash-transactions/scheduled-loan-deductions', [NonCashTransactionController::class, 'storeScheduledDeduction'])->middleware('module:teller')->name('non-cash.scheduled-deductions.store');
+    Route::post('/non-cash-transactions/scheduled-loan-deductions/{schedule}/activate', [NonCashTransactionController::class, 'activateScheduledDeduction'])->middleware('module:teller')->name('non-cash.scheduled-deductions.activate');
+    Route::post('/non-cash-transactions/scheduled-loan-deductions/{schedule}/disable', [NonCashTransactionController::class, 'disableScheduledDeduction'])->middleware('module:teller')->name('non-cash.scheduled-deductions.disable');
+    Route::post('/non-cash-transactions/scheduled-loan-deductions/{schedule}/cancel', [NonCashTransactionController::class, 'cancelScheduledDeduction'])->middleware('module:teller')->name('non-cash.scheduled-deductions.cancel');
     Route::get('/end-of-day', [EndOfDayController::class, 'index'])->middleware('module:teller')->name('end-of-day.index');
     Route::post('/end-of-day/reconcile', [EndOfDayController::class, 'reconcile'])->name('end-of-day.reconcile');
     Route::post('/end-of-day/process', [EndOfDayController::class, 'process'])->name('end-of-day.process');

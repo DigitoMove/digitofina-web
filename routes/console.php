@@ -20,6 +20,12 @@ Schedule::command('loans:apply-penalties')
     ->withoutOverlapping(60)
     ->onOneServer()
     ->name('loans:apply-penalties:midnight');
+Schedule::command('loan-savings-deductions:process')
+    ->everyMinute()
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping(10)
+    ->onOneServer()
+    ->name('loan-savings-deductions:process');
 Schedule::command('investments:mark-matured')->dailyAt('18:30')->withoutOverlapping();
 Schedule::command('savings:mark-fixed-matured')->dailyAt('18:40')->withoutOverlapping();
 Schedule::command('end-of-day:process')->dailyAt('19:00')->withoutOverlapping();

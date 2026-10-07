@@ -14,6 +14,9 @@
         </p>
         <p class="mt-1 text-sm text-slate-500">
             {{ $definition['slug'] === 'arrears-rate' ? 'Current portfolio position' : ($definition['usesDates'] ? $from->format('d M Y').' to '.$to->format('d M Y') : 'Point-in-time report') }}
+            @if($definition['kind'] === 'business_cash_flow' && $period)
+                · {{ str_replace('_', '-', str($period)->headline()) }} view
+            @endif
             · {{ str($detail)->headline() }}
             @if($branchId)
                 · Branch filtered
@@ -57,13 +60,71 @@
     </div>
 @endif
 
+@if($definition['kind'] === 'business_cash_flow' && ! empty($positionRows))
+    <section class="mb-5 df-panel overflow-hidden">
+        <div class="border-b border-slate-200 px-5 py-4">
+            <h2 class="font-semibold text-slate-950">Current Business Position</h2>
+            <p class="mt-1 text-sm text-slate-500">Position as of {{ $to->format('d M Y') }}. Loan balances are operational/current; assets, liabilities, equity, profit, and margin are accounting/accrual measures.</p>
+        </div>
+        @if(! empty($positionSummary))
+            <div class="grid gap-3 border-b border-slate-200 p-4 sm:grid-cols-2 xl:grid-cols-4">
+                @foreach($positionSummary as $label => $value)
+                    <div class="rounded border border-slate-200 bg-slate-50 p-3">
+                        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $label }}</div>
+                        <div class="mt-1 font-semibold text-slate-950">{{ $value }}</div>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+        <div class="overflow-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-50 text-slate-600">
+                    <tr>
+                        @foreach($positionColumns as $column)
+                            <th class="whitespace-nowrap px-4 py-3">{{ $column }}</th>
+                        @endforeach
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($positionRows as $row)
+                        <tr class="border-t border-slate-200">
+                            @foreach($positionColumns as $column)
+                                <td class="whitespace-nowrap px-4 py-3">{{ $row[$column] ?? '' }}</td>
+                            @endforeach
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </section>
+@endif
+
 <div class="df-panel overflow-hidden">
     <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div>
             <h2 class="font-semibold text-slate-950">Generated Results</h2>
             <p class="text-sm text-slate-500">{{ $rows->count() }} row{{ $rows->count() === 1 ? '' : 's' }} shown.</p>
         </div>
-        @if($definition['kind'] === 'general_income_statement')
+        @if($definition['kind'] === 'business_cash_flow')
+            <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="flex w-full flex-wrap items-center justify-end gap-2">
+                <input name="from" type="date" value="{{ $from->toDateString() }}" class="rounded border-slate-300 text-sm">
+                <input name="to" type="date" value="{{ $to->toDateString() }}" class="rounded border-slate-300 text-sm">
+                <select name="period" class="rounded border-slate-300 text-sm">
+                    @foreach(['monthly' => 'Monthly', 'quarterly' => 'Quarterly', 'half_yearly' => 'Half-yearly', 'yearly' => 'Yearly'] as $periodKey => $periodLabel)
+                        <option value="{{ $periodKey }}" @selected(($period ?? 'monthly') === $periodKey)>{{ $periodLabel }}</option>
+                    @endforeach
+                </select>
+                @if($canChooseBranch)
+                    <select name="branch_id" class="rounded border-slate-300 text-sm">
+                        <option value="">All branches</option>
+                        @foreach($branches as $branch)
+                            <option value="{{ $branch->id }}" @selected((int) $branchId === (int) $branch->id)>{{ $branch->name }}</option>
+                        @endforeach
+                    </select>
+                @endif
+                <button class="df-action-secondary">Apply Filters</button>
+            </form>
+        @elseif($definition['kind'] === 'general_income_statement')
             <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:grid-cols-4">
                 @if($definition['slug'] !== 'arrears-rate')
                 <input name="from" type="date" value="{{ $from->toDateString() }}" class="rounded border-slate-300 text-sm">

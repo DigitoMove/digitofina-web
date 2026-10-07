@@ -64,6 +64,126 @@
         </section>
     @endif
 
+    @if($canConfigureScheduledDeductions)
+        <section class="rounded-lg border border-violet-200 bg-violet-50 p-5 shadow-sm">
+            <div>
+                <div class="text-xs font-semibold uppercase tracking-wide text-violet-700">Automatic internal transfer</div>
+                <h2 class="mt-1 text-base font-semibold text-violet-950">Schedule Savings-to-Loan Deductions</h2>
+                <p class="mt-1 text-sm text-violet-800">A cashier can configure a fixed UGX amount and frequency. An administrator must activate the schedule. Each due run transfers only that amount, never overdrafts savings, and leaves a visible result when funds are insufficient.</p>
+            </div>
+            <form method="POST" action="{{ route('non-cash.scheduled-deductions.store') }}" class="mt-4 grid gap-4 lg:grid-cols-5">
+                @csrf
+                <label class="grid gap-1 text-sm">
+                    <span class="font-medium text-violet-950">Savings account</span>
+                    <select name="savings_account_id" required class="rounded-lg border-violet-200 focus:border-violet-500 focus:ring-violet-100">
+                        <option value="">Choose account</option>
+                        @foreach($repaymentSavingsAccounts as $savingsAccount)
+                            <option value="{{ $savingsAccount->id }}" @selected((int) old('savings_account_id') === $savingsAccount->id)>{{ $savingsAccount->account_number }} · {{ $savingsAccount->client?->full_name ?? $savingsAccount->client?->business_name }} · UGX {{ number_format((float) $savingsAccount->available_balance, 2) }} available</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label class="grid gap-1 text-sm">
+                    <span class="font-medium text-violet-950">Active or in-arrears loan</span>
+                    <select name="loan_id" required class="rounded-lg border-violet-200 focus:border-violet-500 focus:ring-violet-100">
+                        <option value="">Choose loan</option>
+                        @foreach($repaymentLoans as $repaymentLoan)
+                            <option value="{{ $repaymentLoan->id }}" @selected((int) old('loan_id') === $repaymentLoan->id)>{{ $repaymentLoan->loan_number }} · {{ $repaymentLoan->client?->full_name ?? 'Client' }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label class="grid gap-1 text-sm">
+                    <span class="font-medium text-violet-950">Amount per run (UGX)</span>
+                    <input type="number" name="amount" min="100" step="100" value="{{ old('amount') }}" required class="rounded-lg border-violet-200 focus:border-violet-500 focus:ring-violet-100" placeholder="5,000">
+                </label>
+                <label class="grid gap-1 text-sm">
+                    <span class="font-medium text-violet-950">Frequency</span>
+                    <select name="frequency" required class="rounded-lg border-violet-200 focus:border-violet-500 focus:ring-violet-100">
+                        @foreach(['daily' => 'Daily', 'weekly' => 'Weekly', 'biweekly' => 'Every two weeks', 'monthly' => 'Monthly'] as $frequency => $label)
+                            <option value="{{ $frequency }}" @selected(old('frequency', 'monthly') === $frequency)>{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label class="grid gap-1 text-sm">
+                    <span class="font-medium text-violet-950">First run</span>
+                    <input type="datetime-local" name="next_run_at" value="{{ old('next_run_at', now()->format('Y-m-d\TH:i')) }}" required class="rounded-lg border-violet-200 focus:border-violet-500 focus:ring-violet-100">
+                </label>
+                <div class="lg:col-span-5">
+                    <button class="rounded-lg bg-violet-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-800">Create Pending Schedule</button>
+                </div>
+            </form>
+        </section>
+    @endif
+
+    @if($scheduledDeductionSchedules->isNotEmpty())
+        <section class="overflow-hidden rounded-lg border border-violet-200 bg-white shadow-sm">
+            <div class="border-b border-violet-100 bg-violet-50 p-5">
+                <h2 class="font-semibold text-violet-950">Scheduled Savings-to-Loan Deductions</h2>
+                <p class="mt-1 text-sm text-violet-800">Every attempt is recorded. Reversals remain available through the linked savings transaction and loan repayment history.</p>
+            </div>
+            <div class="overflow-auto">
+                <table class="w-full min-w-[1050px] text-left text-sm">
+                    <thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                        <tr>
+                            <th class="px-4 py-3">Client / Accounts</th>
+                            <th class="px-4 py-3">Amount & frequency</th>
+                            <th class="px-4 py-3">Status</th>
+                            <th class="px-4 py-3">Next run</th>
+                            <th class="px-4 py-3">Last result</th>
+                            <th class="px-4 py-3 text-right">Admin action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($scheduledDeductionSchedules as $schedule)
+                            <tr class="border-t border-slate-200 align-top">
+                                <td class="px-4 py-3">
+                                    <div class="font-semibold text-slate-950">{{ $schedule->client?->full_name ?? $schedule->client?->business_name ?? 'Client' }}</div>
+                                    <div class="text-xs text-slate-500">{{ $schedule->savingsAccount?->account_number }} → {{ $schedule->loan?->loan_number }}</div>
+                                </td>
+                                <td class="whitespace-nowrap px-4 py-3">UGX {{ number_format((float) $schedule->amount, 2) }} · {{ str($schedule->frequency)->headline() }}</td>
+                                <td class="px-4 py-3"><span class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{{ str($schedule->status)->headline() }}</span></td>
+                                <td class="whitespace-nowrap px-4 py-3">{{ $schedule->next_run_at?->format('d M Y H:i') }}</td>
+                                <td class="max-w-xs px-4 py-3">
+                                    <div class="font-semibold {{ $schedule->last_result === 'succeeded' ? 'text-emerald-700' : ($schedule->last_result === 'failed' ? 'text-red-700' : 'text-amber-700') }}">{{ $schedule->last_result ? str($schedule->last_result)->headline() : 'Not run yet' }}</div>
+                                    <div class="text-xs text-slate-500">{{ $schedule->last_message }}</div>
+                                    @if($schedule->runs->isNotEmpty())
+                                        <details class="mt-1 text-xs text-slate-600">
+                                            <summary class="cursor-pointer font-semibold">{{ $schedule->runs->count() }} recorded run(s)</summary>
+                                            <div class="mt-1 grid gap-1">
+                                                @foreach($schedule->runs as $run)
+                                                    <div>{{ $run->due_at?->format('d M Y H:i') }} · {{ str($run->status)->headline() }}{{ $run->failure_reason ? ' · '.$run->failure_reason : '' }}</div>
+                                                @endforeach
+                                            </div>
+                                        </details>
+                                    @endif
+                                </td>
+                                <td class="px-4 py-3 text-right">
+                                    @if($canAdministerScheduledDeductions && in_array($schedule->status, ['draft', 'disabled'], true))
+                                        <form method="POST" action="{{ route('non-cash.scheduled-deductions.activate', $schedule) }}" class="inline">
+                                            @csrf
+                                            <button class="rounded bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white">Activate</button>
+                                        </form>
+                                    @endif
+                                    @if($canAdministerScheduledDeductions && $schedule->status === 'active')
+                                        <form method="POST" action="{{ route('non-cash.scheduled-deductions.disable', $schedule) }}" class="inline">
+                                            @csrf
+                                            <button class="rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white">Disable</button>
+                                        </form>
+                                    @endif
+                                    @if($canAdministerScheduledDeductions && $schedule->status !== 'cancelled')
+                                        <form method="POST" action="{{ route('non-cash.scheduled-deductions.cancel', $schedule) }}" class="mt-1 inline">
+                                            @csrf
+                                            <button class="rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white">Cancel</button>
+                                        </form>
+                                    @endif
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    @endif
+
     <div class="grid gap-4 lg:grid-cols-2">
         <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div class="flex items-start justify-between gap-3">

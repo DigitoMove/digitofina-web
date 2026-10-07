@@ -63,6 +63,7 @@ class ReportCatalogService
 
     public function __construct(
         private BusinessCalendarService $calendar,
+        private BusinessCashFlowReportService $businessCashFlow,
         private TenantContext $tenant,
         private CurrencyRateService $currencyRates,
     ) {}
@@ -102,6 +103,7 @@ class ReportCatalogService
     public function definitions(?User $user = null): array
     {
         $definitions = [
+            $this->report('business-cash-flow', 'Business Performance', 'Business Cash Flow & Performance', 'business_cash_flow', ['default_period' => 'lifetime'], true, false),
             $this->report('general-income-statement', 'General Reports', 'Simplified Income Statement', 'general_income_statement', ['default_period' => 'full_month']),
             $this->report('projected-general-income-statement', 'General Reports', 'Simplified Income Statement - Projected', 'general_income_statement', ['default_period' => 'full_month', 'interest_basis' => 'projected']),
             $this->report('arrears-rate', 'General Reports', 'Arrears Rate', 'arrears_rate', [], true),
@@ -241,8 +243,13 @@ class ReportCatalogService
 
         abort_unless($definition, 404);
 
+        $requestedBranchId = isset($filters['branch_id']) && $filters['branch_id'] !== '' ? (int) $filters['branch_id'] : null;
         $from = $definition['usesDates']
-            ? (filled($filters['from'] ?? null) ? Carbon::parse($filters['from'])->startOfDay() : today()->startOfDay())
+            ? (filled($filters['from'] ?? null)
+                ? Carbon::parse($filters['from'])->startOfDay()
+                : ($definition['kind'] === 'business_cash_flow'
+                    ? $this->businessCashFlow->earliestActivityDate($user, $requestedBranchId)
+                    : today()->startOfDay()))
             : Carbon::parse('1900-01-01')->startOfDay();
         $to = $definition['usesDates']
             ? (filled($filters['to'] ?? null) ? Carbon::parse($filters['to'])->endOfDay() : now()->endOfDay())
@@ -275,46 +282,69 @@ class ReportCatalogService
             : 'collected';
         $limit = $detail === 'brief' ? 25 : 200;
 
-        [$columns, $rows, $summary] = match ($definition['kind']) {
-            'transactions' => $this->transactions($payload, $from, $to, $branchId, $limit, $user, $search, $postedByUserId),
-            'teller_transactions' => $this->tellerTransactions($from, $to, $branchId, $limit, $user, $search),
-            'non_cash_transactions' => $this->nonCashTransactions($from, $to, $branchId, $limit, $user, $chartAccountId, $search),
-            'cash_balances' => $this->cashBalances($branchId, $user),
-            'drawer_balances' => $this->drawerBalances($from, $to, $branchId, $user),
-            'branch_period_summary' => $this->branchPeriodSummary($from, $to, $branchId, $user),
-            'clients' => $this->clients($payload, $from, $to, $branchId, $limit, $user),
-            'officer_entries' => $this->officerEntries($from, $to, $branchId, $user),
-            'chart_accounts' => $this->chartAccounts($branchId, $user),
-            'journal_entries' => $this->journalEntries($from, $to, $branchId, $limit, $user, $chartAccountId, $search),
-            'daily_ledger_summary' => $this->dailyLedgerSummary($from, $to, $branchId, $user, $chartAccountIds),
-            'journal_analysis' => $this->journalAnalysis($from, $to, $branchId, $user),
-            'ledger_section' => $this->ledgerSection($payload, $from, $to, $branchId, $user),
-            'accounting_statement' => $this->accountingStatement($payload, $from, $to, $branchId, $user),
-            'application_fees_income' => $this->applicationFeesIncome($from, $to, $branchId, $limit, $user),
-            'loan_interest_income' => $this->loanInterestIncome($from, $to, $branchId, $limit, $user, $interestBasis),
-            'profitability_summary' => $this->profitabilitySummary($from, $to, $branchId, $user, $interestBasis),
-            'branch_profitability_standing' => $this->branchProfitabilityStanding($from, $to, $branchId, $user, $interestBasis),
-            'accounts' => $this->accounts($payload, $from, $to, $branchId, $limit, $user),
-            'shares' => $this->shares($from, $to, $branchId, $limit, $user),
-            'loans' => $this->loans($payload, $from, $to, $branchId, $limit, $user),
-            'loan_disbursements' => $this->loanDisbursements($payload, $from, $to, $branchId, $limit, $user),
-            'loan_schedules' => $this->loanSchedules($payload, $from, $to, $branchId, $limit, $user),
-            'loan_summary' => $this->loanSummary($branchId, $user),
-            'loan_book' => $this->loanBook($branchId, $detail === 'brief' ? 100 : 5000, $user),
-            'loan_repayments' => $this->loanRepayments($from, $to, $branchId, $limit, $user),
-            'term_deposits' => $this->termDeposits($payload, $from, $to, $branchId, $limit, $user),
-            'investment_accounts' => $this->investmentAccounts($payload, $from, $to, $branchId, $limit, $user),
-            'investment_transactions' => $this->investmentTransactions($payload, $from, $to, $branchId, $limit, $user),
-            'investment_plan_performance' => $this->investmentPlanPerformance($branchId, $user),
-            'investment_branch_performance' => $this->investmentBranchPerformance($branchId, $user),
-            'investment_officer_performance' => $this->investmentOfficerPerformance($branchId, $user),
-            'settings' => $this->settings($payload),
-            'general_income_statement' => $this->generalIncomeStatement($from, $to, $branchId, $user, $interestBasis),
-            'arrears_rate' => $this->arrearsRate($from, $to, $branchId, $user, (bool) ($filters['lifetime'] ?? false)),
-            default => $this->placeholderRows($definition),
-        };
+        $positionColumns = [];
+        $positionRows = collect();
+        $positionSummary = [];
+        $period = null;
 
-        return compact('definition', 'columns', 'rows', 'summary', 'from', 'to', 'detail', 'branchId', 'chartAccountIds', 'search', 'interestBasis', 'postedByUserId') + ['currency' => $this->reportCurrency, 'baseCurrency' => $this->reportBaseCurrency];
+        if ($definition['kind'] === 'business_cash_flow') {
+            $businessCashFlow = $this->businessCashFlow->generate($from, $to, (string) ($filters['period'] ?? 'monthly'), $branchId, $user, $this->reportCurrency, $this->reportBaseCurrency);
+            $columns = $businessCashFlow['columns'];
+            $rows = $businessCashFlow['rows'];
+            $summary = $businessCashFlow['summary'];
+            $positionColumns = $businessCashFlow['position_columns'];
+            $positionRows = $businessCashFlow['position_rows'];
+            $positionSummary = $businessCashFlow['position_summary'];
+            $period = $businessCashFlow['period'];
+        } else {
+            [$columns, $rows, $summary] = match ($definition['kind']) {
+                'transactions' => $this->transactions($payload, $from, $to, $branchId, $limit, $user, $search, $postedByUserId),
+                'teller_transactions' => $this->tellerTransactions($from, $to, $branchId, $limit, $user, $search),
+                'non_cash_transactions' => $this->nonCashTransactions($from, $to, $branchId, $limit, $user, $chartAccountId, $search),
+                'cash_balances' => $this->cashBalances($branchId, $user),
+                'drawer_balances' => $this->drawerBalances($from, $to, $branchId, $user),
+                'branch_period_summary' => $this->branchPeriodSummary($from, $to, $branchId, $user),
+                'clients' => $this->clients($payload, $from, $to, $branchId, $limit, $user),
+                'officer_entries' => $this->officerEntries($from, $to, $branchId, $user),
+                'chart_accounts' => $this->chartAccounts($branchId, $user),
+                'journal_entries' => $this->journalEntries($from, $to, $branchId, $limit, $user, $chartAccountId, $search),
+                'daily_ledger_summary' => $this->dailyLedgerSummary($from, $to, $branchId, $user, $chartAccountIds),
+                'journal_analysis' => $this->journalAnalysis($from, $to, $branchId, $user),
+                'ledger_section' => $this->ledgerSection($payload, $from, $to, $branchId, $user),
+                'accounting_statement' => $this->accountingStatement($payload, $from, $to, $branchId, $user),
+                'application_fees_income' => $this->applicationFeesIncome($from, $to, $branchId, $limit, $user),
+                'loan_interest_income' => $this->loanInterestIncome($from, $to, $branchId, $limit, $user, $interestBasis),
+                'profitability_summary' => $this->profitabilitySummary($from, $to, $branchId, $user, $interestBasis),
+                'branch_profitability_standing' => $this->branchProfitabilityStanding($from, $to, $branchId, $user, $interestBasis),
+                'accounts' => $this->accounts($payload, $from, $to, $branchId, $limit, $user),
+                'shares' => $this->shares($from, $to, $branchId, $limit, $user),
+                'loans' => $this->loans($payload, $from, $to, $branchId, $limit, $user),
+                'loan_disbursements' => $this->loanDisbursements($payload, $from, $to, $branchId, $limit, $user),
+                'loan_schedules' => $this->loanSchedules($payload, $from, $to, $branchId, $limit, $user),
+                'loan_summary' => $this->loanSummary($branchId, $user),
+                'loan_book' => $this->loanBook($branchId, $detail === 'brief' ? 100 : 5000, $user),
+                'loan_repayments' => $this->loanRepayments($from, $to, $branchId, $limit, $user),
+                'term_deposits' => $this->termDeposits($payload, $from, $to, $branchId, $limit, $user),
+                'investment_accounts' => $this->investmentAccounts($payload, $from, $to, $branchId, $limit, $user),
+                'investment_transactions' => $this->investmentTransactions($payload, $from, $to, $branchId, $limit, $user),
+                'investment_plan_performance' => $this->investmentPlanPerformance($branchId, $user),
+                'investment_branch_performance' => $this->investmentBranchPerformance($branchId, $user),
+                'investment_officer_performance' => $this->investmentOfficerPerformance($branchId, $user),
+                'settings' => $this->settings($payload),
+                'general_income_statement' => $this->generalIncomeStatement($from, $to, $branchId, $user, $interestBasis),
+                'arrears_rate' => $this->arrearsRate($from, $to, $branchId, $user, (bool) ($filters['lifetime'] ?? false)),
+                default => $this->placeholderRows($definition),
+            };
+        }
+
+        return compact('definition', 'columns', 'rows', 'summary', 'from', 'to', 'detail', 'branchId', 'chartAccountIds', 'search', 'interestBasis', 'postedByUserId') + [
+            'currency' => $this->reportCurrency,
+            'baseCurrency' => $this->reportBaseCurrency,
+            'period' => $period,
+            'positionColumns' => $positionColumns,
+            'positionRows' => $positionRows,
+            'positionSummary' => $positionSummary,
+        ];
     }
 
     /**
@@ -391,6 +421,7 @@ class ReportCatalogService
         $kind = (string) $definition['kind'];
 
         $group = match (true) {
+            $slug === 'business-cash-flow' => 'Business Cash Flow & Performance',
             in_array($slug, ['general-income-statement', 'projected-general-income-statement', 'income-statement', 'balance-sheet', 'trial-balance', 'profitability-summary', 'projected-profitability-summary', 'branch-profitability-standing'], true) => 'Executive Financial Pack',
             in_array($category, ['Accounting', 'Posted Transactions'], true) => 'General Ledger & Controls',
             in_array($category, ['Treasury'], true) => 'Treasury, Cash & Reconciliation',
@@ -402,6 +433,7 @@ class ReportCatalogService
         };
 
         $groupOrder = [
+            'Business Cash Flow & Performance' => 5,
             'Executive Financial Pack' => 10,
             'General Ledger & Controls' => 20,
             'Treasury, Cash & Reconciliation' => 30,
@@ -413,6 +445,7 @@ class ReportCatalogService
         ][$group];
 
         $sortOrder = [
+            'business-cash-flow' => 1,
             'general-income-statement' => 1,
             'income-statement' => 10,
             'balance-sheet' => 20,
@@ -451,6 +484,7 @@ class ReportCatalogService
         ][$slug] ?? 900;
 
         $categoryOrder = [
+            'Business Performance' => 1,
             'General Reports' => 1,
             'Posted Transactions' => 10,
             'Treasury' => 20,
@@ -473,6 +507,7 @@ class ReportCatalogService
             'sort_order' => $sortOrder,
             'description' => $this->reportDescription($slug, $category, $kind),
             'is_priority' => in_array($slug, [
+                'business-cash-flow',
                 'general-income-statement',
                 'projected-general-income-statement',
                 'income-statement',
@@ -495,6 +530,7 @@ class ReportCatalogService
     private function reportDescription(string $slug, string $category, string $kind): string
     {
         $descriptions = [
+            'business-cash-flow' => 'Lifetime or selected-range money flow with capital funding, income, expenses, loan movements, cumulative cash flow, and current accounting position.',
             'general-income-statement' => 'A simplified management income statement showing money in, money out, profit, and the main income sources.',
             'projected-general-income-statement' => 'A simplified management income statement using scheduled projected interest instead of collected interest.',
             'income-statement' => 'Revenue, expenses, and surplus for the selected period.',

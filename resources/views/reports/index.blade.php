@@ -5,6 +5,7 @@
     $reportCount = $groups->flatten(1)->count();
     $prioritySlugs = $priorityReports->pluck('slug');
     $categoryDescriptions = [
+        'Business Performance' => 'Lifetime or selected-range business cash flow, loan movement, accounting position, and profitability.',
         'General Reports' => 'Simplified management reports for income, expenses, money movement, and profit.',
         'Posted Transactions' => 'Cash, system, user, teller, and non-cash transaction histories.',
         'Treasury' => 'Cash position, teller accountability, and branch reconciliation.',
@@ -21,6 +22,7 @@
         'Investments' => 'Investment balances, movements, returns, and performance.',
     ];
     $categoryAccents = [
+        'Business Performance' => 'border-fuchsia-200 bg-fuchsia-50 text-fuchsia-950',
         'General Reports' => 'border-brand-200 bg-brand-50 text-brand-950',
         'Posted Transactions' => 'border-amber-200 bg-amber-50 text-amber-900',
         'Treasury' => 'border-emerald-200 bg-emerald-50 text-emerald-900',
@@ -68,10 +70,12 @@
                         data-report-url="{{ route('reports.show', $report['slug']) }}"
                         data-report-dates="{{ $report['usesDates'] ? '1' : '0' }}"
                         data-report-arrears-rate="{{ $report['slug'] === 'arrears-rate' ? '1' : '0' }}"
+                        data-report-business-cash-flow="{{ $report['kind'] === 'business_cash_flow' ? '1' : '0' }}"
                         data-report-detail="{{ $report['hasDetail'] ? '1' : '0' }}"
                         data-report-profitability="{{ $report['category'] === 'Profitability' ? '1' : '0' }}"
                         data-report-interest-basis="{{ $report['payload']['interest_basis'] ?? 'collected' }}"
-                        data-report-from="{{ ($report['payload']['default_period'] ?? null) === 'full_month' ? now()->startOfMonth()->toDateString() : $defaultFrom }}"
+                        data-report-period="{{ $report['kind'] === 'business_cash_flow' ? 'monthly' : '' }}"
+                        data-report-from="{{ $report['kind'] === 'business_cash_flow' ? '' : (($report['payload']['default_period'] ?? null) === 'full_month' ? now()->startOfMonth()->toDateString() : $defaultFrom) }}"
                         data-report-to="{{ ($report['payload']['default_period'] ?? null) === 'full_month' ? now()->endOfMonth()->toDateString() : $defaultTo }}"
                         data-report-ledger="{{ in_array($report['kind'], ['journal_entries', 'non_cash_transactions', 'daily_ledger_summary'], true) ? '1' : '0' }}"
                         data-report-ledger-mode="{{ $report['kind'] === 'daily_ledger_summary' ? 'multiple' : 'single' }}"
@@ -106,6 +110,18 @@
             <label class="text-sm font-medium text-slate-700">To
                 <input name="to" type="date" value="{{ $defaultTo }}" class="mt-1 w-full rounded border-slate-300">
             </label>
+        </div>
+
+        <div class="mt-4 hidden" data-report-period-field>
+            <label class="text-sm font-medium text-slate-700">Period view
+                <select name="period" class="mt-1 w-full rounded border-slate-300" disabled>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="half_yearly">Half-yearly</option>
+                    <option value="yearly">Yearly</option>
+                </select>
+            </label>
+            <p class="mt-1 text-xs text-slate-500">Leave the dates blank to use the earliest recorded business activity through today.</p>
         </div>
 
         <label class="mt-3 hidden items-center gap-2 text-sm font-medium text-slate-700" data-report-lifetime-field>

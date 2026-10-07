@@ -829,6 +829,7 @@ const initReportLauncher = () => {
     const ledgerMultipleField = document.querySelector('[data-report-ledger-multiple-field]');
     const postedByField = document.querySelector('[data-report-posted-by-field]');
     const lifetimeField = document.querySelector('[data-report-lifetime-field]');
+    const periodField = document.querySelector('[data-report-period-field]');
 
     if (!modal || !form) {
         return;
@@ -842,6 +843,7 @@ const initReportLauncher = () => {
     document.querySelectorAll('[data-report-open]').forEach((button) => {
         button.addEventListener('click', () => {
             form.action = button.dataset.reportUrl || '';
+            const isBusinessCashFlow = button.dataset.reportBusinessCashFlow === '1';
 
             if (title) {
                 title.textContent = button.dataset.reportTitle || 'Generate Report';
@@ -857,11 +859,22 @@ const initReportLauncher = () => {
                     input.disabled = dateFields.hidden;
 
                     if (input.name === 'from') {
-                        input.value = button.dataset.reportFrom || input.value;
+                        input.value = isBusinessCashFlow ? '' : (button.dataset.reportFrom || input.value);
                     }
 
                     if (input.name === 'to') {
-                        input.value = button.dataset.reportTo || input.value;
+                        input.value = isBusinessCashFlow ? '' : (button.dataset.reportTo || input.value);
+                    }
+                });
+            }
+
+            if (periodField) {
+                periodField.hidden = !isBusinessCashFlow;
+                periodField.classList.toggle('hidden', !isBusinessCashFlow);
+                periodField.querySelectorAll('select').forEach((select) => {
+                    select.disabled = !isBusinessCashFlow;
+                    if (isBusinessCashFlow) {
+                        select.value = button.dataset.reportPeriod || 'monthly';
                     }
                 });
             }
