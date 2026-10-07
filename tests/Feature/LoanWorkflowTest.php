@@ -2047,6 +2047,74 @@ it('lets an admin clear penalties for one schedule only', function () {
         ->and((float) $loan->fresh()->penalty_balance)->toBe(8000.0);
 });
 
+it('lets an admin write off a specific arrears amount and leaves the remainder payable', function () {
+    $user = loanWorkflowUser();
+    $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $client = loanWorkflowClient($user, '+256700220006');
+    $loan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-PARTIAL-ARREARS', 'in_arrears');
+    $loan->update(['principal_balance' => 10000]);
+    $schedule = LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subDays(10),
+        'principal_due' => 10000,
+        'total_due' => 10000,
+        'outstanding_amount' => 10000,
+        'balance_due' => 10000,
+        'status' => 'overdue',
+        'days_overdue' => 10,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('arrears.write-off'), ['loan_id' => $loan->id, 'amount' => 5000])
+        ->assertRedirect()
+        ->assertSessionHas('status', 'Wrote off UGX 5,000.00 of arrears from 1 schedule(s). Remaining arrears stay payable.');
+
+    expect((float) $schedule->fresh()->principal_due)->toBe(5000.0)
+        ->and((float) $schedule->fresh()->outstanding_amount)->toBe(5000.0)
+        ->and((float) $loan->fresh()->principal_balance)->toBe(5000.0)
+        ->and($schedule->fresh()->status)->toBe('overdue');
+});
+
+it('rejects an arrears write-off that exceeds the loan arrears or currency denomination', function () {
+    $user = loanWorkflowUser();
+    $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $client = loanWorkflowClient($user, '+256700220007');
+    $loan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-ARREARS-LIMIT', 'in_arrears');
+    $loan->update(['principal_balance' => 10000]);
+    LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subDays(10),
+        'principal_due' => 10000,
+        'total_due' => 10000,
+        'outstanding_amount' => 10000,
+        'balance_due' => 10000,
+        'status' => 'overdue',
+        'days_overdue' => 10,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('arrears.write-off'), ['loan_id' => $loan->id, 'amount' => 10100])
+        ->assertSessionHasErrors('amount');
+
+    $this->post(route('arrears.write-off'), ['loan_id' => $loan->id, 'amount' => 5050])
+        ->assertSessionHasErrors('amount');
+});
+
+it('does not allow non-admin users to write off arrears', function () {
+    $user = loanWorkflowUser();
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $client = loanWorkflowClient($user, '+256700220008');
+    $loan = loanWorkflowTrackedLoan($user, $client, $product, '1001-LN-ARREARS-UNAUTHORIZED', 'in_arrears');
+
+    $this->actingAs($user)
+        ->post(route('arrears.write-off'), ['loan_id' => $loan->id, 'amount' => 1000])
+        ->assertRedirect();
+});
+
 it('waits one extra day before treating an unpaid schedule as arrears', function () {
     $user = loanWorkflowUser();
     $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);

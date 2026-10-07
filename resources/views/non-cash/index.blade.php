@@ -18,6 +18,52 @@
         <p class="mt-1">Use a debit-normal <strong>asset</strong> ledger such as "Merchant Code Clearing" or "Mobile Money Clearing", and set its drawer use to <strong>Non-cash only</strong>. Loan principal repayments reduce Loans Receivable; only interest, fees, and penalties are income.</p>
     </section>
 
+    @if($canPostSavingsLoanRepayment)
+        <section class="rounded-lg border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+            <div>
+                <div class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Manual internal transfer</div>
+                <h2 class="mt-1 text-base font-semibold text-emerald-950">Repay a Loan from Client Savings</h2>
+                <p class="mt-1 text-sm text-emerald-800">Select a savings account, then choose an active or in-arrears loan belonging to the same client. This posts directly between the accounts and does not move teller drawer cash.</p>
+            </div>
+            <form method="GET" action="{{ route('non-cash.index') }}" class="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+                <input type="hidden" name="account_id" value="{{ $selectedAccount?->id }}">
+                <input type="hidden" name="chart_account_id" value="{{ $selectedLedger?->id }}">
+                <label class="grid gap-1 text-sm">
+                    <span class="font-medium text-emerald-950">Client savings account</span>
+                    <select name="repayment_savings_account_id" required class="rounded-lg border-emerald-200 focus:border-emerald-500 focus:ring-emerald-100" onchange="this.form.submit()">
+                        <option value="">Choose savings account</option>
+                        @foreach($repaymentSavingsAccounts as $savingsAccount)
+                            <option value="{{ $savingsAccount->id }}" @selected($selectedRepaymentSavings?->id === $savingsAccount->id)>{{ $savingsAccount->account_number }} · {{ $savingsAccount->client?->full_name ?? $savingsAccount->client?->business_name }} · Available UGX {{ number_format((float) $savingsAccount->available_balance, 2) }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label class="grid gap-1 text-sm">
+                    <span class="font-medium text-emerald-950">Same-client loan</span>
+                    <select name="repayment_loan_id" required class="rounded-lg border-emerald-200 focus:border-emerald-500 focus:ring-emerald-100">
+                        <option value="">Choose loan</option>
+                        @foreach($repaymentLoans as $repaymentLoan)
+                            <option value="{{ $repaymentLoan->id }}" @selected($selectedRepaymentLoan?->id === $repaymentLoan->id)>{{ $repaymentLoan->loan_number }} · {{ $repaymentLoan->product?->name ?? 'Loan' }} · {{ str($repaymentLoan->status)->headline() }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <button class="df-action-secondary">Load selection</button>
+            </form>
+            @if($selectedRepaymentSavings && $selectedRepaymentLoan)
+                <form method="POST" action="{{ route('non-cash.repay-loan-from-savings') }}" class="mt-4 grid gap-4 border-t border-emerald-200 pt-4 sm:grid-cols-[1fr_auto] sm:items-end" data-confirm-title="Review savings loan repayment" data-confirm-message="Transfer the selected amount from this savings account to this same-client loan? No teller drawer cash will move." data-confirm-label="Post repayment" data-confirm-tone="neutral">
+                    @csrf
+                    <input type="hidden" name="savings_account_id" value="{{ $selectedRepaymentSavings->id }}">
+                    <input type="hidden" name="loan_id" value="{{ $selectedRepaymentLoan->id }}">
+                    <label class="grid gap-1 text-sm">
+                        <span class="font-medium text-emerald-950">Partial repayment amount</span>
+                        <input type="number" name="amount" min="100" step="100" value="{{ old('amount') }}" required class="rounded-lg border-emerald-200 focus:border-emerald-500 focus:ring-emerald-100" placeholder="UGX 100 or more">
+                        <span class="text-xs text-emerald-800">Available savings: UGX {{ number_format((float) $selectedRepaymentSavings->available_balance, 2) }} · Loan: {{ $selectedRepaymentLoan->loan_number }}</span>
+                    </label>
+                    <button class="rounded-lg bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">Post Savings Repayment</button>
+                </form>
+            @endif
+        </section>
+    @endif
+
     <div class="grid gap-4 lg:grid-cols-2">
         <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div class="flex items-start justify-between gap-3">

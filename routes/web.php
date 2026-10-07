@@ -259,6 +259,7 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::get('/arrears', [ArrearsController::class, 'index'])->middleware('module:loans')->name('arrears.index');
     Route::post('/arrears/apply-penalties', [ArrearsController::class, 'applyPenalties'])->middleware('module:loans')->name('arrears.apply-penalties');
     Route::post('/arrears/clear-penalties', [ArrearsController::class, 'clearPenalties'])->middleware('module:loans')->name('arrears.clear-penalties');
+    Route::post('/arrears/write-off', [ArrearsController::class, 'writeOffArrears'])->middleware('module:loans')->name('arrears.write-off');
     Route::get('/due-repayments', [DueRepaymentController::class, 'index'])->middleware('module:loans')->name('due-repayments.index');
     Route::get('/teller-drawer', [TellerDrawerController::class, 'index'])->middleware('module:teller')->name('teller.index');
     Route::post('/teller-drawer/managed-post', [TellerDrawerController::class, 'postManagedDrawer'])->name('teller.managed-post');
@@ -274,6 +275,7 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::delete('/expenses/{expense}', [ExpenseController::class, 'destroy'])->middleware('module:teller')->name('expenses.destroy');
     Route::get('/non-cash-transactions', [NonCashTransactionController::class, 'index'])->middleware('module:teller')->name('non-cash.index');
     Route::post('/non-cash-transactions', [NonCashTransactionController::class, 'store'])->middleware('module:teller')->name('non-cash.store');
+    Route::post('/non-cash-transactions/loan-repayment-from-savings', [NonCashTransactionController::class, 'repayLoanFromSavings'])->middleware('module:teller')->name('non-cash.repay-loan-from-savings');
     Route::get('/end-of-day', [EndOfDayController::class, 'index'])->middleware('module:teller')->name('end-of-day.index');
     Route::post('/end-of-day/reconcile', [EndOfDayController::class, 'reconcile'])->name('end-of-day.reconcile');
     Route::post('/end-of-day/process', [EndOfDayController::class, 'process'])->name('end-of-day.process');

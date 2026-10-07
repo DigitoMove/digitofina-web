@@ -1159,6 +1159,15 @@ class LoanService
                 'status' => $isSettled ? 'closed' : $loan->status,
             ]);
 
+            if (! $isSettled && $loan->loan_account_id) {
+                Account::query()
+                    ->whereKey($loan->loan_account_id)
+                    ->lockForUpdate()
+                    ->update([
+                        'balance' => max(0, (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance),
+                    ]);
+            }
+
             if ($isSettled && $loan->loan_account_id) {
                 Account::query()
                     ->whereKey($loan->loan_account_id)
@@ -1642,6 +1651,8 @@ class LoanService
             $query->whereHas('loan', fn ($query) => $query->where('organization_id', $actor->organization_id));
         }
 
+        $query->orderBy('due_date')->orderBy('id');
+
         foreach ($query->cursor() as $candidate) {
             DB::transaction(function () use ($candidate, $actor, &$totals): void {
                 $schedule = LoanSchedule::query()->whereKey($candidate->id)->lockForUpdate()->firstOrFail();
@@ -1665,14 +1676,33 @@ class LoanService
 
                 if ($loan->loan_account_id) {
                     $loan->loanAccount()->update([
-                        'balance' => max(0, (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + max(0, (float) $loan->penalty_balance - $penaltyToClear)),
+                        'balance' => max(0, (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance),
                     ]);
                 }
 
-                LoanPenalty::query()
+                $pendingPenalties = LoanPenalty::query()
                     ->where('loan_schedule_id', $schedule->id)
                     ->where('status', 'pending')
-                    ->update(['status' => 'waived']);
+                    ->orderBy('id')
+                    ->get();
+                $remainingPenaltyAmount = $penaltyToClear;
+
+                foreach ($pendingPenalties as $penalty) {
+                    if ($remainingPenaltyAmount <= 0) {
+                        break;
+                    }
+
+                    $penaltyAmount = (float) $penalty->amount;
+                    $waivedAmount = min($penaltyAmount, $remainingPenaltyAmount);
+
+                    if ($waivedAmount >= $penaltyAmount) {
+                        $penalty->update(['status' => 'waived']);
+                    } else {
+                        $penalty->decrement('amount', $waivedAmount);
+                    }
+
+                    $remainingPenaltyAmount -= $waivedAmount;
+                }
 
                 $totals['schedules']++;
                 $totals['amount'] += $penaltyToClear;
@@ -1686,6 +1716,134 @@ class LoanService
         }
 
         return $totals;
+    }
+
+    /**
+     * @return array{schedules:int, amount:float, principal:float, interest:float, fees:float, penalty:float}
+     */
+    public function writeOffArrears(Loan $loan, float $amount, User $actor): array
+    {
+        CurrencyDenomination::assertValid($amount, 'Arrears write-off amount');
+
+        $totals = [
+            'schedules' => 0,
+            'amount' => 0.0,
+            'principal' => 0.0,
+            'interest' => 0.0,
+            'fees' => 0.0,
+            'penalty' => 0.0,
+        ];
+
+        return DB::transaction(function () use ($loan, $amount, $actor, $totals): array {
+            $loan = Loan::query()->with('loanAccount')->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+            $schedules = $loan->schedules()
+                ->eligibleForArrears(now())
+                ->where('outstanding_amount', '>', 0)
+                ->orderBy('due_date')
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+            $availableAmount = (float) $schedules->sum('outstanding_amount');
+
+            if ($amount > $availableAmount + 0.0001) {
+                throw new InvalidArgumentException(sprintf(
+                    'The arrears write-off amount cannot exceed the outstanding arrears of UGX %s.',
+                    number_format($availableAmount, 2),
+                ));
+            }
+
+            $remainingAmount = $amount;
+
+            foreach ($schedules as $schedule) {
+                if ($remainingAmount <= 0.0001) {
+                    break;
+                }
+
+                $scheduleOutstanding = max(0, (float) $schedule->outstanding_amount);
+                $scheduleWriteOff = min($scheduleOutstanding, $remainingAmount);
+                $remainingScheduleWriteOff = $scheduleWriteOff;
+                $penaltyWriteOff = min($remainingScheduleWriteOff, max(0, (float) $schedule->penalty_due - (float) $schedule->penalty_paid));
+                $remainingScheduleWriteOff -= $penaltyWriteOff;
+                $feesWriteOff = min($remainingScheduleWriteOff, max(0, (float) $schedule->fees_due - (float) $schedule->fees_paid));
+                $remainingScheduleWriteOff -= $feesWriteOff;
+                $interestWriteOff = min($remainingScheduleWriteOff, max(0, (float) $schedule->interest_due - (float) $schedule->interest_paid));
+                $remainingScheduleWriteOff -= $interestWriteOff;
+                $principalWriteOff = min($remainingScheduleWriteOff, max(0, (float) $schedule->principal_due - (float) $schedule->principal_paid));
+                $totalWriteOff = $penaltyWriteOff + $feesWriteOff + $interestWriteOff + $principalWriteOff;
+                $outstandingAfterWriteOff = max(0, (float) $schedule->outstanding_amount - $totalWriteOff);
+
+                $schedule->update([
+                    'principal_due' => max((float) $schedule->principal_paid, (float) $schedule->principal_due - $principalWriteOff),
+                    'interest_due' => max((float) $schedule->interest_paid, (float) $schedule->interest_due - $interestWriteOff),
+                    'fees_due' => max((float) $schedule->fees_paid, (float) $schedule->fees_due - $feesWriteOff),
+                    'penalty_due' => max((float) $schedule->penalty_paid, (float) $schedule->penalty_due - $penaltyWriteOff),
+                    'total_due' => max((float) $schedule->total_paid, (float) $schedule->total_due - $totalWriteOff),
+                    'outstanding_amount' => $outstandingAfterWriteOff,
+                    'balance_due' => $outstandingAfterWriteOff,
+                    'status' => $outstandingAfterWriteOff <= 0 ? 'written_off' : 'overdue',
+                ]);
+
+                $loan->decrement('principal_balance', $principalWriteOff);
+                $loan->decrement('interest_balance', $interestWriteOff);
+                $loan->decrement('fees_balance', $feesWriteOff);
+                $loan->decrement('penalty_balance', $penaltyWriteOff);
+
+                if ($penaltyWriteOff > 0) {
+                    $remainingPenaltyWriteOff = $penaltyWriteOff;
+                    $pendingPenalties = LoanPenalty::query()
+                        ->where('loan_schedule_id', $schedule->id)
+                        ->where('status', 'pending')
+                        ->orderBy('id')
+                        ->lockForUpdate()
+                        ->get();
+
+                    foreach ($pendingPenalties as $penalty) {
+                        if ($remainingPenaltyWriteOff <= 0.0001) {
+                            break;
+                        }
+
+                        $penaltyAmount = (float) $penalty->amount;
+                        $waivedAmount = min($penaltyAmount, $remainingPenaltyWriteOff);
+
+                        if ($waivedAmount >= $penaltyAmount) {
+                            $penalty->update(['status' => 'waived']);
+                        } else {
+                            $penalty->decrement('amount', $waivedAmount);
+                        }
+
+                        $remainingPenaltyWriteOff -= $waivedAmount;
+                    }
+                }
+
+                $totals['schedules']++;
+                $totals['amount'] += $totalWriteOff;
+                $totals['principal'] += $principalWriteOff;
+                $totals['interest'] += $interestWriteOff;
+                $totals['fees'] += $feesWriteOff;
+                $totals['penalty'] += $penaltyWriteOff;
+                $remainingAmount -= $totalWriteOff;
+
+                $this->auditLogger->record('loan.arrears_written_off', $loan->fresh(), [
+                    'loan_schedule_id' => $schedule->id,
+                    'amount' => $totalWriteOff,
+                    'principal_amount' => $principalWriteOff,
+                    'interest_amount' => $interestWriteOff,
+                    'fees_amount' => $feesWriteOff,
+                    'penalty_amount' => $penaltyWriteOff,
+                    'written_off_by' => $actor->id,
+                ], actor: $actor);
+            }
+
+            $loan->refresh();
+
+            if ($loan->loan_account_id) {
+                $loan->loanAccount()->update([
+                    'balance' => max(0, (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance),
+                ]);
+            }
+
+            return $totals;
+        });
     }
 
     /**

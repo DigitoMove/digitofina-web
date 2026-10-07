@@ -3,12 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreNonCashTransactionRequest;
+use App\Http\Requests\StoreSavingsLoanRepaymentRequest;
 use App\Models\Account;
 use App\Models\AccountType;
 use App\Models\Branch;
 use App\Models\ChartAccount;
+use App\Models\Loan;
+use App\Models\SavingsAccount;
 use App\Models\Transaction;
 use App\Models\TransactionType;
+use App\Services\FinancialRelationshipService;
 use App\Services\LedgerChargeService;
 use App\Services\TransactionPostingService;
 use App\Support\ApiSecurity;
@@ -36,6 +40,14 @@ class NonCashTransactionController extends Controller
         $historyFrom = (string) ($historyDates['history_from'] ?? '');
         $historyTo = (string) ($historyDates['history_to'] ?? '');
         $selectedAccountTypeId = $request->integer('account_type_id') ?: null;
+        $selectedRepaymentSavings = $request->integer('repayment_savings_account_id')
+            ? SavingsAccount::query()
+                ->with(['client', 'product'])
+                ->where('status', 'active')
+                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->whereKey($request->integer('repayment_savings_account_id'))
+                ->first()
+            : null;
 
         $selectedAccount = $request->integer('account_id')
             ? Account::query()
@@ -120,7 +132,58 @@ class NonCashTransactionController extends Controller
             'historyFrom' => $historyFrom,
             'historyTo' => $historyTo,
             'receiptTransaction' => $this->receiptTransaction($request),
+            'canPostSavingsLoanRepayment' => $request->user()->canPerform('post-repayments'),
+            'selectedRepaymentSavings' => $selectedRepaymentSavings,
+            'selectedRepaymentLoan' => $request->integer('repayment_loan_id')
+                ? Loan::query()
+                    ->with(['client', 'product'])
+                    ->whereIn('status', ['active', 'in_arrears'])
+                    ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                    ->when($selectedRepaymentSavings, fn (Builder $query, SavingsAccount $account): Builder => $query->where('client_id', $account->client_id))
+                    ->whereKey($request->integer('repayment_loan_id'))
+                    ->first()
+                : null,
+            'repaymentSavingsAccounts' => SavingsAccount::query()
+                ->with(['client', 'product'])
+                ->where('status', 'active')
+                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->orderBy('account_number')
+                ->get(),
+            'repaymentLoans' => Loan::query()
+                ->with(['client', 'product'])
+                ->whereIn('status', ['active', 'in_arrears'])
+                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->when($selectedRepaymentSavings, fn (Builder $query, SavingsAccount $account): Builder => $query->where('client_id', $account->client_id))
+                ->orderBy('loan_number')
+                ->get(),
         ]);
+    }
+
+    public function repayLoanFromSavings(StoreSavingsLoanRepaymentRequest $request, FinancialRelationshipService $relationships): RedirectResponse
+    {
+        $branchId = $this->branchId($request);
+        $savingsAccount = SavingsAccount::query()
+            ->where('status', 'active')
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->findOrFail($request->integer('savings_account_id'));
+        $loan = Loan::query()
+            ->whereIn('status', ['active', 'in_arrears'])
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->findOrFail($request->integer('loan_id'));
+
+        ApiSecurity::assertTenantAccess($request->user(), $savingsAccount);
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
+
+        try {
+            $repayment = $relationships->repayLoanFromSavings($loan, $savingsAccount, (float) $request->validated('amount'), $request->user());
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['amount' => $exception->getMessage()])->withInput();
+        }
+
+        return redirect()
+            ->route('non-cash.index')
+            ->with('status', 'Savings funds transferred to the selected loan as a non-cash repayment.')
+            ->with('repayment_id', $repayment->id);
     }
 
     public function store(StoreNonCashTransactionRequest $request, TransactionPostingService $posting): RedirectResponse

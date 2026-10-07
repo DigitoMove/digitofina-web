@@ -5,11 +5,13 @@ use App\Models\AccountType;
 use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\Client;
+use App\Models\DrawerMovement;
 use App\Models\InvestmentAccount;
 use App\Models\InvestmentPlan;
 use App\Models\InvestorAccount;
 use App\Models\Loan;
 use App\Models\LoanProduct;
+use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
 use App\Models\Organization;
 use App\Models\Permission;
@@ -241,6 +243,70 @@ it('repays loans from savings and updates the client overview', function () {
         ->and($overview['total_savings'])->toBe(160000.0)
         ->and($overview['total_investments'])->toBe((float) $investment->current_balance)
         ->and($overview['outstanding_loan_balance'])->toBe(60000.0);
+});
+
+it('posts a manual savings loan repayment through the non-cash route without moving drawer cash', function () {
+    $user = financialRelationshipUser();
+    $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $client = financialRelationshipClient($user);
+    $savings = financialRelationshipSavingsAccount($user, $client);
+    $loan = financialRelationshipLoan($user, $client);
+
+    $this->actingAs($user)
+        ->post(route('non-cash.repay-loan-from-savings'), [
+            'savings_account_id' => $savings->id,
+            'loan_id' => $loan->id,
+            'amount' => 40_000,
+        ])
+        ->assertRedirect(route('non-cash.index'))
+        ->assertSessionHas('status', 'Savings funds transferred to the selected loan as a non-cash repayment.');
+
+    expect((float) $savings->fresh()->current_balance)->toBe(160000.0)
+        ->and((float) $loan->fresh()->principal_balance)->toBe(60000.0)
+        ->and(LoanRepayment::where('loan_id', $loan->id)->value('payment_method'))->toBe('savings_deduction')
+        ->and(DrawerMovement::count())->toBe(0);
+});
+
+it('validates savings loan repayment ownership, available balance, and denomination', function () {
+    $user = financialRelationshipUser();
+    $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $client = financialRelationshipClient($user);
+    $otherClient = financialRelationshipClient($user);
+    $savings = financialRelationshipSavingsAccount($user, $client, 10_000);
+    $otherSavings = financialRelationshipSavingsAccount($user, $otherClient);
+    $loan = financialRelationshipLoan($user, $client);
+    $otherLoan = financialRelationshipLoan($user, $otherClient);
+
+    $this->actingAs($user);
+
+    $this->post(route('non-cash.repay-loan-from-savings'), [
+        'savings_account_id' => $savings->id,
+        'loan_id' => $otherLoan->id,
+        'amount' => 1_000,
+    ])->assertSessionHasErrors('amount');
+
+    $this->post(route('non-cash.repay-loan-from-savings'), [
+        'savings_account_id' => $savings->id,
+        'loan_id' => $loan->id,
+        'amount' => 10_100,
+    ])->assertSessionHasErrors('amount');
+
+    $this->post(route('non-cash.repay-loan-from-savings'), [
+        'savings_account_id' => $otherSavings->id,
+        'loan_id' => $otherLoan->id,
+        'amount' => 5050,
+    ])->assertSessionHasErrors('amount');
+});
+
+it('shows the manual savings loan repayment workflow in the non-cash area for repayment staff', function () {
+    $user = financialRelationshipUser();
+    $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
+
+    $this->actingAs($user)
+        ->get(route('non-cash.index'))
+        ->assertSuccessful()
+        ->assertSee('Repay a Loan from Client Savings')
+        ->assertSee('does not move teller drawer cash');
 });
 
 it('includes basic savings account balances in the client overview for the client organization', function () {

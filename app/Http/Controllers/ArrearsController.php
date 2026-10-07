@@ -11,10 +11,12 @@ use App\Services\BusinessCalendarService;
 use App\Services\LoanService;
 use App\Services\LoanVisibilityService;
 use App\Support\ApiSecurity;
+use App\Support\CurrencyDenomination;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use InvalidArgumentException;
 
 class ArrearsController extends Controller
 {
@@ -164,6 +166,31 @@ class ArrearsController extends Controller
 
         return back()->with('status', sprintf(
             'Cleared UGX %s in penalties from %d schedule(s).',
+            number_format($totals['amount'], 2),
+            $totals['schedules'],
+        ));
+    }
+
+    public function writeOffArrears(Request $request, LoanService $service): RedirectResponse
+    {
+        abort_unless($this->canRunManualPenalties($request), 403);
+
+        $data = $request->validate([
+            'loan_id' => ['required', 'integer', 'exists:loans,id'],
+            'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+        ]);
+
+        $loan = Loan::query()->findOrFail((int) $data['loan_id']);
+        ApiSecurity::assertTenantAccess($request->user(), $loan);
+
+        try {
+            $totals = $service->writeOffArrears($loan, (float) $data['amount'], $request->user());
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['amount' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', sprintf(
+            'Wrote off UGX %s of arrears from %d schedule(s). Remaining arrears stay payable.',
             number_format($totals['amount'], 2),
             $totals['schedules'],
         ));

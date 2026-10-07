@@ -71,9 +71,9 @@
                     $arrearsSchedules = $loan->schedules;
                     $earliestSchedule = $arrearsSchedules->first();
                     $maxDaysDue = $arrearsSchedules->max(fn ($schedule) => (int) ($schedule->days_overdue ?: ($schedule->due_date ? $calendar->businessDaysBetween($schedule->due_date, now()) : 0)));
+                    $arrearsAmount = max(0, (float) $loan->arrears_cumulative_due);
                     $penaltyToClear = max(0, (float) $loan->arrears_penalty_due - (float) $loan->arrears_penalty_paid);
-                    $missedAmount = max(0, (float) $loan->arrears_cumulative_due - $penaltyToClear);
-                    $totalToPay = $missedAmount + $penaltyToClear;
+                    $missedAmount = max(0, $arrearsAmount - $penaltyToClear);
                 @endphp
                 <tr class="align-top hover:bg-slate-50/70">
                     <td class="px-4 py-3">
@@ -83,14 +83,19 @@
                     </td>
                     <td class="px-4 py-3 text-slate-700"><div>{{ $loan->branch?->name ?? 'Unassigned branch' }}</div><div class="text-xs text-slate-500">{{ $loan->officer?->name ?? 'Unassigned officer' }}</div></td>
                     <td class="px-4 py-3"><div class="font-semibold text-slate-950">{{ number_format((int) $loan->arrears_schedules_count) }} installment{{ (int) $loan->arrears_schedules_count === 1 ? '' : 's' }} due</div><div class="text-xs text-slate-500">Since {{ $earliestSchedule?->due_date?->format('d M Y') ?? 'N/A' }} · {{ number_format((int) $maxDaysDue) }} days</div></td>
-                    <td class="px-4 py-3 text-right"><div class="font-semibold text-red-700">Missed · UGX {{ number_format($missedAmount, 2) }}</div><div class="text-xs text-slate-600">Penalty · UGX {{ number_format($penaltyToClear, 2) }}</div><div class="text-xs font-semibold text-slate-950">Total · UGX {{ number_format($totalToPay, 2) }}</div></td>
+                    <td class="px-4 py-3 text-right"><div class="font-semibold text-red-700">Missed · UGX {{ number_format($missedAmount, 2) }}</div><div class="text-xs text-slate-600">Penalty · UGX {{ number_format($penaltyToClear, 2) }}</div><div class="text-xs font-semibold text-slate-950">Total · UGX {{ number_format($arrearsAmount, 2) }}</div></td>
                     <td class="px-4 py-3"><span class="rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">{{ str($loan->status)->headline() }}</span></td>
                     <td class="px-4 py-3 text-right">
-                        @if($canRunManualPenalties && $penaltyToClear > 0)
-                            <form method="POST" action="{{ route('arrears.clear-penalties') }}" onsubmit="return confirm('Clear all pending penalties for this loan?')">
+                        @if($canRunManualPenalties && $arrearsAmount > 0)
+                            <form method="POST" action="{{ route('arrears.write-off') }}" onsubmit="return confirm('Write off only this amount from the loan arrears? The remaining arrears will stay payable.')">
                                 @csrf
                                 <input type="hidden" name="loan_id" value="{{ $loan->id }}">
-                                <x-icon-action type="submit" text="Clear" label="Clear loan penalty" icon="delete" tone="danger" />
+                                <div class="flex flex-col items-end gap-2">
+                                    <label class="text-left text-xs font-semibold text-slate-600">Arrears amount to write off
+                                        <input name="amount" type="number" min="100" max="{{ number_format($arrearsAmount, 2, '.', '') }}" step="100" class="mt-1 w-36 rounded border-slate-300 text-right text-sm" placeholder="UGX" required>
+                                    </label>
+                                    <x-icon-action type="submit" text="Write off amount" label="Write off selected loan arrears amount" icon="delete" tone="danger" />
+                                </div>
                             </form>
                         @endif
                     </td>

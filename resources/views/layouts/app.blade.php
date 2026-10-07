@@ -366,7 +366,7 @@
                             <button type="button" class="-mr-1 grid h-6 w-6 shrink-0 place-items-center rounded-full text-amber-800 transition hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500" aria-label="Close notification" data-flash-dismiss>&times;</button>
                         </div>
                     @endif
-                    @if ($errors->any())
+                    @if (isset($errors) && $errors->any())
                         <div class="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 shadow-lg" data-flash-toast>
                             <div class="min-w-0 flex-1">{{ $errors->first() }}</div>
                             <button type="button" class="-mr-1 grid h-6 w-6 shrink-0 place-items-center rounded-full text-red-700 transition hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500" aria-label="Close notification" data-flash-dismiss>&times;</button>
