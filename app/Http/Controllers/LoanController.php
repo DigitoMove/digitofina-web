@@ -31,6 +31,10 @@ class LoanController extends Controller
         Gate::authorize('viewAny', Loan::class);
 
         $user = $request->user();
+        $dateFilters = $request->validate([
+            'added_from' => ['nullable', 'date'],
+            'added_to' => ['nullable', 'date', 'after_or_equal:added_from'],
+        ]);
         $mustSearchLoanDirectory = $this->mustSearchLoanDirectory($user);
         $hasLoanSearch = $request->filled('search');
 
@@ -53,6 +57,8 @@ class LoanController extends Controller
             ->when($request->string('loan_type')->toString(), fn ($query, string $loanType) => $query->where('loan_type', $loanType))
             ->when($request->integer('officer_id'), fn ($query, int $officerId) => $query->where('officer_id', $officerId))
             ->when($request->integer('loan_product_id'), fn ($query, int $productId) => $query->where('loan_product_id', $productId))
+            ->when($dateFilters['added_from'] ?? null, fn ($query, string $date): mixed => $query->whereDate('application_date', '>=', $date))
+            ->when($dateFilters['added_to'] ?? null, fn ($query, string $date): mixed => $query->whereDate('application_date', '<=', $date))
             ->latest()
             ->paginate(15)
             ->withQueryString();
@@ -63,6 +69,8 @@ class LoanController extends Controller
             'officers' => $visibility->assignableOfficers($user)->get(),
             'hasLoanSearch' => $hasLoanSearch,
             'mustSearchLoanDirectory' => $mustSearchLoanDirectory,
+            'addedFrom' => $dateFilters['added_from'] ?? '',
+            'addedTo' => $dateFilters['added_to'] ?? '',
         ]);
     }
 

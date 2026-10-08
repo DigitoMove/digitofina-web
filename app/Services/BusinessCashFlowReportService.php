@@ -65,7 +65,7 @@ class BusinessCashFlowReportService
                 'Net Cash Flow' => $this->money($net, $currency, $baseCurrency),
                 '_metrics' => [...$metrics, 'net_cash_flow' => $net],
             ];
-        });
+        })->filter(fn (array $row): bool => $this->hasGrossActivity($row['_metrics']))->values();
 
         $cumulative = 0.0;
         $rows = $rows->map(function (array $row) use (&$cumulative, $currency, $baseCurrency): array {
@@ -176,6 +176,30 @@ class BusinessCashFlowReportService
 
             return $metrics;
         });
+    }
+
+    /**
+     * @param  array<string, float>  $metrics
+     */
+    private function hasGrossActivity(array $metrics): bool
+    {
+        foreach ([
+            'capital_in',
+            'other_income_in',
+            'operating_expense_out',
+            'loan_disbursement_out',
+            'loan_repayment_in',
+            'principal_repaid',
+            'interest_repaid',
+            'fees_repaid',
+            'penalties_repaid',
+        ] as $metric) {
+            if ((float) ($metrics[$metric] ?? 0) > 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

@@ -2221,6 +2221,7 @@ class ReportCatalogService
 
         $rows = $query->latest()->limit($limit)->get()->map(fn (Loan $loan): array => [
             'Loan No.' => $loan->loan_number,
+            'Loan Added' => $loan->application_date?->format('d M Y') ?? 'N/A',
             'Client' => $loan->client?->full_name ?? 'N/A',
             'Product' => $loan->product?->name ?? 'N/A',
             'Requested' => $this->money((float) $loan->requested_amount),
@@ -2229,7 +2230,7 @@ class ReportCatalogService
             'Status' => Str::headline($loan->status),
         ]);
 
-        return [['Loan No.', 'Client', 'Product', 'Requested', 'Approved', 'Balance', 'Status'], $rows, ['Loans' => number_format($query->count())]];
+        return [['Loan No.', 'Loan Added', 'Client', 'Product', 'Requested', 'Approved', 'Balance', 'Status'], $rows, ['Loans' => number_format($query->count())]];
     }
 
     private function loanDisbursements(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array

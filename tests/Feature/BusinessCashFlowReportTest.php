@@ -95,6 +95,27 @@ it('groups business cash flow into quarterly, half-yearly, and yearly rows', fun
         ->and($yearly['rows']->firstWhere('Period', '2026')['Other Income In'])->toBe('UGX 100,000.00');
 });
 
+it('omits zero-activity periods while retaining offsetting activity and cumulative totals', function () {
+    [, $branch, $user] = businessCashFlowFixture('Sparse Business', 'SPARSE');
+    $accounts = businessCashFlowAccounts($user->organization, $branch);
+    businessCashFlowJournal($accounts['income'], $branch, '2026-01-10', 'credit', 10_000, 'OFFSET-INCOME');
+    businessCashFlowJournal($accounts['expense'], $branch, '2026-01-11', 'debit', 10_000, 'OFFSET-EXPENSE');
+    businessCashFlowJournal($accounts['income'], $branch, '2026-03-10', 'credit', 5_000, 'MARCH-INCOME');
+
+    $report = app(ReportCatalogService::class)->generate('business-cash-flow', [
+        'from' => '2026-01-01',
+        'to' => '2026-03-31',
+        'period' => 'monthly',
+    ], $user);
+    $rows = $report['rows']->keyBy('Period');
+
+    expect($report['rows']->pluck('Period')->all())->toBe(['Jan 2026', 'Mar 2026', 'Lifetime / Selected Total'])
+        ->and($rows['Jan 2026']['Net Cash Flow'])->toBe('UGX 0.00')
+        ->and($rows['Jan 2026']['Other Income In'])->toBe('UGX 10,000.00')
+        ->and($rows['Mar 2026']['Cumulative Cash Flow'])->toBe('UGX 5,000.00')
+        ->and($report['summary']['Selected net cash flow'])->toBe('UGX 5,000.00');
+});
+
 it('scopes business cash flow to the tenant and authorized report roles', function () {
     [$organization, $branch, $user] = businessCashFlowFixture('Scoped Business', 'SCOPED');
     $accounts = businessCashFlowAccounts($organization, $branch);
