@@ -64,7 +64,7 @@
     <section class="mb-5 df-panel overflow-hidden">
         <div class="border-b border-slate-200 px-5 py-4">
             <h2 class="font-semibold text-slate-950">Current Business Position</h2>
-            <p class="mt-1 text-sm text-slate-500">Position as of {{ $to->format('d M Y') }}. Loan balances are operational/current; assets, liabilities, equity, profit, and margin are accounting/accrual measures.</p>
+            <p class="mt-1 text-sm text-slate-500">Position as of {{ $to->format('d M Y') }}. Loan balances are current operational values for loans existing by the report end; assets, liabilities, equity, profit, and margin are accounting/accrual measures.</p>
         </div>
         @if(! empty($positionSummary))
             <div class="grid gap-3 border-b border-slate-200 p-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -89,6 +89,45 @@
                     @foreach($positionRows as $row)
                         <tr class="border-t border-slate-200">
                             @foreach($positionColumns as $column)
+                                <td class="whitespace-nowrap px-4 py-3">{{ $row[$column] ?? '' }}</td>
+                            @endforeach
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </section>
+@endif
+
+@if($definition['kind'] === 'business_cash_flow' && ! empty($liquidationRows))
+    <section class="mb-5 df-panel overflow-hidden">
+        <div class="border-b border-slate-200 px-5 py-4">
+            <h2 class="font-semibold text-slate-950">Estimated Closure / Liquidation</h2>
+            <p class="mt-1 text-sm text-slate-500">Estimated surplus/(shortfall) before liquidation costs. It includes accounting cash and non-loan assets, recoverable outstanding loan principal, expected future loan income, and current liabilities. Loan principal is a recovery amount, not profit; no settlement-cost model is configured.</p>
+        </div>
+        @if(! empty($liquidationSummary))
+            <div class="grid gap-3 border-b border-slate-200 p-4 sm:grid-cols-2">
+                @foreach($liquidationSummary as $label => $value)
+                    <div class="rounded border border-slate-200 bg-slate-50 p-3">
+                        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $label }}</div>
+                        <div class="mt-1 font-semibold text-slate-950">{{ $value }}</div>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+        <div class="overflow-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-50 text-slate-600">
+                    <tr>
+                        @foreach($liquidationColumns as $column)
+                            <th class="whitespace-nowrap px-4 py-3">{{ $column }}</th>
+                        @endforeach
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($liquidationRows as $row)
+                        <tr class="border-t border-slate-200">
+                            @foreach($liquidationColumns as $column)
                                 <td class="whitespace-nowrap px-4 py-3">{{ $row[$column] ?? '' }}</td>
                             @endforeach
                         </tr>

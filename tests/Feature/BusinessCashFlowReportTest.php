@@ -69,9 +69,68 @@ it('aggregates lifetime business cash flow and current position by month', funct
         ->and($rows['Mar 2026']['Loan Repayments In'])->toBe('UGX 12,000.00')
         ->and($rows['Mar 2026']['Principal Repaid'])->toBe('UGX 10,000.00')
         ->and($report['summary']['Selected net cash flow'])->toBe('UGX 102,000.00')
+        ->and($report['summary']['Selected realized profit'])->toBe('UGX 42,000.00')
+        ->and($report['summary']['Selected profit margin'])->toBe('77.78%')
+        ->and($report['summary']['Cumulative / lifetime accounting profit'])->toBe('UGX 38,000.00')
+        ->and($report['summary']['Expected future loan income'])->toBe('UGX 7,000.00')
+        ->and($report['summary']['Estimated liquidation surplus/(shortfall)'])->toBe('UGX 195,000.00')
         ->and($position['Outstanding loan principal']['Amount'])->toBe('UGX 88,000.00')
         ->and($position['Total outstanding loan balance']['Amount'])->toBe('UGX 95,000.00')
         ->and($position['Current profit']['Amount'])->toBe('UGX 38,000.00');
+});
+
+it('shows a negative liquidation shortfall when liabilities exceed recoverable value', function () {
+    [$organization, $branch, $user] = businessCashFlowFixture('Shortfall Business', 'SHORTFALL');
+    $loan = businessCashFlowLoan($organization, $branch, $user, 50_000, 20_000, 2_000, 500, 500);
+    $liability = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'code' => $organization->id.'-2100',
+        'name' => 'Current Liabilities',
+        'type' => 'liability',
+        'normal_balance' => 'credit',
+        'is_active' => true,
+    ]);
+    businessCashFlowJournal($liability, $branch, '2026-02-01', 'credit', 200_000, 'LIABILITY-SHORTFALL');
+
+    $report = app(ReportCatalogService::class)->generate('business-cash-flow', [
+        'from' => '2026-01-01',
+        'to' => '2026-02-28',
+    ], $user);
+
+    expect($loan->exists)->toBeTrue()
+        ->and($report['summary']['Expected future loan income'])->toBe('UGX 3,000.00')
+        ->and($report['summary']['Estimated liquidation surplus/(shortfall)'])->toBe('UGX -177,000.00')
+        ->and($report['liquidationRows']->firstWhere('Metric', 'Estimated liquidation surplus/(shortfall)')['Amount'])->toBe('UGX -177,000.00');
+});
+
+it('scopes liquidation estimates to the selected branch and tenant', function () {
+    [$organization, $branch, $user] = businessCashFlowFixture('Branch Scope Business', 'BRANCHSCOPE');
+    businessCashFlowLoan($organization, $branch, $user, 25_000, 25_000, 0, 0, 0);
+    $otherBranch = Branch::create([
+        'organization_id' => $organization->id,
+        'code' => 'BRANCHSCOPE-OTHER',
+        'name' => 'Other Branch',
+        'is_active' => true,
+        'status' => 'active',
+    ]);
+    businessCashFlowLoan($organization, $otherBranch, $user, 900_000, 900_000, 0, 0, 0);
+    [$foreignOrganization, $foreignBranch, $foreignUser] = businessCashFlowFixture('Foreign Scope Business', 'FOREIGNSCOPE');
+    businessCashFlowLoan($foreignOrganization, $foreignBranch, $foreignUser, 700_000, 700_000, 0, 0, 0);
+
+    $service = app(ReportCatalogService::class);
+    $branchReport = $service->generate('business-cash-flow', [
+        'from' => '2026-01-01',
+        'to' => '2026-02-28',
+        'branch_id' => $branch->id,
+    ], $user);
+    $organizationReport = $service->generate('business-cash-flow', [
+        'from' => '2026-01-01',
+        'to' => '2026-02-28',
+    ], $user);
+
+    expect($branchReport['summary']['Estimated liquidation surplus/(shortfall)'])->toBe('UGX 25,000.00')
+        ->and($organizationReport['summary']['Estimated liquidation surplus/(shortfall)'])->toBe('UGX 925,000.00');
 });
 
 it('groups business cash flow into quarterly, half-yearly, and yearly rows', function () {
@@ -127,6 +186,7 @@ it('scopes business cash flow to the tenant and authorized report roles', functi
     $report = app(ReportCatalogService::class)->generate('business-cash-flow', ['from' => '2026-02-01', 'to' => '2026-02-28'], $user);
 
     expect($report['summary']['Selected net cash flow'])->toBe('UGX 5,000.00')
+        ->and($report['summary']['Estimated liquidation surplus/(shortfall)'])->toBe('UGX 0.00')
         ->and($report['rows']->pluck('Other Income In')->all())->not->toContain('UGX 900,000.00');
 
     $restrictedRole = Role::create(['name' => 'No Report Access', 'slug' => 'no-report-access']);
@@ -156,6 +216,8 @@ it('renders the separate business performance report section and filters', funct
         ->get(route('reports.show', ['report' => 'business-cash-flow', 'from' => '2026-01-01', 'to' => '2026-12-31', 'period' => 'yearly']))
         ->assertSuccessful()
         ->assertSee('Current Business Position')
+        ->assertSee('Estimated Closure / Liquidation')
+        ->assertSee('Estimated liquidation surplus/(shortfall)')
         ->assertSee('Yearly view')
         ->assertSee('Total assets');
 });
@@ -219,11 +281,12 @@ function businessCashFlowJournal(ChartAccount $account, Branch $branch, string $
 
 function businessCashFlowLoan(Organization $organization, Branch $branch, User $user, int $principal, int $principalBalance, int $interestBalance, int $feesBalance, int $penaltyBalance): Loan
 {
+    $sequence = Client::query()->where('organization_id', $organization->id)->count() + 1;
     $client = Client::create([
         'organization_id' => $organization->id,
         'branch_id' => $branch->id,
         'officer_id' => $user->id,
-        'client_number' => $organization->id.'-CLIENT-001',
+        'client_number' => $organization->id.'-CLIENT-'.str_pad((string) $sequence, 3, '0', STR_PAD_LEFT),
         'client_type' => 'individual',
         'first_name' => 'Report',
         'last_name' => 'Client',
@@ -233,7 +296,7 @@ function businessCashFlowLoan(Organization $organization, Branch $branch, User $
     $product = LoanProduct::create([
         'organization_id' => $organization->id,
         'name' => 'Report Loan',
-        'code' => $organization->id.'-REPORT-LOAN',
+        'code' => $organization->id.'-REPORT-LOAN-'.$sequence,
         'min_amount' => 1_000,
         'max_amount' => 1_000_000,
         'annual_interest_rate' => 12,
@@ -250,7 +313,7 @@ function businessCashFlowLoan(Organization $organization, Branch $branch, User $
         'branch_id' => $branch->id,
         'loan_product_id' => $product->id,
         'officer_id' => $user->id,
-        'loan_number' => $organization->id.'-REPORT-LOAN-001',
+        'loan_number' => $organization->id.'-REPORT-LOAN-'.str_pad((string) $sequence, 3, '0', STR_PAD_LEFT),
         'requested_amount' => $principal,
         'approved_amount' => $principal,
         'principal_balance' => $principalBalance,

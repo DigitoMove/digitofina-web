@@ -285,6 +285,9 @@ class ReportCatalogService
         $positionColumns = [];
         $positionRows = collect();
         $positionSummary = [];
+        $liquidationColumns = [];
+        $liquidationRows = collect();
+        $liquidationSummary = [];
         $period = null;
 
         if ($definition['kind'] === 'business_cash_flow') {
@@ -295,6 +298,9 @@ class ReportCatalogService
             $positionColumns = $businessCashFlow['position_columns'];
             $positionRows = $businessCashFlow['position_rows'];
             $positionSummary = $businessCashFlow['position_summary'];
+            $liquidationColumns = $businessCashFlow['liquidation_columns'];
+            $liquidationRows = $businessCashFlow['liquidation_rows'];
+            $liquidationSummary = $businessCashFlow['liquidation_summary'];
             $period = $businessCashFlow['period'];
         } else {
             [$columns, $rows, $summary] = match ($definition['kind']) {
@@ -344,6 +350,9 @@ class ReportCatalogService
             'positionColumns' => $positionColumns,
             'positionRows' => $positionRows,
             'positionSummary' => $positionSummary,
+            'liquidationColumns' => $liquidationColumns,
+            'liquidationRows' => $liquidationRows,
+            'liquidationSummary' => $liquidationSummary,
         ];
     }
 

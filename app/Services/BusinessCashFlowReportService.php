@@ -38,7 +38,7 @@ class BusinessCashFlowReportService
     }
 
     /**
-     * @return array{columns:array<int, string>, rows:Collection<int, array<string, mixed>>, summary:array<string, string>, position_columns:array<int, string>, position_rows:Collection<int, array<string, mixed>>, position_summary:array<string, string>, period:string}
+     * @return array{columns:array<int, string>, rows:Collection<int, array<string, mixed>>, summary:array<string, string>, position_columns:array<int, string>, position_rows:Collection<int, array<string, mixed>>, position_summary:array<string, string>, liquidation_columns:array<int, string>, liquidation_rows:Collection<int, array<string, mixed>>, liquidation_summary:array<string, string>, period:string}
      */
     public function generate(CarbonInterface $from, CarbonInterface $to, string $period, ?int $branchId, User $user, string $currency = 'UGX', string $baseCurrency = 'UGX'): array
     {
@@ -104,6 +104,11 @@ class BusinessCashFlowReportService
         ]);
 
         $position = $this->currentPosition($to, $branchId, $user);
+        $selectedIncome = $totals['other_income_in'] + $totals['interest_repaid'] + $totals['fees_repaid'] + $totals['penalties_repaid'];
+        $selectedProfit = $selectedIncome - $totals['operating_expense_out'];
+        $selectedMargin = $selectedIncome > 0 ? ($selectedProfit / $selectedIncome) * 100 : 0;
+        $futureIncome = $position['future_income'];
+        $liquidationSurplus = $position['non_loan_assets'] + $position['principal'] + $futureIncome - $position['liabilities'];
 
         return [
             'columns' => ['Period', 'Capital / Funding In', 'Other Income In', 'Operating Expenses Out', 'Loan Disbursements Out', 'Loan Repayments In', 'Principal Repaid', 'Interest Repaid', 'Fees Repaid', 'Penalties Repaid', 'Net Cash Flow', 'Cumulative Cash Flow'],
@@ -112,6 +117,11 @@ class BusinessCashFlowReportService
                 'Period view' => ucfirst(str_replace('_', ' ', $period)),
                 'Selected net cash flow' => $this->money($totalNet, $currency, $baseCurrency),
                 'Loan repayments received' => $this->money($totals['loan_repayment_in'], $currency, $baseCurrency),
+                'Selected realized profit' => $this->money($selectedProfit, $currency, $baseCurrency),
+                'Selected profit margin' => number_format($selectedMargin, 2).'%',
+                'Cumulative / lifetime accounting profit' => $this->money($position['profit'], $currency, $baseCurrency),
+                'Expected future loan income' => $this->money($futureIncome, $currency, $baseCurrency),
+                'Estimated liquidation surplus/(shortfall)' => $this->money($liquidationSurplus, $currency, $baseCurrency),
                 'Current profit (accrual)' => $this->money($position['profit'], $currency, $baseCurrency),
                 'Current cash (accounting)' => $this->money($position['cash'], $currency, $baseCurrency),
             ],
@@ -122,6 +132,20 @@ class BusinessCashFlowReportService
                 'Total liabilities' => $this->money($position['liabilities'], $currency, $baseCurrency),
                 'Total equity' => $this->money($position['equity'], $currency, $baseCurrency),
                 'Profit margin' => number_format($position['margin'], 2).'%',
+                'Expected future loan income' => $this->money($futureIncome, $currency, $baseCurrency),
+                'Estimated liquidation surplus/(shortfall)' => $this->money($liquidationSurplus, $currency, $baseCurrency),
+            ],
+            'liquidation_columns' => ['Metric', 'Amount', 'Basis'],
+            'liquidation_rows' => collect([
+                ['Metric' => 'Cash and non-loan assets', 'Amount' => $this->money($position['non_loan_assets'], $currency, $baseCurrency), 'Basis' => 'Accounting assets less any Loans Receivable ledger balance.'],
+                ['Metric' => 'Recoverable outstanding loan principal', 'Amount' => $this->money($position['principal'], $currency, $baseCurrency), 'Basis' => 'Outstanding operational loan principal within the selected tenant/branch scope.'],
+                ['Metric' => 'Expected future loan income', 'Amount' => $this->money($futureIncome, $currency, $baseCurrency), 'Basis' => 'Outstanding contractual interest, fees, and penalties; not realized profit.'],
+                ['Metric' => 'Less: current liabilities', 'Amount' => $this->money(-$position['liabilities'], $currency, $baseCurrency), 'Basis' => 'Current accounting liabilities through report end.'],
+                ['Metric' => 'Estimated liquidation surplus/(shortfall)', 'Amount' => $this->money($liquidationSurplus, $currency, $baseCurrency), 'Basis' => 'Before liquidation costs; no settlement-cost model is configured.'],
+            ]),
+            'liquidation_summary' => [
+                'Expected future loan income' => $this->money($futureIncome, $currency, $baseCurrency),
+                'Estimated liquidation surplus/(shortfall)' => $this->money($liquidationSurplus, $currency, $baseCurrency),
             ],
             'period' => $period,
         ];
@@ -212,12 +236,21 @@ class BusinessCashFlowReportService
         $expenses = (float) $balances->where('type', 'expense')->sum('balance');
         $profit = $income - $expenses;
         $assets = (float) $balances->where('type', 'asset')->sum('balance');
+        $loanReceivableAssets = (float) $balances->where('is_loan_receivable', true)->sum('balance');
+        $nonLoanAssets = $assets - $loanReceivableAssets;
         $liabilities = (float) $balances->where('type', 'liability')->sum('balance');
         $equity = (float) $balances->where('type', 'equity')->sum('balance') + $profit;
         $cash = (float) $balances->where('type', 'asset')->where('is_cash_account', true)->sum('balance');
         $loans = Loan::query()
             ->where('organization_id', $this->organizationId($user))
             ->whereIn('status', ['disbursed', 'active', 'in_arrears', 'restructured'])
+            ->where(function (Builder $query) use ($to): void {
+                $query->whereDate('disbursed_at', '<=', $to->toDateString())
+                    ->orWhere(function (Builder $query) use ($to): void {
+                        $query->whereNull('disbursed_at')
+                            ->whereDate('created_at', '<=', $to->toDateString());
+                    });
+            })
             ->when($this->effectiveBranchId($branchId, $user), fn (Builder $query, int $branch): Builder => $query->where('branch_id', $branch))
             ->get();
         $principal = (float) $loans->sum('principal_balance');
@@ -225,10 +258,14 @@ class BusinessCashFlowReportService
         $fees = (float) $loans->sum('fees_balance');
         $penalties = (float) $loans->sum('penalty_balance');
         $incomeTotal = $income;
+        $futureIncome = $interest + $fees + $penalties;
 
         return compact('assets', 'liabilities', 'equity', 'cash', 'profit', 'incomeTotal', 'principal', 'interest', 'fees', 'penalties') + [
             'loan_total' => $principal + $interest + $fees + $penalties,
             'margin' => $incomeTotal > 0 ? ($profit / $incomeTotal) * 100 : 0,
+            'future_income' => $futureIncome,
+            'loan_receivable_assets' => $loanReceivableAssets,
+            'non_loan_assets' => $nonLoanAssets,
         ];
     }
 
@@ -245,11 +282,13 @@ class BusinessCashFlowReportService
             ['Metric' => 'Outstanding loan penalties', 'Amount' => $this->money($position['penalties'], $currency, $baseCurrency), 'Basis' => 'Current remaining loan penalties.'],
             ['Metric' => 'Total outstanding loan balance', 'Amount' => $this->money($position['loan_total'], $currency, $baseCurrency), 'Basis' => 'Principal, interest, fees, and penalties combined.'],
             ['Metric' => 'Current profit', 'Amount' => $this->money($position['profit'], $currency, $baseCurrency), 'Basis' => 'Accounting/accrual ledger income less ledger expenses through report end.'],
+            ['Metric' => 'Expected future loan income', 'Amount' => $this->money($position['future_income'], $currency, $baseCurrency), 'Basis' => 'Outstanding contractual interest, fees, and penalties; not realized profit.'],
             ['Metric' => 'Current cash', 'Amount' => $this->money($position['cash'], $currency, $baseCurrency), 'Basis' => 'Accounting asset accounts marked as cash.'],
             ['Metric' => 'Total assets', 'Amount' => $this->money($position['assets'], $currency, $baseCurrency), 'Basis' => 'Accounting/accrual ledger position through report end.'],
             ['Metric' => 'Total liabilities', 'Amount' => $this->money($position['liabilities'], $currency, $baseCurrency), 'Basis' => 'Accounting/accrual ledger position through report end.'],
             ['Metric' => 'Total equity', 'Amount' => $this->money($position['equity'], $currency, $baseCurrency), 'Basis' => 'Ledger equity plus current retained profit.'],
             ['Metric' => 'Profit margin', 'Amount' => number_format($position['margin'], 2).'%', 'Basis' => 'Current profit divided by accounting income.'],
+            ['Metric' => 'Estimated liquidation surplus/(shortfall)', 'Amount' => $this->money($position['non_loan_assets'] + $position['principal'] + $position['future_income'] - $position['liabilities'], $currency, $baseCurrency), 'Basis' => 'Before liquidation costs; no settlement-cost model is configured.'],
         ]);
     }
 
@@ -315,11 +354,22 @@ class BusinessCashFlowReportService
             $balance = in_array($account->type, ['asset', 'expense'], true) ? $debit - $credit : $credit - $debit;
 
             return [
+                'code' => (string) $account->code,
+                'name' => (string) $account->name,
                 'type' => $account->type,
                 'balance' => $balance,
                 'is_cash_account' => (bool) $account->is_cash_account,
+                'is_loan_receivable' => $this->isLoanReceivableAccount($account),
             ];
         })->values();
+    }
+
+    private function isLoanReceivableAccount(ChartAccount $account): bool
+    {
+        return $account->type === 'asset'
+            && (str_ends_with((string) $account->code, '-1200')
+                || (string) $account->code === '1200'
+                || str_contains(strtolower((string) $account->name), 'loan receivable'));
     }
 
     private function loanDisbursements(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): Collection
