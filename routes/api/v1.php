@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\V1\LoanController;
 use App\Http\Controllers\Api\V1\LoanProductController;
 use App\Http\Controllers\Api\V1\LoanRepaymentController;
 use App\Http\Controllers\Api\V1\LoanWorkflowController;
+use App\Http\Controllers\Api\V1\MobileOperationsController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\NylonPayWebhookController;
 use App\Http\Controllers\Api\V1\OfflineSyncController;
@@ -72,6 +73,26 @@ Route::middleware(['auth:sanctum', ImpersonateApiUser::class, 'tenant', 'demo.ac
     Route::get('/sync/manifest', [OfflineSyncController::class, 'manifest'])->name('sync.manifest');
     Route::get('/sync/clients', [OfflineSyncController::class, 'pullClients'])->name('sync.clients.pull');
     Route::post('/sync/clients', [OfflineSyncController::class, 'pushClients'])->middleware('throttle:api-sensitive')->name('sync.clients.push');
+
+    Route::prefix('mobile-operations')->name('mobile-operations.')->group(function (): void {
+        Route::get('/savings-loan-sources', [MobileOperationsController::class, 'savingsLoanSources'])->name('savings-loan-sources.index');
+        Route::get('/savings-loan-sources/{account}/loans', [MobileOperationsController::class, 'payableLoans'])->name('savings-loan-sources.loans');
+        Route::post('/loans/{loan}/repay-from-account-savings', [MobileOperationsController::class, 'repayLoanFromAccountSavings'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('loans.repay-from-account-savings');
+        Route::get('/scheduled-deductions', [MobileOperationsController::class, 'scheduledDeductions'])->name('scheduled-deductions.index');
+        Route::post('/scheduled-deductions', [MobileOperationsController::class, 'createScheduledDeduction'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('scheduled-deductions.store');
+        Route::post('/scheduled-deductions/{schedule}/activate', [MobileOperationsController::class, 'activateScheduledDeduction'])->middleware('throttle:api-sensitive')->name('scheduled-deductions.activate');
+        Route::post('/scheduled-deductions/{schedule}/disable', [MobileOperationsController::class, 'disableScheduledDeduction'])->middleware('throttle:api-sensitive')->name('scheduled-deductions.disable');
+        Route::get('/scheduled-deductions/{schedule}/runs', [MobileOperationsController::class, 'scheduledDeductionRuns'])->name('scheduled-deductions.runs');
+        Route::get('/due-repayments', [MobileOperationsController::class, 'dueRepayments'])->name('due-repayments.index');
+        Route::post('/loans/{loan}/arrears/write-off', [MobileOperationsController::class, 'writeOffArrears'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('loans.arrears.write-off');
+        Route::get('/non-cash/options', [MobileOperationsController::class, 'nonCashOptions'])->name('non-cash.options');
+        Route::get('/non-cash/accounts', [MobileOperationsController::class, 'nonCashAccounts'])->name('non-cash.accounts');
+        Route::get('/non-cash/transactions', [MobileOperationsController::class, 'nonCashTransactions'])->name('non-cash.transactions.index');
+        Route::post('/non-cash/transactions', [MobileOperationsController::class, 'postNonCash'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('non-cash.transactions.store');
+        Route::post('/non-cash/transactions/{transaction}/reversal-request', [MobileOperationsController::class, 'requestNonCashReversal'])->middleware('throttle:api-sensitive')->name('non-cash.transactions.reversal-request');
+        Route::get('/end-of-day', [MobileOperationsController::class, 'endOfDay'])->name('end-of-day.show');
+        Route::post('/end-of-day/close', [MobileOperationsController::class, 'closeEndOfDay'])->middleware(['throttle:api-sensitive', 'idempotent.financial'])->name('end-of-day.close');
+    });
 
     Route::apiResource('clients', ClientController::class)->except(['destroy'])->middleware('demo.capacity:clients');
     Route::get('/clients/{client}/documents', [ClientDocumentController::class, 'index'])->name('clients.documents.index');

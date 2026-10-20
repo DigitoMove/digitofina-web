@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/network/api_client.dart';
 import '../admin/admin_workspace.dart';
+import '../operations/operations_hub.dart';
 
 class RecoveryWorkspace extends StatefulWidget {
   const RecoveryWorkspace({
@@ -61,6 +62,16 @@ class _RecoveryWorkspaceState extends State<RecoveryWorkspace> {
     appBar: AppBar(
       title: const BrandTitle(title: 'Loan recovery'),
       actions: [
+        IconButton(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  OperationsHub(client: widget.client, user: widget.user),
+            ),
+          ),
+          tooltip: 'Operations',
+          icon: const Icon(Icons.point_of_sale_outlined),
+        ),
         IconButton(
           onPressed: () => reload(),
           tooltip: 'Refresh',

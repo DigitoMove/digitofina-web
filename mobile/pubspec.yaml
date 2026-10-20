@@ -37,6 +37,11 @@ dependencies:
   http: ^1.5.0
   flutter_secure_storage: ^9.2.4
   flutter_svg: ^2.2.0
+  firebase_core: ^4.3.0
+  firebase_messaging: ^16.1.0
+  image_picker: ^1.2.1
+  pdf: ^3.11.3
+  printing: ^5.14.2
 
 dev_dependencies:
   flutter_test:

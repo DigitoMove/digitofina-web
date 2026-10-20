@@ -3,9 +3,11 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'core/config/api_config.dart';
 import 'core/network/api_client.dart';
+import 'core/notifications/push_notification_service.dart';
 import 'features/admin/admin_workspace.dart';
 import 'features/cashier/cashier_workspace.dart';
 import 'features/admin/impersonation_picker.dart';
+import 'features/operations/operations_hub.dart';
 import 'features/roles/role_workspaces.dart';
 
 void main() => runApp(const DigitoFinaApp());
@@ -20,6 +22,23 @@ class DigitoFinaApp extends StatefulWidget {
 class _DigitoFinaAppState extends State<DigitoFinaApp> {
   final client = ApiClient(config: ApiConfig.fromEnvironment());
   final navigatorKey = GlobalKey<NavigatorState>();
+  final pushNotifications = PushNotificationService();
+
+  void openNotification(Map<String, String> data) {
+    final user = client.profile.value;
+    if (user == null) return;
+    final loanId = int.tryParse(data['loan_id'] ?? data['loan'] ?? '');
+    navigatorKey.currentState?.push(
+      MaterialPageRoute<void>(
+        builder: (_) => OperationsHub(
+          client: client,
+          user: user,
+          initialTab: loanId == null ? 4 : 1,
+          initialLoanId: loanId,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +70,11 @@ class _DigitoFinaAppState extends State<DigitoFinaApp> {
                             client.stopImpersonating();
                             navigatorKey.currentState!.pushAndRemoveUntil(
                               MaterialPageRoute<void>(
-                                builder: (_) => SessionGate(client: client),
+                                builder: (_) => SessionGate(
+                                  client: client,
+                                  pushNotifications: pushNotifications,
+                                  onNotificationOpened: openNotification,
+                                ),
                               ),
                               (_) => false,
                             );
@@ -79,7 +102,11 @@ class _DigitoFinaAppState extends State<DigitoFinaApp> {
           border: OutlineInputBorder(),
         ),
       ),
-      home: SessionGate(client: client),
+      home: SessionGate(
+        client: client,
+        pushNotifications: pushNotifications,
+        onNotificationOpened: openNotification,
+      ),
     );
   }
 }
@@ -149,8 +176,15 @@ Widget workspace(
 }
 
 class SessionGate extends StatefulWidget {
-  const SessionGate({super.key, required this.client});
+  const SessionGate({
+    super.key,
+    required this.client,
+    this.pushNotifications,
+    this.onNotificationOpened,
+  });
   final ApiClient client;
+  final PushNotificationService? pushNotifications;
+  final void Function(Map<String, String> data)? onNotificationOpened;
   @override
   State<SessionGate> createState() => _SessionGateState();
 }
@@ -166,7 +200,15 @@ class _SessionGateState extends State<SessionGate> {
   Future<Map<String, dynamic>?> restore() async {
     if (!await widget.client.hasSession()) return null;
     try {
-      return await widget.client.me();
+      final user = await widget.client.me();
+      if (widget.pushNotifications != null &&
+          widget.onNotificationOpened != null) {
+        await widget.pushNotifications!.configure(
+          widget.client,
+          onOpened: widget.onNotificationOpened!,
+        );
+      }
+      return user;
     } on ApiException catch (error) {
       if (error.status == 401) return null;
       rethrow;
@@ -207,16 +249,27 @@ class _SessionGateState extends State<SessionGate> {
         );
       }
       return snapshot.data == null
-          ? LoginPage(client: widget.client)
+          ? LoginPage(
+              client: widget.client,
+              onAuthenticated:
+                  widget.pushNotifications == null ||
+                      widget.onNotificationOpened == null
+                  ? null
+                  : () => widget.pushNotifications!.configure(
+                      widget.client,
+                      onOpened: widget.onNotificationOpened!,
+                    ),
+            )
           : workspace(context, snapshot.data!, widget.client);
     },
   );
 }
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({required this.client, super.key});
+  const LoginPage({required this.client, this.onAuthenticated, super.key});
 
   final ApiClient client;
+  final Future<void> Function()? onAuthenticated;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -240,6 +293,7 @@ class _LoginPageState extends State<LoginPage> {
         loginController.text.trim(),
         passwordController.text,
       );
+      await widget.onAuthenticated?.call();
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(
@@ -442,6 +496,14 @@ class RoleDashboard extends StatelessWidget {
                   subtitle: const Text(
                     'Module access follows your Laravel permissions',
                   ),
+                  onTap: isClient
+                      ? null
+                      : () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                OperationsHub(client: client, user: user),
+                          ),
+                        ),
                 ),
               ),
           ],

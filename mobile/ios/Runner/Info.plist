@@ -8,6 +8,10 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>DigitoFina</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Capture KYC documents for client verification.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Select KYC documents for client verification.</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../core/network/api_client.dart';
+import '../operations/operations_hub.dart';
 import '../roles/role_workspaces.dart';
 
 class AdminWorkspace extends StatefulWidget {
@@ -76,7 +77,9 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
       await widget.client.selectOrganization(selected);
     } on ApiException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
       }
       return;
     }
@@ -114,6 +117,16 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
         appBar: AppBar(
           title: const BrandTitle(title: 'DigitoFina'),
           actions: [
+            IconButton(
+              tooltip: 'Operations',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      OperationsHub(client: widget.client, user: widget.user),
+                ),
+              ),
+              icon: const Icon(Icons.point_of_sale_outlined),
+            ),
             if (widget.onImpersonate != null)
               IconButton(
                 tooltip: 'Act as a user',
@@ -267,10 +280,18 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
                                   TextButton(
                                     onPressed: () async {
                                       try {
-                                        await widget.client.selectOrganization(null);
+                                        await widget.client.selectOrganization(
+                                          null,
+                                        );
                                       } on ApiException catch (error) {
                                         if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(error.message),
+                                            ),
+                                          );
                                         }
                                         return;
                                       }
