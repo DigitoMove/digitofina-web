@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Account;
+use App\Models\AccountType;
 use App\Models\Branch;
 use App\Models\ChartAccount;
 use App\Models\Client;
@@ -58,6 +60,24 @@ it('processes a due schedule once without moving teller drawer cash', function (
         ->and(LoanRepayment::where('loan_id', $loan->id)->count())->toBe(1)
         ->and(DrawerMovement::count())->toBe(0)
         ->and(LoanSavingsDeductionRun::where('schedule_id', $schedule->id)->count())->toBe(1)
+        ->and(LoanSavingsDeductionRun::where('schedule_id', $schedule->id)->value('status'))->toBe('succeeded');
+});
+
+it('processes a due schedule from a client savings account in the main account register', function () {
+    [$organization, $branch, $admin, , $loan] = scheduledDeductionFixture();
+    $savings = scheduledDeductionBasicSavingsAccount($organization, $branch, $admin, $loan->client, 200_000);
+    $service = app(ScheduledSavingsLoanDeductionService::class);
+    $schedule = $service->create($savings, $loan, 10_000, 'monthly', now()->subMinute(), $admin);
+    $service->activate($schedule, $admin);
+
+    $summary = $service->processDueSchedules(now(), $organization->id);
+
+    expect($summary)->toMatchArray(['checked' => 1, 'succeeded' => 1, 'skipped' => 0, 'failed' => 0])
+        ->and($schedule->fresh()->account_id)->toBe($savings->id)
+        ->and($schedule->fresh()->savings_account_id)->toBeNull()
+        ->and((float) $savings->fresh()->balance)->toBe(190_000.0)
+        ->and((float) $loan->fresh()->principal_balance)->toBe(90_000.0)
+        ->and(DrawerMovement::count())->toBe(0)
         ->and(LoanSavingsDeductionRun::where('schedule_id', $schedule->id)->value('status'))->toBe('succeeded');
 });
 
@@ -259,4 +279,27 @@ function scheduledDeductionFixture(string $label = 'Scheduled', float $balance =
     ]);
 
     return [$organization, $branch, $admin, $savings, $loan];
+}
+
+function scheduledDeductionBasicSavingsAccount(Organization $organization, Branch $branch, User $admin, Client $client, float $balance): Account
+{
+    $type = AccountType::create([
+        'organization_id' => $organization->id,
+        'name' => 'Client Savings',
+        'code' => fake()->unique()->bothify('SAV-??'),
+        'category' => 'savings',
+        'is_active' => true,
+    ]);
+
+    return Account::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'client_id' => $client->id,
+        'account_type_id' => $type->id,
+        'account_number' => fake()->unique()->numerify('SAV-#######'),
+        'account_name' => $client->full_name.' Savings',
+        'status' => 'active',
+        'balance' => $balance,
+        'opened_at' => today(),
+    ]);
 }

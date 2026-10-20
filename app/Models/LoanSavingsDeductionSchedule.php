@@ -53,6 +53,11 @@ class LoanSavingsDeductionSchedule extends Model
         return $this->belongsTo(SavingsAccount::class);
     }
 
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(Account::class);
+    }
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');

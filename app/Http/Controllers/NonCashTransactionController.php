@@ -45,6 +45,15 @@ class NonCashTransactionController extends Controller
         $historyFrom = (string) ($historyDates['history_from'] ?? '');
         $historyTo = (string) ($historyDates['history_to'] ?? '');
         $selectedAccountTypeId = $request->integer('account_type_id') ?: null;
+        $selectedRepaymentAccount = $request->integer('repayment_account_id')
+            ? Account::query()
+                ->with(['client', 'accountType'])
+                ->where('status', 'active')
+                ->whereHas('accountType', fn (Builder $query): Builder => $query->where('category', 'savings'))
+                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->whereKey($request->integer('repayment_account_id'))
+                ->first()
+            : null;
         $selectedRepaymentSavings = $request->integer('repayment_savings_account_id')
             ? SavingsAccount::query()
                 ->with(['client', 'product'])
@@ -53,6 +62,44 @@ class NonCashTransactionController extends Controller
                 ->whereKey($request->integer('repayment_savings_account_id'))
                 ->first()
             : null;
+        $selectedRepaymentSource = $selectedRepaymentAccount ?: $selectedRepaymentSavings;
+
+        $accountRepaymentResults = Account::query()
+            ->with(['client', 'accountType'])
+            ->where('status', 'active')
+            ->whereHas('accountType', fn (Builder $query): Builder => $query->where('category', 'savings'))
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when($repaymentSavingsSearch !== '', function (Builder $query) use ($repaymentSavingsSearch): void {
+                $query->where(function (Builder $query) use ($repaymentSavingsSearch): void {
+                    $query->whereAny(['account_number', 'account_name', 'status'], 'like', "%{$repaymentSavingsSearch}%")
+                        ->orWhereHas('client', function (Builder $query) use ($repaymentSavingsSearch): void {
+                            $query->whereAny(['client_number', 'first_name', 'middle_name', 'last_name', 'business_name', 'phone', 'alternative_phone'], 'like', "%{$repaymentSavingsSearch}%");
+                        });
+                });
+            })
+            ->when($repaymentSavingsSearch === '', fn (Builder $query): Builder => $query->whereRaw('1 = 0'))
+            ->orderBy('account_number')
+            ->limit(12)
+            ->get()
+            ->each(fn (Account $account): Account => $account->setAttribute('repayment_source_type', 'account'));
+
+        $savingsRepaymentResults = SavingsAccount::query()
+            ->with(['client', 'product'])
+            ->where('status', 'active')
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when($repaymentSavingsSearch !== '', function (Builder $query) use ($repaymentSavingsSearch): void {
+                $query->where(function (Builder $query) use ($repaymentSavingsSearch): void {
+                    $query->whereAny(['account_number', 'status'], 'like', "%{$repaymentSavingsSearch}%")
+                        ->orWhereHas('client', function (Builder $query) use ($repaymentSavingsSearch): void {
+                            $query->whereAny(['client_number', 'first_name', 'middle_name', 'last_name', 'business_name', 'phone', 'alternative_phone'], 'like', "%{$repaymentSavingsSearch}%");
+                        });
+                });
+            })
+            ->when($repaymentSavingsSearch === '', fn (Builder $query): Builder => $query->whereRaw('1 = 0'))
+            ->orderBy('account_number')
+            ->limit(12)
+            ->get()
+            ->each(fn (SavingsAccount $account): SavingsAccount => $account->setAttribute('repayment_source_type', 'savings_account'));
 
         $selectedAccount = $request->integer('account_id')
             ? Account::query()
@@ -139,33 +186,24 @@ class NonCashTransactionController extends Controller
             'receiptTransaction' => $this->receiptTransaction($request),
             'canPostSavingsLoanRepayment' => $request->user()->canPerform('post-repayments'),
             'selectedRepaymentSavings' => $selectedRepaymentSavings,
+            'selectedRepaymentAccount' => $selectedRepaymentAccount,
+            'selectedRepaymentSource' => $selectedRepaymentSource,
             'selectedRepaymentLoan' => $request->integer('repayment_loan_id')
-                ? $this->repayableLoans($selectedRepaymentSavings, $branchId)
+                ? $this->repayableLoans($selectedRepaymentSource?->client_id, $branchId)
                     ->whereKey($request->integer('repayment_loan_id'))
                     ->first()
                 : null,
             'repaymentSavingsSearch' => $repaymentSavingsSearch,
-            'repaymentSavingsResults' => SavingsAccount::query()
-                ->with(['client', 'product'])
-                ->where('status', 'active')
-                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-                ->when($repaymentSavingsSearch !== '', function (Builder $query) use ($repaymentSavingsSearch): void {
-                    $query->where(function (Builder $query) use ($repaymentSavingsSearch): void {
-                        $query->whereAny(['account_number', 'status'], 'like', "%{$repaymentSavingsSearch}%")
-                            ->orWhereHas('client', function (Builder $query) use ($repaymentSavingsSearch): void {
-                                $query->whereAny(['client_number', 'first_name', 'middle_name', 'last_name', 'business_name', 'phone', 'alternative_phone'], 'like', "%{$repaymentSavingsSearch}%");
-                            });
-                    });
-                })
-                ->when($repaymentSavingsSearch === '', fn (Builder $query): Builder => $query->whereRaw('1 = 0'))
-                ->orderBy('account_number')
-                ->limit(12)
-                ->get(),
-            'repaymentLoans' => $this->repayableLoans($selectedRepaymentSavings, $branchId)
+            'repaymentSavingsResults' => $accountRepaymentResults
+                ->concat($savingsRepaymentResults)
+                ->sortBy('account_number')
+                ->take(12)
+                ->values(),
+            'repaymentLoans' => $this->repayableLoans($selectedRepaymentSource?->client_id, $branchId)
                 ->orderBy('loan_number')
                 ->get(),
             'scheduledDeductionSchedules' => LoanSavingsDeductionSchedule::query()
-                ->with(['client', 'loan.product', 'savingsAccount', 'creator', 'activator', 'runs' => fn ($query) => $query->latest('due_at')->limit(5)])
+                ->with(['client', 'loan.product', 'account', 'savingsAccount', 'creator', 'activator', 'runs' => fn ($query) => $query->latest('due_at')->limit(5)])
                 ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
                 ->whereIn('status', LoanSavingsDeductionSchedule::STATUSES)
                 ->latest('id')
@@ -179,20 +217,31 @@ class NonCashTransactionController extends Controller
     public function repayLoanFromSavings(StoreSavingsLoanRepaymentRequest $request, FinancialRelationshipService $relationships): RedirectResponse
     {
         $branchId = $this->branchId($request);
-        $savingsAccount = SavingsAccount::query()
-            ->where('status', 'active')
-            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->findOrFail($request->integer('savings_account_id'));
         $loan = Loan::query()
             ->whereIn('status', ['active', 'in_arrears'])
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->findOrFail($request->integer('loan_id'));
 
-        ApiSecurity::assertTenantAccess($request->user(), $savingsAccount);
         ApiSecurity::assertTenantAccess($request->user(), $loan);
 
         try {
-            $repayment = $relationships->repayLoanFromSavings($loan, $savingsAccount, (float) $request->validated('amount'), $request->user());
+            if ($request->integer('account_id')) {
+                $savingsAccount = Account::query()
+                    ->with('accountType')
+                    ->where('status', 'active')
+                    ->whereHas('accountType', fn (Builder $query): Builder => $query->where('category', 'savings'))
+                    ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                    ->findOrFail($request->integer('account_id'));
+                ApiSecurity::assertTenantAccess($request->user(), $savingsAccount);
+                $repayment = $relationships->repayLoanFromAccountSavings($loan, $savingsAccount, (float) $request->validated('amount'), $request->user());
+            } else {
+                $savingsAccount = SavingsAccount::query()
+                    ->where('status', 'active')
+                    ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                    ->findOrFail($request->integer('savings_account_id'));
+                ApiSecurity::assertTenantAccess($request->user(), $savingsAccount);
+                $repayment = $relationships->repayLoanFromSavings($loan, $savingsAccount, (float) $request->validated('amount'), $request->user());
+            }
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['amount' => $exception->getMessage()])->withInput();
         }
@@ -206,16 +255,23 @@ class NonCashTransactionController extends Controller
     public function storeScheduledDeduction(StoreScheduledLoanSavingsDeductionRequest $request, ScheduledSavingsLoanDeductionService $deductions): RedirectResponse
     {
         $branchId = $this->branchId($request);
-        $savingsAccount = SavingsAccount::query()
-            ->where('status', 'active')
-            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->findOrFail($request->integer('savings_account_id'));
         $loan = Loan::query()
             ->whereIn('status', Loan::OPERATIONAL_STATUSES)
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->findOrFail($request->integer('loan_id'));
 
         try {
+            $savingsAccount = $request->integer('account_id')
+                ? Account::query()
+                    ->with('accountType')
+                    ->where('status', 'active')
+                    ->whereHas('accountType', fn (Builder $query): Builder => $query->where('category', 'savings'))
+                    ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                    ->findOrFail($request->integer('account_id'))
+                : SavingsAccount::query()
+                    ->where('status', 'active')
+                    ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                    ->findOrFail($request->integer('savings_account_id'));
             $schedule = $deductions->create(
                 $savingsAccount,
                 $loan,
@@ -346,7 +402,7 @@ class NonCashTransactionController extends Controller
         });
     }
 
-    private function repayableLoans(?SavingsAccount $savingsAccount, ?int $branchId): Builder
+    private function repayableLoans(?int $clientId, ?int $branchId): Builder
     {
         return Loan::query()
             ->with([
@@ -363,7 +419,7 @@ class NonCashTransactionController extends Controller
                 ->where('status', '!=', 'paid')
                 ->where('outstanding_amount', '>', 0))
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when($savingsAccount, fn (Builder $query): Builder => $query->where('client_id', $savingsAccount->client_id))
-            ->when(! $savingsAccount, fn (Builder $query): Builder => $query->whereRaw('1 = 0'));
+            ->when($clientId, fn (Builder $query): Builder => $query->where('client_id', $clientId))
+            ->when(! $clientId, fn (Builder $query): Builder => $query->whereRaw('1 = 0'));
     }
 }

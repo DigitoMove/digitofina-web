@@ -24,7 +24,8 @@ class StoreSavingsLoanRepaymentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'savings_account_id' => ['required', 'integer', 'exists:savings_accounts,id'],
+            'account_id' => ['nullable', 'integer', 'exists:accounts,id', 'required_without:savings_account_id'],
+            'savings_account_id' => ['nullable', 'integer', 'exists:savings_accounts,id', 'required_without:account_id'],
             'loan_id' => ['required', 'integer', 'exists:loans,id'],
             'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
         ];

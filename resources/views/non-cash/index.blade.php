@@ -40,13 +40,19 @@
             @if($repaymentSavingsSearch !== '')
                 <div class="mt-4 divide-y divide-emerald-200 overflow-hidden rounded-lg border border-emerald-200 bg-white">
                     @forelse($repaymentSavingsResults as $savingsAccount)
+                        @php
+                            $isAccountSource = $savingsAccount->repayment_source_type === 'account';
+                            $availableBalance = (float) ($isAccountSource ? $savingsAccount->balance : $savingsAccount->available_balance);
+                            $sourceLabel = $isAccountSource ? ($savingsAccount->accountType?->name ?? 'Savings account') : ($savingsAccount->product?->name ?? 'Savings account');
+                            $selection = $isAccountSource ? ['repayment_account_id' => $savingsAccount->id] : ['repayment_savings_account_id' => $savingsAccount->id];
+                        @endphp
                         <div class="grid gap-3 p-4 sm:grid-cols-[1fr_auto] sm:items-center">
                             <div>
                                 <div class="font-semibold text-slate-950">{{ $savingsAccount->client?->full_name ?? $savingsAccount->client?->business_name ?? 'Client' }}</div>
-                                <div class="text-sm text-slate-600">{{ $savingsAccount->account_number }} · {{ $savingsAccount->product?->name ?? 'Savings account' }}</div>
-                                <div class="mt-1 text-xs font-semibold {{ (float) $savingsAccount->available_balance > 0 ? 'text-emerald-700' : 'text-amber-700' }}">Available to transfer: UGX {{ number_format((float) $savingsAccount->available_balance, 2) }}</div>
+                                <div class="text-sm text-slate-600">{{ $savingsAccount->account_number }} · {{ $sourceLabel }}</div>
+                                <div class="mt-1 text-xs font-semibold {{ $availableBalance > 0 ? 'text-emerald-700' : 'text-amber-700' }}">Available to transfer: UGX {{ number_format($availableBalance, 2) }}</div>
                             </div>
-                            <a href="{{ route('non-cash.index', array_filter(array_merge(request()->except(['repayment_savings_search', 'repayment_loan_id']), ['repayment_savings_account_id' => $savingsAccount->id]))) }}" class="df-action-primary justify-center">Use this savings</a>
+                            <a href="{{ route('non-cash.index', array_filter(array_merge(request()->except(['repayment_savings_search', 'repayment_loan_id', 'repayment_account_id', 'repayment_savings_account_id']), $selection))) }}" class="df-action-primary justify-center">Use this savings</a>
                         </div>
                     @empty
                         <div class="p-5 text-sm text-slate-500">No active savings accounts match that search in the selected branch.</div>
@@ -54,15 +60,19 @@
                 </div>
             @endif
 
-            @if($selectedRepaymentSavings)
+            @if($selectedRepaymentSource)
+                @php
+                    $selectedSavingsBalance = (float) ($selectedRepaymentAccount ? $selectedRepaymentAccount->balance : $selectedRepaymentSavings->available_balance);
+                    $selectedSavingsLabel = $selectedRepaymentAccount ? ($selectedRepaymentAccount->accountType?->name ?? 'Savings account') : ($selectedRepaymentSavings->product?->name ?? 'Savings account');
+                @endphp
                 <div class="mt-4 rounded-lg border border-emerald-200 bg-white p-4">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div>
                             <div class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Selected savings account</div>
-                            <div class="mt-1 font-semibold text-slate-950">{{ $selectedRepaymentSavings->account_number }} · {{ $selectedRepaymentSavings->client?->full_name ?? $selectedRepaymentSavings->client?->business_name }}</div>
-                            <div class="mt-1 text-sm text-slate-600">{{ $selectedRepaymentSavings->product?->name ?? 'Savings account' }} · Available to transfer: <span class="font-semibold">UGX {{ number_format((float) $selectedRepaymentSavings->available_balance, 2) }}</span></div>
+                            <div class="mt-1 font-semibold text-slate-950">{{ $selectedRepaymentSource->account_number }} · {{ $selectedRepaymentSource->client?->full_name ?? $selectedRepaymentSource->client?->business_name }}</div>
+                            <div class="mt-1 text-sm text-slate-600">{{ $selectedSavingsLabel }} · Available to transfer: <span class="font-semibold">UGX {{ number_format($selectedSavingsBalance, 2) }}</span></div>
                         </div>
-                        <a href="{{ route('non-cash.index', array_filter(request()->except(['repayment_savings_account_id', 'repayment_loan_id', 'repayment_savings_search']))) }}" class="df-action-secondary">Change savings</a>
+                        <a href="{{ route('non-cash.index', array_filter(request()->except(['repayment_account_id', 'repayment_savings_account_id', 'repayment_loan_id', 'repayment_savings_search']))) }}" class="df-action-secondary">Change savings</a>
                     </div>
 
                     @if($repaymentLoans->isNotEmpty())
@@ -70,7 +80,11 @@
                             <input type="hidden" name="account_id" value="{{ $selectedAccount?->id }}">
                             <input type="hidden" name="chart_account_id" value="{{ $selectedLedger?->id }}">
                             <input type="hidden" name="branch_id" value="{{ $branchId }}">
-                            <input type="hidden" name="repayment_savings_account_id" value="{{ $selectedRepaymentSavings->id }}">
+                            @if($selectedRepaymentAccount)
+                                <input type="hidden" name="repayment_account_id" value="{{ $selectedRepaymentAccount->id }}">
+                            @else
+                                <input type="hidden" name="repayment_savings_account_id" value="{{ $selectedRepaymentSavings->id }}">
+                            @endif
                             <label class="grid gap-1 text-sm">
                                 <span class="font-medium text-emerald-950">Payable loan for this client</span>
                                 <select name="repayment_loan_id" required class="rounded-lg border-emerald-200 focus:border-emerald-500 focus:ring-emerald-100" onchange="this.form.submit()">
@@ -92,11 +106,11 @@
                 </div>
             @endif
 
-            @if($selectedRepaymentSavings && $selectedRepaymentLoan)
+            @if($selectedRepaymentSource && $selectedRepaymentLoan)
                 @php
                     $nextInstallment = $selectedRepaymentLoan->schedules->first();
                     $unpaidAmount = (float) $selectedRepaymentLoan->schedules->sum('outstanding_amount');
-                    $repaymentMaximum = min((float) $selectedRepaymentSavings->available_balance, $unpaidAmount);
+                    $repaymentMaximum = min($selectedSavingsBalance, $unpaidAmount);
                 @endphp
                 <div class="mt-4 rounded-lg border border-emerald-200 bg-white p-4">
                     <div class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Selected loan</div>
@@ -107,7 +121,11 @@
 
                 <form method="POST" action="{{ route('non-cash.repay-loan-from-savings') }}" class="mt-4 grid gap-4 border-t border-emerald-200 pt-4 sm:grid-cols-[1fr_auto] sm:items-end" data-confirm-title="Review savings loan repayment" data-confirm-message="Transfer the selected amount from this savings account to this same-client loan? No teller drawer cash will move." data-confirm-label="Post repayment" data-confirm-tone="neutral">
                     @csrf
-                    <input type="hidden" name="savings_account_id" value="{{ $selectedRepaymentSavings->id }}">
+                    @if($selectedRepaymentAccount)
+                        <input type="hidden" name="account_id" value="{{ $selectedRepaymentAccount->id }}">
+                    @else
+                        <input type="hidden" name="savings_account_id" value="{{ $selectedRepaymentSavings->id }}">
+                    @endif
                     <input type="hidden" name="loan_id" value="{{ $selectedRepaymentLoan->id }}">
                     <label class="grid gap-1 text-sm">
                         <span class="font-medium text-emerald-950">One-off repayment amount</span>
@@ -124,7 +142,11 @@
                         <p class="mt-1 text-sm text-violet-800">Use the selected savings account and loan. An administrator activates the schedule. Each run transfers the set amount, or only the final remaining installment amount, and stops once the loan is cleared.</p>
                         <form method="POST" action="{{ route('non-cash.scheduled-deductions.store') }}" class="mt-4 grid gap-4 lg:grid-cols-4">
                             @csrf
-                            <input type="hidden" name="savings_account_id" value="{{ $selectedRepaymentSavings->id }}">
+                            @if($selectedRepaymentAccount)
+                                <input type="hidden" name="account_id" value="{{ $selectedRepaymentAccount->id }}">
+                            @else
+                                <input type="hidden" name="savings_account_id" value="{{ $selectedRepaymentSavings->id }}">
+                            @endif
                             <input type="hidden" name="loan_id" value="{{ $selectedRepaymentLoan->id }}">
                             <label class="grid gap-1 text-sm">
                                 <span class="font-medium text-violet-950">Amount per run (UGX)</span>
@@ -156,7 +178,7 @@
         <section class="overflow-hidden rounded-lg border border-violet-200 bg-white shadow-sm">
             <div class="border-b border-violet-100 bg-violet-50 p-5">
                 <h2 class="font-semibold text-violet-950">Scheduled Savings-to-Loan Deductions</h2>
-                <p class="mt-1 text-sm text-violet-800">Every attempt is recorded. Reversals remain available through the linked savings transaction and loan repayment history.</p>
+                <p class="mt-1 text-sm text-violet-800">Every attempt is recorded with its loan repayment history.</p>
             </div>
             <div class="overflow-auto">
                 <table class="w-full min-w-[1050px] text-left text-sm">
@@ -175,7 +197,7 @@
                             <tr class="border-t border-slate-200 align-top">
                                 <td class="px-4 py-3">
                                     <div class="font-semibold text-slate-950">{{ $schedule->client?->full_name ?? $schedule->client?->business_name ?? 'Client' }}</div>
-                                    <div class="text-xs text-slate-500">{{ $schedule->savingsAccount?->account_number }} → {{ $schedule->loan?->loan_number }}</div>
+                                    <div class="text-xs text-slate-500">{{ $schedule->account?->account_number ?? $schedule->savingsAccount?->account_number }} → {{ $schedule->loan?->loan_number }}</div>
                                 </td>
                                 <td class="whitespace-nowrap px-4 py-3">UGX {{ number_format((float) $schedule->amount, 2) }} · {{ str($schedule->frequency)->headline() }}</td>
                                 <td class="px-4 py-3"><span class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{{ str($schedule->status)->headline() }}</span></td>

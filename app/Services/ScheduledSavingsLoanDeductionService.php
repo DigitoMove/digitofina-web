@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Account;
 use App\Models\Loan;
 use App\Models\LoanSavingsDeductionRun;
 use App\Models\LoanSavingsDeductionSchedule;
@@ -25,7 +26,7 @@ class ScheduledSavingsLoanDeductionService
     ) {}
 
     public function create(
-        SavingsAccount $savingsAccount,
+        Account|SavingsAccount $savingsAccount,
         Loan $loan,
         float $amount,
         string $frequency,
@@ -51,13 +52,19 @@ class ScheduledSavingsLoanDeductionService
             throw new InvalidArgumentException('Savings account must be active.');
         }
 
+        if ($savingsAccount instanceof Account && $savingsAccount->accountType?->category !== 'savings') {
+            throw new InvalidArgumentException('The source account must be a savings account.');
+        }
+
         if (! in_array($loan->status, Loan::OPERATIONAL_STATUSES, true)) {
             throw new InvalidArgumentException('Loan must be active or in arrears.');
         }
 
+        $sourceColumn = $savingsAccount instanceof Account ? 'account_id' : 'savings_account_id';
+
         if (LoanSavingsDeductionSchedule::query()
             ->where('loan_id', $loan->id)
-            ->where('savings_account_id', $savingsAccount->id)
+            ->where($sourceColumn, $savingsAccount->id)
             ->whereIn('status', ['draft', 'active'])
             ->exists()) {
             throw new InvalidArgumentException('This savings-to-loan deduction already has an active or pending schedule.');
@@ -68,7 +75,8 @@ class ScheduledSavingsLoanDeductionService
             'branch_id' => $loan->branch_id,
             'client_id' => $loan->client_id,
             'loan_id' => $loan->id,
-            'savings_account_id' => $savingsAccount->id,
+            'savings_account_id' => $savingsAccount instanceof SavingsAccount ? $savingsAccount->id : null,
+            'account_id' => $savingsAccount instanceof Account ? $savingsAccount->id : null,
             'created_by' => $user->id,
             'amount' => $amount,
             'frequency' => $frequency,
@@ -191,15 +199,21 @@ class ScheduledSavingsLoanDeductionService
                 }
 
                 $loan = Loan::query()->whereKey($schedule->loan_id)->firstOrFail();
-                $savingsAccount = SavingsAccount::query()->whereKey($schedule->savings_account_id)->firstOrFail();
+                $savingsAccount = $schedule->account_id
+                    ? Account::query()->with('accountType')->whereKey($schedule->account_id)->firstOrFail()
+                    : SavingsAccount::query()->whereKey($schedule->savings_account_id)->firstOrFail();
                 $this->assertCurrentRelationship($schedule, $savingsAccount, $loan);
                 CurrencyDenomination::assertValid((float) $schedule->amount);
-                $repayment = $this->relationships->repayLoanFromSavings($loan, $savingsAccount, (float) $schedule->amount, $actor, true);
-                $savingsTransaction = SavingsTransaction::query()
-                    ->where('savings_account_id', $savingsAccount->id)
-                    ->where('reference', $repayment->reference)
-                    ->latest('id')
-                    ->first();
+                $repayment = $savingsAccount instanceof Account
+                    ? $this->relationships->repayLoanFromAccountSavings($loan, $savingsAccount, (float) $schedule->amount, $actor, true)
+                    : $this->relationships->repayLoanFromSavings($loan, $savingsAccount, (float) $schedule->amount, $actor, true);
+                $savingsTransaction = $savingsAccount instanceof SavingsAccount
+                    ? SavingsTransaction::query()
+                        ->where('savings_account_id', $savingsAccount->id)
+                        ->where('reference', $repayment->reference)
+                        ->latest('id')
+                        ->first()
+                    : null;
 
                 $run->update([
                     'status' => 'succeeded',
@@ -273,7 +287,7 @@ class ScheduledSavingsLoanDeductionService
         }
     }
 
-    private function assertCurrentRelationship(LoanSavingsDeductionSchedule $schedule, SavingsAccount $savingsAccount, Loan $loan): void
+    private function assertCurrentRelationship(LoanSavingsDeductionSchedule $schedule, Account|SavingsAccount $savingsAccount, Loan $loan): void
     {
         if ((int) $schedule->organization_id !== (int) $loan->organization_id
             || (int) $schedule->organization_id !== (int) $savingsAccount->organization_id
@@ -287,6 +301,6 @@ class ScheduledSavingsLoanDeductionService
 
     private function isInsufficientFunds(Throwable $exception): bool
     {
-        return str($exception->getMessage())->contains(['unlocked savings balance', 'minimum balance']);
+        return str($exception->getMessage())->contains(['unlocked savings balance', 'available savings balance', 'minimum balance']);
     }
 }

@@ -92,6 +92,29 @@ function financialRelationshipSavingsAccount(User $user, Client $client, float $
     ]);
 }
 
+function financialRelationshipBasicSavingsAccount(User $user, Client $client, float $balance = 200_000): Account
+{
+    $type = AccountType::create([
+        'organization_id' => $user->organization_id,
+        'name' => 'Client Savings',
+        'code' => fake()->unique()->bothify('SAV-??'),
+        'category' => 'savings',
+        'is_active' => true,
+    ]);
+
+    return Account::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'client_id' => $client->id,
+        'account_type_id' => $type->id,
+        'account_number' => fake()->unique()->numerify('1001-SAV-#######'),
+        'account_name' => $client->full_name.' Savings',
+        'status' => 'active',
+        'balance' => $balance,
+        'opened_at' => today(),
+    ]);
+}
+
 function financialRelationshipInvestmentAccount(User $user, Client $client, float $balance = 50_000): InvestmentAccount
 {
     $plan = InvestmentPlan::create([
@@ -330,6 +353,38 @@ it('shows the manual savings loan repayment workflow in the non-cash area for re
         ->assertSee($loan->loan_number)
         ->assertSee('Schedule Deductions for this Same Client Pair')
         ->assertSee('Earliest unpaid installment due');
+});
+
+it('finds and uses a client savings account from the main account register for a loan repayment', function () {
+    $user = financialRelationshipUser();
+    $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $client = financialRelationshipClient($user);
+    $savings = financialRelationshipBasicSavingsAccount($user, $client);
+    $loan = financialRelationshipLoan($user, $client);
+
+    $this->actingAs($user)
+        ->get(route('non-cash.index', ['repayment_savings_search' => $savings->account_number]))
+        ->assertSuccessful()
+        ->assertSee($savings->account_number)
+        ->assertSee('Use this savings');
+
+    $this->actingAs($user)
+        ->get(route('non-cash.index', ['repayment_account_id' => $savings->id, 'repayment_loan_id' => $loan->id]))
+        ->assertSuccessful()
+        ->assertSee($loan->loan_number)
+        ->assertSee('Post Savings Repayment');
+
+    $this->actingAs($user)
+        ->post(route('non-cash.repay-loan-from-savings'), [
+            'account_id' => $savings->id,
+            'loan_id' => $loan->id,
+            'amount' => 10_000,
+        ])
+        ->assertRedirect(route('non-cash.index'));
+
+    expect((float) $savings->fresh()->balance)->toBe(190_000.0)
+        ->and((float) $loan->fresh()->principal_balance)->toBe(90_000.0)
+        ->and(LoanRepayment::where('loan_id', $loan->id)->value('payment_method'))->toBe('savings_deduction');
 });
 
 it('includes basic savings account balances in the client overview for the client organization', function () {

@@ -12,6 +12,8 @@ use App\Models\LoanSecurity;
 use App\Models\LockedFund;
 use App\Models\SavingsAccount;
 use App\Models\SavingsTransaction;
+use App\Models\Transaction;
+use App\Models\TransactionType;
 use App\Models\User;
 use App\Support\CurrencyDenomination;
 use App\Support\ModuleCatalog;
@@ -248,6 +250,88 @@ class FinancialRelationshipService
 
             $this->auditLogger->record('financial_relationship.loan_repaid_from_savings', $repayment, [
                 'savings_transaction_id' => $savingsTransaction->id,
+                'amount' => $repaymentAmount,
+                'requested_amount' => $amount,
+            ]);
+
+            return $repayment;
+        });
+    }
+
+    public function repayLoanFromAccountSavings(Loan $loan, Account $savingsAccount, float $amount, User $user, bool $capAtOutstanding = false): LoanRepayment
+    {
+        $this->assertPositiveMoney($amount);
+
+        return DB::transaction(function () use ($loan, $savingsAccount, $amount, $user, $capAtOutstanding): LoanRepayment {
+            $loan = Loan::query()->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+            $savingsAccount = Account::query()->with('accountType')->whereKey($savingsAccount->id)->lockForUpdate()->firstOrFail();
+
+            if ($savingsAccount->accountType?->category !== 'savings') {
+                throw new InvalidArgumentException('The source account must be a savings account.');
+            }
+
+            if ($savingsAccount->status !== 'active') {
+                throw new InvalidArgumentException('Savings account must be active.');
+            }
+
+            $this->assertSameClient((int) $loan->client_id, (int) $savingsAccount->client_id);
+            $preview = $this->loanRepayments->preview($loan, $amount);
+            $repaymentAmount = (float) $preview['applied'];
+
+            if ($repaymentAmount <= 0) {
+                throw new InvalidArgumentException('There are no outstanding installments to receive this repayment.');
+            }
+
+            if (! $capAtOutstanding && $repaymentAmount < $amount) {
+                throw new InvalidArgumentException('Amount exceeds the remaining unpaid loan installments.');
+            }
+
+            if ($repaymentAmount > (float) $savingsAccount->balance) {
+                throw new InvalidArgumentException('Amount exceeds the available savings balance.');
+            }
+
+            $reference = 'SLR'.now()->format('ymdHis').str()->upper(str()->random(5));
+            $type = TransactionType::query()->firstOrCreate(
+                ['code' => 'savings_loan_repayment'],
+                [
+                    'name' => 'Savings to Loan Repayment',
+                    'direction' => 'debit',
+                    'affects_cash_drawer' => false,
+                    'is_active' => true,
+                ],
+            );
+
+            $savingsAccount->decrement('balance', $repaymentAmount);
+            $savingsAccount->refresh();
+
+            $transaction = Transaction::create([
+                'organization_id' => $savingsAccount->organization_id,
+                'account_id' => $savingsAccount->id,
+                'transaction_type_id' => $type->id,
+                'branch_id' => $savingsAccount->branch_id,
+                'user_id' => $user->id,
+                'reference' => $reference,
+                'amount' => $repaymentAmount,
+                'balance_after' => $savingsAccount->balance,
+                'description' => "Loan repayment for {$loan->loan_number} from savings account {$savingsAccount->account_number}",
+                'posted_at' => now(),
+            ]);
+
+            $repayment = $this->loanRepayments->repay(
+                $loan,
+                $repaymentAmount,
+                $user,
+                $transaction->id,
+                'savings_deduction',
+                $reference,
+                now(),
+                '2100',
+                'Loan repayment from savings account transfer',
+            );
+
+            $this->auditLogger->record('financial_relationship.loan_repaid_from_account_savings', $repayment, [
+                'account_transaction_id' => $transaction->id,
+                'savings_account_id' => $savingsAccount->id,
                 'amount' => $repaymentAmount,
                 'requested_amount' => $amount,
             ]);
