@@ -21,6 +21,7 @@ use App\Services\TransactionPostingService;
 use App\Support\ApiSecurity;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -39,6 +40,7 @@ class NonCashTransactionController extends Controller
         $branchId = $this->branchId($request);
         $accountSearch = $request->string('account_search')->trim()->toString();
         $ledgerSearch = $request->string('ledger_search')->trim()->toString();
+        $repaymentSavingsSearch = $request->string('repayment_savings_search')->trim()->toString();
         $historySearch = $request->string('history_search')->trim()->toString();
         $historyFrom = (string) ($historyDates['history_from'] ?? '');
         $historyTo = (string) ($historyDates['history_to'] ?? '');
@@ -138,25 +140,28 @@ class NonCashTransactionController extends Controller
             'canPostSavingsLoanRepayment' => $request->user()->canPerform('post-repayments'),
             'selectedRepaymentSavings' => $selectedRepaymentSavings,
             'selectedRepaymentLoan' => $request->integer('repayment_loan_id')
-                ? Loan::query()
-                    ->with(['client', 'product'])
-                    ->whereIn('status', ['active', 'in_arrears'])
-                    ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-                    ->when($selectedRepaymentSavings, fn (Builder $query, SavingsAccount $account): Builder => $query->where('client_id', $account->client_id))
+                ? $this->repayableLoans($selectedRepaymentSavings, $branchId)
                     ->whereKey($request->integer('repayment_loan_id'))
                     ->first()
                 : null,
-            'repaymentSavingsAccounts' => SavingsAccount::query()
+            'repaymentSavingsSearch' => $repaymentSavingsSearch,
+            'repaymentSavingsResults' => SavingsAccount::query()
                 ->with(['client', 'product'])
                 ->where('status', 'active')
                 ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+                ->when($repaymentSavingsSearch !== '', function (Builder $query) use ($repaymentSavingsSearch): void {
+                    $query->where(function (Builder $query) use ($repaymentSavingsSearch): void {
+                        $query->whereAny(['account_number', 'status'], 'like', "%{$repaymentSavingsSearch}%")
+                            ->orWhereHas('client', function (Builder $query) use ($repaymentSavingsSearch): void {
+                                $query->whereAny(['client_number', 'first_name', 'middle_name', 'last_name', 'business_name', 'phone', 'alternative_phone'], 'like', "%{$repaymentSavingsSearch}%");
+                            });
+                    });
+                })
+                ->when($repaymentSavingsSearch === '', fn (Builder $query): Builder => $query->whereRaw('1 = 0'))
                 ->orderBy('account_number')
+                ->limit(12)
                 ->get(),
-            'repaymentLoans' => Loan::query()
-                ->with(['client', 'product'])
-                ->whereIn('status', ['active', 'in_arrears'])
-                ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-                ->when($selectedRepaymentSavings, fn (Builder $query, SavingsAccount $account): Builder => $query->where('client_id', $account->client_id))
+            'repaymentLoans' => $this->repayableLoans($selectedRepaymentSavings, $branchId)
                 ->orderBy('loan_number')
                 ->get(),
             'scheduledDeductionSchedules' => LoanSavingsDeductionSchedule::query()
@@ -339,5 +344,26 @@ class NonCashTransactionController extends Controller
                     $query->whereAny(['code', 'name', 'type'], 'like', $likeSearch);
                 });
         });
+    }
+
+    private function repayableLoans(?SavingsAccount $savingsAccount, ?int $branchId): Builder
+    {
+        return Loan::query()
+            ->with([
+                'client',
+                'product',
+                'schedules' => fn (HasMany $query): HasMany => $query
+                    ->where('status', '!=', 'paid')
+                    ->where('outstanding_amount', '>', 0)
+                    ->orderBy('due_date')
+                    ->orderBy('id'),
+            ])
+            ->whereIn('status', Loan::OPERATIONAL_STATUSES)
+            ->whereHas('schedules', fn (Builder $query): Builder => $query
+                ->where('status', '!=', 'paid')
+                ->where('outstanding_amount', '>', 0))
+            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
+            ->when($savingsAccount, fn (Builder $query): Builder => $query->where('client_id', $savingsAccount->client_id))
+            ->when(! $savingsAccount, fn (Builder $query): Builder => $query->whereRaw('1 = 0'));
     }
 }

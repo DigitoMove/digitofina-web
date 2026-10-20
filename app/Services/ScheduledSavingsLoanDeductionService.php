@@ -194,7 +194,7 @@ class ScheduledSavingsLoanDeductionService
                 $savingsAccount = SavingsAccount::query()->whereKey($schedule->savings_account_id)->firstOrFail();
                 $this->assertCurrentRelationship($schedule, $savingsAccount, $loan);
                 CurrencyDenomination::assertValid((float) $schedule->amount);
-                $repayment = $this->relationships->repayLoanFromSavings($loan, $savingsAccount, (float) $schedule->amount, $actor);
+                $repayment = $this->relationships->repayLoanFromSavings($loan, $savingsAccount, (float) $schedule->amount, $actor, true);
                 $savingsTransaction = SavingsTransaction::query()
                     ->where('savings_account_id', $savingsAccount->id)
                     ->where('reference', $repayment->reference)
@@ -207,7 +207,14 @@ class ScheduledSavingsLoanDeductionService
                     'loan_repayment_id' => $repayment->id,
                     'processed_at' => now(),
                 ]);
-                $this->finishSchedule($schedule, $now, 'succeeded', 'Scheduled savings repayment posted successfully.');
+                $loanFullyCleared = $loan->fresh()->status === 'closed';
+                $this->finishSchedule(
+                    $schedule,
+                    $now,
+                    'succeeded',
+                    $loanFullyCleared ? 'Scheduled savings repayment posted and the loan is fully cleared. Schedule stopped.' : 'Scheduled savings repayment posted successfully.',
+                    $loanFullyCleared,
+                );
 
                 return 'succeeded';
             } catch (Throwable $exception) {
@@ -221,7 +228,7 @@ class ScheduledSavingsLoanDeductionService
         });
     }
 
-    private function finishSchedule(LoanSavingsDeductionSchedule $schedule, CarbonImmutable $now, string $result, string $message): void
+    private function finishSchedule(LoanSavingsDeductionSchedule $schedule, CarbonImmutable $now, string $result, string $message, bool $stopSchedule = false): void
     {
         $nextRunAt = CarbonImmutable::instance($schedule->next_run_at);
 
@@ -239,6 +246,8 @@ class ScheduledSavingsLoanDeductionService
             'last_run_at' => now(),
             'last_result' => $result,
             'last_message' => $message,
+            'status' => $stopSchedule ? 'disabled' : $schedule->status,
+            'disabled_at' => $stopSchedule ? now() : $schedule->disabled_at,
         ]);
     }
 

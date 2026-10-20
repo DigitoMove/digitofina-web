@@ -222,22 +222,34 @@ class FinancialRelationshipService
         });
     }
 
-    public function repayLoanFromSavings(Loan $loan, SavingsAccount $savingsAccount, float $amount, User $user): LoanRepayment
+    public function repayLoanFromSavings(Loan $loan, SavingsAccount $savingsAccount, float $amount, User $user, bool $capAtOutstanding = false): LoanRepayment
     {
         $this->assertPositiveMoney($amount);
 
-        return DB::transaction(function () use ($loan, $savingsAccount, $amount, $user): LoanRepayment {
+        return DB::transaction(function () use ($loan, $savingsAccount, $amount, $user, $capAtOutstanding): LoanRepayment {
             $loan = Loan::query()->whereKey($loan->id)->lockForUpdate()->firstOrFail();
             $savingsAccount = SavingsAccount::query()->with('product')->whereKey($savingsAccount->id)->lockForUpdate()->firstOrFail();
             $this->assertSameClient((int) $loan->client_id, (int) $savingsAccount->client_id);
-            $this->assertSavingsCanRelease($savingsAccount, $amount);
+            $preview = $this->loanRepayments->preview($loan, $amount);
+            $repaymentAmount = (float) $preview['applied'];
 
-            $savingsTransaction = $this->savingsTransactions->withdraw($savingsAccount, $amount, $user, 'internal_transfer', "Loan repayment for {$loan->loan_number}");
-            $repayment = $this->loanRepayments->repay($loan, $amount, $user, null, 'savings_deduction', $savingsTransaction->reference, now(), '2100', 'Loan repayment from savings liability');
+            if ($repaymentAmount <= 0) {
+                throw new InvalidArgumentException('There are no outstanding installments to receive this repayment.');
+            }
+
+            if (! $capAtOutstanding && $repaymentAmount < $amount) {
+                throw new InvalidArgumentException('Amount exceeds the remaining unpaid loan installments.');
+            }
+
+            $this->assertSavingsCanRelease($savingsAccount, $repaymentAmount);
+
+            $savingsTransaction = $this->savingsTransactions->withdraw($savingsAccount, $repaymentAmount, $user, 'internal_transfer', "Loan repayment for {$loan->loan_number}");
+            $repayment = $this->loanRepayments->repay($loan, $repaymentAmount, $user, null, 'savings_deduction', $savingsTransaction->reference, now(), '1000', 'Loan repayment from savings transfer');
 
             $this->auditLogger->record('financial_relationship.loan_repaid_from_savings', $repayment, [
                 'savings_transaction_id' => $savingsTransaction->id,
-                'amount' => $amount,
+                'amount' => $repaymentAmount,
+                'requested_amount' => $amount,
             ]);
 
             return $repayment;

@@ -78,6 +78,22 @@ it('skips insufficient funds without overdrawing savings and advances the schedu
         ->and($schedule->fresh()->next_run_at->isFuture())->toBeTrue();
 });
 
+it('caps the final scheduled deduction at the remaining installment and stops the schedule', function () {
+    [$organization, , $admin, $savings, $loan] = scheduledDeductionFixture();
+    $service = app(ScheduledSavingsLoanDeductionService::class);
+    $schedule = $service->create($savings, $loan, 150_000, 'monthly', now()->subMinute(), $admin);
+    $service->activate($schedule, $admin);
+
+    $summary = $service->processDueSchedules(now(), $organization->id);
+
+    expect($summary)->toMatchArray(['checked' => 1, 'succeeded' => 1, 'skipped' => 0, 'failed' => 0])
+        ->and((float) $savings->fresh()->current_balance)->toBe(100_000.0)
+        ->and((float) $loan->fresh()->principal_balance)->toBe(0.0)
+        ->and((float) LoanRepayment::where('loan_id', $loan->id)->value('amount'))->toBe(100_000.0)
+        ->and($schedule->fresh()->status)->toBe('disabled')
+        ->and($schedule->fresh()->last_message)->toContain('fully cleared');
+});
+
 it('rejects a cross-client schedule and a non-denomination amount', function () {
     [, , $admin, $savings, $loan] = scheduledDeductionFixture();
     $otherClient = Client::create([

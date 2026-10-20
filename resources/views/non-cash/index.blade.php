@@ -21,96 +21,134 @@
     @if($canPostSavingsLoanRepayment)
         <section class="rounded-lg border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
             <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Manual internal transfer</div>
-                <h2 class="mt-1 text-base font-semibold text-emerald-950">Repay a Loan from Client Savings</h2>
-                <p class="mt-1 text-sm text-emerald-800">Select a savings account, then choose an active or in-arrears loan belonging to the same client. This posts directly between the accounts and does not move teller drawer cash.</p>
+                <div class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Savings-to-loan internal transfer</div>
+                <h2 class="mt-1 text-base font-semibold text-emerald-950">Pay a Client Loan from Savings</h2>
+                <p class="mt-1 text-sm text-emerald-800">First find the client’s savings account. The system then shows only that client’s open loans with unpaid installments, so you can make a one-off repayment or set up an automatic deduction without using teller drawer cash.</p>
             </div>
-            <form method="GET" action="{{ route('non-cash.index') }}" class="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+
+            <form method="GET" action="{{ route('non-cash.index') }}" class="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
                 <input type="hidden" name="account_id" value="{{ $selectedAccount?->id }}">
                 <input type="hidden" name="chart_account_id" value="{{ $selectedLedger?->id }}">
+                <input type="hidden" name="branch_id" value="{{ $branchId }}">
                 <label class="grid gap-1 text-sm">
-                    <span class="font-medium text-emerald-950">Client savings account</span>
-                    <select name="repayment_savings_account_id" required class="rounded-lg border-emerald-200 focus:border-emerald-500 focus:ring-emerald-100" onchange="this.form.submit()">
-                        <option value="">Choose savings account</option>
-                        @foreach($repaymentSavingsAccounts as $savingsAccount)
-                            <option value="{{ $savingsAccount->id }}" @selected($selectedRepaymentSavings?->id === $savingsAccount->id)>{{ $savingsAccount->account_number }} · {{ $savingsAccount->client?->full_name ?? $savingsAccount->client?->business_name }} · Available UGX {{ number_format((float) $savingsAccount->available_balance, 2) }}</option>
-                        @endforeach
-                    </select>
+                    <span class="font-medium text-emerald-950">Search a client savings account</span>
+                    <input name="repayment_savings_search" value="{{ $repaymentSavingsSearch }}" class="rounded-lg border-emerald-200 focus:border-emerald-500 focus:ring-emerald-100" placeholder="Client name, phone, client number, or savings account number">
                 </label>
-                <label class="grid gap-1 text-sm">
-                    <span class="font-medium text-emerald-950">Same-client loan</span>
-                    <select name="repayment_loan_id" required class="rounded-lg border-emerald-200 focus:border-emerald-500 focus:ring-emerald-100">
-                        <option value="">Choose loan</option>
-                        @foreach($repaymentLoans as $repaymentLoan)
-                            <option value="{{ $repaymentLoan->id }}" @selected($selectedRepaymentLoan?->id === $repaymentLoan->id)>{{ $repaymentLoan->loan_number }} · {{ $repaymentLoan->product?->name ?? 'Loan' }} · {{ str($repaymentLoan->status)->headline() }}</option>
-                        @endforeach
-                    </select>
-                </label>
-                <button class="df-action-secondary">Load selection</button>
+                <button class="df-action-secondary">Search savings</button>
             </form>
+
+            @if($repaymentSavingsSearch !== '')
+                <div class="mt-4 divide-y divide-emerald-200 overflow-hidden rounded-lg border border-emerald-200 bg-white">
+                    @forelse($repaymentSavingsResults as $savingsAccount)
+                        <div class="grid gap-3 p-4 sm:grid-cols-[1fr_auto] sm:items-center">
+                            <div>
+                                <div class="font-semibold text-slate-950">{{ $savingsAccount->client?->full_name ?? $savingsAccount->client?->business_name ?? 'Client' }}</div>
+                                <div class="text-sm text-slate-600">{{ $savingsAccount->account_number }} · {{ $savingsAccount->product?->name ?? 'Savings account' }}</div>
+                                <div class="mt-1 text-xs font-semibold {{ (float) $savingsAccount->available_balance > 0 ? 'text-emerald-700' : 'text-amber-700' }}">Available to transfer: UGX {{ number_format((float) $savingsAccount->available_balance, 2) }}</div>
+                            </div>
+                            <a href="{{ route('non-cash.index', array_filter(array_merge(request()->except(['repayment_savings_search', 'repayment_loan_id']), ['repayment_savings_account_id' => $savingsAccount->id]))) }}" class="df-action-primary justify-center">Use this savings</a>
+                        </div>
+                    @empty
+                        <div class="p-5 text-sm text-slate-500">No active savings accounts match that search in the selected branch.</div>
+                    @endforelse
+                </div>
+            @endif
+
+            @if($selectedRepaymentSavings)
+                <div class="mt-4 rounded-lg border border-emerald-200 bg-white p-4">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <div class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Selected savings account</div>
+                            <div class="mt-1 font-semibold text-slate-950">{{ $selectedRepaymentSavings->account_number }} · {{ $selectedRepaymentSavings->client?->full_name ?? $selectedRepaymentSavings->client?->business_name }}</div>
+                            <div class="mt-1 text-sm text-slate-600">{{ $selectedRepaymentSavings->product?->name ?? 'Savings account' }} · Available to transfer: <span class="font-semibold">UGX {{ number_format((float) $selectedRepaymentSavings->available_balance, 2) }}</span></div>
+                        </div>
+                        <a href="{{ route('non-cash.index', array_filter(request()->except(['repayment_savings_account_id', 'repayment_loan_id', 'repayment_savings_search']))) }}" class="df-action-secondary">Change savings</a>
+                    </div>
+
+                    @if($repaymentLoans->isNotEmpty())
+                        <form method="GET" action="{{ route('non-cash.index') }}" class="mt-4 grid gap-3 border-t border-emerald-100 pt-4 md:grid-cols-[1fr_auto] md:items-end">
+                            <input type="hidden" name="account_id" value="{{ $selectedAccount?->id }}">
+                            <input type="hidden" name="chart_account_id" value="{{ $selectedLedger?->id }}">
+                            <input type="hidden" name="branch_id" value="{{ $branchId }}">
+                            <input type="hidden" name="repayment_savings_account_id" value="{{ $selectedRepaymentSavings->id }}">
+                            <label class="grid gap-1 text-sm">
+                                <span class="font-medium text-emerald-950">Payable loan for this client</span>
+                                <select name="repayment_loan_id" required class="rounded-lg border-emerald-200 focus:border-emerald-500 focus:ring-emerald-100" onchange="this.form.submit()">
+                                    <option value="">Choose a loan with an unpaid installment</option>
+                                    @foreach($repaymentLoans as $repaymentLoan)
+                                        @php
+                                            $nextInstallment = $repaymentLoan->schedules->first();
+                                            $unpaidAmount = (float) $repaymentLoan->schedules->sum('outstanding_amount');
+                                        @endphp
+                                        <option value="{{ $repaymentLoan->id }}" @selected($selectedRepaymentLoan?->id === $repaymentLoan->id)>{{ $repaymentLoan->loan_number }} · {{ $repaymentLoan->product?->name ?? 'Loan' }} · UGX {{ number_format($unpaidAmount, 2) }} unpaid{{ $nextInstallment?->due_date ? ' · next due '.$nextInstallment->due_date->format('d M Y') : '' }}</option>
+                                    @endforeach
+                                </select>
+                            </label>
+                            <button class="df-action-secondary">Load loan</button>
+                        </form>
+                    @else
+                        <p class="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">This client has no active or in-arrears loans with unpaid installments in this branch.</p>
+                    @endif
+                </div>
+            @endif
+
             @if($selectedRepaymentSavings && $selectedRepaymentLoan)
+                @php
+                    $nextInstallment = $selectedRepaymentLoan->schedules->first();
+                    $unpaidAmount = (float) $selectedRepaymentLoan->schedules->sum('outstanding_amount');
+                    $repaymentMaximum = min((float) $selectedRepaymentSavings->available_balance, $unpaidAmount);
+                @endphp
+                <div class="mt-4 rounded-lg border border-emerald-200 bg-white p-4">
+                    <div class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Selected loan</div>
+                    <div class="mt-1 font-semibold text-slate-950">{{ $selectedRepaymentLoan->loan_number }} · {{ $selectedRepaymentLoan->product?->name ?? 'Loan' }} · {{ str($selectedRepaymentLoan->status)->headline() }}</div>
+                    <div class="mt-1 text-sm text-slate-600">Unpaid installments: <span class="font-semibold">UGX {{ number_format($unpaidAmount, 2) }}</span>{{ $nextInstallment?->due_date ? ' · Earliest unpaid installment due '.$nextInstallment->due_date->format('d M Y') : '' }}</div>
+                    <p class="mt-2 text-xs text-emerald-800">Each payment clears the earliest unpaid installment first: penalties, then fees, interest, and principal.</p>
+                </div>
+
                 <form method="POST" action="{{ route('non-cash.repay-loan-from-savings') }}" class="mt-4 grid gap-4 border-t border-emerald-200 pt-4 sm:grid-cols-[1fr_auto] sm:items-end" data-confirm-title="Review savings loan repayment" data-confirm-message="Transfer the selected amount from this savings account to this same-client loan? No teller drawer cash will move." data-confirm-label="Post repayment" data-confirm-tone="neutral">
                     @csrf
                     <input type="hidden" name="savings_account_id" value="{{ $selectedRepaymentSavings->id }}">
                     <input type="hidden" name="loan_id" value="{{ $selectedRepaymentLoan->id }}">
                     <label class="grid gap-1 text-sm">
-                        <span class="font-medium text-emerald-950">Partial repayment amount</span>
-                        <input type="number" name="amount" min="100" step="100" value="{{ old('amount') }}" required class="rounded-lg border-emerald-200 focus:border-emerald-500 focus:ring-emerald-100" placeholder="UGX 100 or more">
-                        <span class="text-xs text-emerald-800">Available savings: UGX {{ number_format((float) $selectedRepaymentSavings->available_balance, 2) }} · Loan: {{ $selectedRepaymentLoan->loan_number }}</span>
+                        <span class="font-medium text-emerald-950">One-off repayment amount</span>
+                        <input type="number" name="amount" min="100" max="{{ number_format($repaymentMaximum, 2, '.', '') }}" step="100" value="{{ old('amount') }}" required @disabled($repaymentMaximum < 100) class="rounded-lg border-emerald-200 focus:border-emerald-500 focus:ring-emerald-100 disabled:bg-slate-100" placeholder="UGX 100 or more">
+                        <span class="text-xs text-emerald-800">Maximum transferable now: UGX {{ number_format($repaymentMaximum, 2) }}.</span>
                     </label>
-                    <button class="rounded-lg bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">Post Savings Repayment</button>
+                    <button @disabled($repaymentMaximum < 100) class="rounded-lg bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400">Post Savings Repayment</button>
                 </form>
-            @endif
-        </section>
-    @endif
 
-    @if($canConfigureScheduledDeductions)
-        <section class="rounded-lg border border-violet-200 bg-violet-50 p-5 shadow-sm">
-            <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-violet-700">Automatic internal transfer</div>
-                <h2 class="mt-1 text-base font-semibold text-violet-950">Schedule Savings-to-Loan Deductions</h2>
-                <p class="mt-1 text-sm text-violet-800">A cashier can configure a fixed UGX amount and frequency. An administrator must activate the schedule. Each due run transfers only that amount, never overdrafts savings, and leaves a visible result when funds are insufficient.</p>
-            </div>
-            <form method="POST" action="{{ route('non-cash.scheduled-deductions.store') }}" class="mt-4 grid gap-4 lg:grid-cols-5">
-                @csrf
-                <label class="grid gap-1 text-sm">
-                    <span class="font-medium text-violet-950">Savings account</span>
-                    <select name="savings_account_id" required class="rounded-lg border-violet-200 focus:border-violet-500 focus:ring-violet-100">
-                        <option value="">Choose account</option>
-                        @foreach($repaymentSavingsAccounts as $savingsAccount)
-                            <option value="{{ $savingsAccount->id }}" @selected((int) old('savings_account_id') === $savingsAccount->id)>{{ $savingsAccount->account_number }} · {{ $savingsAccount->client?->full_name ?? $savingsAccount->client?->business_name }} · UGX {{ number_format((float) $savingsAccount->available_balance, 2) }} available</option>
-                        @endforeach
-                    </select>
-                </label>
-                <label class="grid gap-1 text-sm">
-                    <span class="font-medium text-violet-950">Active or in-arrears loan</span>
-                    <select name="loan_id" required class="rounded-lg border-violet-200 focus:border-violet-500 focus:ring-violet-100">
-                        <option value="">Choose loan</option>
-                        @foreach($repaymentLoans as $repaymentLoan)
-                            <option value="{{ $repaymentLoan->id }}" @selected((int) old('loan_id') === $repaymentLoan->id)>{{ $repaymentLoan->loan_number }} · {{ $repaymentLoan->client?->full_name ?? 'Client' }}</option>
-                        @endforeach
-                    </select>
-                </label>
-                <label class="grid gap-1 text-sm">
-                    <span class="font-medium text-violet-950">Amount per run (UGX)</span>
-                    <input type="number" name="amount" min="100" step="100" value="{{ old('amount') }}" required class="rounded-lg border-violet-200 focus:border-violet-500 focus:ring-violet-100" placeholder="5,000">
-                </label>
-                <label class="grid gap-1 text-sm">
-                    <span class="font-medium text-violet-950">Frequency</span>
-                    <select name="frequency" required class="rounded-lg border-violet-200 focus:border-violet-500 focus:ring-violet-100">
-                        @foreach(['daily' => 'Daily', 'weekly' => 'Weekly', 'biweekly' => 'Every two weeks', 'monthly' => 'Monthly'] as $frequency => $label)
-                            <option value="{{ $frequency }}" @selected(old('frequency', 'monthly') === $frequency)>{{ $label }}</option>
-                        @endforeach
-                    </select>
-                </label>
-                <label class="grid gap-1 text-sm">
-                    <span class="font-medium text-violet-950">First run</span>
-                    <input type="datetime-local" name="next_run_at" value="{{ old('next_run_at', now()->format('Y-m-d\TH:i')) }}" required class="rounded-lg border-violet-200 focus:border-violet-500 focus:ring-violet-100">
-                </label>
-                <div class="lg:col-span-5">
-                    <button class="rounded-lg bg-violet-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-800">Create Pending Schedule</button>
-                </div>
-            </form>
+                @if($canConfigureScheduledDeductions)
+                    <div class="mt-5 border-t border-violet-200 pt-5">
+                        <div class="text-xs font-semibold uppercase tracking-wide text-violet-700">Automatic internal transfer</div>
+                        <h3 class="mt-1 font-semibold text-violet-950">Schedule Deductions for this Same Client Pair</h3>
+                        <p class="mt-1 text-sm text-violet-800">Use the selected savings account and loan. An administrator activates the schedule. Each run transfers the set amount, or only the final remaining installment amount, and stops once the loan is cleared.</p>
+                        <form method="POST" action="{{ route('non-cash.scheduled-deductions.store') }}" class="mt-4 grid gap-4 lg:grid-cols-4">
+                            @csrf
+                            <input type="hidden" name="savings_account_id" value="{{ $selectedRepaymentSavings->id }}">
+                            <input type="hidden" name="loan_id" value="{{ $selectedRepaymentLoan->id }}">
+                            <label class="grid gap-1 text-sm">
+                                <span class="font-medium text-violet-950">Amount per run (UGX)</span>
+                                <input type="number" name="amount" min="100" step="100" value="{{ old('amount') }}" required class="rounded-lg border-violet-200 focus:border-violet-500 focus:ring-violet-100" placeholder="5,000">
+                            </label>
+                            <label class="grid gap-1 text-sm">
+                                <span class="font-medium text-violet-950">Frequency</span>
+                                <select name="frequency" required class="rounded-lg border-violet-200 focus:border-violet-500 focus:ring-violet-100">
+                                    @foreach(['daily' => 'Daily', 'weekly' => 'Weekly', 'biweekly' => 'Every two weeks', 'monthly' => 'Monthly'] as $frequency => $label)
+                                        <option value="{{ $frequency }}" @selected(old('frequency', 'monthly') === $frequency)>{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                            </label>
+                            <label class="grid gap-1 text-sm">
+                                <span class="font-medium text-violet-950">First run</span>
+                                <input type="datetime-local" name="next_run_at" value="{{ old('next_run_at', now()->format('Y-m-d\TH:i')) }}" required class="rounded-lg border-violet-200 focus:border-violet-500 focus:ring-violet-100">
+                            </label>
+                            <div class="flex items-end">
+                                <button class="w-full rounded-lg bg-violet-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-800">Create Pending Schedule</button>
+                            </div>
+                        </form>
+                    </div>
+                @endif
+            @endif
         </section>
     @endif
 
