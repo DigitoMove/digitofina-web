@@ -14,6 +14,9 @@ use App\Models\Organization;
 use App\Models\OrganizationModule;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\ShareAccount;
+use App\Models\ShareProduct;
+use App\Models\ShareTransaction;
 use App\Models\User;
 use App\Services\ModuleService;
 use App\Services\ReportCatalogService;
@@ -52,6 +55,99 @@ it('isolates every profitability source to the active organization', function ()
         ->and($interest['summary']['Interest collected'])->toBe('UGX 120.00')
         ->and($branches['rows']->pluck('Branch'))->toContain($branchA->name, 'All Branches')
         ->and($branches['rows']->pluck('Branch'))->not->toContain('OTHER Branch');
+});
+
+it('scopes arrears figures and excludes unsuccessful loan recoveries', function () {
+    [, $branch, $admin, $loan] = reportTenantFixture('Arrears Organization', 'ARREARS', 1000, 50, 120, 200, 40);
+    reportTenantFixture('Foreign Arrears Organization', 'FOREIGNARREARS', 9_000_000, 50, 120, 200, 40);
+
+    LoanRepayment::create([
+        'organization_id' => $admin->organization_id,
+        'loan_id' => $loan->id,
+        'client_id' => $loan->client_id,
+        'branch_id' => $branch->id,
+        'amount' => 5000,
+        'principal_paid' => 5000,
+        'paid_at' => today(),
+        'status' => 'failed',
+    ]);
+
+    $reports = app(ReportCatalogService::class);
+    $filters = ['from' => today()->toDateString(), 'to' => today()->toDateString()];
+    $arrears = $reports->generate('arrears-rate', $filters + ['lifetime' => true], $admin);
+    $recovery = $reports->generate('loan-recovery', $filters, $admin);
+
+    expect($arrears['summary']['Principal Given Out'])->toBe('UGX 1,000.00')
+        ->and($arrears['summary']['Total Loan Portfolio'])->toBe('UGX 1,170.00')
+        ->and($recovery['summary']['Recovered'])->toBe('UGX 220.00')
+        ->and($recovery['rows'])->toHaveCount(1);
+});
+
+it('keeps loan book totals equal to their components when a loan has no schedule', function () {
+    [, , $admin, $loan] = reportTenantFixture('Unscheduled Loan Organization', 'UNSCHEDULED', 1000, 50, 120, 200, 40);
+    $loan->schedules()->delete();
+
+    $report = app(ReportCatalogService::class)->generate('loan-book', [], $admin);
+    $row = $report['rows']->first();
+
+    expect($row['Loan Principal'])->toBe('1,000.00')
+        ->and($row['Loan Total'])->toBe('1,000.00');
+});
+
+it('reports collected interest on its payment date even when the installment was due earlier', function () {
+    [, , $admin, $loan] = reportTenantFixture('Interest Period Organization', 'INTERESTPERIOD', 1000, 50, 120, 200, 40);
+    $loan->schedules()->update(['due_date' => today()->subMonth()]);
+
+    $report = app(ReportCatalogService::class)->generate('loan-interest-income', [
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+    ], $admin);
+
+    expect($report['summary']['Projected interest'])->toBe('UGX 0.00')
+        ->and($report['summary']['Interest collected'])->toBe('UGX 120.00')
+        ->and($report['rows']->first()['Interest Collected'])->toBe('UGX 120.00');
+});
+
+it('uses share transaction records and sums only successful amounts', function () {
+    [, $branch, $admin, $loan] = reportTenantFixture('Shares Report Organization', 'SHARESREPORT', 1000, 50, 120, 200, 40);
+    $product = ShareProduct::create([
+        'organization_id' => $admin->organization_id,
+        'name' => 'Ordinary Shares',
+        'code' => 'SHARESREPORT-PRODUCT',
+        'share_value' => 100,
+    ]);
+    $account = ShareAccount::create([
+        'organization_id' => $admin->organization_id,
+        'branch_id' => $branch->id,
+        'client_id' => $loan->client_id,
+        'share_product_id' => $product->id,
+        'account_number' => 'SHARESREPORT-ACCOUNT',
+        'total_shares' => 10,
+        'share_value' => 100,
+        'total_share_capital' => 1000,
+    ]);
+    foreach ([['BUY-001', 'successful', 300], ['BUY-002', 'failed', 900]] as [$reference, $status, $amount]) {
+        ShareTransaction::create([
+            'share_account_id' => $account->id,
+            'reference' => $reference,
+            'type' => 'purchase',
+            'shares' => $amount / 100,
+            'amount' => $amount,
+            'status' => $status,
+        ]);
+    }
+
+    $report = app(ReportCatalogService::class)->generate('share-transactions', [
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+    ], $admin);
+    $balances = app(ReportCatalogService::class)->generate('share-balances', [], $admin);
+
+    expect($report['rows']->pluck('Reference')->all())->toContain('BUY-001', 'BUY-002')
+        ->and($report['summary']['Transactions'])->toBe('2')
+        ->and($report['summary']['Successful amount'])->toBe('UGX 300.00')
+        ->and($balances['rows']->first()['Shares'])->toBe('10')
+        ->and($balances['summary']['Share capital'])->toBe('UGX 1,000.00');
 });
 
 it('includes approved loans after they move beyond the approved status', function () {

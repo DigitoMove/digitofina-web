@@ -22,6 +22,7 @@ use App\Models\LoanDisbursement;
 use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
 use App\Models\ShareAccount;
+use App\Models\ShareTransaction;
 use App\Models\SystemSetting;
 use App\Models\TellerDrawer;
 use App\Models\Transaction;
@@ -154,7 +155,7 @@ class ReportCatalogService
             $this->placeholder('cancelled-savings-standing-orders', 'Savings', 'Cancelled Savings Standing Orders'),
             $this->report('share-accounts', 'Shares', 'Share Accounts', 'shares', [], false),
             $this->report('share-balances', 'Shares', 'Share Balances', 'shares', [], false),
-            $this->report('share-transactions', 'Shares', 'Share Transactions', 'shares', []),
+            $this->report('share-transactions', 'Shares', 'Share Transactions', 'share_transactions', []),
             $this->report('loans-application-by-date', 'Loan Application', 'Loans Application By Date', 'loans', ['date_column' => 'application_date']),
             $this->report('appraisal-loan-applications', 'Loan Application', 'Appraisal Loan Applications', 'loans', ['status' => 'under_review']),
             $this->report('approval-loan-applications', 'Loan Application', 'Approval Loan Applications', 'loans', ['status' => 'submitted']),
@@ -324,6 +325,7 @@ class ReportCatalogService
                 'branch_profitability_standing' => $this->branchProfitabilityStanding($from, $to, $branchId, $user, $interestBasis),
                 'accounts' => $this->accounts($payload, $from, $to, $branchId, $limit, $user),
                 'shares' => $this->shares($from, $to, $branchId, $limit, $user),
+                'share_transactions' => $this->shareTransactions($from, $to, $branchId, $limit, $user),
                 'loans' => $this->loans($payload, $from, $to, $branchId, $limit, $user),
                 'loan_disbursements' => $this->loanDisbursements($payload, $from, $to, $branchId, $limit, $user),
                 'loan_schedules' => $this->loanSchedules($payload, $from, $to, $branchId, $limit, $user),
@@ -1327,8 +1329,7 @@ class ReportCatalogService
     {
         $loans = Loan::query()->with(['officer', 'schedules'])->whereIn('status', Loan::LISTING_STATUSES)
             ->when(! $lifetime, fn (Builder $query): Builder => $query->whereBetween('disbursed_at', [$from, $to]))
-            ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
-            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id))
+            ->tap(fn (Builder $query): Builder => $this->scopeLoanReport($query, $branchId, $user))
             ->get();
         $rows = $loans->groupBy(fn (Loan $loan): string => $loan->officer?->name ?: 'Unassigned')->map(function ($officerLoans, string $officer) use ($to): array {
             $portfolio = 0.0;
@@ -1932,38 +1933,61 @@ class ReportCatalogService
             ->whereBetween('due_date', [$from, $to])
             ->whereHas('loan', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
 
-        $rows = (clone $query)->orderBy('due_date')->limit($limit)->get()->map(function (LoanSchedule $schedule) use ($interestBasis): array {
+        $scheduleRows = (clone $query)->orderBy('due_date')->limit($limit)->get()->map(function (LoanSchedule $schedule) use ($interestBasis): array {
             $projectedInterest = (float) $schedule->interest_due;
             $collectedInterest = (float) $schedule->interest_paid;
 
             return [
                 'Due Date' => $schedule->due_date?->format('d M Y'),
+                'Payment Date' => '',
                 'Branch' => $schedule->loan?->branch?->name ?? 'N/A',
                 'Loan' => $schedule->loan?->loan_number ?? 'N/A',
                 'Client' => $schedule->loan?->client?->full_name ?? 'N/A',
                 'Product' => $schedule->loan?->product?->name ?? 'N/A',
                 'Installment' => '#'.$schedule->installment_number,
                 'Projected Interest' => $this->money($projectedInterest),
-                'Interest Collected' => $this->money($collectedInterest),
+                'Interest Collected' => $this->money(0),
                 'Interest Outstanding' => $this->money(max(0, $projectedInterest - $collectedInterest)),
-                'Interest Shown' => $this->money($interestBasis === 'projected' ? $projectedInterest : $collectedInterest),
+                'Interest Shown' => $this->money($interestBasis === 'projected' ? $projectedInterest : 0),
                 'Status' => Str::headline($schedule->status),
             ];
         });
 
+        $repayments = LoanRepayment::query()
+            ->with(['loan.client', 'loan.branch', 'loan.product'])
+            ->where('status', 'successful')
+            ->whereBetween('paid_at', [$from, $to])
+            ->where('interest_paid', '>', 0)
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+        $paymentRows = (clone $repayments)->orderBy('paid_at')->limit($limit)->get()->map(fn (LoanRepayment $repayment): array => [
+            'Due Date' => '',
+            'Payment Date' => $repayment->paid_at?->format('d M Y'),
+            'Branch' => $repayment->loan?->branch?->name ?? 'N/A',
+            'Loan' => $repayment->loan?->loan_number ?? 'N/A',
+            'Client' => $repayment->loan?->client?->full_name ?? 'N/A',
+            'Product' => $repayment->loan?->product?->name ?? 'N/A',
+            'Installment' => 'Payment',
+            'Projected Interest' => $this->money(0),
+            'Interest Collected' => $this->money((float) $repayment->interest_paid),
+            'Interest Outstanding' => $this->money(0),
+            'Interest Shown' => $this->money($interestBasis === 'collected' ? (float) $repayment->interest_paid : 0),
+            'Status' => 'Collected',
+        ]);
+
         $projectedInterest = (float) (clone $query)->sum('interest_due');
-        $interestCollected = (float) (clone $query)->sum('interest_paid');
+        $interestCollected = (float) (clone $repayments)->sum('interest_paid');
         $interestShown = $interestBasis === 'projected' ? $projectedInterest : $interestCollected;
+        $interestOutstanding = (float) (clone $query)->get()->sum(fn (LoanSchedule $schedule): float => max(0, (float) $schedule->interest_due - (float) $schedule->interest_paid));
 
         return [
-            ['Due Date', 'Branch', 'Loan', 'Client', 'Product', 'Installment', 'Projected Interest', 'Interest Collected', 'Interest Outstanding', 'Interest Shown', 'Status'],
-            $rows,
+            ['Due Date', 'Payment Date', 'Branch', 'Loan', 'Client', 'Product', 'Installment', 'Projected Interest', 'Interest Collected', 'Interest Outstanding', 'Interest Shown', 'Status'],
+            $scheduleRows->concat($paymentRows)->take($limit)->values(),
             [
                 'Interest basis' => Str::headline($interestBasis),
                 'Interest shown' => $this->money($interestShown),
                 'Projected interest' => $this->money($projectedInterest),
                 'Interest collected' => $this->money($interestCollected),
-                'Interest outstanding' => $this->money(max(0, $projectedInterest - $interestCollected)),
+                'Interest outstanding' => $this->money($interestOutstanding),
             ],
         ];
     }
@@ -2209,13 +2233,42 @@ class ReportCatalogService
             ->map(fn (ShareAccount $account): array => [
                 'Client' => $account->client?->full_name ?? 'N/A',
                 'Product' => $account->product?->name ?? 'N/A',
-                'Shares' => number_format((float) ($account->shares ?? 0)),
+                'Shares' => number_format((int) $account->total_shares),
                 'Share Value' => $this->money((float) $account->share_value),
                 'Capital' => $this->money((float) $account->total_share_capital),
                 'Status' => Str::headline((string) $account->status),
             ]);
 
         return [['Client', 'Product', 'Shares', 'Share Value', 'Capital', 'Status'], $rows, ['Share capital' => $this->money((float) (clone $query)->sum('total_share_capital'))]];
+    }
+
+    private function shareTransactions(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
+    {
+        $query = ShareTransaction::query()
+            ->with(['account.client', 'account.product'])
+            ->whereBetween('created_at', [$from, $to])
+            ->whereHas('account', fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+
+        $rows = (clone $query)->latest()->limit($limit)->get()->map(fn (ShareTransaction $transaction): array => [
+            'Date' => $transaction->created_at?->format('d M Y H:i'),
+            'Reference' => $transaction->reference,
+            'Account' => $transaction->account?->account_number ?? 'N/A',
+            'Client' => $transaction->account?->client?->full_name ?? 'N/A',
+            'Product' => $transaction->account?->product?->name ?? 'N/A',
+            'Type' => Str::headline($transaction->type),
+            'Shares' => number_format((int) $transaction->shares),
+            'Amount' => $this->money((float) $transaction->amount),
+            'Status' => Str::headline($transaction->status),
+        ]);
+
+        return [
+            ['Date', 'Reference', 'Account', 'Client', 'Product', 'Type', 'Shares', 'Amount', 'Status'],
+            $rows,
+            [
+                'Transactions' => number_format((clone $query)->count()),
+                'Successful amount' => $this->money((float) (clone $query)->where('status', 'successful')->sum('amount')),
+            ],
+        ];
     }
 
     private function loans(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
@@ -2322,6 +2375,7 @@ class ReportCatalogService
             $isArrears = in_array($loan->status, ['active', 'in_arrears'], true)
                 && ($overdueSchedules->isNotEmpty() || $loan->status === 'in_arrears');
             $principalDue = (float) $schedules->sum('principal_due');
+            $loanPrincipal = $principalDue ?: (float) ($loan->approved_amount ?? $loan->requested_amount);
             $interestDue = (float) $schedules->sum('interest_due');
             $feesDue = (float) $schedules->sum('fees_due');
             $penaltyDue = (float) $schedules->sum('penalty_due');
@@ -2347,10 +2401,10 @@ class ReportCatalogService
                 'Disbursement' => $loan->disbursed_at?->format('d-m-Y'),
                 'Maturity' => $schedules->max('due_date')?->format('d-m-Y'),
                 'Interest Rate P.M' => $this->periodicInterestRate($loan),
-                'Loan Principal' => $this->amount($principalDue ?: (float) ($loan->approved_amount ?? $loan->requested_amount)),
+                'Loan Principal' => $this->amount($loanPrincipal),
                 'Loan Interest' => $this->amount($interestDue),
                 'Loan Fees' => $this->amount($feesDue),
-                'Loan Total' => $this->amount($principalDue + $interestDue + $feesDue),
+                'Loan Total' => $this->amount($loanPrincipal + $interestDue + $feesDue),
                 'Installment Cycle' => $this->installmentCycle($loan),
                 'Number Of Installments' => (string) $schedules->count(),
                 'Paid Principal' => $this->amount($paidPrincipal),
@@ -2459,6 +2513,7 @@ class ReportCatalogService
             ->with(['loan.client', 'receivedBy'])
             ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
             ->whereBetween('paid_at', [$from, $to])
+            ->where('status', 'successful')
             ->when($branchId, fn (Builder $query): Builder => $query->where('branch_id', $branchId))
             ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('branch_id', $user->branch_id));
 
