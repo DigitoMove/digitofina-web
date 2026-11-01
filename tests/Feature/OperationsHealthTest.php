@@ -50,14 +50,15 @@ it('emails the new encrypted database backup to the configured recipient', funct
     SystemSetting::forPlatform()->where('key', 'backup_mail_to')->firstOrFail()->update(['value' => 'epaphradigito@gmail.com']);
     config()->set('backup.backup.password', 'test-archive-password');
     config()->set('backup.backup.encryption', 'default');
-    config()->set('mail.default', 'sendmail');
-    config()->set('mail.from.address', 'backup@digitomove.com');
+    config()->set('backup.mail_delivery.mailer', 'sendmail');
+    config()->set('backup.mail_delivery.from', 'backup@digitomove.com');
     Artisan::shouldReceive('all')->once()->andReturn(['backup:run' => new stdClass]);
     Artisan::shouldReceive('call')->once()->andReturnUsing(function (): int {
         Storage::disk('local')->put('DigitoFina/new-backup.zip', 'test archive');
 
         return 0;
     });
+    Mail::shouldReceive('mailer')->with('sendmail')->once()->andReturnSelf();
     Mail::shouldReceive('raw')->once();
 
     (new RunBackupJob)->handle();

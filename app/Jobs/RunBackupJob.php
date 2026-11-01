@@ -33,12 +33,14 @@ class RunBackupJob implements ShouldQueue
             $recipientSetting = SystemSetting::forPlatform()->where('key', 'backup_mail_to')->value('value');
             $recipients = array_values(array_filter(array_map('trim', explode(',', (string) ($recipientSetting ?: env('BACKUP_MAIL_TO', ''))))));
             $shouldEmail = $this->emailBackup && $recipients !== [];
+            $mailer = config('backup.mail_delivery.mailer', config('mail.default'));
+            $sender = config('backup.mail_delivery.from', config('mail.from.address'));
 
             if ($shouldEmail && (! filled(config('backup.backup.password')) || config('backup.backup.encryption') === 'none')) {
                 throw new RuntimeException('Backup email requires an encrypted archive. Configure BACKUP_ARCHIVE_PASSWORD first.');
             }
 
-            if ($shouldEmail && (in_array(config('mail.default'), ['log', 'array'], true) || config('mail.from.address') === 'hello@example.com')) {
+            if ($shouldEmail && (in_array($mailer, ['log', 'array'], true) || ! filled($sender) || $sender === 'hello@example.com')) {
                 throw new RuntimeException('Backup email requires a delivery mailer and a real sender address.');
             }
 
@@ -60,8 +62,9 @@ class RunBackupJob implements ShouldQueue
             }
 
             if ($shouldEmail) {
-                Mail::raw('The latest DigitoFina database backup is attached. Keep it in protected storage and test restoration regularly.', function ($message) use ($recipients, $disk, $backupPath): void {
-                    $message->to($recipients)
+                Mail::mailer($mailer)->raw('The latest DigitoFina database backup is attached. Keep it in protected storage and test restoration regularly.', function ($message) use ($recipients, $sender, $disk, $backupPath): void {
+                    $message->from($sender)
+                        ->to($recipients)
                         ->subject('DigitoFina database backup - '.now()->format('Y-m-d'))
                         ->attach($disk->path($backupPath), ['as' => basename($backupPath), 'mime' => 'application/zip']);
                 });
