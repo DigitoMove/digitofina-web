@@ -16,7 +16,7 @@
         @csrf
         @method('PUT')
         @if(($credential?->unreadableSecretAttributes() ?? []) !== [])
-            <div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 md:col-span-2">Saved Mobile Money credentials cannot be decrypted. Re-enter each secret with an empty placeholder to restore client collections.</div>
+            <div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 md:col-span-2">Saved Mobile Money credentials cannot be decrypted. Re-enter each secret with an empty placeholder to restore the saved configuration.</div>
         @endif
         <p class="text-sm text-slate-600 md:col-span-2">Secrets are encrypted and never displayed again. Leave an existing secret blank to keep it unchanged. Configure platform Mobile Money credentials separately for DigitoFina quote billing.</p>
         @if($errors->has('api_key') || $errors->has('api_secret') || $errors->has('webhook_secret'))

@@ -22,6 +22,7 @@ $config['backup']['encryption'] = env('BACKUP_ARCHIVE_PASSWORD') ? 'default' : '
 $config['backup']['verify_backup'] = true;
 $config['notifications']['mail']['to'] = array_values(array_filter(array_map('trim', explode(',', (string) env('BACKUP_MAIL_TO', '')))));
 $config['mail_delivery'] = [
+    'enabled' => (bool) env('BACKUP_EMAIL_ENABLED', false),
     'mailer' => env('BACKUP_MAILER', env('MAIL_MAILER', 'log')),
     'from' => env('BACKUP_MAIL_FROM_ADDRESS', env('MAIL_FROM_ADDRESS', 'hello@example.com')),
 ];
