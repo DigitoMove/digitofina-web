@@ -15,7 +15,13 @@
     <form method="POST" action="{{ route('organization.nylon-pay.update') }}" class="mt-5 grid gap-4 md:grid-cols-2" autocomplete="off">
         @csrf
         @method('PUT')
+        @if(($credential?->unreadableSecretAttributes() ?? []) !== [])
+            <div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 md:col-span-2">Saved Mobile Money credentials cannot be decrypted. Re-enter each secret with an empty placeholder to restore client collections.</div>
+        @endif
         <p class="text-sm text-slate-600 md:col-span-2">Secrets are encrypted and never displayed again. Leave an existing secret blank to keep it unchanged. Configure platform Mobile Money credentials separately for DigitoFina quote billing.</p>
+        @if($errors->has('api_key') || $errors->has('api_secret') || $errors->has('webhook_secret'))
+            <p class="text-sm text-red-700 md:col-span-2">{{ $errors->first() }}</p>
+        @endif
         <label class="text-sm font-semibold text-slate-700">API key<input name="api_key" type="password" autocomplete="new-password" class="mt-1" placeholder="{{ $credential?->masked('api_key') ?: 'npk_live_...' }}"></label>
         <label class="text-sm font-semibold text-slate-700">API secret<input name="api_secret" type="password" autocomplete="new-password" class="mt-1" placeholder="{{ $credential?->masked('api_secret') ?: 'nps_live_...' }}"></label>
         <label class="text-sm font-semibold text-slate-700">Webhook secret<input name="webhook_secret" type="password" autocomplete="new-password" class="mt-1" placeholder="{{ $credential?->masked('webhook_secret') ?: 'Webhook signing secret' }}"></label>

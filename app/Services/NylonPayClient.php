@@ -273,9 +273,9 @@ class NylonPayClient
         }
 
         return [
-            'api_key' => (string) ($stored?->api_key ?: config('services.nylon_pay.api_key')),
-            'api_secret' => (string) ($stored?->api_secret ?: config('services.nylon_pay.api_secret')),
-            'webhook_secret' => (string) ($stored?->webhook_secret ?: config('services.nylon_pay.webhook_secret')),
+            'api_key' => (string) ($stored?->readableSecret('api_key') ?: config('services.nylon_pay.api_key')),
+            'api_secret' => (string) ($stored?->readableSecret('api_secret') ?: config('services.nylon_pay.api_secret')),
+            'webhook_secret' => (string) ($stored?->readableSecret('webhook_secret') ?: config('services.nylon_pay.webhook_secret')),
             'base_url' => (string) ($stored?->base_url ?: config('services.nylon_pay.base_url')),
         ];
     }

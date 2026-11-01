@@ -37,6 +37,6 @@ Schedule::call(function (): void {
 })
     ->dailyAt('23:00')->name('savings:post-interest')->withoutOverlapping();
 Schedule::call(function (): void {
-    app(RunBackupJob::class, ['emailBackup' => false])->handle();
+    app(RunBackupJob::class)->handle();
 })
     ->dailyAt('00:00')->timezone(config('app.timezone'))->name('backups:run')->withoutOverlapping(60);

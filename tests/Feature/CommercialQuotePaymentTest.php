@@ -8,6 +8,7 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 
@@ -299,6 +300,49 @@ it('stores Nylon Pay credentials encrypted and preserves blank secret updates', 
     expect($credential->fresh()->api_key)->toBe('npk_live_saved_key')
         ->and($credential->fresh()->api_secret)->toBe('nps_live_saved_secret')
         ->and($credential->fresh()->webhook_secret)->toBe('saved-webhook-secret');
+});
+
+it('keeps billing quotes available when saved payment credentials cannot be decrypted', function () {
+    $superAdmin = quoteSuperAdministrator();
+    $credential = NylonPayCredential::create([
+        'scope_key' => 'platform:default',
+        'profile' => 'default',
+        'api_key' => 'npk_live_saved_key',
+        'api_secret' => 'nps_live_saved_secret',
+        'webhook_secret' => 'saved-webhook-secret',
+        'base_url' => 'https://api.nylonpay.nilesquad.com/api/services',
+    ]);
+    DB::table('nylon_pay_credentials')->where('id', $credential->id)->update(['api_key' => 'unreadable-ciphertext']);
+
+    $this->actingAs($superAdmin)
+        ->get(route('commercial-quotes.index'))
+        ->assertSuccessful()
+        ->assertSee('Saved Mobile Money credentials cannot be decrypted');
+
+    $this->actingAs($superAdmin)
+        ->put(route('nylon-pay.settings.update'), [
+            'api_key' => '',
+            'api_secret' => '',
+            'webhook_secret' => '',
+            'base_url' => 'https://api.nylonpay.nilesquad.com/api/services',
+        ])
+        ->assertSessionHasErrors('api_key');
+
+    $this->actingAs($superAdmin)
+        ->put(route('nylon-pay.settings.update'), [
+            'api_key' => 'npk_live_replacement_key',
+            'api_secret' => '',
+            'webhook_secret' => '',
+            'base_url' => 'https://api.nylonpay.nilesquad.com/api/services',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($credential->fresh()->api_key)->toBe('npk_live_replacement_key');
+
+    $this->actingAs($superAdmin)
+        ->get(route('commercial-quotes.index'))
+        ->assertSuccessful()
+        ->assertDontSee('Saved Mobile Money credentials cannot be decrypted');
 });
 
 it('restricts an expired paid subscription while keeping renewal quotes accessible', function () {

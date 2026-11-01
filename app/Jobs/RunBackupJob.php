@@ -30,21 +30,36 @@ class RunBackupJob implements ShouldQueue
                 throw new RuntimeException('No application backup provider is configured. A manifest is not a backup. Configure and test database and file backups before retrying.');
             }
 
+            $recipientSetting = SystemSetting::forPlatform()->where('key', 'backup_mail_to')->value('value');
+            $recipients = array_values(array_filter(array_map('trim', explode(',', (string) ($recipientSetting ?: env('BACKUP_MAIL_TO', ''))))));
+            $shouldEmail = $this->emailBackup && $recipients !== [];
+
+            if ($shouldEmail && (! filled(config('backup.backup.password')) || config('backup.backup.encryption') === 'none')) {
+                throw new RuntimeException('Backup email requires an encrypted archive. Configure BACKUP_ARCHIVE_PASSWORD first.');
+            }
+
+            if ($shouldEmail && (in_array(config('mail.default'), ['log', 'array'], true) || config('mail.from.address') === 'hello@example.com')) {
+                throw new RuntimeException('Backup email requires a delivery mailer and a real sender address.');
+            }
+
             // The configured backup source is database-only, so the provider
             // command does not need a separate --only-db flag.
+            $backupStartedAt = now()->timestamp;
             if (Artisan::call('backup:run', ['--no-interaction' => true, '--disable-notifications' => true]) !== 0) {
                 throw new RuntimeException('The backup command returned a failure exit code. Check backup logs and storage.');
             }
 
-            $recipientSetting = SystemSetting::forPlatform()->where('key', 'backup_mail_to')->value('value');
-            $recipients = array_values(array_filter(array_map('trim', explode(',', (string) ($recipientSetting ?: env('BACKUP_MAIL_TO', ''))))));
             $disk = Storage::disk('local');
-            $backupPath = collect($disk->allFiles())
-                ->filter(fn (string $path): bool => str_ends_with(strtolower($path), '.zip'))
+            $backupPath = collect($disk->allFiles(config('backup.backup.name')))
+                ->filter(fn (string $path): bool => str_ends_with(strtolower($path), '.zip') && $disk->lastModified($path) >= $backupStartedAt)
                 ->sortByDesc(fn (string $path): int => $disk->lastModified($path))
                 ->first();
 
-            if ($this->emailBackup && $recipients !== [] && $backupPath !== null) {
+            if ($shouldEmail && $backupPath === null) {
+                throw new RuntimeException('The new backup archive was not found, so no backup email was sent.');
+            }
+
+            if ($shouldEmail) {
                 Mail::raw('The latest DigitoFina database backup is attached. Keep it in protected storage and test restoration regularly.', function ($message) use ($recipients, $disk, $backupPath): void {
                     $message->to($recipients)
                         ->subject('DigitoFina database backup - '.now()->format('Y-m-d'))
@@ -52,9 +67,9 @@ class RunBackupJob implements ShouldQueue
                 });
             }
 
-            Log::info('Queued database backup command completed.', ['command' => 'backup:run --only-db', 'emailed' => $this->emailBackup && $recipients !== [] && $backupPath !== null]);
+            Log::info('Queued database backup command completed.', ['command' => 'backup:run', 'emailed' => $shouldEmail]);
 
-            return ['command' => 'backup:run', 'restore_verified' => false];
+            return ['command' => 'backup:run', 'emailed' => $shouldEmail, 'restore_verified' => false];
         });
     }
 

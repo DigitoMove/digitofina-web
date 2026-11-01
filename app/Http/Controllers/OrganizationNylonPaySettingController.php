@@ -9,6 +9,7 @@ use App\Services\NylonPayClient;
 use App\Services\TenantContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class OrganizationNylonPaySettingController extends Controller
@@ -38,10 +39,22 @@ class OrganizationNylonPaySettingController extends Controller
             'profile' => 'collections',
             'webhook_token' => Str::random(48),
         ]);
+        $errors = [];
+
+        foreach ($credential->unreadableSecretAttributes() as $attribute) {
+            if (blank($request->validated($attribute))) {
+                $errors[$attribute] = 'This saved secret cannot be decrypted. Enter it again to replace it.';
+            }
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+
         $data = collect($request->validated())
             ->reject(fn (mixed $value, string $key): bool => in_array($key, ['api_key', 'api_secret', 'webhook_secret'], true) && blank($value))
             ->all();
-        $credential->fill($data + ['updated_by' => $request->user()->id])->save();
+        $credential = $credential->saveCredentials($data + ['updated_by' => $request->user()->id]);
         $auditLogger->record('nylon_pay.organization_credentials_updated', $credential, ['organization_id' => $organization->id]);
 
         return back()->with('status', 'Organization Nylon Pay credentials saved securely.');

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -32,8 +33,54 @@ class NylonPayCredential extends Model
 
     public function masked(string $attribute): ?string
     {
-        $value = (string) $this->getAttribute($attribute);
+        $value = (string) $this->readableSecret($attribute);
 
         return $value === '' ? null : '••••••••'.substr($value, -4);
+    }
+
+    public function readableSecret(string $attribute): ?string
+    {
+        try {
+            return $this->getAttribute($attribute);
+        } catch (DecryptException) {
+            return null;
+        }
+    }
+
+    /** @return array<int, string> */
+    public function unreadableSecretAttributes(): array
+    {
+        $unreadable = [];
+
+        foreach (['api_key', 'api_secret', 'webhook_secret'] as $attribute) {
+            if (blank($this->getRawOriginal($attribute))) {
+                continue;
+            }
+
+            try {
+                $this->getAttribute($attribute);
+            } catch (DecryptException) {
+                $unreadable[] = $attribute;
+            }
+        }
+
+        return $unreadable;
+    }
+
+    /** @param array<string, mixed> $attributes */
+    public function saveCredentials(array $attributes): self
+    {
+        if (! $this->exists || $this->unreadableSecretAttributes() === []) {
+            $this->fill($attributes)->save();
+
+            return $this;
+        }
+
+        $replacement = new self;
+        $replacement->exists = true;
+        $replacement->setRawAttributes([$this->getKeyName() => $this->getKey()], true);
+        $replacement->fill($attributes)->save();
+
+        return $replacement;
     }
 }

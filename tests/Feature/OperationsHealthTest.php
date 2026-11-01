@@ -4,10 +4,12 @@ use App\Jobs\RunBackupJob;
 use App\Models\OperationalRun;
 use App\Models\Organization;
 use App\Models\Role;
+use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\OperationsMonitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
@@ -42,6 +44,38 @@ it('records backup success only on a zero command exit code', function (int $exi
         expect(OperationalRun::sole()->status)->toBe('failed');
     }
 })->with([0, 1]);
+
+it('emails the new encrypted database backup to the configured recipient', function () {
+    Storage::fake('local');
+    SystemSetting::forPlatform()->where('key', 'backup_mail_to')->firstOrFail()->update(['value' => 'epaphradigito@gmail.com']);
+    config()->set('backup.backup.password', 'test-archive-password');
+    config()->set('backup.backup.encryption', 'default');
+    config()->set('mail.default', 'sendmail');
+    config()->set('mail.from.address', 'backup@digitomove.com');
+    Artisan::shouldReceive('all')->once()->andReturn(['backup:run' => new stdClass]);
+    Artisan::shouldReceive('call')->once()->andReturnUsing(function (): int {
+        Storage::disk('local')->put('DigitoFina/new-backup.zip', 'test archive');
+
+        return 0;
+    });
+    Mail::shouldReceive('raw')->once();
+
+    (new RunBackupJob)->handle();
+
+    expect(OperationalRun::sole()->status)->toBe('succeeded')
+        ->and(OperationalRun::sole()->summary['emailed'])->toBeTrue();
+});
+
+it('refuses to email an unencrypted database backup', function () {
+    SystemSetting::forPlatform()->where('key', 'backup_mail_to')->firstOrFail()->update(['value' => 'epaphradigito@gmail.com']);
+    config()->set('backup.backup.password', null);
+    config()->set('backup.backup.encryption', 'none');
+    Artisan::shouldReceive('all')->once()->andReturn(['backup:run' => new stdClass]);
+    Artisan::shouldNotReceive('call');
+
+    expect(fn () => (new RunBackupJob)->handle())->toThrow(RuntimeException::class, 'encrypted archive');
+    expect(OperationalRun::sole()->status)->toBe('failed');
+});
 
 it('distinguishes unverified overdue and stalled tasks and reuses the heartbeat record', function () {
     $this->travelTo(now()->setTime(12, 0));
