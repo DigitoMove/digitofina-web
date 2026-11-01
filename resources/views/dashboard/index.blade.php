@@ -106,6 +106,9 @@
         <div><h2 class="text-lg font-semibold text-slate-950">Organization activity</h2><p class="text-sm text-slate-500">Staff presence and client visits for your organization.</p></div>
         <a href="{{ route('system-activity.index') }}" class="df-action-primary">View activity details</a>
     </div>
+    @unless($activitySummary['activity_available'])
+        <p class="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Activity tracking is temporarily unavailable. Staff and client activity counts may be incomplete.</p>
+    @endunless
     <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         @foreach([['Online staff', $activitySummary['online_staff']], ['Staff devices', $activitySummary['active_devices']], ['Clients', $activitySummary['total_clients']], ['Client visits', $activitySummary['visiting_clients'].' / '.$activitySummary['visit_days'].'d']] as [$label, $value])
             <div class="rounded-xl bg-slate-50 p-4"><div class="text-sm text-slate-500">{{ $label }}</div><div class="mt-1 text-xl font-semibold text-slate-950">{{ $value }}</div></div>

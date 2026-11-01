@@ -9,6 +9,10 @@
     <a href="{{ route('dashboard') }}" class="df-action-secondary">Back to dashboard</a>
 </div>
 
+@unless($summary['activity_available'])
+    <p class="mb-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-900">Activity tracking is temporarily unavailable. Staff and client activity counts may be incomplete.</p>
+@endunless
+
 <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
     @foreach([
         ['Active staff', $summary['active_staff']],
@@ -44,7 +48,7 @@
                         <td class="px-5 py-3 text-right"><a href="{{ route('system-activity.users.show', $presence['user']) }}" class="df-action-secondary">View details</a></td>
                     </tr>
                 @empty
-                    <tr><td colspan="5" class="px-5 py-10 text-center text-slate-500">No users have been active in the last {{ $summary['online_minutes'] }} minutes.</td></tr>
+                    <tr><td colspan="5" class="px-5 py-10 text-center text-slate-500">{{ $summary['activity_available'] ? 'No users have been active in the last '.$summary['online_minutes'].' minutes.' : 'Activity records are temporarily unavailable.' }}</td></tr>
                 @endforelse
             </tbody>
         </table>

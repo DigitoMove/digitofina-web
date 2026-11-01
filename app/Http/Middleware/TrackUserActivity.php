@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\UserActivity;
 use Closure;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
@@ -27,22 +28,32 @@ class TrackUserActivity
         $deviceId = $request->cookie('df_device_id') ?: (string) Str::uuid();
         $userAgent = $request->userAgent();
         $platform = $this->platform($userAgent);
-        $activity = UserActivity::query()->firstOrNew([
-            'user_id' => $user->id,
-            'session_id' => $request->session()->getId(),
-        ]);
-        $activity->fill([
-            'organization_id' => $user->organization_id,
-            'device_key' => hash('sha256', $deviceId),
-            'device_name' => $this->deviceName($userAgent, $platform),
-            'platform' => $platform,
-            'ip_address' => $request->ip(),
-            'user_agent' => $userAgent,
-            'last_route' => $request->route()?->getName() ?: $request->path(),
-            'last_seen_at' => now(),
-        ]);
-        $activity->first_seen_at ??= now();
-        $activity->save();
+        try {
+            $activity = UserActivity::query()->firstOrNew([
+                'user_id' => $user->id,
+                'session_id' => $request->session()->getId(),
+            ]);
+            $activity->fill([
+                'organization_id' => $user->organization_id,
+                'device_key' => hash('sha256', $deviceId),
+                'device_name' => $this->deviceName($userAgent, $platform),
+                'platform' => $platform,
+                'ip_address' => $request->ip(),
+                'user_agent' => $userAgent,
+                'last_route' => $request->route()?->getName() ?: $request->path(),
+                'last_seen_at' => now(),
+            ]);
+            $activity->first_seen_at ??= now();
+            $activity->save();
+        } catch (QueryException $exception) {
+            if (! str_contains($exception->getSql(), 'user_activities')) {
+                throw $exception;
+            }
+
+            report($exception);
+
+            return $response;
+        }
 
         if (! $request->cookie('df_device_id')) {
             $response->headers->setCookie(cookie('df_device_id', $deviceId, 60 * 24 * 365 * 2, '/', null, $request->isSecure(), true, false, 'lax'));

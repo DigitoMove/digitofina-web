@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\UserActivity;
 use App\Support\RoleCatalog;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 
 class SystemActivityService
@@ -16,30 +17,46 @@ class SystemActivityService
     public const CLIENT_VISIT_DAYS = 30;
 
     /**
-     * @return array{active_staff:int, online_staff:int, active_devices:int, total_clients:int, visiting_clients:int, online_minutes:int, visit_days:int}
+     * @return array{active_staff:int, online_staff:int, active_devices:int, total_clients:int, visiting_clients:int, online_minutes:int, visit_days:int, activity_available:bool}
      */
     public function summary(?int $organizationId = null): array
     {
-        $activities = $this->activities($organizationId);
         $onlineCutoff = now()->subMinutes(self::ONLINE_MINUTES);
         $visitCutoff = now()->subDays(self::CLIENT_VISIT_DAYS);
         $staff = User::query()->withoutGlobalScopes()->staff()->where('status', 'active')->where('is_active', true)
             ->when($organizationId, fn (Builder $query): Builder => $query->where('organization_id', $organizationId));
         $clients = Client::query()->withoutGlobalScopes()->when($organizationId, fn ($query) => $query->where('organization_id', $organizationId));
-        $staffIds = $staff->pluck('id');
-        $onlineStaff = (clone $activities)->whereIn('user_id', $staffIds)->where('last_seen_at', '>=', $onlineCutoff)->distinct()->count('user_id');
-        $activeDevices = (clone $activities)->whereIn('user_id', $staffIds)->distinct()->count('device_key');
-        $clientIds = User::query()->withoutGlobalScopes()->whereHas('role', fn ($query) => $query->where('slug', RoleCatalog::MEMBER_SLUG))->pluck('id');
-        $visitingClientIds = (clone $activities)->whereIn('user_id', $clientIds)->where('last_seen_at', '>=', $visitCutoff)->distinct()->pluck('user_id');
+        $onlineStaff = 0;
+        $activeDevices = 0;
+        $visitingClients = 0;
+        $activityAvailable = true;
+
+        try {
+            $activities = $this->activities($organizationId);
+            $staffIds = $staff->pluck('id');
+            $onlineStaff = (clone $activities)->whereIn('user_id', $staffIds)->where('last_seen_at', '>=', $onlineCutoff)->distinct()->count('user_id');
+            $activeDevices = (clone $activities)->whereIn('user_id', $staffIds)->distinct()->count('device_key');
+            $clientIds = User::query()->withoutGlobalScopes()->whereHas('role', fn ($query) => $query->where('slug', RoleCatalog::MEMBER_SLUG))->pluck('id');
+            $visitingClientIds = (clone $activities)->whereIn('user_id', $clientIds)->where('last_seen_at', '>=', $visitCutoff)->distinct()->pluck('user_id');
+            $visitingClients = Client::query()->withoutGlobalScopes()->when($organizationId, fn ($query) => $query->where('organization_id', $organizationId))->whereIn('user_id', $visitingClientIds)->count();
+        } catch (QueryException $exception) {
+            if (! str_contains($exception->getSql(), 'user_activities')) {
+                throw $exception;
+            }
+
+            report($exception);
+            $activityAvailable = false;
+        }
 
         return [
             'active_staff' => $staff->count(),
             'online_staff' => $onlineStaff,
             'active_devices' => $activeDevices,
             'total_clients' => $clients->count(),
-            'visiting_clients' => Client::query()->withoutGlobalScopes()->when($organizationId, fn ($query) => $query->where('organization_id', $organizationId))->whereIn('user_id', $visitingClientIds)->count(),
+            'visiting_clients' => $visitingClients,
             'online_minutes' => self::ONLINE_MINUTES,
             'visit_days' => self::CLIENT_VISIT_DAYS,
+            'activity_available' => $activityAvailable,
         ];
     }
 
@@ -51,7 +68,19 @@ class SystemActivityService
 
     public function groupedRecent(?int $organizationId = null): Collection
     {
-        return $this->activities($organizationId)->where('last_seen_at', '>=', now()->subMinutes(self::ONLINE_MINUTES))->latest('last_seen_at')->get()->groupBy('user_id')->map(function (Collection $records): array {
+        try {
+            $records = $this->activities($organizationId)->where('last_seen_at', '>=', now()->subMinutes(self::ONLINE_MINUTES))->latest('last_seen_at')->get();
+        } catch (QueryException $exception) {
+            if (! str_contains($exception->getSql(), 'user_activities')) {
+                throw $exception;
+            }
+
+            report($exception);
+
+            return collect();
+        }
+
+        return $records->groupBy('user_id')->map(function (Collection $records): array {
             $latest = $records->first();
 
             return ['user' => $latest->user, 'activity' => $latest, 'device_count' => $records->pluck('device_key')->unique()->count(), 'sessions' => $records->count()];
