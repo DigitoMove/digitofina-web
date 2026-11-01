@@ -11,6 +11,7 @@ use App\Services\ClientService;
 use App\Services\SavingsAccountService;
 use App\Services\SavingsTransactionService;
 use App\Support\ApiSecurity;
+use App\Support\CurrencyDenomination;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -120,6 +121,32 @@ class SavingsAccountController extends Controller
         $savingsAccount->delete();
 
         return redirect()->route('clients.savings-accounts', $client)->with('status', 'Savings product package removed. The client basic savings account was not deleted.');
+    }
+
+    public function markDormant(Request $request, SavingsAccount $savingsAccount, SavingsAccountService $accounts): RedirectResponse
+    {
+        $accounts->markDormant($savingsAccount, $request->user());
+
+        return back()->with('status', 'Savings account marked dormant.');
+    }
+
+    public function reactivate(Request $request, SavingsAccount $savingsAccount, SavingsAccountService $accounts): RedirectResponse
+    {
+        $accounts->reactivate($savingsAccount, $request->user());
+
+        return back()->with('status', 'Savings account reactivated.');
+    }
+
+    public function adjustMinimumBalance(Request $request, SavingsAccount $savingsAccount, SavingsAccountService $accounts): RedirectResponse
+    {
+        $data = $request->validate([
+            'minimum_balance' => ['nullable', 'numeric', 'min:0', CurrencyDenomination::validationRule()],
+            'reason' => ['required', 'string', 'max:1000'],
+        ]);
+        $minimumBalance = filled($data['minimum_balance'] ?? null) ? (float) $data['minimum_balance'] : null;
+        $accounts->adjustMinimumBalance($savingsAccount, $minimumBalance, $data['reason'], $request->user());
+
+        return back()->with('status', 'Savings account minimum balance updated.');
     }
 
     public function statement(Request $request, SavingsAccount $savingsAccount): RedirectResponse

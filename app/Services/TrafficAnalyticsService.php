@@ -6,6 +6,7 @@ use App\Models\Organization;
 use App\Models\OrganizationDomain;
 use App\Models\TrafficVisit;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 
@@ -45,32 +46,57 @@ class TrafficAnalyticsService
             ->when($organizationId, fn (Builder $q): Builder => $q->where('organization_id', $organizationId))
             ->when($host !== '', fn (Builder $q): Builder => $q->where('host', $host))
             ->when($kind !== 'all', fn (Builder $q): Builder => $q->where('is_demo', $kind === 'demo'));
-        $query = $scope()->where('started_at', '>=', $start)->where('started_at', '<=', now());
-        $totals = $ready ? (clone $query)->selectRaw('COUNT(*) as visits, COUNT(DISTINCT visitor_hash) as visitors, COALESCE(SUM(page_views), 0) as views, COALESCE(AVG(active_seconds), 0) as duration, COUNT(DISTINCT host) as hosts, COALESCE(SUM(CASE WHEN is_demo = 1 THEN 1 ELSE 0 END), 0) as demos')->first()->toArray() : [];
-        $daily = $ready ? (clone $query)->selectRaw('DATE(started_at) as day, COUNT(*) as visits, SUM(page_views) as views')->groupByRaw('DATE(started_at)')->orderBy('day')->get()->keyBy('day') : collect();
-        $trend = collect(range(0, $days - 1))->map(function (int $offset) use ($start, $daily): array {
-            $date = $start->copy()->addDays($offset)->toDateString();
-
-            return ['date' => $date, 'visits' => (int) ($daily[$date]->visits ?? 0), 'views' => (int) ($daily[$date]->views ?? 0)];
-        });
-        $hosts = $ready ? (clone $query)->select(['host', 'domain', 'subdomain', 'organization_id', 'is_demo'])
-            ->selectRaw('COUNT(*) as visits, SUM(page_views) as views, AVG(active_seconds) as duration, MAX(last_seen_at) as last_seen')
-            ->groupBy('host', 'domain', 'subdomain', 'organization_id', 'is_demo')->orderByDesc('visits')->orderBy('host')
-            ->paginate(15, ['*'], 'traffic_page')->withQueryString()->fragment('traffic-domains') : null;
-        $breakdown = $ready ? (clone $query)->select('audience')->selectRaw('COUNT(*) as visits')->groupBy('audience')->pluck('visits', 'audience') : collect();
-        $previous = $ready ? $scope()->whereBetween('started_at', [$start->copy()->subDays($days), $start->copy()->subSecond()])->count() : 0;
         $knownHosts = OrganizationDomain::query()->where('status', 'active')
             ->when($organizationId, fn (Builder $q): Builder => $q->where('organization_id', $organizationId))->pluck('domain');
         if (! $organizationId) {
             $knownHosts = $knownHosts->merge(config('tenancy.central_domains', []));
         }
+
+        $totals = [];
+        $daily = collect();
+        $hosts = null;
+        $breakdown = collect();
+        $previous = 0;
+        $online = 0;
+
         if ($ready) {
-            $knownHosts = $knownHosts->merge(TrafficVisit::query()->when($organizationId, fn (Builder $q): Builder => $q->where('organization_id', $organizationId))->distinct()->pluck('host'));
+            try {
+                $query = $scope()->where('started_at', '>=', $start)->where('started_at', '<=', now());
+                $totals = (clone $query)->selectRaw('COUNT(*) as visits, COUNT(DISTINCT visitor_hash) as visitors, COALESCE(SUM(page_views), 0) as views, COALESCE(AVG(active_seconds), 0) as duration, COUNT(DISTINCT host) as hosts, COALESCE(SUM(CASE WHEN is_demo = 1 THEN 1 ELSE 0 END), 0) as demos')->first()->toArray();
+                $daily = (clone $query)->selectRaw('DATE(started_at) as day, COUNT(*) as visits, SUM(page_views) as views')->groupByRaw('DATE(started_at)')->orderBy('day')->get()->keyBy('day');
+                $hosts = (clone $query)->select(['host', 'domain', 'subdomain', 'organization_id', 'is_demo'])
+                    ->selectRaw('COUNT(*) as visits, SUM(page_views) as views, AVG(active_seconds) as duration, MAX(last_seen_at) as last_seen')
+                    ->groupBy('host', 'domain', 'subdomain', 'organization_id', 'is_demo')->orderByDesc('visits')->orderBy('host')
+                    ->paginate(15, ['*'], 'traffic_page')->withQueryString()->fragment('traffic-domains');
+                $breakdown = (clone $query)->select('audience')->selectRaw('COUNT(*) as visits')->groupBy('audience')->pluck('visits', 'audience');
+                $previous = $scope()->whereBetween('started_at', [$start->copy()->subDays($days), $start->copy()->subSecond()])->count();
+                $knownHosts = $knownHosts->merge(TrafficVisit::query()->when($organizationId, fn (Builder $q): Builder => $q->where('organization_id', $organizationId))->distinct()->pluck('host'));
+                $online = $scope()->where('last_seen_at', '>=', now()->subMinutes(5))->distinct()->count('visitor_hash');
+            } catch (QueryException $exception) {
+                if (! str_contains($exception->getSql(), 'traffic_visits')) {
+                    throw $exception;
+                }
+
+                report($exception);
+                $ready = false;
+                $totals = [];
+                $daily = collect();
+                $hosts = null;
+                $breakdown = collect();
+                $previous = 0;
+                $online = 0;
+            }
         }
+
+        $trend = collect(range(0, $days - 1))->map(function (int $offset) use ($start, $daily): array {
+            $date = $start->copy()->addDays($offset)->toDateString();
+
+            return ['date' => $date, 'visits' => (int) ($daily[$date]->visits ?? 0), 'views' => (int) ($daily[$date]->views ?? 0)];
+        });
 
         return compact('ready', 'days', 'host', 'kind', 'totals', 'trend', 'hosts', 'breakdown', 'previous') + [
             'known_hosts' => $knownHosts->unique()->sort()->values(),
-            'online' => $ready ? $scope()->where('last_seen_at', '>=', now()->subMinutes(5))->distinct()->count('visitor_hash') : 0,
+            'online' => $online,
             'organizations' => Organization::query()->pluck('name', 'id'),
         ];
     }

@@ -125,8 +125,8 @@ class ScheduledSavingsLoanDeductionService
             throw new InvalidArgumentException('Unsupported schedule status.');
         }
 
-        if ($schedule->status === 'cancelled') {
-            throw new InvalidArgumentException('Cancelled schedules cannot be changed.');
+        if (in_array($schedule->status, ['closed', 'cancelled'], true)) {
+            throw new InvalidArgumentException('Closed or cancelled schedules cannot be changed.');
         }
 
         $schedule->update([
@@ -260,7 +260,7 @@ class ScheduledSavingsLoanDeductionService
             'last_run_at' => now(),
             'last_result' => $result,
             'last_message' => $message,
-            'status' => $stopSchedule ? 'disabled' : $schedule->status,
+            'status' => $stopSchedule ? 'closed' : $schedule->status,
             'disabled_at' => $stopSchedule ? now() : $schedule->disabled_at,
         ]);
     }

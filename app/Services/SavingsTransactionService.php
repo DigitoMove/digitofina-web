@@ -242,7 +242,7 @@ class SavingsTransactionService
             $toBefore = (float) $to->current_balance;
             $fromAfter = $fromBefore - $amount;
 
-            if (! $from->product->allows_overdraft && $fromAfter < (float) $from->product->minimum_balance) {
+            if (! $from->product->allows_overdraft && $fromAfter < $from->minimumBalance()) {
                 throw new InvalidArgumentException('Transfer would breach the source account minimum balance.');
             }
 
@@ -304,7 +304,7 @@ class SavingsTransactionService
                 ? $balanceBefore + $amount - $charge
                 : $balanceBefore - $movement;
 
-            if ($type === 'withdrawal' && ! $account->product->allows_overdraft && $balanceAfter < (float) $account->product->minimum_balance) {
+            if ($type === 'withdrawal' && ! $account->product->allows_overdraft && $balanceAfter < $account->minimumBalance()) {
                 throw new InvalidArgumentException('Withdrawal would breach the minimum balance.');
             }
 

@@ -2,6 +2,7 @@
 
 @section('content')
 @php($canRemoveSavingsPackage = auth()->user()->hasRole('super-admin') || auth()->user()->canPerform('manage-accounts'))
+@php($canManageSavingsAccount = auth()->user()->canPerform('manage-accounts'))
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div>
         <h1 class="df-title">{{ $account->account_number }}</h1>
@@ -33,7 +34,8 @@
     </section>
     <section class="df-panel df-hover-lift p-5">
         <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Minimum balance</div>
-        <div class="mt-2 text-2xl font-semibold text-slate-950">{{ number_format($account->product->minimum_balance, 2) }} UGX</div>
+        <div class="mt-2 text-2xl font-semibold text-slate-950">{{ number_format($account->minimumBalance(), 2) }} UGX</div>
+        @if($account->minimum_balance_override !== null)<p class="mt-1 text-xs text-slate-500">Account adjustment</p>@endif
     </section>
     <section class="df-panel df-hover-lift p-5">
         <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</div>
@@ -107,7 +109,7 @@
         <div class="mt-4 grid gap-3 md:grid-cols-3">
             <div class="df-soft-panel p-4 text-sm">
                 <div class="font-semibold text-slate-950">Minimum Balance Rule</div>
-                <p class="mt-2 text-slate-600">Withdrawals are checked against {{ number_format($account->product->minimum_balance, 2) }} UGX before posting.</p>
+                <p class="mt-2 text-slate-600">Withdrawals are checked against {{ number_format($account->minimumBalance(), 2) }} UGX before posting.</p>
             </div>
             <div class="df-soft-panel p-4 text-sm">
                 <div class="font-semibold text-slate-950">Product Charges</div>
@@ -118,6 +120,36 @@
                 <p class="mt-2 text-slate-600">Each posted transaction records balances before and after, teller, branch, and receipt reference.</p>
             </div>
         </div>
+        @if($canManageSavingsAccount)
+            <div class="mt-5 grid gap-4 lg:grid-cols-2">
+                <div class="df-soft-panel p-4">
+                    <h3 class="font-semibold text-slate-950">Account status</h3>
+                    @if($account->status === 'active')
+                        <form method="POST" action="{{ route('savings-accounts.dormant', $account) }}" class="mt-3">
+                            @csrf
+                            <button class="df-action-secondary">Mark Dormant</button>
+                        </form>
+                    @elseif($account->status === 'dormant')
+                        <form method="POST" action="{{ route('savings-accounts.reactivate', $account) }}" class="mt-3">
+                            @csrf
+                            <button class="df-action-primary">Reactivate Account</button>
+                        </form>
+                    @endif
+                </div>
+                <form method="POST" action="{{ route('savings-accounts.minimum-balance', $account) }}" class="df-soft-panel p-4">
+                    @csrf
+                    <h3 class="font-semibold text-slate-950">Adjust minimum balance</h3>
+                    <label class="mt-3 block text-sm text-slate-600" for="minimum_balance">Account minimum (UGX)</label>
+                    <input id="minimum_balance" name="minimum_balance" type="number" min="0" step="100" value="{{ old('minimum_balance', $account->minimum_balance_override) }}" placeholder="Use product minimum" class="mt-1 w-full rounded border-slate-300 text-sm">
+                    @error('minimum_balance')<p class="mt-1 text-sm text-red-700">{{ $message }}</p>@enderror
+                    <label class="mt-3 block text-sm text-slate-600" for="minimum_balance_reason">Reason</label>
+                    <input id="minimum_balance_reason" name="reason" type="text" maxlength="1000" value="{{ old('reason') }}" required class="mt-1 w-full rounded border-slate-300 text-sm">
+                    @error('reason')<p class="mt-1 text-sm text-red-700">{{ $message }}</p>@enderror
+                    <p class="mt-2 text-xs text-slate-500">Leave the amount blank to use the product minimum of {{ number_format($account->product->minimum_balance, 2) }} UGX.</p>
+                    <button class="df-action-primary mt-3">Save Minimum</button>
+                </form>
+            </div>
+        @endif
     </section>
 </div>
 @endsection

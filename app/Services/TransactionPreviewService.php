@@ -201,7 +201,7 @@ class TransactionPreviewService
 
     private function ensureSavingsFunds(SavingsAccount $account, float $amount): void
     {
-        if ((! $account->product->allows_overdraft && (float) $account->current_balance - $amount < (float) $account->product->minimum_balance) || $amount > (float) $account->current_balance - (float) $account->locked_amount) {
+        if ((! $account->product->allows_overdraft && (float) $account->current_balance - $amount < $account->minimumBalance()) || $amount > (float) $account->current_balance - (float) $account->locked_amount) {
             throw new InvalidArgumentException('This movement exceeds unlocked funds or breaches the minimum savings balance.');
         }
     }

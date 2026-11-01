@@ -15,7 +15,7 @@
             <button class="df-action-primary">Apply</button>
         </form>
     </div>
-    @unless($traffic['ready'])<div class="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Traffic monitoring will start after the database migration is deployed.</div>@endunless
+    @unless($traffic['ready'])<div class="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Traffic monitoring is temporarily unavailable. The traffic figures below are unavailable until storage is restored.</div>@endunless
     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         @foreach([
             ['Visits', number_format($visits), 'Previous period: '.number_format($traffic['previous']), 'border-purple-500'],

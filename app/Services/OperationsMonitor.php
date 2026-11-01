@@ -13,7 +13,7 @@ class OperationsMonitor
     public const DAILY_TASKS = [
         'penalties' => ['label' => 'Loan penalties', 'time' => '00:00'],
         'interest' => ['label' => 'Savings interest', 'time' => '23:00'],
-        'backup' => ['label' => 'Application backup', 'time' => '02:00'],
+        'backup' => ['label' => 'Application backup', 'time' => '00:00'],
         'investment-maturities' => ['label' => 'Investment maturities', 'time' => '18:30'],
         'fixed-savings-maturities' => ['label' => 'Fixed savings maturities', 'time' => '18:40'],
     ];

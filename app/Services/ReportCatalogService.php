@@ -5,6 +5,7 @@ namespace App\Services;
 use App\CurrencyRateService;
 use App\CurrencyRegistry;
 use App\Models\Account;
+use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\BranchDailySummary;
 use App\Models\ChartAccount;
@@ -20,7 +21,10 @@ use App\Models\JournalEntry;
 use App\Models\Loan;
 use App\Models\LoanDisbursement;
 use App\Models\LoanRepayment;
+use App\Models\LoanSavingsDeductionSchedule;
 use App\Models\LoanSchedule;
+use App\Models\SavingsAccount;
+use App\Models\SavingsTransaction;
 use App\Models\ShareAccount;
 use App\Models\ShareTransaction;
 use App\Models\SystemSetting;
@@ -142,17 +146,17 @@ class ReportCatalogService
             $this->report('unfunded-savings-accounts', 'Savings', 'Unfunded Savings Accounts', 'accounts', ['category' => 'savings', 'max_balance' => 0], false),
             $this->report('active-savings-accounts', 'Savings', 'Active Savings Accounts', 'accounts', ['category' => 'savings', 'status' => 'active'], false),
             $this->report('dormant-savings-accounts', 'Savings', 'Dormant Savings Accounts', 'accounts', ['category' => 'savings', 'status' => 'dormant'], false),
-            $this->report('reactivated-savings-accounts', 'Savings', 'Reactivated Savings Accounts', 'accounts', ['category' => 'savings', 'status' => 'active']),
+            $this->report('reactivated-savings-accounts', 'Savings', 'Reactivated Savings Accounts', 'savings_reactivations'),
             $this->report('closed-savings-accounts', 'Savings', 'Closed Savings Accounts', 'accounts', ['category' => 'savings', 'status' => 'closed']),
             $this->report('savings-accounts-by-balances', 'Savings', 'Savings Accounts By Balances', 'accounts', ['category' => 'savings'], false),
-            $this->report('accounts-below-minimum-balance', 'Savings', 'Accounts Below Minimum Balance', 'accounts', ['category' => 'savings', 'max_balance' => 9999], false),
+            $this->report('accounts-below-minimum-balance', 'Savings', 'Accounts Below Minimum Balance', 'accounts', ['category' => 'savings', 'below_minimum_balance' => true], false),
             $this->report('savings-accounts-with-holds', 'Savings', 'Savings Accounts With Holds', 'accounts', ['category' => 'savings', 'status' => 'on_hold'], false),
-            $this->report('accounts-with-adjusted-minimum-balance', 'Savings', 'Accounts With Adjusted Minimum Balance', 'accounts', ['category' => 'savings'], false),
-            $this->report('accounts-with-accrued-interest', 'Savings', 'Accounts With Accrued Interest', 'accounts', ['category' => 'savings'], false),
-            $this->placeholder('created-savings-standing-orders', 'Savings', 'Created Savings Standing Orders'),
-            $this->placeholder('active-savings-standing-orders', 'Savings', 'Active Savings Standing Orders'),
-            $this->placeholder('closed-savings-standing-orders', 'Savings', 'Closed Savings Standing Orders'),
-            $this->placeholder('cancelled-savings-standing-orders', 'Savings', 'Cancelled Savings Standing Orders'),
+            $this->report('accounts-with-adjusted-minimum-balance', 'Savings', 'Accounts With Adjusted Minimum Balance', 'savings_adjusted_minimums', [], false),
+            $this->report('accounts-with-accrued-interest', 'Savings', 'Accounts With Posted Interest', 'savings_posted_interest'),
+            $this->report('created-savings-standing-orders', 'Savings', 'Created Savings Standing Orders', 'savings_standing_orders', ['created' => true]),
+            $this->report('active-savings-standing-orders', 'Savings', 'Active Savings Standing Orders', 'savings_standing_orders', ['status' => 'active'], false),
+            $this->report('closed-savings-standing-orders', 'Savings', 'Closed Savings Standing Orders', 'savings_standing_orders', ['status' => 'closed'], false),
+            $this->report('cancelled-savings-standing-orders', 'Savings', 'Cancelled Savings Standing Orders', 'savings_standing_orders', ['status' => 'cancelled'], false),
             $this->report('share-accounts', 'Shares', 'Share Accounts', 'shares', [], false),
             $this->report('share-balances', 'Shares', 'Share Balances', 'shares', [], false),
             $this->report('share-transactions', 'Shares', 'Share Transactions', 'share_transactions', []),
@@ -178,7 +182,7 @@ class ReportCatalogService
             $this->report('portfolio-at-risk', 'Loan Accounts', 'Portfolio At Risk', 'loan_schedules', ['arrears' => true], false),
             $this->report('loan-book', 'Loan Accounts', 'Loan Book', 'loan_book', [], false),
             $this->report('loan-recovery', 'Loan Accounts', 'Loan Recovery', 'loan_repayments'),
-            $this->report('loan-repayments-by-relations-officer', 'Loan Accounts', 'Loan Repayments By Relations Officer', 'loan_repayments'),
+            $this->report('loan-repayments-by-relations-officer', 'Loan Accounts', 'Loan Repayments By Relations Officer', 'loan_repayments_by_officer'),
             $this->report('loan-accounts-paid-up', 'Loan Accounts', 'Loan Accounts Paid Up', 'loans', ['status_in' => ['closed', 'fully_paid']]),
             $this->report('closed-rescheduled-loans', 'Loan Accounts', 'Closed Rescheduled Loans', 'loans', ['status' => 'closed_rescheduled']),
             $this->report('opened-rescheduled-loans', 'Loan Accounts', 'Opened Rescheduled Loans', 'loans', ['status' => 'restructured']),
@@ -324,6 +328,10 @@ class ReportCatalogService
                 'profitability_summary' => $this->profitabilitySummary($from, $to, $branchId, $user, $interestBasis),
                 'branch_profitability_standing' => $this->branchProfitabilityStanding($from, $to, $branchId, $user, $interestBasis),
                 'accounts' => $this->accounts($payload, $from, $to, $branchId, $limit, $user),
+                'savings_reactivations' => $this->savingsReactivations($from, $to, $branchId, $limit, $user),
+                'savings_adjusted_minimums' => $this->savingsAdjustedMinimums($branchId, $limit, $user),
+                'savings_posted_interest' => $this->savingsPostedInterest($from, $to, $branchId, $limit, $user),
+                'savings_standing_orders' => $this->savingsStandingOrders($payload, $from, $to, $branchId, $limit, $user),
                 'shares' => $this->shares($from, $to, $branchId, $limit, $user),
                 'share_transactions' => $this->shareTransactions($from, $to, $branchId, $limit, $user),
                 'loans' => $this->loans($payload, $from, $to, $branchId, $limit, $user),
@@ -332,6 +340,7 @@ class ReportCatalogService
                 'loan_summary' => $this->loanSummary($branchId, $user),
                 'loan_book' => $this->loanBook($branchId, $detail === 'brief' ? 100 : 5000, $user),
                 'loan_repayments' => $this->loanRepayments($from, $to, $branchId, $limit, $user),
+                'loan_repayments_by_officer' => $this->loanRepaymentsByOfficer($from, $to, $branchId, $user),
                 'term_deposits' => $this->termDeposits($payload, $from, $to, $branchId, $limit, $user),
                 'investment_accounts' => $this->investmentAccounts($payload, $from, $to, $branchId, $limit, $user),
                 'investment_transactions' => $this->investmentTransactions($payload, $from, $to, $branchId, $limit, $user),
@@ -573,6 +582,13 @@ class ReportCatalogService
             'application-fees-income' => 'Application fees charged at disbursement.',
             'loan-interest-income' => 'Loan interest accumulated or collected for the selected basis.',
             'savings-accounts-by-balances' => 'Savings balances by account for liability and liquidity analysis.',
+            'accounts-with-accrued-interest' => 'Savings interest already posted to accounts during the selected period.',
+            'reactivated-savings-accounts' => 'Dormant savings accounts reactivated during the selected period.',
+            'accounts-with-adjusted-minimum-balance' => 'Current savings accounts with a minimum balance that differs from their product default.',
+            'created-savings-standing-orders' => 'Scheduled savings-to-loan deductions created during the selected period.',
+            'active-savings-standing-orders' => 'Scheduled savings-to-loan deductions currently active.',
+            'closed-savings-standing-orders' => 'Scheduled savings-to-loan deductions closed after loan repayment.',
+            'cancelled-savings-standing-orders' => 'Scheduled savings-to-loan deductions cancelled by an administrator.',
             'opened-savings-accounts' => 'New savings accounts opened during the period.',
             'current-accounts-register' => 'Current account register and balances.',
             'share-balances' => 'Member share capital balances.',
@@ -2204,6 +2220,7 @@ class ReportCatalogService
             ->when($payload['category'] ?? null, fn (Builder $query, string $category): Builder => $query->whereHas('accountType', fn (Builder $query): Builder => $query->where('category', $category)))
             ->when($payload['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->when(isset($payload['max_balance']), fn (Builder $query): Builder => $query->where('balance', '<=', $payload['max_balance']))
+            ->when($payload['below_minimum_balance'] ?? false, fn (Builder $query): Builder => $query->whereHas('accountType', fn (Builder $query): Builder => $query->whereColumn('accounts.balance', '<', 'account_types.minimum_balance')))
             ->when($payload['date_column'] ?? null, fn (Builder $query, string $column): Builder => $query->whereBetween($column, [$from, $to]))
             ->tap(fn (Builder $query) => $this->scopeBranch($query, $branchId, $user));
 
@@ -2218,6 +2235,109 @@ class ReportCatalogService
         ]);
 
         return [['Account No.', 'Name', 'Client', 'Type', 'Branch', 'Balance', 'Status'], $rows, ['Balance' => $this->money((float) $query->sum('balance'))]];
+    }
+
+    private function savingsReactivations(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
+    {
+        $query = AuditLog::query()
+            ->with('user')
+            ->where('action', 'savings_account.reactivated')
+            ->where('auditable_type', (new SavingsAccount)->getMorphClass())
+            ->whereBetween('created_at', [$from, $to])
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+        $logs = (clone $query)->latest()->limit($limit)->get();
+        $accounts = SavingsAccount::query()->withTrashed()->with('client')
+            ->whereIn('id', $logs->pluck('auditable_id'))->get()->keyBy('id');
+        $rows = $logs->map(function (AuditLog $log) use ($accounts): array {
+            $account = $accounts->get($log->auditable_id);
+
+            return [
+                'Reactivated' => $log->created_at?->format('d M Y H:i'),
+                'Account' => $account?->account_number ?? ($log->new_values['account_number'] ?? 'N/A'),
+                'Client' => $account?->client?->full_name ?? 'N/A',
+                'By' => $log->user?->name ?? 'System',
+            ];
+        });
+
+        return [['Reactivated', 'Account', 'Client', 'By'], $rows, [
+            'Reactivations' => number_format((clone $query)->count()),
+        ]];
+    }
+
+    private function savingsAdjustedMinimums(?int $branchId, int $limit, User $user): array
+    {
+        $query = SavingsAccount::query()
+            ->with(['client', 'product', 'branch'])
+            ->whereNotNull('minimum_balance_override')
+            ->whereHas('product', fn (Builder $query): Builder => $query->whereColumn('savings_accounts.minimum_balance_override', '!=', 'savings_products.minimum_balance'))
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+        $rows = (clone $query)->orderBy('account_number')->limit($limit)->get()->map(fn (SavingsAccount $account): array => [
+            'Account' => $account->account_number,
+            'Client' => $account->client?->full_name ?? 'N/A',
+            'Branch' => $account->branch?->name ?? 'N/A',
+            'Product Minimum' => $this->money((float) $account->product?->minimum_balance),
+            'Account Minimum' => $this->money($account->minimumBalance()),
+            'Balance' => $this->money((float) $account->current_balance),
+            'Status' => Str::headline($account->status),
+        ]);
+
+        return [['Account', 'Client', 'Branch', 'Product Minimum', 'Account Minimum', 'Balance', 'Status'], $rows, [
+            'Adjusted accounts' => number_format((clone $query)->count()),
+        ]];
+    }
+
+    private function savingsPostedInterest(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
+    {
+        $query = SavingsTransaction::query()
+            ->where('type', 'interest_posting')
+            ->where('status', 'successful')
+            ->whereBetween('value_date', [$from->toDateString(), $to->toDateString().' 23:59:59'])
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+        $postings = (clone $query)
+            ->with(['account.client', 'account.branch'])
+            ->selectRaw('savings_account_id, count(*) as postings, sum(amount) as interest_posted, max(value_date) as last_posted')
+            ->groupBy('savings_account_id')
+            ->orderByDesc('interest_posted')
+            ->limit($limit)
+            ->get();
+        $rows = $postings->map(fn (SavingsTransaction $posting): array => [
+            'Account' => $posting->account?->account_number ?? 'N/A',
+            'Client' => $posting->account?->client?->full_name ?? 'N/A',
+            'Branch' => $posting->account?->branch?->name ?? 'N/A',
+            'Postings' => number_format((int) $posting->postings),
+            'Interest Posted' => $this->money((float) $posting->interest_posted),
+            'Last Posted' => $posting->last_posted,
+        ]);
+
+        return [['Account', 'Client', 'Branch', 'Postings', 'Interest Posted', 'Last Posted'], $rows, [
+            'Accounts' => number_format((clone $query)->distinct()->count('savings_account_id')),
+            'Interest posted' => $this->money((float) (clone $query)->sum('amount')),
+        ]];
+    }
+
+    private function savingsStandingOrders(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
+    {
+        $query = LoanSavingsDeductionSchedule::query()
+            ->with(['loan', 'client', 'savingsAccount', 'account'])
+            ->when($payload['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
+            ->when($payload['created'] ?? false, fn (Builder $query): Builder => $query->whereBetween('created_at', [$from, $to]))
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user));
+        $rows = (clone $query)->latest()->limit($limit)->get()->map(fn (LoanSavingsDeductionSchedule $order): array => [
+            'Created' => $order->created_at?->format('d M Y H:i'),
+            'Client' => $order->client?->full_name ?? 'N/A',
+            'Savings Account' => $order->savingsAccount?->account_number ?? $order->account?->account_number ?? 'N/A',
+            'Loan' => $order->loan?->loan_number ?? 'N/A',
+            'Amount' => $this->money((float) $order->amount),
+            'Frequency' => Str::headline($order->frequency),
+            'Next Run' => $order->status === 'active' ? $order->next_run_at?->format('d M Y H:i') : 'N/A',
+            'Closed / Cancelled' => in_array($order->status, ['closed', 'cancelled'], true) ? $order->disabled_at?->format('d M Y H:i') : 'N/A',
+            'Status' => Str::headline($order->status),
+        ]);
+
+        return [['Created', 'Client', 'Savings Account', 'Loan', 'Amount', 'Frequency', 'Next Run', 'Closed / Cancelled', 'Status'], $rows, [
+            'Orders' => number_format((clone $query)->count()),
+            'Scheduled amount' => $this->money((float) (clone $query)->sum('amount')),
+        ]];
     }
 
     private function shares(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
@@ -2328,7 +2448,7 @@ class ReportCatalogService
             'Rescheduled',
             'Disbursement',
             'Maturity',
-            'Interest Rate P.M',
+            'Interest Rate / Installment (%)',
             'Loan Principal',
             'Loan Interest',
             'Loan Fees',
@@ -2354,15 +2474,25 @@ class ReportCatalogService
             'Customer Relationship Officer',
         ];
 
-        $loans = Loan::query()
-            ->with(['client', 'product', 'loanAccount', 'officer', 'schedules'])
+        $loanQuery = Loan::query()
             ->whereIn('status', Loan::OPERATIONAL_STATUSES)
             ->where(fn (Builder $query): Builder => $this->scopePositiveLoanBalance($query))
-            ->tap(fn (Builder $query) => $this->scopeLoanReport($query, $branchId, $user))
+            ->tap(fn (Builder $query) => $this->scopeLoanReport($query, $branchId, $user));
+        $loans = (clone $loanQuery)
+            ->with(['client', 'product', 'loanAccount', 'officer', 'schedules'])
             ->orderBy('loan_product_id')
             ->orderBy('loan_number')
             ->limit($limit)
             ->get();
+        $balances = (clone $loanQuery)
+            ->selectRaw('count(*) as loans, coalesce(sum(principal_balance + interest_balance + fees_balance + penalty_balance), 0) as total_balance')
+            ->first();
+        $arrearsCount = (clone $loanQuery)
+            ->where(function (Builder $query): void {
+                $query->where('status', 'in_arrears')
+                    ->orWhereHas('schedules', fn (Builder $query): Builder => $query->eligibleForArrears(today()));
+            })
+            ->count();
 
         $rows = $loans->map(function (Loan $loan): array {
             $schedules = $loan->schedules;
@@ -2400,7 +2530,7 @@ class ReportCatalogService
                 'Rescheduled' => in_array($loan->status, ['restructured', 'closed_rescheduled'], true) ? 'Yes' : 'No',
                 'Disbursement' => $loan->disbursed_at?->format('d-m-Y'),
                 'Maturity' => $schedules->max('due_date')?->format('d-m-Y'),
-                'Interest Rate P.M' => $this->periodicInterestRate($loan),
+                'Interest Rate / Installment (%)' => $this->periodicInterestRate($loan),
                 'Loan Principal' => $this->amount($loanPrincipal),
                 'Loan Interest' => $this->amount($interestDue),
                 'Loan Fees' => $this->amount($feesDue),
@@ -2429,9 +2559,9 @@ class ReportCatalogService
         });
 
         return [$columns, $rows, [
-            'Loans' => number_format($rows->count()),
-            'Loans in arrears' => number_format($rows->where('_is_arrears', true)->count()),
-            'Balance total' => $this->money($loans->sum(fn (Loan $loan): float => (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance)),
+            'Loans' => number_format((int) $balances?->loans),
+            'Loans in arrears' => number_format($arrearsCount),
+            'Balance total' => $this->money((float) $balances?->total_balance),
         ]];
     }
 
@@ -2490,21 +2620,28 @@ class ReportCatalogService
 
     private function loanSummary(?int $branchId, User $user): array
     {
-        $rows = Loan::query()
+        $balances = Loan::query()
             ->tap(fn (Builder $query) => $this->scopeLoanReport($query, $branchId, $user))
-            ->selectRaw('status, count(*) as loans, sum(principal_balance) as principal, sum(interest_balance) as interest, sum(penalty_balance) as penalty')
+            ->selectRaw('status, count(*) as loans, sum(principal_balance) as principal, sum(interest_balance) as interest, sum(fees_balance) as fees, sum(penalty_balance) as penalty')
             ->groupBy('status')
             ->orderBy('status')
-            ->get()
+            ->get();
+        $rows = $balances
             ->map(fn (Loan $loan): array => [
                 'Status' => Str::headline($loan->status),
                 'Loans' => number_format((int) $loan->loans),
                 'Principal' => $this->money((float) $loan->principal),
                 'Interest' => $this->money((float) $loan->interest),
+                'Fees' => $this->money((float) $loan->fees),
                 'Penalty' => $this->money((float) $loan->penalty),
+                'Total Balance' => $this->money((float) $loan->principal + (float) $loan->interest + (float) $loan->fees + (float) $loan->penalty),
             ]);
 
-        return [['Status', 'Loans', 'Principal', 'Interest', 'Penalty'], $rows, ['Statuses' => number_format($rows->count())]];
+        return [['Status', 'Loans', 'Principal', 'Interest', 'Fees', 'Penalty', 'Total Balance'], $rows, [
+            'Statuses' => number_format($rows->count()),
+            'Loans' => number_format((int) $balances->sum('loans')),
+            'Total balance' => $this->money((float) $balances->sum(fn (Loan $loan): float => (float) $loan->principal + (float) $loan->interest + (float) $loan->fees + (float) $loan->penalty)),
+        ]];
     }
 
     private function loanRepayments(CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
@@ -2533,6 +2670,38 @@ class ReportCatalogService
             ]);
 
         return [['Date', 'Loan', 'Client', 'Amount', 'Principal', 'Interest', 'Officer'], $rows, ['Recovered' => $this->money((float) $query->sum('amount'))]];
+    }
+
+    private function loanRepaymentsByOfficer(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
+    {
+        $query = LoanRepayment::query()
+            ->join('loans', 'loans.id', '=', 'loan_repayments.loan_id')
+            ->leftJoin('users', 'users.id', '=', 'loans.officer_id')
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
+            ->whereBetween('loan_repayments.paid_at', [$from, $to])
+            ->where('loan_repayments.status', 'successful')
+            ->when($branchId, fn (Builder $query): Builder => $query->where('loan_repayments.branch_id', $branchId))
+            ->when(! $branchId && ! ApiSecurity::hasGlobalBranchAccess($user) && $user->branch_id, fn (Builder $query): Builder => $query->where('loan_repayments.branch_id', $user->branch_id));
+        $officers = $query
+            ->selectRaw("coalesce(users.name, 'Unassigned') as officer_name, count(*) as repayments, coalesce(sum(loan_repayments.amount), 0) as recovered, coalesce(sum(loan_repayments.principal_paid), 0) as principal, coalesce(sum(loan_repayments.interest_paid), 0) as interest, coalesce(sum(loan_repayments.fees_paid), 0) as fees, coalesce(sum(loan_repayments.penalty_paid), 0) as penalty")
+            ->groupBy('loans.officer_id', 'users.name')
+            ->orderByDesc('recovered')
+            ->get();
+        $rows = $officers->map(fn (LoanRepayment $repayment): array => [
+            'Relations Officer' => $repayment->officer_name,
+            'Repayments' => number_format((int) $repayment->repayments),
+            'Principal' => $this->money((float) $repayment->principal),
+            'Interest' => $this->money((float) $repayment->interest),
+            'Fees' => $this->money((float) $repayment->fees),
+            'Penalty' => $this->money((float) $repayment->penalty),
+            'Recovered' => $this->money((float) $repayment->recovered),
+        ]);
+
+        return [['Relations Officer', 'Repayments', 'Principal', 'Interest', 'Fees', 'Penalty', 'Recovered'], $rows, [
+            'Officers' => number_format($rows->count()),
+            'Repayments' => number_format((int) $officers->sum('repayments')),
+            'Recovered' => $this->money((float) $officers->sum('recovered')),
+        ]];
     }
 
     private function investmentAccounts(array $payload, CarbonInterface $from, CarbonInterface $to, ?int $branchId, int $limit, User $user): array
@@ -2743,8 +2912,8 @@ class ReportCatalogService
             ['Report', 'Status', 'Note'],
             collect([[
                 'Report' => $definition['title'],
-                'Status' => 'Available',
-                'Note' => 'This report is registered. No source records are currently configured for this module.',
+                'Status' => 'Unavailable',
+                'Note' => 'This report has no configured data source yet.',
             ]]),
             ['Records' => '0'],
         ];
@@ -2931,7 +3100,11 @@ class ReportCatalogService
 
     private function amount(float $amount): string
     {
-        return number_format($amount, 2);
+        $converted = $this->reportCurrency === $this->reportBaseCurrency
+            ? $amount
+            : $this->currencyRates->convert($amount, $this->reportBaseCurrency, $this->reportCurrency);
+
+        return number_format($converted, 2);
     }
 
     /**

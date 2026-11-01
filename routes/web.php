@@ -214,6 +214,9 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::resource('accounts', AccountController::class)->only(['index', 'create', 'store', 'show']);
     Route::resource('savings-products', SavingsProductController::class)->except(['show', 'destroy'])->middleware('module:savings');
     Route::resource('savings-accounts', SavingsAccountController::class)->only(['index', 'create', 'store', 'show', 'destroy'])->middleware('module:savings');
+    Route::post('/savings-accounts/{savingsAccount}/dormant', [SavingsAccountController::class, 'markDormant'])->middleware('module:savings')->name('savings-accounts.dormant');
+    Route::post('/savings-accounts/{savingsAccount}/reactivate', [SavingsAccountController::class, 'reactivate'])->middleware('module:savings')->name('savings-accounts.reactivate');
+    Route::post('/savings-accounts/{savingsAccount}/minimum-balance', [SavingsAccountController::class, 'adjustMinimumBalance'])->middleware('module:savings')->name('savings-accounts.minimum-balance');
     Route::get('/savings-accounts/{savingsAccount}/statement', [SavingsAccountController::class, 'statement'])->middleware('module:savings')->name('savings-accounts.statement');
     Route::get('/savings-accounts/{savingsAccountId}/deposit', [SavingsTransactionController::class, 'depositForm'])->middleware('module:savings')->name('savings-transactions.deposit.create');
     Route::post('/savings-accounts/{savingsAccountId}/deposit', [SavingsTransactionController::class, 'deposit'])->middleware('module:savings')->name('savings-transactions.deposit.store');

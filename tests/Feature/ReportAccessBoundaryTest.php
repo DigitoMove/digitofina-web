@@ -3,7 +3,10 @@
 use App\Http\Middleware\ResolveTenant;
 use App\Http\Middleware\TrackSiteTraffic;
 use App\Jobs\GenerateReportExport;
+use App\Models\Account;
+use App\Models\AccountType;
 use App\Models\Branch;
+use App\Models\Client;
 use App\Models\MakerCheckerRequest;
 use App\Models\Module;
 use App\Models\Organization;
@@ -21,6 +24,7 @@ use App\Services\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
@@ -124,6 +128,63 @@ it('rejects branch filter overrides at the report service boundary', function ()
             ->toThrow(HttpException::class);
     }
 });
+
+it('generates every catalog report for an organization administrator', function () {
+    $catalog = app(ReportCatalogService::class);
+
+    foreach ($catalog->definitions($this->admin) as $definition) {
+        try {
+            $report = $catalog->generate($definition['slug'], [], $this->admin);
+        } catch (Throwable $exception) {
+            throw new RuntimeException("Report [{$definition['slug']}] could not be generated.", previous: $exception);
+        }
+
+        expect($report['columns'])->toBeArray()
+            ->and($report['rows'])->toBeInstanceOf(Collection::class)
+            ->and($report['summary'])->toBeArray();
+    }
+});
+
+it('compares savings balances with each account type minimum', function () {
+    $client = Client::create([
+        'organization_id' => $this->organization->id,
+        'branch_id' => $this->branch->id,
+        'client_number' => 'MINIMUM-CLIENT',
+        'client_type' => 'individual',
+        'first_name' => 'Minimum',
+        'last_name' => 'Client',
+        'phone' => '+256700000001',
+        'status' => 'active',
+    ]);
+    foreach ([['High minimum', 'HIGH', 50_000, 30_000], ['Low minimum', 'LOW', 1_000, 5_000]] as [$name, $code, $minimum, $balance]) {
+        $type = AccountType::create(['name' => $name, 'code' => $code, 'category' => 'savings', 'minimum_balance' => $minimum]);
+        Account::create([
+            'organization_id' => $this->organization->id,
+            'client_id' => $client->id,
+            'branch_id' => $this->branch->id,
+            'account_type_id' => $type->id,
+            'account_number' => 'MINIMUM-'.$code,
+            'account_name' => $name,
+            'balance' => $balance,
+            'opened_at' => today(),
+        ]);
+    }
+
+    $report = app(ReportCatalogService::class)->generate('accounts-below-minimum-balance', [], $this->admin);
+
+    expect($report['rows']->map(fn (array $row): string => $row['Account No.'])->all())->toBe(['MINIMUM-HIGH'])
+        ->and($report['summary']['Balance'])->toBe('UGX 30,000.00');
+});
+
+it('returns no fabricated savings activity when its source is empty', function (string $slug) {
+    $report = app(ReportCatalogService::class)->generate($slug, [], $this->admin);
+
+    expect($report['rows'])->toBeEmpty();
+})->with([
+    'reactivated-savings-accounts',
+    'accounts-with-adjusted-minimum-balance',
+    'accounts-with-accrued-interest',
+]);
 
 it('limits report filter options to the users branch', function () {
     $this->actingAs($this->staff)->get(route('reports.index'))->assertSuccessful()

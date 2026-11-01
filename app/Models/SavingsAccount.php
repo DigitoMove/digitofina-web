@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use LogicException;
 
 class SavingsAccount extends Model
 {
@@ -24,8 +25,18 @@ class SavingsAccount extends Model
             'current_balance' => 'decimal:2',
             'available_balance' => 'decimal:2',
             'locked_amount' => 'decimal:2',
+            'minimum_balance_override' => 'decimal:2',
             'is_organization_wide' => 'boolean',
         ];
+    }
+
+    public function minimumBalance(): float
+    {
+        if ($this->minimum_balance_override !== null) {
+            return (float) $this->minimum_balance_override;
+        }
+
+        return (float) ($this->product?->minimum_balance ?? throw new LogicException('Savings product minimum balance is unavailable.'));
     }
 
     /**

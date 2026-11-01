@@ -21,7 +21,7 @@ class RunBackupJob implements ShouldQueue
 
     public int $timeout = 900;
 
-    public function __construct(public bool $preferPackageBackup = true) {}
+    public function __construct(public bool $preferPackageBackup = true, public bool $emailBackup = true) {}
 
     public function handle(): void
     {
@@ -32,7 +32,7 @@ class RunBackupJob implements ShouldQueue
 
             // The configured backup source is database-only, so the provider
             // command does not need a separate --only-db flag.
-            if (Artisan::call('backup:run', ['--no-interaction' => true]) !== 0) {
+            if (Artisan::call('backup:run', ['--no-interaction' => true, '--disable-notifications' => true]) !== 0) {
                 throw new RuntimeException('The backup command returned a failure exit code. Check backup logs and storage.');
             }
 
@@ -44,7 +44,7 @@ class RunBackupJob implements ShouldQueue
                 ->sortByDesc(fn (string $path): int => $disk->lastModified($path))
                 ->first();
 
-            if ($recipients !== [] && $backupPath !== null) {
+            if ($this->emailBackup && $recipients !== [] && $backupPath !== null) {
                 Mail::raw('The latest DigitoFina database backup is attached. Keep it in protected storage and test restoration regularly.', function ($message) use ($recipients, $disk, $backupPath): void {
                     $message->to($recipients)
                         ->subject('DigitoFina database backup - '.now()->format('Y-m-d'))
@@ -52,7 +52,7 @@ class RunBackupJob implements ShouldQueue
                 });
             }
 
-            Log::info('Queued database backup command completed.', ['command' => 'backup:run --only-db', 'emailed' => $recipients !== [] && $backupPath !== null]);
+            Log::info('Queued database backup command completed.', ['command' => 'backup:run --only-db', 'emailed' => $this->emailBackup && $recipients !== [] && $backupPath !== null]);
 
             return ['command' => 'backup:run', 'restore_verified' => false];
         });

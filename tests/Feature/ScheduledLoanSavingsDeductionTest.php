@@ -110,7 +110,7 @@ it('caps the final scheduled deduction at the remaining installment and stops th
         ->and((float) $savings->fresh()->current_balance)->toBe(100_000.0)
         ->and((float) $loan->fresh()->principal_balance)->toBe(0.0)
         ->and((float) LoanRepayment::where('loan_id', $loan->id)->value('amount'))->toBe(100_000.0)
-        ->and($schedule->fresh()->status)->toBe('disabled')
+        ->and($schedule->fresh()->status)->toBe('closed')
         ->and($schedule->fresh()->last_message)->toContain('fully cleared');
 });
 

@@ -472,7 +472,7 @@ class FinancialControlService
         $balanceBefore = (float) $account->current_balance;
         $balanceAfter = $balanceBefore - ($amount + $charge);
 
-        if (! $account->product->allows_overdraft && $balanceAfter < (float) $account->product->minimum_balance) {
+        if (! $account->product->allows_overdraft && $balanceAfter < $account->minimumBalance()) {
             throw new InvalidArgumentException('Withdrawal would breach the minimum balance.');
         }
 

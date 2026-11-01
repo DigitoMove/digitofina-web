@@ -33,7 +33,7 @@ it('fails a missing backup provider instead of producing a misleading manifest',
 
 it('records backup success only on a zero command exit code', function (int $exitCode) {
     Artisan::shouldReceive('all')->once()->andReturn(['backup:run' => new stdClass]);
-    Artisan::shouldReceive('call')->with('backup:run', ['--no-interaction' => true])->once()->andReturn($exitCode);
+    Artisan::shouldReceive('call')->with('backup:run', ['--no-interaction' => true, '--disable-notifications' => true])->once()->andReturn($exitCode);
     if ($exitCode === 0) {
         (new RunBackupJob)->handle();
         expect(OperationalRun::sole()->status)->toBe('succeeded')->and(OperationalRun::sole()->summary['restore_verified'])->toBeFalse();

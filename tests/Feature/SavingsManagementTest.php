@@ -186,6 +186,34 @@ it('prevents withdrawals below minimum balance', function () {
     expect($account->fresh()->current_balance)->toBe('20000.00');
 });
 
+it('uses an approved account minimum adjustment when checking withdrawals', function () {
+    $user = savingsAdmin();
+    $product = savingsProduct();
+    $account = SavingsAccount::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'client_id' => savingsClient($user)->id,
+        'savings_product_id' => $product->id,
+        'account_number' => '1001-SAV-ADJUSTED',
+        'opening_date' => today(),
+        'current_balance' => 20_000,
+        'available_balance' => 20_000,
+        'status' => 'active',
+    ]);
+
+    $this->actingAs($user)->post(route('savings-accounts.minimum-balance', $account), [
+        'minimum_balance' => 1_000,
+        'reason' => 'Approved member exception',
+    ])->assertRedirect();
+
+    $this->post(route('savings-transactions.withdrawal.store', $account), [
+        'amount' => 15_000,
+        'payment_method' => 'cash',
+    ])->assertSessionHasNoErrors();
+
+    expect($account->fresh()->current_balance)->toBe('4000.00');
+});
+
 it('allows staff to withdraw from a savings account at another branch in their organization', function () {
     $admin = savingsAdmin();
     $organization = $admin->organization;

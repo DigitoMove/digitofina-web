@@ -7,6 +7,7 @@ use App\Models\Client;
 use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
 use App\Models\User;
+use App\Support\ApiSecurity;
 use App\Support\CurrencyDenomination;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -78,6 +79,89 @@ class SavingsAccountService
 
             return $account->refresh();
         });
+    }
+
+    public function markDormant(SavingsAccount $account, User $user): SavingsAccount
+    {
+        $this->authorizeAccountChange($account, $user);
+
+        return DB::transaction(function () use ($account, $user): SavingsAccount {
+            $account = SavingsAccount::query()->whereKey($account->id)->lockForUpdate()->firstOrFail();
+            $this->authorizeAccountChange($account, $user);
+
+            if ($account->status !== 'active') {
+                throw ValidationException::withMessages(['status' => 'Only active savings accounts can be marked dormant.']);
+            }
+
+            $account->update(['status' => 'dormant', 'dormant_at' => now()]);
+            $this->auditLogger->record('savings_account.marked_dormant', $account, ['status' => 'dormant'], ['status' => 'active'], $user);
+
+            return $account->refresh();
+        });
+    }
+
+    public function reactivate(SavingsAccount $account, User $user): SavingsAccount
+    {
+        $this->authorizeAccountChange($account, $user);
+
+        return DB::transaction(function () use ($account, $user): SavingsAccount {
+            $account = SavingsAccount::query()->whereKey($account->id)->lockForUpdate()->firstOrFail();
+            $this->authorizeAccountChange($account, $user);
+
+            if ($account->status !== 'dormant') {
+                throw ValidationException::withMessages(['status' => 'Only dormant savings accounts can be reactivated.']);
+            }
+
+            $account->update(['status' => 'active', 'dormant_at' => null]);
+            $this->auditLogger->record('savings_account.reactivated', $account, [
+                'status' => 'active',
+                'account_number' => $account->account_number,
+                'client_id' => $account->client_id,
+            ], ['status' => 'dormant'], $user);
+
+            return $account->refresh();
+        });
+    }
+
+    public function adjustMinimumBalance(SavingsAccount $account, ?float $minimumBalance, string $reason, User $user): SavingsAccount
+    {
+        $this->authorizeAccountChange($account, $user);
+
+        if ($minimumBalance !== null && $minimumBalance < 0) {
+            throw ValidationException::withMessages(['minimum_balance' => 'Minimum balance cannot be negative.']);
+        }
+
+        if ($minimumBalance !== null && $minimumBalance > 0) {
+            CurrencyDenomination::assertValid($minimumBalance, 'Minimum balance');
+        }
+
+        if (trim($reason) === '') {
+            throw ValidationException::withMessages(['reason' => 'Explain the minimum balance adjustment.']);
+        }
+
+        return DB::transaction(function () use ($account, $minimumBalance, $reason, $user): SavingsAccount {
+            $account = SavingsAccount::query()->with('product')->whereKey($account->id)->lockForUpdate()->firstOrFail();
+            $this->authorizeAccountChange($account, $user);
+            $oldMinimumBalance = $account->minimumBalance();
+            $oldOverride = $account->minimum_balance_override;
+            $account->update(['minimum_balance_override' => $minimumBalance]);
+            $this->auditLogger->record('savings_account.minimum_balance_adjusted', $account, [
+                'minimum_balance_override' => $minimumBalance,
+                'effective_minimum_balance' => $account->minimumBalance(),
+                'reason' => $reason,
+            ], [
+                'minimum_balance_override' => $oldOverride,
+                'effective_minimum_balance' => $oldMinimumBalance,
+            ], $user);
+
+            return $account->refresh();
+        });
+    }
+
+    private function authorizeAccountChange(SavingsAccount $account, User $user): void
+    {
+        abort_unless($user->canPerform('manage-accounts'), 403);
+        ApiSecurity::assertTenantAccess($user, $account);
     }
 
     private function accountNumber(int|string $branchId, SavingsProduct $product): string

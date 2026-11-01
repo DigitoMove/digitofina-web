@@ -5,9 +5,11 @@ use App\Models\Role;
 use App\Models\TrafficVisit;
 use App\Models\User;
 use App\Services\TrafficAnalyticsService;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -80,6 +82,16 @@ it('renders the super admin charts and preserves dashboard operations', function
         ->assertSee('Traffic & engagement', false)->assertSee('Daily visits')
         ->assertSee('Domain performance')->assertSee('demo.example.com')->assertSee('New Organization');
     $this->getJson('/dashboard?traffic_days=1000')->assertUnprocessable();
+});
+
+it('keeps the super admin dashboard available when traffic storage fails', function () {
+    $role = Role::firstOrCreate(['slug' => 'super-admin'], ['name' => 'Super Admin']);
+    $admin = User::factory()->create(['role_id' => $role->id, 'organization_id' => null, 'branch_id' => null, 'status' => 'active', 'is_active' => true]);
+    Schema::drop('traffic_visits');
+    Schema::create('traffic_visits', fn (Blueprint $table) => $table->id());
+
+    $this->actingAs($admin)->get('/dashboard')->assertOk()
+        ->assertSee('Traffic monitoring is temporarily unavailable');
 });
 
 it('preserves multi-label custom domains without guessing public suffixes', function () {

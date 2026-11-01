@@ -13,7 +13,7 @@ class LoanSavingsDeductionSchedule extends Model
 
     public const FREQUENCIES = ['daily', 'weekly', 'biweekly', 'monthly'];
 
-    public const STATUSES = ['draft', 'active', 'disabled', 'cancelled'];
+    public const STATUSES = ['draft', 'active', 'disabled', 'closed', 'cancelled'];
 
     protected $guarded = [];
 

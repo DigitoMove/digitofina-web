@@ -2,8 +2,10 @@
 
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\CurrencyRate;
 use App\Models\Loan;
 use App\Models\LoanProduct;
+use App\Models\LoanRepayment;
 use App\Models\Module;
 use App\Models\Organization;
 use App\Models\OrganizationModule;
@@ -65,6 +67,93 @@ it('keeps loan list tenant and authorization boundaries', function () {
     expect($response->getContent())->toContain($ownLoan->loan_number)
         ->not->toContain($foreignLoan->loan_number)
         ->and($this->actingAs($member)->get(route('loans.index'))->status())->toBe(302);
+});
+
+it('includes every outstanding balance component in the portfolio summary', function () {
+    [$organization, $branch, $admin, $product] = loanListingFixture('Portfolio');
+    $loan = loanListingLoan($organization, $branch, $admin, $product, '2026-02-15', 'PORTFOLIO-LOAN');
+    $loan->update([
+        'principal_balance' => 100_000,
+        'interest_balance' => 12_000,
+        'fees_balance' => 3_000,
+        'penalty_balance' => 500,
+        'repayment_frequency' => 'weekly',
+    ]);
+
+    $portfolio = app(ReportCatalogService::class)->generate('portfolio-summary', [], $admin);
+    $row = $portfolio['rows']->sole();
+    $loanBook = app(ReportCatalogService::class)->generate('loan-book', [], $admin);
+
+    expect($row['Principal'])->toBe('UGX 100,000.00')
+        ->and($row['Interest'])->toBe('UGX 12,000.00')
+        ->and($row['Fees'])->toBe('UGX 3,000.00')
+        ->and($row['Penalty'])->toBe('UGX 500.00')
+        ->and($row['Total Balance'])->toBe('UGX 115,500.00')
+        ->and($portfolio['summary']['Total balance'])->toBe('UGX 115,500.00')
+        ->and($loanBook['rows']->sole()['Balance Total'])->toBe('115,500.00')
+        ->and($loanBook['rows']->sole()['Interest Rate / Installment (%)'])->toBe('0.23');
+});
+
+it('keeps loan book totals for the full portfolio when the displayed rows are limited', function () {
+    [$organization, $branch, $admin, $product] = loanListingFixture('Book Limit');
+
+    for ($number = 1; $number <= 101; $number++) {
+        loanListingLoan($organization, $branch, $admin, $product, '2026-02-15', sprintf('BOOK-%03d', $number));
+    }
+
+    $loanBook = app(ReportCatalogService::class)->generate('loan-book', ['detail' => 'brief'], $admin);
+
+    expect($loanBook['rows'])->toHaveCount(100)
+        ->and($loanBook['summary']['Loans'])->toBe('101')
+        ->and($loanBook['summary']['Balance total'])->toBe('UGX 10,100,000.00');
+});
+
+it('converts loan book amounts to the selected report currency', function () {
+    [$organization, $branch, $admin, $product] = loanListingFixture('Currency');
+    loanListingLoan($organization, $branch, $admin, $product, '2026-02-15', 'CURRENCY-LOAN');
+    CurrencyRate::create(['base_currency' => 'UGX', 'quote_currency' => 'USD', 'rate' => 0.001]);
+
+    $loanBook = app(ReportCatalogService::class)->generate('loan-book', ['currency' => 'USD'], $admin);
+
+    expect($loanBook['rows']->sole()['Balance Total'])->toBe('100.00')
+        ->and($loanBook['summary']['Balance total'])->toBe('USD 100.00');
+});
+
+it('groups loan recovery by the assigned relations officer', function () {
+    [$organization, $branch, $admin, $product] = loanListingFixture('Recovery');
+    $otherOfficer = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'role_id' => $admin->role_id,
+    ]);
+    $firstLoan = loanListingLoan($organization, $branch, $admin, $product, '2026-02-15', 'RECOVERY-FIRST');
+    $secondLoan = loanListingLoan($organization, $branch, $admin, $product, '2026-02-15', 'RECOVERY-SECOND');
+    $secondLoan->update(['officer_id' => $otherOfficer->id]);
+
+    foreach ([[$firstLoan, 1_200, 1_000, 100, 50, 50], [$secondLoan, 2_400, 2_000, 200, 100, 100]] as [$loan, $amount, $principal, $interest, $fees, $penalty]) {
+        LoanRepayment::create([
+            'organization_id' => $organization->id,
+            'branch_id' => $branch->id,
+            'client_id' => $loan->client_id,
+            'loan_id' => $loan->id,
+            'received_by' => $admin->id,
+            'paid_at' => today(),
+            'status' => 'successful',
+            'amount' => $amount,
+            'principal_paid' => $principal,
+            'interest_paid' => $interest,
+            'fees_paid' => $fees,
+            'penalty_paid' => $penalty,
+        ]);
+    }
+
+    $report = app(ReportCatalogService::class)->generate('loan-repayments-by-relations-officer', [], $admin);
+    $rows = $report['rows']->keyBy('Relations Officer');
+
+    expect($rows)->toHaveCount(2)
+        ->and($rows[$admin->name]['Recovered'])->toBe('UGX 1,200.00')
+        ->and($rows[$otherOfficer->name]['Recovered'])->toBe('UGX 2,400.00')
+        ->and($report['summary']['Recovered'])->toBe('UGX 3,600.00');
 });
 
 /**
