@@ -148,6 +148,7 @@
 
         <article class="df-panel p-5">
             <p class="text-xs font-semibold uppercase tracking-wide text-violet-700">Required annual hosting</p>
+            @if($hostingFee)
             <div class="mt-3 flex flex-wrap items-start justify-between gap-3">
                 <div><h2 class="text-xl font-semibold text-slate-950">UGX {{ number_format((float) $hostingFee->amount) }} per year</h2><p class="mt-1 text-sm text-slate-500">{{ $hostingFee->period_starts_on->format('d M Y') }} – {{ $hostingFee->period_ends_on->format('d M Y') }}</p></div>
                 <span class="rounded-lg {{ $hostingFee->status === 'paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900' }} px-3 py-2 text-sm font-semibold">{{ str($hostingFee->status)->headline() }}</span>
@@ -163,6 +164,12 @@
                     <input name="provider_reference" placeholder="External payment reference (optional)">
                     <button class="df-action-primary">Mark hosting paid</button>
                 </form>
+            @endif
+            @elseif($hostingContract?->annual_hosting_first_due_on?->greaterThan(today()))
+                <h2 class="mt-3 text-xl font-semibold text-slate-950">UGX {{ number_format((float) $hostingContract->annual_hosting_fee) }} per year</h2>
+                <p class="mt-2 text-sm text-slate-600">First annual hosting payment is due {{ $hostingContract->annual_hosting_first_due_on->format('d M Y') }}. No hosting payment is due yet.</p>
+            @else
+                <p class="mt-3 text-sm text-slate-600">No new annual hosting charge is due for this period. Existing issued charges keep their original due dates.</p>
             @endif
         </article>
     </section>

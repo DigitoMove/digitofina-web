@@ -143,6 +143,7 @@ class OrganizationContractController extends Controller
             'total_fee' => ['required', 'numeric', 'min:0'],
             'paid_amount' => ['nullable', 'numeric', 'min:0'],
             'annual_hosting_fee' => ['required', 'numeric', 'min:0'],
+            'annual_hosting_first_due_on' => ['nullable', 'date_format:Y-m-d'],
             'balance_due_date' => ['nullable', 'date'],
             'balance_due_after_days' => ['nullable', 'integer', 'min:0', 'max:3650'],
             'included_branches' => ['nullable', 'integer', 'min:0'],

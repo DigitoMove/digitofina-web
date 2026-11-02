@@ -79,13 +79,45 @@ class BillingAdministrationService
         }, 3);
     }
 
-    public function ensureCurrentHostingFee(Organization $organization): OrganizationHostingFee
+    public function ensureCurrentHostingFee(Organization $organization): ?OrganizationHostingFee
     {
-        return DB::transaction(function () use ($organization): OrganizationHostingFee {
+        return DB::transaction(function () use ($organization): ?OrganizationHostingFee {
             $organization = Organization::query()->whereKey($organization->id)->lockForUpdate()->firstOrFail();
-            [$periodStart, $periodEnd] = $this->hostingPeriod($organization);
-            $existing = OrganizationHostingFee::query()
-                ->where('organization_id', $organization->id)
+            $fees = OrganizationHostingFee::query()->where('organization_id', $organization->id);
+            $existing = (clone $fees)
+                ->whereDate('period_starts_on', '<=', today())
+                ->whereDate('period_ends_on', '>=', today())
+                ->latest('period_starts_on')
+                ->first();
+
+            if ($existing) {
+                return $existing->load('quote');
+            }
+
+            $contract = $organization->contracts()->latest('version')->first();
+            $firstDueOn = $contract?->annual_hosting_first_due_on;
+
+            if ($firstDueOn) {
+                $firstDueOn = CarbonImmutable::parse($firstDueOn)->startOfDay();
+
+                if ($firstDueOn->greaterThan(today())) {
+                    return null;
+                }
+
+                [$periodStart, $periodEnd] = $this->annualPeriod($firstDueOn);
+                $lastCoveredUntil = (clone $fees)->max('period_ends_on');
+
+                if ($lastCoveredUntil && $periodStart->lessThanOrEqualTo(CarbonImmutable::parse($lastCoveredUntil))) {
+                    return null;
+                }
+
+                $dueOn = $periodStart;
+            } else {
+                [$periodStart, $periodEnd] = $this->hostingPeriod($organization);
+                $dueOn = $periodStart->addDays((int) config('billing.hosting.payment_due_days', 30))->min($periodEnd);
+            }
+
+            $existing = (clone $fees)
                 ->whereDate('period_starts_on', $periodStart)
                 ->first();
 
@@ -93,7 +125,12 @@ class BillingAdministrationService
                 return $existing->load('quote');
             }
 
-            $amount = (float) config('billing.hosting.annual_amount', 200000);
+            $amount = (float) ($contract?->annual_hosting_fee ?? config('billing.hosting.annual_amount', 200000));
+
+            if ($amount <= 0) {
+                return null;
+            }
+
             $currency = (string) config('billing.hosting.currency', 'UGX');
             $quote = CommercialQuote::create([
                 'organization_id' => $organization->id,
@@ -115,7 +152,7 @@ class BillingAdministrationService
                 'commercial_quote_id' => $quote->id,
                 'period_starts_on' => $periodStart,
                 'period_ends_on' => $periodEnd,
-                'due_on' => $periodStart->addDays((int) config('billing.hosting.payment_due_days', 30))->min($periodEnd),
+                'due_on' => $dueOn,
                 'amount' => $amount,
                 'currency' => $currency,
                 'status' => 'due',
@@ -140,7 +177,7 @@ class BillingAdministrationService
             ]);
             $hostingFee->quote?->update(['status' => 'paid', 'paid_at' => $paidAt, 'nylon_payment_status' => 'manual']);
             $this->auditLogger->record('billing.hosting_fee_paid', $hostingFee, ['provider_reference' => $reference], actor: $actor);
-            $this->notifyOrganizationAdmins($hostingFee->organization, 'Annual hosting fee paid', 'Your annual UGX 200,000 DigitoFina hosting fee has been marked paid.');
+            $this->notifyOrganizationAdmins($hostingFee->organization, 'Annual hosting fee paid', 'Your annual UGX '.number_format((float) $hostingFee->amount).' DigitoFina hosting fee has been marked paid.');
 
             return $hostingFee->refresh()->load('quote');
         }, 3);
@@ -149,13 +186,19 @@ class BillingAdministrationService
     /** @return array{CarbonImmutable, CarbonImmutable} */
     private function hostingPeriod(Organization $organization): array
     {
-        $periodStart = CarbonImmutable::parse($organization->created_at)->startOfDay();
+        return $this->annualPeriod(CarbonImmutable::parse($organization->created_at)->startOfDay());
+    }
 
-        while ($periodStart->addYear()->lessThanOrEqualTo(today())) {
-            $periodStart = $periodStart->addYear();
+    /** @return array{CarbonImmutable, CarbonImmutable} */
+    private function annualPeriod(CarbonImmutable $firstDay): array
+    {
+        $years = 0;
+
+        while ($firstDay->addYearsNoOverflow($years + 1)->lessThanOrEqualTo(today())) {
+            $years++;
         }
 
-        return [$periodStart, $periodStart->addYear()->subDay()];
+        return [$firstDay->addYearsNoOverflow($years), $firstDay->addYearsNoOverflow($years + 1)->subDay()];
     }
 
     private function notifyOrganizationAdmins(Organization $organization, string $title, string $message): void

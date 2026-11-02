@@ -26,6 +26,7 @@ class CommercialQuoteController extends Controller
         $user = $request->user();
         $billingOrganization = $user->hasRole('super-admin') ? $tenant->organization() : $user->organization;
         $hostingFee = $billingOrganization ? $billing->ensureCurrentHostingFee($billingOrganization) : null;
+        $hostingContract = $billingOrganization?->contracts()->latest('version')->first();
         $currentSubscription = $billingOrganization?->latestSubscription()->with(['quote', 'assigner'])->first();
 
         $quoteQuery = CommercialQuote::query()
@@ -64,6 +65,7 @@ class CommercialQuoteController extends Controller
             'billingOrganization' => $billingOrganization,
             'currentSubscription' => $currentSubscription,
             'hostingFee' => $hostingFee,
+            'hostingContract' => $hostingContract,
         ]);
     }
 

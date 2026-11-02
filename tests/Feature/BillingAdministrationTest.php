@@ -2,12 +2,14 @@
 
 use App\Models\Branch;
 use App\Models\Organization;
+use App\Models\OrganizationContract;
 use App\Models\OrganizationHostingFee;
 use App\Models\OrganizationSubscription;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\BillingAdministrationService;
 use App\Services\QuoteBillingService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -39,6 +41,82 @@ it('lets a super admin directly assign a plan and creates the annual hosting cha
         ->assertSee('Monthly subscription')
         ->assertSee('Assigned by DigitoFina')
         ->assertSee('200,000 per year');
+});
+
+it('starts annual hosting payments on the contract due date and repeats yearly', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-11-02 10:00:00'));
+    [$organization, $organizationAdmin] = billingAdministrationFixture();
+    OrganizationContract::create([
+        'organization_id' => $organization->id,
+        'title' => 'Hosting schedule agreement',
+        'public_token' => str()->random(64),
+        'annual_hosting_fee' => 275000,
+        'annual_hosting_first_due_on' => '2027-01-15',
+    ]);
+    $billing = app(BillingAdministrationService::class);
+
+    expect($billing->ensureCurrentHostingFee($organization))->toBeNull()
+        ->and(OrganizationHostingFee::count())->toBe(0);
+
+    $this->actingAs($organizationAdmin)->get(route('commercial-quotes.index'))
+        ->assertOk()
+        ->assertSee('First annual hosting payment is due 15 Jan 2027');
+
+    $this->travelTo(CarbonImmutable::parse('2027-01-15 09:00:00'));
+    $first = $billing->ensureCurrentHostingFee($organization);
+    expect($first?->due_on?->toDateString())->toBe('2027-01-15')
+        ->and($first?->period_starts_on?->toDateString())->toBe('2027-01-15')
+        ->and($first?->period_ends_on?->toDateString())->toBe('2028-01-14')
+        ->and((float) $first?->amount)->toBe(275000.0)
+        ->and($billing->ensureCurrentHostingFee($organization)?->id)->toBe($first?->id)
+        ->and(OrganizationHostingFee::count())->toBe(1);
+
+    $this->travelTo(CarbonImmutable::parse('2028-01-15 09:00:00'));
+    $second = $billing->ensureCurrentHostingFee($organization);
+    expect($second?->due_on?->toDateString())->toBe('2028-01-15')
+        ->and($second?->period_ends_on?->toDateString())->toBe('2029-01-14')
+        ->and(OrganizationHostingFee::count())->toBe(2);
+});
+
+it('keeps an issued hosting charge when a contract changes the future due date', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-11-02 10:00:00'));
+    [$organization] = billingAdministrationFixture();
+    $billing = app(BillingAdministrationService::class);
+    $issued = $billing->ensureCurrentHostingFee($organization);
+    $originalDueOn = $issued?->due_on?->toDateString();
+    $firstContractDueOn = today()->addDays(90)->toDateString();
+    OrganizationContract::create([
+        'organization_id' => $organization->id,
+        'title' => 'Revised hosting schedule',
+        'public_token' => str()->random(64),
+        'annual_hosting_fee' => 300000,
+        'annual_hosting_first_due_on' => $firstContractDueOn,
+    ]);
+
+    expect($billing->ensureCurrentHostingFee($organization)?->id)->toBe($issued?->id)
+        ->and($issued?->fresh()->due_on?->toDateString())->toBe($originalDueOn)
+        ->and(OrganizationHostingFee::count())->toBe(1);
+
+    $nextContractDueOn = CarbonImmutable::parse($firstContractDueOn)->addYearNoOverflow();
+    $this->travelTo($nextContractDueOn->setTime(9, 0));
+    $next = $billing->ensureCurrentHostingFee($organization);
+    expect($next?->due_on?->toDateString())->toBe($nextContractDueOn->toDateString())
+        ->and((float) $next?->amount)->toBe(300000.0)
+        ->and(OrganizationHostingFee::count())->toBe(2);
+});
+
+it('does not issue a payable hosting quote when the contract waives the annual fee', function () {
+    [$organization] = billingAdministrationFixture();
+    OrganizationContract::create([
+        'organization_id' => $organization->id,
+        'title' => 'Hosting waiver agreement',
+        'public_token' => str()->random(64),
+        'annual_hosting_fee' => 0,
+        'annual_hosting_first_due_on' => today()->toDateString(),
+    ]);
+
+    expect(app(BillingAdministrationService::class)->ensureCurrentHostingFee($organization))->toBeNull()
+        ->and(OrganizationHostingFee::count())->toBe(0);
 });
 
 it('records an externally paid one-time licence and replaces the previous active plan', function () {

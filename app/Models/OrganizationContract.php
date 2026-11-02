@@ -19,6 +19,7 @@ class OrganizationContract extends Model
             'balance_due_date' => 'date',
             'balance_due_after_days' => 'integer',
             'annual_hosting_fee' => 'decimal:2',
+            'annual_hosting_first_due_on' => 'date',
             'review_date' => 'date',
             'sent_at' => 'datetime',
             'reviewed_at' => 'datetime',

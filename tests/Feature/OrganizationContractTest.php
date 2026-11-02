@@ -26,6 +26,7 @@ it('lets a super administrator create and share organization contract versions',
         'total_fee' => 750000,
         'paid_amount' => 300000,
         'annual_hosting_fee' => 200000,
+        'annual_hosting_first_due_on' => '2027-03-15',
         'included_branches' => 3,
         'included_users' => 15,
         'included_clients' => 350,
@@ -36,7 +37,8 @@ it('lets a super administrator create and share organization contract versions',
     ])->assertRedirect();
 
     $contract = OrganizationContract::firstOrFail();
-    expect($contract->balance_due)->toBe('450000.00');
+    expect($contract->balance_due)->toBe('450000.00')
+        ->and($contract->annual_hosting_first_due_on->toDateString())->toBe('2027-03-15');
 
     $this->actingAs($admin)->get(route('organizations.contracts.edit', [$organization, $contract]))
         ->assertSuccessful()
@@ -45,7 +47,20 @@ it('lets a super administrator create and share organization contract versions',
         ->assertSee('value="350"', false)
         ->assertSee('value="2028-09-01"', false)
         ->assertSee('value="2026-10-15"', false)
-        ->assertSee('value="30"', false);
+        ->assertSee('value="30"', false)
+        ->assertSee('value="2027-03-15"', false);
+
+    $this->actingAs($admin)->put(route('organizations.contracts.update', [$organization, $contract]), [
+        'title' => 'Software Services Agreement',
+        'term_type' => 'fixed_term',
+        'term_months' => 24,
+        'total_fee' => 750000,
+        'paid_amount' => 300000,
+        'annual_hosting_fee' => 200000,
+        'annual_hosting_first_due_on' => '2027-04-01',
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    expect($contract->fresh()->annual_hosting_first_due_on->toDateString())->toBe('2027-04-01');
 
     $this->actingAs($admin)->post(route('organizations.contracts.share', [$organization, $contract]))
         ->assertRedirect(route('organizations.contracts.show', [$organization, $contract]))
@@ -66,6 +81,7 @@ it('accepts customer comments through the public contract review link', function
         'paid_amount' => 300000,
         'balance_due' => 450000,
         'annual_hosting_fee' => 200000,
+        'annual_hosting_first_due_on' => '2027-03-15',
     ]);
 
     $this->post(route('contracts.review.comment', [$contract, $contract->public_token]), [
@@ -80,6 +96,8 @@ it('accepts customer comments through the public contract review link', function
         ->assertSee('Included branches')
         ->assertSee('Included users')
         ->assertSee('Included clients')
+        ->assertSee('First annual hosting payment due')
+        ->assertSee('15 Mar 2027')
         ->assertSee('Platform operation and data flow')
         ->assertSee('DigitoMove Co. LTD')
         ->assertSee('https://digitomove.com')
