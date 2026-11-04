@@ -30,6 +30,7 @@ class LoanSchedule extends Model
             'outstanding_amount' => 'decimal:2',
             'balance_due' => 'decimal:2',
             'days_overdue' => 'integer',
+            'extension_days' => 'integer',
             'last_reversal_at' => 'datetime',
         ];
     }

@@ -16,7 +16,7 @@ class EnsurePasswordChanged
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->user()?->must_change_password && ! $request->session()->has(ImpersonationService::IMPERSONATOR_SESSION_KEY)) {
+        if ($request->user()?->isMember() && $request->user()->must_change_password && ! $request->session()->has(ImpersonationService::IMPERSONATOR_SESSION_KEY)) {
             return redirect()->route('profile.edit')->with('warning', 'Change your temporary password before using the client portal.');
         }
 

@@ -535,6 +535,87 @@ class LoanService
             && (string) $loan->repayment_frequency === $repaymentFrequency;
     }
 
+    public function extendPeriod(Loan $loan, User $user, int $days, string $reason): Loan
+    {
+        abort_unless($user->canAdministerLoanRepairs(), 403);
+
+        if ($days < 1 || $days > 3650) {
+            throw new InvalidArgumentException('Extension must be between 1 and 3650 days.');
+        }
+
+        return DB::transaction(function () use ($loan, $user, $days, $reason): Loan {
+            $loan = Loan::query()->whereKey($loan->id)->lockForUpdate()->firstOrFail();
+
+            if (! in_array($loan->status, ['approved', 'disbursed', 'active', 'in_arrears'], true)) {
+                throw new InvalidArgumentException('Only approved, disbursed, active, or in-arrears loans can be extended.');
+            }
+
+            $schedules = $loan->schedules()->where('outstanding_amount', '>', 0)->orderBy('installment_number')->lockForUpdate()->get();
+
+            if ($schedules->isEmpty()) {
+                throw new InvalidArgumentException('This loan has no unpaid installments to extend.');
+            }
+
+            $asOf = CarbonImmutable::today();
+            $penaltiesCleared = 0.0;
+            $previousMaturityDate = $loan->schedules()->max('due_date');
+
+            foreach ($schedules as $schedule) {
+                $dueDate = CarbonImmutable::parse($schedule->due_date)->addDays($days);
+                $isOverdue = $dueDate->lt($asOf->subDay());
+                $updates = [
+                    'due_date' => $dueDate->toDateString(),
+                    'extension_days' => (int) $schedule->extension_days + $days,
+                    'days_overdue' => $isOverdue ? $this->calendar->businessDaysBetween($dueDate, $asOf, $loan->organization_id ? (int) $loan->organization_id : null) : 0,
+                    'status' => $isOverdue ? 'overdue' : ((float) $schedule->total_paid > 0 ? 'partially_paid' : 'pending'),
+                ];
+
+                if (! $isOverdue && (float) $schedule->penalty_due > 0 && (float) $schedule->penalty_paid <= 0) {
+                    $pendingPenalties = LoanPenalty::query()->where('loan_schedule_id', $schedule->id)->where('status', 'pending');
+                    $penaltyDue = (float) $schedule->penalty_due;
+
+                    if ((float) (clone $pendingPenalties)->sum('amount') >= $penaltyDue - 0.01
+                        && ! LoanPenalty::query()->where('loan_schedule_id', $schedule->id)->where('status', '!=', 'pending')->exists()) {
+                        $pendingPenalties->delete();
+                        $updates['penalty_due'] = 0;
+                        $updates['total_due'] = max(0, (float) $schedule->total_due - $penaltyDue);
+                        $updates['outstanding_amount'] = max(0, (float) $schedule->outstanding_amount - $penaltyDue);
+                        $updates['balance_due'] = max(0, (float) $schedule->balance_due - $penaltyDue);
+                        $penaltiesCleared += $penaltyDue;
+                    }
+                }
+
+                $schedule->update($updates);
+            }
+
+            if ($penaltiesCleared > 0) {
+                $loan->update(['penalty_balance' => max(0, (float) $loan->penalty_balance - $penaltiesCleared)]);
+            }
+
+            if (in_array($loan->status, ['active', 'in_arrears'], true)) {
+                $loan->update(['status' => $loan->schedules()->eligibleForArrears($asOf)->exists() ? 'in_arrears' : 'active']);
+            }
+
+            if ($loan->loan_account_id) {
+                Account::query()->whereKey($loan->loan_account_id)->lockForUpdate()->update([
+                    'balance' => (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance,
+                ]);
+            }
+
+            $this->auditLogger->record('loan.period_extended', $loan, [
+                'extension_days' => $days,
+                'reason' => $reason,
+                'previous_maturity_date' => $previousMaturityDate,
+                'new_maturity_date' => $loan->schedules()->max('due_date'),
+                'updated_schedules' => $schedules->count(),
+                'penalties_cleared' => $penaltiesCleared,
+                'extended_by' => $user->id,
+            ], actor: $user);
+
+            return $loan->refresh();
+        });
+    }
+
     private function repairScheduleDatesOnly(Loan $loan, User $user, CarbonInterface $scheduleStartDate, string $reason): Loan
     {
         $loan->loadMissing('schedules', 'loanAccount');
@@ -1054,7 +1135,7 @@ class LoanService
                 (int) $schedule->installment_number,
                 $loan->repayment_frequency,
                 $loan->organization_id ? (int) $loan->organization_id : null,
-            );
+            )->addDays((int) $schedule->extension_days);
             $isOverdue = $expectedDueDate->lt($asOf->copy()->subDay());
             $status = match (true) {
                 (float) $schedule->outstanding_amount <= 0 => 'paid',
@@ -1406,20 +1487,20 @@ class LoanService
         });
     }
 
-    public function closeWithBalanceCoverage(Loan $loan, User $user, string $coverageMethod, string $reason, ?string $reference = null): Loan
+    public function writeOffLoan(Loan $loan, User $user, string $reason, ?string $reference = null): Loan
     {
-        return DB::transaction(function () use ($loan, $user, $coverageMethod, $reason, $reference): Loan {
+        return DB::transaction(function () use ($loan, $user, $reason, $reference): Loan {
             $loan = Loan::query()
                 ->with(['loanAccount', 'schedules', 'loanGuarantors', 'collaterals'])
                 ->whereKey($loan->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if (in_array($loan->status, ['closed', 'fully_paid', 'written_off', 'cancelled', 'rejected'], true)) {
-                throw new InvalidArgumentException('This loan cannot be closed with balance coverage.');
+            if (! in_array($loan->status, ['disbursed', 'active', 'in_arrears', 'restructured'], true)) {
+                throw new InvalidArgumentException('Only disbursed, active, in-arrears, or restructured loans can be written off.');
             }
 
-            if ($coverageMethod === 'write_off' && ! $user->canWriteOffLoans()) {
+            if (! $user->canWriteOffLoans() && ! $user->canPerform('override-maker-checker')) {
                 throw new InvalidArgumentException('You do not have permission to write off loans.');
             }
 
@@ -1434,17 +1515,25 @@ class LoanService
             }
 
             $old = $loan->only(['status', 'principal_balance', 'interest_balance', 'fees_balance', 'penalty_balance']);
-            $coverageLabel = str($coverageMethod)->replace('_', ' ')->headline()->toString();
-            $coverageReason = trim($reason.($reference ? "\nReference: {$reference}" : '')."\nCoverage method: {$coverageLabel}");
+            $writeOffReason = trim($reason.($reference ? "\nReference: {$reference}" : ''));
 
-            LoanWriteOff::create([
+            if ($principalBalance > 0) {
+                $receivableAccount = ChartAccount::query()->where('organization_id', $loan->organization_id)->where('code', '1200')->where('is_active', true)->first();
+                $lossAccount = ChartAccount::query()->where('organization_id', $loan->organization_id)->where('code', '5100')->where('is_active', true)->first();
+
+                if (! $receivableAccount || ! $lossAccount) {
+                    throw new InvalidArgumentException('Active Loans Receivable (1200) and Loan Loss Provision Expense (5100) accounts are required before writing off principal.');
+                }
+            }
+
+            $writeOff = LoanWriteOff::create([
                 'loan_id' => $loan->id,
                 'approved_by' => $user->id,
                 'principal_amount' => $principalBalance,
                 'interest_amount' => $interestBalance,
                 'fees_amount' => $feesBalance,
                 'penalty_amount' => $penaltyBalance,
-                'reason' => $coverageReason,
+                'reason' => $writeOffReason,
                 'written_off_at' => today(),
                 'status' => 'approved',
             ]);
@@ -1454,7 +1543,7 @@ class LoanService
                 ->update([
                     'outstanding_amount' => 0,
                     'balance_due' => 0,
-                    'status' => 'paid',
+                    'status' => 'written_off',
                     'updated_at' => now(),
                 ]);
 
@@ -1463,8 +1552,34 @@ class LoanService
                 'interest_balance' => 0,
                 'fees_balance' => 0,
                 'penalty_balance' => 0,
-                'status' => $coverageMethod === 'write_off' ? 'written_off' : 'closed',
+                'status' => 'written_off',
             ]);
+
+            LoanPenalty::query()->where('loan_id', $loan->id)->where('status', 'pending')->update(['status' => 'written_off']);
+
+            if ($principalBalance > 0) {
+                $journalNumber = 'LW'.now()->format('ymdHis').Str::upper(Str::random(4));
+
+                foreach ([[$lossAccount, 'debit', '01'], [$receivableAccount, 'credit', '02']] as [$account, $entryType, $sequence]) {
+                    JournalEntry::create([
+                        'organization_id' => $loan->organization_id,
+                        'branch_id' => $loan->branch_id,
+                        'created_by' => $user->id,
+                        'posted_by' => $user->id,
+                        'journal_number' => $journalNumber.'-'.$sequence,
+                        'journal_date' => today()->toDateString(),
+                        'description' => "Loan write-off {$loan->loan_number}",
+                        'status' => 'posted',
+                        'posted_at' => now(),
+                        'chart_account_id' => $account->id,
+                        'reference' => 'LW-'.$writeOff->id,
+                        'account_name' => $account->name,
+                        'entry_type' => $entryType,
+                        'amount' => $principalBalance,
+                        'memo' => $writeOffReason,
+                    ]);
+                }
+            }
 
             if ($loan->loan_account_id) {
                 Account::query()
@@ -1479,12 +1594,15 @@ class LoanService
             $loan->loanGuarantors()->where('status', '!=', 'released')->update(['status' => 'released']);
             $loan->collaterals()->where('status', '!=', 'released')->update(['status' => 'released']);
 
-            $this->auditLogger->record('loan.closed_with_balance_coverage', $loan->fresh(), [
+            $this->auditLogger->record('loan.written_off', $loan->fresh(), [
                 'reason' => $reason,
                 'reference' => $reference,
-                'coverage_method' => $coverageMethod,
-                'covered_amount' => $outstandingBalance,
-                'closed_by' => $user->id,
+                'write_off_id' => $writeOff->id,
+                'principal_amount' => $principalBalance,
+                'interest_amount' => $interestBalance,
+                'fees_amount' => $feesBalance,
+                'penalty_amount' => $penaltyBalance,
+                'written_off_by' => $user->id,
             ], $old, actor: $user);
 
             return $loan->refresh();

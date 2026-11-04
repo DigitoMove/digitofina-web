@@ -37,7 +37,7 @@
     $dormantSavings = $basicSavingsAccounts->where('status', 'dormant')->count();
     $activeCurrent = $currentAccounts->where('status', 'active')->count();
     $dormantCurrent = $currentAccounts->where('status', 'dormant')->count();
-    $goodLoans = $loansEnabled ? $client->loans->whereIn('status', ['active', 'fully_paid', 'closed'])->count() : 0;
+    $goodLoans = $loansEnabled ? $client->loans->where('status', 'active')->count() : 0;
     $arrearsLoans = $loansEnabled ? $client->loans->whereIn('status', ['in_arrears', 'written_off'])->count() : 0;
     $newApplications = $loansEnabled ? $client->loans->whereIn('status', ['draft', 'under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification', 'approved']) : collect();
     $approvingApplications = $loansEnabled ? $client->loans->whereIn('status', ['under_review', 'submitted', 'pending_guarantor_approval', 'pending_collateral_verification'])->count() : 0;

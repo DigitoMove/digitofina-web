@@ -230,6 +230,7 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::resource('loans', LoanController::class)->only(['index', 'create', 'store', 'show'])->middleware(['module:loans', 'demo.capacity:loans']);
     Route::post('/loans/{loan}/draft-terms', [LoanController::class, 'updateDraftTerms'])->middleware('module:loans')->name('loans.update-draft-terms');
     Route::post('/loans/{loan}/repair-terms', [LoanController::class, 'repairTerms'])->middleware('module:loans')->name('loans.repair-terms');
+    Route::post('/loans/{loan}/extend-period', [LoanController::class, 'extendPeriod'])->middleware('module:loans')->name('loans.extend-period');
     Route::post('/loans/{loan}/generate-savings-account', [LoanController::class, 'generateSavingsAccount'])->middleware('module:loans')->name('loans.generate-savings-account');
     Route::post('/loans/{loan}/generate-loan-account', [LoanController::class, 'generateLoanAccount'])->middleware('module:loans')->name('loans.generate-loan-account');
     Route::post('/loans/{loan}/submit-appraisal', [LoanController::class, 'submitForAppraisal'])->middleware('module:loans')->name('loans.submit-appraisal');
@@ -239,7 +240,7 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::post('/loans/{loan}/reject', [LoanController::class, 'reject'])->middleware('module:loans')->name('loans.reject');
     Route::post('/loans/{loan}/cancel', [LoanController::class, 'cancel'])->middleware('module:loans')->name('loans.cancel');
     Route::post('/loans/{loan}/close-paid', [LoanController::class, 'closePaid'])->middleware('module:loans')->name('loans.close-paid');
-    Route::post('/loans/{loan}/close-with-coverage', [LoanController::class, 'closeWithCoverage'])->middleware('module:loans')->name('loans.close-with-coverage');
+    Route::post('/loans/{loan}/write-off', [LoanController::class, 'writeOff'])->middleware('module:loans')->name('loans.write-off');
     Route::post('/loans/{loan}/reopen', [LoanController::class, 'reopen'])->middleware('module:loans')->name('loans.reopen');
     Route::post('/loans/{loan}/assign-officer', [LoanController::class, 'assignOfficer'])->middleware('module:loans')->name('loans.assign-officer');
     Route::put('/loans/{loan}/application-fee', [LoanFeeController::class, 'update'])->middleware('module:loans')->name('loans.application-fee.update');

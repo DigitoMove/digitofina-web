@@ -147,7 +147,7 @@ class LoanController extends Controller
         $isRestrictedLoanRecoveryOfficer = request()->user()->isLoanRecoveryOfficer()
             && (int) $loan->created_by !== (int) request()->user()->id;
 
-        if (! $loan->schedules()->exists() && (float) $loan->requested_amount > 0) {
+        if (! $loan->schedules()->exists() && (float) $loan->requested_amount > 0 && ! in_array($loan->status, ['closed', 'fully_paid', 'written_off', 'cancelled', 'rejected'], true)) {
             $service->generateSchedule($loan->load('product'), CarbonImmutable::parse(($loan->disbursed_at ?? $loan->application_date ?? today())->toDateString()));
         }
 
@@ -163,6 +163,7 @@ class LoanController extends Controller
                 'savingsAccount.accountType',
                 'loanAccount.accountType',
                 'schedules',
+                'writeOffs.approvedBy',
                 'loanGuarantors.guarantorClient',
                 'collaterals',
                 'approvals.approver',
@@ -240,6 +241,25 @@ class LoanController extends Controller
         }
 
         return back()->with('status', 'Loan terms repaired and repayment schedule recalculated.');
+    }
+
+    public function extendPeriod(Request $request, Loan $loan, LoanService $service): RedirectResponse
+    {
+        Gate::authorize('view', $loan);
+        abort_unless($request->user()->canAdministerLoanRepairs(), 403);
+
+        $data = $request->validate([
+            'extension_days' => ['required', 'integer', 'min:1', 'max:3650'],
+            'reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        try {
+            $service->extendPeriod($loan, $request->user(), (int) $data['extension_days'], $data['reason']);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['extension_days' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Loan period extended and repayment schedule recalculated.');
     }
 
     public function generateSavingsAccount(Loan $loan, LoanService $service): RedirectResponse
@@ -379,32 +399,29 @@ class LoanController extends Controller
         return back()->with('status', 'Fully paid loan closed.');
     }
 
-    public function closeWithCoverage(Request $request, Loan $loan, LoanService $service): RedirectResponse
+    public function writeOff(Request $request, Loan $loan, LoanService $service): RedirectResponse
     {
         Gate::authorize('view', $loan);
 
-        abort_unless($request->user()->canAdministerLoanRepairs(), 403);
+        abort_unless($request->user()->canWriteOffLoans(), 403);
 
         $data = $request->validate([
-            'coverage_method' => ['required', 'in:organization_covered,write_off,external_settlement'],
-            'coverage_reference' => ['nullable', 'string', 'max:120'],
+            'reference' => ['nullable', 'string', 'max:120'],
             'reason' => ['required', 'string', 'max:1000'],
         ]);
-        abort_unless($data['coverage_method'] !== 'write_off' || $request->user()->canWriteOffLoans(), 403);
 
         try {
-            $service->closeWithBalanceCoverage(
+            $service->writeOffLoan(
                 $loan,
                 $request->user(),
-                $data['coverage_method'],
                 $data['reason'],
-                $data['coverage_reference'] ?? null,
+                $data['reference'] ?? null,
             );
         } catch (InvalidArgumentException $exception) {
-            return back()->withErrors(['coverage_reason' => $exception->getMessage()])->withInput();
+            return back()->withErrors(['write_off_reason' => $exception->getMessage()])->withInput();
         }
 
-        return back()->with('status', 'Loan closed with balance coverage recorded.');
+        return back()->with('status', 'Loan written off and closed.');
     }
 
     public function reopen(Request $request, Loan $loan, LoanService $service): RedirectResponse

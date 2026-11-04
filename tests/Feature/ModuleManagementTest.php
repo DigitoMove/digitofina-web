@@ -286,7 +286,7 @@ it('renders a loan-only client dashboard without disabled financial modules', fu
         'is_active' => true,
     ]);
 
-    Loan::create([
+    $activeLoan = Loan::create([
         'organization_id' => $user->organization_id,
         'branch_id' => $user->branch_id,
         'client_id' => $client->id,
@@ -304,7 +304,18 @@ it('renders a loan-only client dashboard without disabled financial modules', fu
         'repayment_frequency' => 'monthly',
         'status' => 'active',
     ]);
-    $this->actingAs($user)
+
+    foreach (['fully_paid', 'closed'] as $status) {
+        $paidLoan = $activeLoan->replicate();
+        $paidLoan->loan_number = fake()->unique()->numerify('1001-LN-######');
+        $paidLoan->status = $status;
+        $paidLoan->principal_balance = 0;
+        $paidLoan->interest_balance = 0;
+        $paidLoan->fees_balance = 0;
+        $paidLoan->save();
+    }
+
+    $response = $this->actingAs($user)
         ->get(route('clients.show', $client))
         ->assertSuccessful()
         ->assertSee('Outstanding Loans')
@@ -313,6 +324,9 @@ it('renders a loan-only client dashboard without disabled financial modules', fu
         ->assertDontSee('Total Investments')
         ->assertDontSee('Shares Accounts')
         ->assertDontSee('Term Deposits');
+
+    preg_match('/In Good Standing<\/div>\s*<div[^>]*>\s*([\d,]+)\s*<\/div>/', $response->getContent(), $matches);
+    expect($matches[1] ?? null)->toBe('1');
 });
 
 it('lets branch users and cashiers view clients and loans without edit rights', function () {

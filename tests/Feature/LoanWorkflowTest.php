@@ -10,6 +10,7 @@ use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
 use App\Models\FinancialDay;
 use App\Models\Guarantor;
+use App\Models\JournalEntry;
 use App\Models\Loan;
 use App\Models\LoanDisbursement;
 use App\Models\LoanPenalty;
@@ -30,6 +31,7 @@ use App\Models\TransactionType;
 use App\Models\User;
 use App\Policies\ClientPolicy;
 use App\Services\BusinessCalendarService;
+use App\Services\FinancialControlService;
 use App\Services\LoanApplicationFeeService;
 use App\Services\LoanApplicationService;
 use App\Services\LoanFeeAdjustmentService;
@@ -62,6 +64,7 @@ function loanWorkflowUser(): User
         ['2100', 'Client Savings Liability', 'liability', 'credit'],
         ['4100', 'Interest Income', 'income', 'credit'],
         ['4200', 'Fees and Penalties Income', 'income', 'credit'],
+        ['5100', 'Loan Loss Provision Expense', 'expense', 'debit'],
     ] as [$code, $name, $type, $normalBalance]) {
         ChartAccount::create(['code' => $code, 'name' => $name, 'type' => $type, 'normal_balance' => $normalBalance, 'is_active' => true]);
     }
@@ -881,7 +884,7 @@ it('lets an admin close a fully paid loan that remained active', function () {
         ->and((float) $loanAccount->fresh()->balance)->toBe(0.0);
 });
 
-it('lets an admin close a loan with remaining balance coverage recorded', function () {
+it('writes off an outstanding loan with a balanced principal journal and preserved repayment history', function () {
     $user = loanWorkflowUser();
     $superAdminRole = Role::firstOrCreate(['slug' => 'super-admin'], ['name' => 'Super Admin']);
     $user->update(['role_id' => $superAdminRole->id]);
@@ -914,7 +917,7 @@ it('lets an admin close a loan with remaining balance coverage recorded', functi
         'repayment_frequency' => 'monthly',
         'status' => 'active',
     ]);
-    LoanSchedule::create([
+    $schedule = LoanSchedule::create([
         'loan_id' => $loan->id,
         'installment_number' => 1,
         'due_date' => today(),
@@ -923,26 +926,35 @@ it('lets an admin close a loan with remaining balance coverage recorded', functi
         'fees_due' => 5000,
         'penalty_due' => 0,
         'total_due' => 115000,
-        'total_paid' => 0,
+        'total_paid' => 10000,
         'outstanding_amount' => 115000,
         'balance_due' => 115000,
+        'status' => 'partially_paid',
+    ]);
+
+    $penalty = LoanPenalty::create([
+        'loan_id' => $loan->id,
+        'loan_schedule_id' => $schedule->id,
+        'amount' => 1000,
+        'calculated_for_date' => today(),
         'status' => 'pending',
     ]);
 
     $this->actingAs($user)
-        ->post(route('loans.close-with-coverage', $loan), [
-            'coverage_method' => 'organization_covered',
-            'coverage_reference' => 'BOARD-001',
-            'reason' => 'Board approved covering the remaining balance.',
+        ->post(route('loans.write-off', $loan), [
+            'reference' => 'BOARD-001',
+            'reason' => 'Board approved the remaining balance write-off.',
         ])
         ->assertRedirect()
         ->assertSessionHasNoErrors()
-        ->assertSessionHas('status', 'Loan closed with balance coverage recorded.');
+        ->assertSessionHas('status', 'Loan written off and closed.');
 
     $freshLoan = $loan->fresh();
     $writeOff = LoanWriteOff::where('loan_id', $loan->id)->firstOrFail();
 
-    expect($freshLoan->status)->toBe('closed')
+    $journalEntries = JournalEntry::query()->where('reference', 'LW-'.$writeOff->id)->get();
+
+    expect($freshLoan->status)->toBe('written_off')
         ->and((float) $freshLoan->principal_balance)->toBe(0.0)
         ->and((float) $freshLoan->interest_balance)->toBe(0.0)
         ->and((float) $freshLoan->fees_balance)->toBe(0.0)
@@ -950,10 +962,30 @@ it('lets an admin close a loan with remaining balance coverage recorded', functi
         ->and((float) $loanAccount->fresh()->balance)->toBe(0.0)
         ->and((float) $writeOff->principal_amount)->toBe(100000.0)
         ->and((float) $writeOff->interest_amount)->toBe(10000.0)
-        ->and($writeOff->reason)->toContain('BOARD-001');
+        ->and((float) $writeOff->fees_amount)->toBe(5000.0)
+        ->and($writeOff->reason)->toContain('BOARD-001')
+        ->and($schedule->fresh()->status)->toBe('written_off')
+        ->and((float) $schedule->fresh()->total_paid)->toBe(10000.0)
+        ->and((float) $schedule->fresh()->outstanding_amount)->toBe(0.0)
+        ->and($penalty->fresh()->status)->toBe('written_off')
+        ->and($journalEntries)->toHaveCount(2)
+        ->and($journalEntries->where('entry_type', 'debit')->sum('amount'))->toEqual(100000)
+        ->and($journalEntries->where('entry_type', 'credit')->sum('amount'))->toEqual(100000);
+
+    $this->actingAs($user)
+        ->post(route('loans.write-off', $loan), ['reason' => 'Repeat write-off.'])
+        ->assertSessionHasErrors('write_off_reason');
+
+    expect(LoanWriteOff::where('loan_id', $loan->id)->count())->toBe(1)
+        ->and(JournalEntry::query()->where('reference', 'LW-'.$writeOff->id)->count())->toBe(2);
+
+    $this->get(route('loans.show', $loan))
+        ->assertOk()
+        ->assertSee('Written off on')
+        ->assertSee('BOARD-001');
 });
 
-it('requires write off permission before a loan can be written off from coverage actions', function () {
+it('requires write off permission before an outstanding loan can be closed', function () {
     $user = loanWorkflowUser();
     $role = Role::create(['name' => 'Repair Operator', 'slug' => 'repair-operator']);
     $role->permissions()->sync(Permission::whereIn('slug', ['manage-loans', 'approve-reversals'])->pluck('id')->all());
@@ -981,14 +1013,105 @@ it('requires write off permission before a loan can be written off from coverage
     expect($user->fresh()->canWriteOffLoans())->toBeFalse();
 
     $response = $this->actingAs($user)
-        ->post(route('loans.close-with-coverage', $loan), [
-            'coverage_method' => 'write_off',
+        ->post(route('loans.write-off', $loan), [
             'reason' => 'Trying to write off without permission.',
         ]);
 
     expect($response->isForbidden() || $response->isRedirect())->toBeTrue()
         ->and($loan->fresh()->status)->toBe('active')
         ->and(LoanWriteOff::where('loan_id', $loan->id)->exists())->toBeFalse();
+});
+
+it('uses the same write-off posting after API maker-checker approval', function () {
+    $maker = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($maker, ['loans']);
+    $permission = Permission::firstOrCreate(['slug' => 'write-off-loans'], ['name' => 'Write Off Loans']);
+    $maker->role->permissions()->attach($permission);
+    $checker = User::factory()->create([
+        'organization_id' => $organization->id,
+        'branch_id' => $maker->branch_id,
+        'role_id' => $maker->role_id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $client = loanWorkflowClient($maker);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $product->update(['organization_id' => $organization->id]);
+    $loan = Loan::create([
+        'organization_id' => $organization->id,
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'loan_number' => '1001-LN-API-WRITEOFF',
+        'requested_amount' => 20000,
+        'approved_amount' => 20000,
+        'principal_balance' => 15000,
+        'interest_balance' => 2000,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 12,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'status' => 'active',
+    ]);
+
+    Sanctum::actingAs($maker, ['*']);
+    $this->postJson("/api/v1/loans/{$loan->id}/write-off", ['reason' => 'Approved loss.', 'reference' => 'BOARD-API-001'])
+        ->assertStatus(202);
+
+    $approval = MakerCheckerRequest::query()->where('action', 'loan_write_off')->firstOrFail();
+    expect((float) $approval->amount)->toBe(17000.0)
+        ->and($loan->fresh()->status)->toBe('active');
+
+    $loan->update(['interest_balance' => 2500]);
+    expect(fn () => app(FinancialControlService::class)->approveMakerChecker($approval, $checker))
+        ->toThrow(InvalidArgumentException::class, 'The outstanding balance has increased');
+    expect($approval->fresh()->status)->toBe('pending')
+        ->and(LoanWriteOff::query()->where('loan_id', $loan->id)->exists())->toBeFalse();
+
+    $loan->update(['interest_balance' => 2000]);
+    app(FinancialControlService::class)->approveMakerChecker($approval, $checker);
+
+    $writeOff = LoanWriteOff::query()->where('loan_id', $loan->id)->firstOrFail();
+    expect($loan->fresh()->status)->toBe('written_off')
+        ->and((float) $loan->fresh()->principal_balance)->toBe(0.0)
+        ->and((float) $writeOff->principal_amount)->toBe(15000.0)
+        ->and($writeOff->reason)->toContain('BOARD-API-001')
+        ->and($writeOff->approved_by)->toBe($checker->id)
+        ->and(JournalEntry::query()->where('reference', 'LW-'.$writeOff->id)->count())->toBe(2);
+});
+
+it('does not alter a loan when the write-off loss account is unavailable', function () {
+    $user = loanWorkflowUser();
+    $user->update(['role_id' => Role::firstOrCreate(['slug' => 'super-admin'], ['name' => 'Super Admin'])->id]);
+    $client = loanWorkflowClient($user);
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0]);
+    $loan = Loan::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'loan_number' => '1001-LN-NO-LOSS-ACCOUNT',
+        'requested_amount' => 10000,
+        'approved_amount' => 10000,
+        'principal_balance' => 10000,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'interest_rate' => 12,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'status' => 'active',
+    ]);
+    ChartAccount::query()->where('code', '5100')->delete();
+
+    $this->actingAs($user)
+        ->post(route('loans.write-off', $loan), ['reason' => 'Uncollectible.'])
+        ->assertSessionHasErrors('write_off_reason');
+
+    expect($loan->fresh()->status)->toBe('active')
+        ->and((float) $loan->fresh()->principal_balance)->toBe(10000.0)
+        ->and(LoanWriteOff::query()->where('loan_id', $loan->id)->exists())->toBeFalse()
+        ->and(JournalEntry::query()->where('reference', 'like', 'LW-%')->exists())->toBeFalse();
 });
 
 it('shows a loan when the legacy guarantors payload is empty', function () {
@@ -2996,3 +3119,127 @@ it('automatically charges a percentage application fee on requested principal at
         ->and((float) $savings->fresh()->balance)->toBe($startingSavings + 790000.0)
         ->and((float) $disbursement->net_amount)->toBe($startingSavings >= 10000 ? 800000.0 : 790000.0);
 })->with(['paid from savings' => 250000, 'deducted from proceeds' => 0]);
+
+it('extends unpaid installments by admin-selected days and recalculates arrears without changing repayments', function () {
+    $admin = loanWorkflowUser();
+    $admin->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $client = loanWorkflowClient($admin);
+    $product = loanWorkflowProduct();
+    $loan = loanWorkflowTrackedLoan($admin, $client, $product, '1001-LN-EXTEND-001', 'in_arrears');
+    $account = Account::create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'account_type_id' => AccountType::where('category', 'loan')->value('id'),
+        'account_number' => '1001-LON-EXTEND-001',
+        'account_name' => 'Extension test loan',
+        'status' => 'active',
+        'balance' => 230000,
+        'opened_at' => today(),
+    ]);
+    $loan->update(['loan_account_id' => $account->id, 'principal_balance' => 200000, 'interest_balance' => 20000, 'penalty_balance' => 10000]);
+    $originalDueDate = today()->subDays(4);
+    $schedule = $loan->schedules()->create([
+        'installment_number' => 1,
+        'due_date' => $originalDueDate,
+        'principal_due' => 300000,
+        'principal_paid' => 100000,
+        'interest_due' => 20000,
+        'penalty_due' => 10000,
+        'total_due' => 330000,
+        'total_paid' => 100000,
+        'amount_paid' => 100000,
+        'outstanding_amount' => 230000,
+        'balance_due' => 230000,
+        'status' => 'overdue',
+        'days_overdue' => 3,
+    ]);
+    $repayment = $loan->repayments()->create([
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'amount' => 100000,
+        'principal_paid' => 100000,
+        'paid_at' => today(),
+        'status' => 'successful',
+    ]);
+    LoanPenalty::create([
+        'loan_id' => $loan->id,
+        'loan_schedule_id' => $schedule->id,
+        'amount' => 10000,
+        'days_overdue' => 3,
+        'calculated_for_date' => today(),
+        'status' => 'pending',
+    ]);
+
+    $this->actingAs($admin)->post(route('loans.extend-period', $loan), [
+        'extension_days' => 7,
+        'reason' => 'Give the member another week to pay.',
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    expect($schedule->fresh()->due_date?->toDateString())->toBe($originalDueDate->copy()->addDays(7)->toDateString())
+        ->and($schedule->fresh()->extension_days)->toBe(7)
+        ->and($schedule->fresh()->status)->toBe('partially_paid')
+        ->and($schedule->fresh()->days_overdue)->toBe(0)
+        ->and((float) $schedule->fresh()->outstanding_amount)->toBe(220000.0)
+        ->and((float) $schedule->fresh()->penalty_due)->toBe(0.0)
+        ->and((float) $loan->fresh()->penalty_balance)->toBe(0.0)
+        ->and($loan->fresh()->status)->toBe('active')
+        ->and((float) $account->fresh()->balance)->toBe(220000.0)
+        ->and($repayment->fresh()->status)->toBe('successful')
+        ->and((float) $repayment->fresh()->amount)->toBe(100000.0)
+        ->and(LoanPenalty::where('loan_schedule_id', $schedule->id)->exists())->toBeFalse();
+
+    $this->post(route('loans.extend-period', $loan), [
+        'extension_days' => 2,
+        'reason' => 'Allow two more days.',
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    expect($schedule->fresh()->due_date?->toDateString())->toBe($originalDueDate->copy()->addDays(9)->toDateString())
+        ->and($schedule->fresh()->extension_days)->toBe(9);
+});
+
+it('restricts period extensions to admins and positive day counts', function () {
+    $user = loanWorkflowUser();
+    $user->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $client = loanWorkflowClient($user);
+    $loan = loanWorkflowTrackedLoan($user, $client, loanWorkflowProduct(), '1001-LN-EXTEND-002', 'active');
+    $schedule = loanWorkflowSchedule($loan, today()->addDays(3), 'pending');
+
+    $this->actingAs($user)->post(route('loans.extend-period', $loan), [
+        'extension_days' => 0,
+        'reason' => 'Invalid extension.',
+    ])->assertSessionHasErrors('extension_days');
+
+    $officer = User::factory()->create([
+        'branch_id' => $user->branch_id,
+        'role_id' => Role::where('slug', 'loan-officer')->firstOrFail()->id,
+        'status' => 'active',
+        'is_active' => true,
+    ]);
+    $loan->update(['officer_id' => $officer->id]);
+
+    $this->actingAs($officer)->post(route('loans.extend-period', $loan), [
+        'extension_days' => 5,
+        'reason' => 'Unauthorized extension.',
+    ])->assertRedirect(route('dashboard'))->assertSessionHas('warning');
+
+    expect($schedule->fresh()->due_date?->toDateString())->toBe(today()->addDays(3)->toDateString());
+});
+
+it('keeps an extension when monthly schedule dates are repaired later', function () {
+    $admin = loanWorkflowUser();
+    $admin->role->update(['name' => 'Super Admin', 'slug' => 'super-admin']);
+    $client = loanWorkflowClient($admin);
+    $loan = loanWorkflowTrackedLoan($admin, $client, loanWorkflowProduct(), '1001-LN-EXTEND-003', 'active');
+    $originalDueDate = app(BusinessCalendarService::class)->dueDate($loan->application_date, 1, 'monthly');
+    $schedule = loanWorkflowSchedule($loan, $originalDueDate, 'pending');
+
+    $this->actingAs($admin)->post(route('loans.extend-period', $loan), [
+        'extension_days' => 5,
+        'reason' => 'Extend the repayment window.',
+    ])->assertSessionHasNoErrors();
+
+    app(LoanService::class)->repairMonthlyScheduleDates();
+
+    expect($schedule->fresh()->due_date?->toDateString())->toBe($originalDueDate->copy()->addDays(5)->toDateString())
+        ->and($schedule->fresh()->extension_days)->toBe(5);
+});

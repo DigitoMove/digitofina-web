@@ -34,10 +34,10 @@
     $loanAccountNeedsReopen = $loan->loanAccount && $loan->loanAccount->status !== 'active' && in_array($loan->status, ['disbursed', 'active', 'in_arrears'], true);
     $canReopenClosedLoan = (in_array($loan->status, ['closed', 'fully_paid'], true) || $loanAccountNeedsReopen) && auth()->user()->canAdministerLoanRepairs();
     $canRepairLoanTerms = in_array($loan->status, ['approved', 'disbursed', 'active', 'in_arrears'], true) && auth()->user()->canAdministerLoanRepairs();
+    $canExtendLoanPeriod = $canRepairLoanTerms && $loan->schedules->contains(fn ($schedule) => (float) $schedule->outstanding_amount > 0);
     $outstandingLoanBalance = (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance;
     $canClosePaidLoan = $outstandingLoanBalance <= 0 && ! in_array($loan->status, ['closed', 'written_off', 'cancelled', 'rejected'], true) && auth()->user()->canAdministerLoanRepairs();
-    $canCloseLoanWithCoverage = $outstandingLoanBalance > 0 && in_array($loan->status, ['disbursed', 'active', 'in_arrears', 'restructured'], true) && auth()->user()->canAdministerLoanRepairs();
-    $canWriteOffLoan = auth()->user()->canWriteOffLoans();
+    $canWriteOffLoan = $outstandingLoanBalance > 0 && in_array($loan->status, ['disbursed', 'active', 'in_arrears', 'restructured'], true) && auth()->user()->canWriteOffLoans();
     $workflow = ['Draft', 'Appraisal', 'Approval', 'Approved', 'Disbursed', 'Closed'];
     $statusIndex = match (true) {
         $loan->status === 'draft' => 0,
@@ -58,7 +58,7 @@
     };
     $statusLabel = match ($loan->status) {
         'fully_paid', 'closed' => 'Closed Obligation Met',
-        'written_off' => 'Closed Written-Off',
+        'written_off' => 'Written off',
         default => str($loan->status)->headline(),
     };
     $summaryRows = [
@@ -153,16 +153,38 @@
     </section>
 @endif
 
-@if($canRepairLoanTerms || $canClosePaidLoan || $canCloseLoanWithCoverage || $canReopenClosedLoan)
+@if($canRepairLoanTerms || $canExtendLoanPeriod || $canClosePaidLoan || $canWriteOffLoan || $canReopenClosedLoan)
     <section class="df-loan-action-panel">
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div>
                 <h2 class="text-base font-semibold text-slate-950">Administrative Actions</h2>
-                <p class="text-sm text-slate-500">Available controls for repairs, closure, coverage, and reactivation.</p>
+                <p class="text-sm text-slate-500">Available controls for extensions, repairs, closure, coverage, and reactivation.</p>
             </div>
             <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold {{ $statusTone }}">{{ $statusLabel }}</span>
         </div>
         <div class="df-loan-action-grid">
+            @if($canExtendLoanPeriod)
+                <section class="df-loan-action-card border-indigo-200 bg-indigo-50">
+                    <div class="min-w-0">
+                        <div class="mb-3 inline-flex rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-800">Period extension</div>
+                        <h3 class="text-base font-semibold text-slate-950">Extend loan period</h3>
+                        <p class="mt-1 text-sm text-indigo-900">Add calendar days to unpaid installments. Current maturity: {{ $maturityDate?->format('d M Y') ?? 'N/A' }}. Due dates and arrears are recalculated when saved.</p>
+                    </div>
+                    <form method="POST" action="{{ route('loans.extend-period', $loan) }}" class="mt-auto grid gap-2" data-confirm-title="Extend loan period" data-confirm-message="Extend every unpaid installment by the selected number of calendar days?" data-confirm-label="Extend period" data-confirm-tone="warning">
+                        @csrf
+                        <label class="text-sm font-medium text-slate-700">Additional days
+                            <input name="extension_days" value="{{ old('extension_days') }}" type="number" min="1" max="3650" step="1" class="mt-1 w-full rounded-lg border-indigo-200 bg-white text-sm" required>
+                        </label>
+                        @error('extension_days')
+                            <div class="text-xs font-semibold text-red-700">{{ $message }}</div>
+                        @enderror
+                        <label class="text-sm font-medium text-slate-700">Reason
+                            <textarea name="reason" rows="2" required class="mt-1 w-full rounded-lg border-indigo-200 bg-white text-sm" placeholder="Why is this extension needed?">{{ old('reason') }}</textarea>
+                        </label>
+                        <button class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800">Save extension</button>
+                    </form>
+                </section>
+            @endif
             @if($canRepairLoanTerms)
                 <section class="df-loan-action-card border-sky-200 bg-sky-50">
                     <div class="min-w-0">
@@ -192,14 +214,14 @@
                 </section>
             @endif
 
-            @if($canCloseLoanWithCoverage)
+            @if($canWriteOffLoan)
                 <section class="df-loan-action-card border-rose-200 bg-rose-50">
                     <div class="min-w-0">
-                        <div class="mb-3 inline-flex rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800">Balance coverage</div>
-                        <h3 class="text-base font-semibold text-rose-950">Admin Close With Balance Coverage</h3>
-                        <p class="mt-1 text-sm text-rose-900">Outstanding balance is UGX {{ number_format($outstandingLoanBalance, 2) }}. Use only after management approval.</p>
+                        <div class="mb-3 inline-flex rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800">Write-off</div>
+                        <h3 class="text-base font-semibold text-rose-950">Write off loan</h3>
+                        <p class="mt-1 text-sm text-rose-900">Record the outstanding UGX {{ number_format($outstandingLoanBalance, 2) }} as a write-off and close the loan.</p>
                     </div>
-                    <button type="button" data-loan-coverage-open class="mt-auto rounded-lg bg-rose-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm ring-1 ring-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-800 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2">Close with coverage</button>
+                    <button type="button" data-loan-write-off-open class="mt-auto rounded-lg bg-rose-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm ring-1 ring-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-800 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2">Write off loan</button>
                 </section>
             @endif
 
@@ -276,18 +298,18 @@
     </div>
 @endif
 
-@if($canCloseLoanWithCoverage)
-    <div data-loan-coverage-modal data-open="{{ $errors->has('coverage_reason') ? '1' : '0' }}" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4">
+@if($canWriteOffLoan)
+    <div data-loan-write-off-modal data-open="{{ $errors->has('write_off_reason') ? '1' : '0' }}" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4">
         <div class="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl">
             <div class="mb-4 flex items-start justify-between gap-4">
                 <div>
-                    <h2 class="text-lg font-semibold text-slate-950">Close loan with balance coverage</h2>
-                    <p class="mt-1 text-sm text-slate-600">The remaining UGX {{ number_format($outstandingLoanBalance, 2) }} will be cleared from the loan account and recorded for audit.</p>
+                    <h2 class="text-lg font-semibold text-slate-950">Write off outstanding loan balance</h2>
+                    <p class="mt-1 text-sm text-slate-600">This records the unpaid balance as a loss, closes the loan account, and preserves repayment history.</p>
                 </div>
-                <button type="button" data-loan-coverage-close class="rounded-lg px-3 py-1 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900" aria-label="Close balance coverage dialog">&times;</button>
+                <button type="button" data-loan-write-off-close class="rounded-lg px-3 py-1 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900" aria-label="Close write-off dialog">&times;</button>
             </div>
 
-            <form method="POST" action="{{ route('loans.close-with-coverage', $loan) }}" class="grid gap-4" data-confirm-title="Close loan with coverage" data-confirm-message="Close this loan and clear the remaining balance using the selected coverage method?" data-confirm-label="Close and record coverage" data-confirm-tone="danger">
+            <form method="POST" action="{{ route('loans.write-off', $loan) }}" class="grid gap-4" data-confirm-title="Write off loan" data-confirm-message="Write off the remaining UGX {{ number_format($outstandingLoanBalance, 2) }} and close this loan?" data-confirm-label="Write off loan" data-confirm-tone="danger">
                 @csrf
                 <div class="rounded-lg border border-rose-100 bg-rose-50 p-3 text-sm text-rose-900">
                     <div class="flex justify-between gap-3"><span>Principal</span><strong>UGX {{ number_format((float) $loan->principal_balance, 2) }}</strong></div>
@@ -296,29 +318,19 @@
                     <div class="flex justify-between gap-3"><span>Penalties</span><strong>UGX {{ number_format((float) $loan->penalty_balance, 2) }}</strong></div>
                 </div>
                 <label class="text-sm font-semibold text-slate-800">
-                    Coverage method <x-required-badge />
-                    <select name="coverage_method" required class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100">
-                        <option value="organization_covered" @selected(old('coverage_method') === 'organization_covered')>Covered by organization</option>
-                        @if($canWriteOffLoan)
-                            <option value="write_off" @selected(old('coverage_method') === 'write_off')>Write off remaining balance</option>
-                        @endif
-                        <option value="external_settlement" @selected(old('coverage_method') === 'external_settlement')>Settled outside system</option>
-                    </select>
-                </label>
-                <label class="text-sm font-semibold text-slate-800">
-                    Reference
-                    <input name="coverage_reference" value="{{ old('coverage_reference') }}" class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100" placeholder="Approval memo, voucher, or external receipt">
+                    Approval reference
+                    <input name="reference" value="{{ old('reference') }}" class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100" placeholder="Approval memo or board resolution">
                 </label>
                 <label class="text-sm font-semibold text-slate-800">
                     Reason <x-required-badge />
-                    <textarea name="reason" rows="3" required class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100" placeholder="Explain why this balance is being covered">{{ old('reason') }}</textarea>
+                    <textarea name="reason" rows="3" required class="mt-1 w-full rounded-lg border-slate-300 bg-white text-sm focus:border-brand-500 focus:ring-brand-100" placeholder="Explain why this loan is being written off">{{ old('reason') }}</textarea>
                 </label>
-                @error('coverage_reason')
+                @error('write_off_reason')
                     <div class="rounded border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{{ $message }}</div>
                 @enderror
                 <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                    <button type="button" data-loan-coverage-close class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-                    <button class="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2">Close and record coverage</button>
+                    <button type="button" data-loan-write-off-close class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                    <button class="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2">Write off loan</button>
                 </div>
             </form>
         </div>
@@ -574,6 +586,15 @@
             </section>
 
             <section data-df-tab-panel="schedule" class="df-panel overflow-hidden">
+                @if($loan->writeOffs->isNotEmpty())
+                    @foreach($loan->writeOffs as $writeOff)
+                        <div class="border-b border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-950">
+                            <div class="font-semibold">Written off on {{ $writeOff->written_off_at?->format('d M Y') }} by {{ $writeOff->approvedBy?->name ?? 'Former user' }}</div>
+                            <div class="mt-1">Principal UGX {{ number_format((float) $writeOff->principal_amount, 2) }} · Interest UGX {{ number_format((float) $writeOff->interest_amount, 2) }} · Fees UGX {{ number_format((float) $writeOff->fees_amount, 2) }} · Penalties UGX {{ number_format((float) $writeOff->penalty_amount, 2) }}</div>
+                            <div class="mt-1 whitespace-pre-line">{{ $writeOff->reason }}</div>
+                        </div>
+                    @endforeach
+                @endif
                 <h2 class="px-5 py-4 font-semibold text-slate-950">Repayment Schedule</h2>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-left text-sm">

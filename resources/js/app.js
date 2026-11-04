@@ -1132,10 +1132,10 @@ const initLoanReopenModal = () => {
     }
 };
 
-const initLoanCoverageModal = () => {
-    const modal = document.querySelector('[data-loan-coverage-modal]');
-    const openButton = document.querySelector('[data-loan-coverage-open]');
-    const closeButtons = document.querySelectorAll('[data-loan-coverage-close]');
+const initLoanWriteOffModal = () => {
+    const modal = document.querySelector('[data-loan-write-off-modal]');
+    const openButton = document.querySelector('[data-loan-write-off-open]');
+    const closeButtons = document.querySelectorAll('[data-loan-write-off-close]');
 
     if (!modal || !openButton) {
         return;
@@ -1144,7 +1144,7 @@ const initLoanCoverageModal = () => {
     const open = () => {
         modal.classList.remove('hidden');
         modal.classList.add('flex');
-        modal.querySelector('[name="coverage_method"]')?.focus();
+        modal.querySelector('[name="reference"]')?.focus();
     };
 
     const close = () => {
@@ -1350,8 +1350,31 @@ const initTableExports = () => {
             .filter((cell) => !cell.matches('[data-export-exclude]'))
             .map(cellText))
         .filter((row) => row.some((value) => value !== ''));
+    const currencyCodes = new Set((document.querySelector('[data-report-currencies]')?.dataset.reportCurrencies || 'UGX').split(','));
+    const numericExportValue = (value, heading) => {
+        const display = String(value ?? '').replaceAll('\u00a0', ' ').trim();
+        const currencyMatch = display.match(/^([A-Z]{3})\s+(.+)$/);
+        const hasCurrency = currencyMatch && currencyCodes.has(currencyMatch[1]);
+        const amountHeading = /amount|balance|debit|credit|fee|charge|penalty|total|paid|principal|interest|cash|income|expense|portfolio|arrears|recovered|asset|liabilit|equity|profit|loss|surplus|shortfall|capital|savings/i.test(heading);
+
+        if (!hasCurrency && !amountHeading) {
+            return null;
+        }
+
+        const amount = hasCurrency ? currencyMatch[2] : display;
+
+        if (!/^-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/.test(amount)) {
+            return null;
+        }
+
+        return amount.replaceAll(',', '');
+    };
     const csvFor = (rows) => rows
-        .map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','))
+        .map((row, rowIndex) => row.map((value, columnIndex) => {
+            const exported = rowIndex === 0 ? value : numericExportValue(value, rows[0]?.[columnIndex] || '') ?? value;
+
+            return `"${String(exported).replaceAll('"', '""')}"`;
+        }).join(','))
         .join('\r\n');
     const download = (content, filename, type) => {
         const blob = new Blob([content], { type });
@@ -1385,7 +1408,7 @@ const initTableExports = () => {
             website: reportOrganization?.dataset.reportWebsite || '',
             reportNumber: `WEB-${stamp}`,
             branch: branchLabel?.textContent?.trim() || 'Current branch',
-            currency: 'Uganda Shilling - UGX',
+            currency: reportOrganization?.dataset.reportCurrency || 'UGX',
             period: `${date} - ${date}`,
             heading: `${title} As At: ${date}`,
         };
@@ -1439,7 +1462,13 @@ const initTableExports = () => {
                 <tr><td colspan="${span}" class="title">${escapeHtml(brand.heading)}</td></tr>
             </table>
             <table class="report-table">
-                ${rows.map((row, rowIndex) => `<tr>${row.map((value) => `<${rowIndex === 0 ? 'th' : 'td'}>${escapeHtml(value)}</${rowIndex === 0 ? 'th' : 'td'}>`).join('')}</tr>`).join('')}
+                ${rows.map((row, rowIndex) => `<tr>${row.map((value, columnIndex) => {
+                    const number = rowIndex === 0 ? null : numericExportValue(value, rows[0]?.[columnIndex] || '');
+
+                    return number === null
+                        ? `<${rowIndex === 0 ? 'th' : 'td'}>${escapeHtml(value)}</${rowIndex === 0 ? 'th' : 'td'}>`
+                        : `<td x:num="${number}" style="mso-number-format:'#,##0.00'">${number}</td>`;
+                }).join('')}</tr>`).join('')}
             </table>
         </body>
         </html>
@@ -1586,7 +1615,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initNonCashLookups();
     initLoanRepairModal();
     initLoanReopenModal();
-    initLoanCoverageModal();
+    initLoanWriteOffModal();
     initLedgerAccountModals();
     initDataWipeTargets();
     initTableExports();

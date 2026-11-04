@@ -125,7 +125,7 @@ Parameter names are normalized only for the static OpenAPI comparison. GET/HEAD 
 | POST | loans/{loan}/assign-officer | loans.assign-officer | LoanController@assignOfficer | L01/L02/L06 | web, Authenticate, ResolveTenant, EnsureDemoActive, EnsureModuleEnabled:auto, EnsureModuleEnabled:loans |
 | POST | loans/{loan}/cancel | loans.cancel | LoanController@cancel | L01/L02/L06 | web, Authenticate, ResolveTenant, EnsureDemoActive, EnsureModuleEnabled:auto, EnsureModuleEnabled:loans |
 | POST | loans/{loan}/close-paid | loans.close-paid | LoanController@closePaid | L01/L02/L06 | web, Authenticate, ResolveTenant, EnsureDemoActive, EnsureModuleEnabled:auto, EnsureModuleEnabled:loans |
-| POST | loans/{loan}/close-with-coverage | loans.close-with-coverage | LoanController@closeWithCoverage | L01/L02/L06 | web, Authenticate, ResolveTenant, EnsureDemoActive, EnsureModuleEnabled:auto, EnsureModuleEnabled:loans |
+| POST | loans/{loan}/write-off | loans.write-off | LoanController@writeOff | L01/L02/L06 | web, Authenticate, ResolveTenant, EnsureDemoActive, EnsureModuleEnabled:auto, EnsureModuleEnabled:loans |
 | POST | loans/{loan}/collaterals | loans.collaterals.store | LoanCollateralController@store | L03 | web, Authenticate, ResolveTenant, EnsureDemoActive, EnsureModuleEnabled:auto, EnsureModuleEnabled:loans |
 | PUT | loans/{loan}/collaterals/{collateral} | loans.collaterals.status | LoanCollateralController@updateStatus | L03 | web, Authenticate, ResolveTenant, EnsureDemoActive, EnsureModuleEnabled:auto, EnsureModuleEnabled:loans |
 | POST | loans/{loan}/disburse | loans.disburse | LoanController@disburse | L01/L02/L06 | web, Authenticate, ResolveTenant, EnsureDemoActive, EnsureModuleEnabled:auto, EnsureModuleEnabled:loans |

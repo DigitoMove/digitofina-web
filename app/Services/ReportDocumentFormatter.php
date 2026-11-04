@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\CurrencyRegistry;
 use App\Models\Branch;
 use App\Models\Organization;
 use App\Models\ReportExport;
@@ -430,8 +431,9 @@ class ReportDocumentFormatter
             foreach ($columns as $index => $column) {
                 $cellRef = $this->columnName($index + 1).$rowNumber;
                 $value = $row[$column] ?? null;
-                $cells[] = is_numeric($value) && $this->isAmountColumn($column)
-                    ? $this->numberCell($cellRef, (float) $value, 4)
+                $number = $this->xlsxNumber($value, $column);
+                $cells[] = $number !== null
+                    ? $this->numberCell($cellRef, $number, 4)
                     : $this->textCell($cellRef, $this->displayValue($value, $column), 5);
             }
 
@@ -655,6 +657,29 @@ class ReportDocumentFormatter
         return '<c r="'.$cell.'" s="'.$style.'"><v>'.rtrim(rtrim(number_format($value, 4, '.', ''), '0'), '.').'</v></c>';
     }
 
+    private function xlsxNumber(mixed $value, string $column): ?float
+    {
+        if (! is_scalar($value) || is_bool($value)) {
+            return null;
+        }
+
+        $display = trim((string) $value);
+        $hasCurrency = preg_match('/^([A-Z]{3})\s+(.+)$/', $display, $matches) === 1
+            && CurrencyRegistry::supports($matches[1]);
+
+        if (! $hasCurrency && ! $this->isAmountColumn($column)) {
+            return null;
+        }
+
+        $amount = $hasCurrency ? $matches[2] : $display;
+
+        if (preg_match('/^-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/', $amount) !== 1) {
+            return null;
+        }
+
+        return (float) str_replace(',', '', $amount);
+    }
+
     private function columnName(int $index): string
     {
         $name = '';
@@ -791,7 +816,7 @@ class ReportDocumentFormatter
 
     private function isAmountColumn(string $column): bool
     {
-        return Str::contains($column, [
+        return Str::contains(Str::lower($column), [
             'amount',
             'balance',
             'debit',

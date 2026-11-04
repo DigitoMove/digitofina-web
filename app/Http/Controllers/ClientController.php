@@ -141,7 +141,7 @@ class ClientController extends Controller
         return view('clients.show', [
             'statement' => $statements->statement($client, $request->validated()),
             'statementAccounts' => $statements->accounts($client)->map(fn ($account): string => $statements->label($account)),
-            'statementAction' => route('clients.show', $client),
+            'statementAction' => route('clients.statements', $client),
             'client' => $client,
             'enabledModules' => $enabledModules,
             'financialOverview' => $financialRelationships->clientOverview($client, $enabledModules),

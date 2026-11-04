@@ -538,12 +538,13 @@ class FinancialControlService
     {
         $loan = Loan::query()->whereKey($request->subject_id)->lockForUpdate()->firstOrFail();
 
-        if (! in_array($loan->status, ['active', 'in_arrears', 'restructured'], true)) {
-            throw new InvalidArgumentException('Only active, in-arrears, or restructured loans can be written off.');
+        $currentBalance = (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance;
+
+        if (round($currentBalance, 2) > round((float) $request->amount, 2)) {
+            throw new InvalidArgumentException('The outstanding balance has increased since approval was requested. Submit a new write-off request.');
         }
 
-        $loan->update(['status' => 'written_off']);
-        $this->auditLogger->record('loan.written_off_checked', $loan, ['reason' => $request->payload['reason'] ?? $request->reason]);
+        $this->loans->writeOffLoan($loan, $checker, $request->payload['reason'] ?? $request->reason, $request->payload['reference'] ?? null);
     }
 
     private function performSettingsUpdate(MakerCheckerRequest $request, User $checker): void

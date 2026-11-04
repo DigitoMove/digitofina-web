@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div hidden data-report-organization="{{ $organization?->name }}" data-report-address="{{ $organization?->address }}" data-report-phone="{{ $organization?->phone }}" data-report-email="{{ $organization?->email }}" data-report-website="{{ $organization?->website }}" data-report-logo="{{ $organization?->logo ?: $organization?->logo_path }}"></div>
+<div hidden data-report-organization="{{ $organization?->name }}" data-report-address="{{ $organization?->address }}" data-report-phone="{{ $organization?->phone }}" data-report-email="{{ $organization?->email }}" data-report-website="{{ $organization?->website }}" data-report-logo="{{ $organization?->logo ?: $organization?->logo_path }}" data-report-currency="{{ $currency ?? $baseCurrency ?? 'UGX' }}" data-report-currencies="{{ implode(',', array_keys($currencies)) }}"></div>
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div>
         <div class="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">

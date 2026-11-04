@@ -11,7 +11,6 @@ use App\Http\Resources\LoanScheduleResource;
 use App\Http\Resources\MakerCheckerRequestResource;
 use App\Models\Loan;
 use App\Models\LoanSchedule;
-use App\Services\AuditLogger;
 use App\Services\FinancialControlService;
 use App\Services\LoanApprovalService;
 use App\Services\LoanCalculatorService;
@@ -286,24 +285,28 @@ class LoanWorkflowController extends Controller
         return ApiResponse::resource(new LoanResource($loan->fresh()->load(['client', 'product'])), 'Loan closed successfully.');
     }
 
-    public function writeOff(Request $request, Loan $loan, AuditLogger $auditLogger, FinancialControlService $controls): JsonResponse
+    public function writeOff(Request $request, Loan $loan, LoanService $loans, FinancialControlService $controls): JsonResponse
     {
         $this->assertLoanAccess($request, $loan);
         ApiSecurity::assertPermission($request->user(), 'write-off-loans');
 
         $data = $request->validate([
             'reason' => ['required', 'string', 'max:1000'],
+            'reference' => ['nullable', 'string', 'max:120'],
         ]);
 
-        abort_unless(in_array($loan->status, ['active', 'in_arrears', 'restructured'], true), 422);
+        abort_unless(in_array($loan->status, ['disbursed', 'active', 'in_arrears', 'restructured'], true), 422);
 
-        if ($controls->requiresMakerChecker($request->user(), 'loan_write_off', (float) $loan->principal_balance)) {
+        $outstandingBalance = (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance;
+        abort_unless($outstandingBalance > 0, 422);
+
+        if ($controls->requiresMakerChecker($request->user(), 'loan_write_off', $outstandingBalance)) {
             $approval = $controls->requestAction(
                 maker: $request->user(),
                 action: 'loan_write_off',
                 subject: $loan,
                 payload: $data,
-                amount: (float) $loan->principal_balance,
+                amount: $outstandingBalance,
                 requiredPermission: 'write-off-loans',
                 reason: $data['reason'],
                 oldValues: $loan->only(['status', 'principal_balance', 'interest_balance', 'fees_balance', 'penalty_balance']),
@@ -312,14 +315,11 @@ class LoanWorkflowController extends Controller
             return ApiResponse::resource(new MakerCheckerRequestResource($approval->load(['requestedBy', 'branch'])), 'Loan write-off submitted for maker-checker review.', 202);
         }
 
-        $old = $loan->only(['status', 'principal_balance', 'interest_balance', 'fees_balance', 'penalty_balance']);
-        $loan->update(['status' => 'written_off']);
-
-        $auditLogger->record('loan.written_off_api', $loan, [
-            'reason' => $data['reason'],
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-        ], $old);
+        try {
+            $loans->writeOffLoan($loan, $request->user(), $data['reason'], $data['reference'] ?? null);
+        } catch (InvalidArgumentException $exception) {
+            abort(422, $exception->getMessage());
+        }
 
         return ApiResponse::resource(new LoanResource($loan->fresh()->load(['client', 'product'])), 'Loan written off successfully.');
     }

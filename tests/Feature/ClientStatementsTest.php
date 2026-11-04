@@ -164,9 +164,56 @@ it('keeps staff client actions beside the statement workspace', function () {
     Storage::disk('local')->put('staff-dashboard-qa.html', $dashboard->getContent());
 });
 
+it('opens and downloads account statements from the staff client flow', function () {
+    $role = Role::create(['slug' => 'organization-admin', 'name' => 'Organization Admin']);
+    $admin = User::factory()->create(['role_id' => $role->id, 'organization_id' => $this->organization->id, 'branch_id' => null, 'must_change_password' => true, 'is_active' => true, 'status' => 'active']);
+    statementTransaction($this, 'STAFF-DEPOSIT', '2026-01-01', 5000, 5000);
+
+    $this->actingAs($admin)
+        ->get(route('clients.show', $this->client))
+        ->assertOk()
+        ->assertSee('action="'.route('clients.statements', $this->client).'#account-statement"', false)
+        ->assertSee(route('clients.statements', ['client' => $this->client, 'account' => 'account:'.$this->account->id]), false);
+
+    $this->get(route('clients.statements', ['client' => $this->client, 'account' => 'account:'.$this->account->id]))
+        ->assertOk()
+        ->assertSee('STAFF-DEPOSIT');
+
+    foreach (['pdf', 'xlsx', 'csv'] as $format) {
+        $download = $this->get(route('clients.statements', ['client' => $this->client, 'account' => 'account:'.$this->account->id, 'format' => $format]))
+            ->assertOk()
+            ->assertDownload('st-sav-001-statement.'.$format)
+            ->streamedContent();
+
+        expect($download)->not->toBeEmpty();
+    }
+});
+
+it('renders and downloads savings package and loan statements for staff', function () {
+    $role = Role::create(['slug' => 'organization-admin', 'name' => 'Organization Admin']);
+    $admin = User::factory()->create(['role_id' => $role->id, 'organization_id' => $this->organization->id, 'branch_id' => null, 'must_change_password' => false, 'is_active' => true, 'status' => 'active']);
+    $product = SavingsProduct::create(['organization_id' => $this->organization->id, 'name' => 'Regular', 'code' => 'ST-REG-2', 'status' => 'active']);
+    $savings = SavingsAccount::create(['organization_id' => $this->organization->id, 'branch_id' => $this->branch->id, 'client_id' => $this->client->id, 'savings_product_id' => $product->id, 'account_number' => 'ST-PACKAGE-002', 'opening_date' => '2026-01-01', 'current_balance' => 5000, 'available_balance' => 5000, 'status' => 'active']);
+    SavingsTransaction::create(['organization_id' => $this->organization->id, 'branch_id' => $this->branch->id, 'client_id' => $this->client->id, 'savings_account_id' => $savings->id, 'reference' => 'PACKAGE-DEPOSIT', 'type' => 'deposit', 'amount' => 5000, 'balance_before' => 0, 'balance_after' => 5000, 'transaction_date' => '2026-01-01', 'value_date' => '2026-01-01', 'payment_method' => 'cash', 'status' => 'successful']);
+    $loanProduct = LoanProduct::create(['organization_id' => $this->organization->id, 'name' => 'Business Loan', 'code' => 'ST-LOAN-2', 'annual_interest_rate' => 12, 'status' => 'active']);
+    $loan = Loan::create(['organization_id' => $this->organization->id, 'client_id' => $this->client->id, 'branch_id' => $this->branch->id, 'loan_product_id' => $loanProduct->id, 'loan_number' => 'ST-LN-002', 'requested_amount' => 100000, 'approved_amount' => 100000, 'principal_balance' => 80000, 'interest_rate' => 12, 'term_periods' => 4, 'repayment_frequency' => 'monthly', 'status' => 'active']);
+    $loan->repayments()->create(['organization_id' => $this->organization->id, 'branch_id' => $this->branch->id, 'amount' => 20000, 'principal_paid' => 20000, 'paid_at' => today(), 'status' => 'successful', 'reference' => 'LOAN-PAYMENT']);
+
+    $this->actingAs($admin);
+
+    foreach (['savings:'.$savings->id => 'PACKAGE-DEPOSIT', 'loan:'.$loan->id => 'LOAN-PAYMENT'] as $account => $reference) {
+        $this->get(route('clients.statements', ['client' => $this->client, 'account' => $account]))->assertOk()->assertSee($reference);
+
+        foreach (['pdf', 'xlsx', 'csv'] as $format) {
+            expect($this->get(route('clients.statements', ['client' => $this->client, 'account' => $account, 'format' => $format]))->assertOk()->streamedContent())->toContain($format === 'xlsx' ? 'PK' : $reference);
+        }
+    }
+});
+
 it('requires the temporary password to be changed before downloading statements', function () {
     $this->member->update(['must_change_password' => true]);
     $this->actingAs($this->member)->get(route('member.statements', ['format' => 'pdf']))->assertRedirect(route('profile.edit'));
+    $this->get(route('clients.statements', ['client' => $this->client, 'format' => 'pdf']))->assertRedirect(route('profile.edit'));
 });
 
 function statementTransaction(object $test, string $reference, string $date, float $amount, float $balance, bool $debit = false): Transaction
