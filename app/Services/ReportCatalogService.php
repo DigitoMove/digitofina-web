@@ -1377,7 +1377,7 @@ class ReportCatalogService
             return $carry;
         }, []);
 
-        return [['Officer', 'Total Loan Portfolio', 'Principal Given Out', 'Amount In Arrears', 'Total Paid', 'Total Balance', 'Arrears Rate'], $rows, ['Officer' => 'Company / Branch Total', 'Total Loan Portfolio' => $this->money($totals['portfolio'] ?? 0), 'Principal Given Out' => $this->money($totals['principal'] ?? 0), 'Amount In Arrears' => $this->money($totals['arrears'] ?? 0), 'Total Paid' => $this->money($totals['paid'] ?? 0), 'Total Balance' => $this->money($totals['balance'] ?? 0), 'Arrears Rate' => number_format(($totals['balance'] ?? 0) > 0 ? (($totals['arrears'] ?? 0) / $totals['balance']) * 100 : 0, 2).'%', '_is_total' => true]];
+        return [['Officer', 'Total Loan Portfolio', 'Principal Given Out', 'Amount In Arrears', 'Total Paid', 'Total Balance', 'Arrears Rate'], $rows, ['Officer' => 'Company / Branch Total', 'Total Loan Portfolio' => $this->money($totals['portfolio'] ?? 0), 'Principal Given Out' => $this->money($totals['principal'] ?? 0), 'Amount In Arrears' => $this->money($totals['arrears'] ?? 0), 'Total Paid' => $this->money($totals['paid'] ?? 0), 'Total Balance' => $this->money($totals['balance'] ?? 0), 'Arrears Rate' => number_format(($totals['balance'] ?? 0) > 0 ? (($totals['arrears'] ?? 0) / $totals['balance']) * 100 : 0, 2).'%']];
     }
 
     private function generalIncomeStatement(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, string $interestBasis): array

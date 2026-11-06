@@ -79,7 +79,8 @@ it('calculates arrears rate against the full outstanding balance', function () {
         ->and($officerRow['Total Balance'])->toBe('UGX 650.00')
         ->and($officerRow['Arrears Rate'])->toBe('46.15%')
         ->and($report['summary']['Total Balance'])->toBe('UGX 850.00')
-        ->and($report['summary']['Arrears Rate'])->toBe('35.29%');
+        ->and($report['summary']['Arrears Rate'])->toBe('35.29%')
+        ->and($report['summary'])->not->toHaveKey('_is_total');
 });
 
 it('shows product subtotals from displayed report rows', function () {
