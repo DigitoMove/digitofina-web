@@ -1737,7 +1737,7 @@ class LoanService
 
                     if ($loan->loan_account_id) {
                         $loan->loanAccount()->update([
-                            'balance' => max(0, (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance + $penaltyAmount),
+                            'balance' => max(0, (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance),
                         ]);
                     }
 

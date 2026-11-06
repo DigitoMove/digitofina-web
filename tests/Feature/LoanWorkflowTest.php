@@ -276,6 +276,26 @@ it('rejects a cash repayment above the outstanding loan amount without changing 
         ->and(DrawerMovement::query()->count())->toBe(0);
 });
 
+it('accepts repayment of the assessed penalty in addition to principal', function () {
+    $user = loanWorkflowUser();
+    loanWorkflowOrganizationWithModules($user, ['clients', 'loans']);
+    $client = loanWorkflowClient($user);
+    $loan = loanWorkflowTrackedLoan($user, $client, loanWorkflowProduct(), '1001-LN-PENALTY-PAYOFF', 'in_arrears');
+    $loan->update(['penalty_balance' => 10000]);
+    $schedule = loanWorkflowSchedule($loan, today()->subDays(3), 'overdue', 310000);
+    $schedule->update(['penalty_due' => 10000, 'total_due' => 310000]);
+
+    $this->actingAs($user);
+    $repayment = app(LoanService::class)->repay($loan, 310000, $user);
+
+    expect((float) $repayment->amount)->toBe(310000.0)
+        ->and((float) $repayment->penalty_paid)->toBe(10000.0)
+        ->and((float) $repayment->principal_paid)->toBe(300000.0)
+        ->and((float) $schedule->fresh()->outstanding_amount)->toBe(0.0)
+        ->and((float) $loan->fresh()->penalty_balance)->toBe(0.0)
+        ->and((float) $loan->fresh()->principal_balance)->toBe(0.0);
+});
+
 it('approves and disburses a loan with guarantor checks and a repayment schedule', function () {
     $user = loanWorkflowUser();
     $organization = loanWorkflowOrganizationWithModules($user, ['clients', 'loans', 'savings']);
@@ -2369,6 +2389,17 @@ it('applies rounded penalties to the missed schedule only', function () {
         'application_date' => today()->subMonths(2),
         'status' => 'active',
     ]);
+    $account = Account::create([
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'account_type_id' => AccountType::where('category', 'loan')->value('id'),
+        'account_number' => '1001-LON-PENALTY',
+        'account_name' => 'Penalty test loan',
+        'status' => 'active',
+        'balance' => 200000,
+        'opened_at' => today(),
+    ]);
+    $loan->update(['loan_account_id' => $account->id]);
     $missedSchedule = LoanSchedule::create([
         'loan_id' => $loan->id,
         'installment_number' => 1,
@@ -2400,7 +2431,8 @@ it('applies rounded penalties to the missed schedule only', function () {
         ->and((float) $missedSchedule->fresh()->penalty_due)->toBe($expectedPenalty)
         ->and((float) $missedSchedule->fresh()->outstanding_amount)->toBe(17850.0 + $expectedPenalty)
         ->and((float) $futureSchedule->fresh()->penalty_due)->toBe(0.0)
-        ->and((float) $loan->fresh()->penalty_balance)->toBe($expectedPenalty);
+        ->and((float) $loan->fresh()->penalty_balance)->toBe($expectedPenalty)
+        ->and((float) $account->fresh()->balance)->toBe(200000.0 + $expectedPenalty);
 
     expect((float) LoanPenalty::where('loan_schedule_id', $missedSchedule->id)->value('amount'))->toBe($expectedPenalty);
 });
