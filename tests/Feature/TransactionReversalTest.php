@@ -25,6 +25,7 @@ use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
+use App\Services\FinancialControlService;
 use App\Services\LedgerAccountStatementService;
 use App\Services\ModuleService;
 use App\Services\TransactionReversalService;
@@ -1014,7 +1015,122 @@ it('reopens a closed loan account when its payoff repayment is reversed', functi
         ->and($transaction->fresh()->status)->toBe('reversed');
 });
 
-it('allows an admin to reopen a closed loan and clear all paid installments from the loan page action', function () {
+it('finishes a cash reversal when a loan repair already marked its repayment reversed', function () {
+    [$admin, $branch] = transactionDeletionContext();
+    $client = Client::create([
+        'organization_id' => $branch->organization_id,
+        'branch_id' => $branch->id,
+        'client_number' => '1001-C-REPAIR',
+        'first_name' => 'Repair',
+        'last_name' => 'Client',
+        'phone' => '+256700000099',
+        'status' => 'active',
+        'registered_at' => today(),
+    ]);
+    $accountType = AccountType::create(['organization_id' => $branch->organization_id, 'name' => 'Loan', 'code' => 'LN-REPAIR', 'category' => 'loan', 'is_active' => true]);
+    $account = Account::create([
+        'organization_id' => $branch->organization_id,
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'account_type_id' => $accountType->id,
+        'account_number' => '1001-LON-REPAIR',
+        'account_name' => 'Repair Client Loan',
+        'status' => 'active',
+        'balance' => 300000,
+        'opened_at' => today(),
+    ]);
+    $product = LoanProduct::create(['organization_id' => $branch->organization_id, 'name' => 'Repair Loan', 'code' => 'REPAIR', 'annual_interest_rate' => 20, 'interest_method' => 'flat', 'repayment_frequency' => 'monthly', 'default_term_months' => 1, 'status' => 'active', 'is_active' => true]);
+    $loan = Loan::create([
+        'organization_id' => $branch->organization_id,
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'loan_product_id' => $product->id,
+        'loan_account_id' => $account->id,
+        'loan_number' => 'LN-REPAIR-001',
+        'requested_amount' => 300000,
+        'approved_amount' => 300000,
+        'principal_balance' => 250000,
+        'interest_balance' => 50000,
+        'interest_rate' => 20,
+        'term_periods' => 1,
+        'repayment_frequency' => 'monthly',
+        'status' => 'active',
+    ]);
+    $drawer = TellerDrawer::create(['organization_id' => $branch->organization_id, 'branch_id' => $branch->id, 'assigned_user_id' => $admin->id, 'name' => 'Repair Drawer', 'code' => 'REPAIR-TDR', 'current_balance' => 1526400, 'status' => 'open']);
+    $session = DrawerSession::create(['organization_id' => $branch->organization_id, 'teller_drawer_id' => $drawer->id, 'user_id' => $admin->id, 'opening_balance' => 26400, 'status' => 'open', 'opened_at' => now()]);
+    $type = TransactionType::create(['organization_id' => $branch->organization_id, 'name' => 'Loan Repayment', 'code' => 'loan_repayment', 'direction' => 'credit', 'affects_cash_drawer' => true, 'is_active' => true]);
+    $transaction = Transaction::create([
+        'organization_id' => $branch->organization_id,
+        'account_id' => $account->id,
+        'transaction_type_id' => $type->id,
+        'drawer_session_id' => $session->id,
+        'branch_id' => $branch->id,
+        'user_id' => $admin->id,
+        'reference' => 'TX-REPAIR-OVERPAY',
+        'amount' => 1500000,
+        'balance_after' => 0,
+        'status' => 'posted',
+        'posted_at' => now(),
+    ]);
+    $repayment = LoanRepayment::create([
+        'organization_id' => $branch->organization_id,
+        'loan_id' => $loan->id,
+        'client_id' => $client->id,
+        'branch_id' => $branch->id,
+        'transaction_id' => $transaction->id,
+        'received_by' => $admin->id,
+        'amount' => 1500000,
+        'payment_method' => 'cash',
+        'reference' => $transaction->reference,
+        'status' => 'reversed',
+        'principal_paid' => 250000,
+        'interest_paid' => 50000,
+        'paid_at' => today(),
+    ]);
+    DrawerMovement::create(['organization_id' => $branch->organization_id, 'drawer_session_id' => $session->id, 'user_id' => $admin->id, 'type' => 'cash_in', 'amount' => 1500000, 'balance_after' => 1526400, 'reference' => $transaction->reference]);
+    JournalEntry::create([
+        'organization_id' => $branch->organization_id,
+        'branch_id' => $branch->id,
+        'created_by' => $admin->id,
+        'posted_by' => $admin->id,
+        'journal_number' => 'LR-REPAIR-001',
+        'journal_date' => today()->toDateString(),
+        'description' => 'Loan repayment allocation',
+        'status' => 'posted',
+        'posted_at' => now(),
+        'transaction_id' => $transaction->id,
+        'reference' => 'LR-'.$repayment->id,
+        'account_name' => 'Cash on Hand',
+        'entry_type' => 'debit',
+        'amount' => 300000,
+    ]);
+    $request = MakerCheckerRequest::create([
+        'organization_id' => $branch->organization_id,
+        'branch_id' => $branch->id,
+        'subject_type' => $transaction->getMorphClass(),
+        'subject_id' => $transaction->id,
+        'requested_by' => $admin->id,
+        'action' => 'transaction_reversal',
+        'required_permission' => 'approve-reversals',
+        'amount' => 1500000,
+        'status' => 'pending',
+        'reason' => 'Correct excess repayment',
+    ]);
+
+    app(FinancialControlService::class)->approveMakerChecker($request, $admin);
+
+    expect($request->fresh()->status)->toBe('approved')
+        ->and($transaction->fresh()->status)->toBe('reversed')
+        ->and($repayment->fresh()->status)->toBe('reversed')
+        ->and($repayment->fresh()->reversal_transaction_id)->not->toBeNull()
+        ->and((float) $loan->fresh()->principal_balance)->toBe(250000.0)
+        ->and((float) $account->fresh()->balance)->toBe(300000.0)
+        ->and((float) $drawer->fresh()->current_balance)->toBe(26400.0)
+        ->and(JournalEntry::where('transaction_id', $repayment->fresh()->reversal_transaction_id)->where('entry_type', 'credit')->where('amount', 300000)->count())->toBe(1)
+        ->and(DrawerMovement::where('reference', 'RV-'.$transaction->reference)->where('type', 'cash_out')->count())->toBe(1);
+});
+
+it('does not reopen a paid loan while posted repayments still need reversal', function () {
     $branch = Branch::create([
         'code' => '1004',
         'name' => 'Reopen Branch',
@@ -1136,17 +1252,12 @@ it('allows an admin to reopen a closed loan and clear all paid installments from
             'reason' => 'Mistaken payoff needs to be reopened',
         ])
         ->assertRedirect(route('loans.show', $loan))
-        ->assertSessionHas('status', 'Loan reopened and paid installments cleared.');
+        ->assertSessionHasErrors('reopen_reason');
 
-    expect($loan->fresh()->status)->toBe('active')
-        ->and($loan->fresh()->principal_balance)->toBe('200000.00')
-        ->and($loan->fresh()->interest_balance)->toBe('20000.00')
-        ->and($loanAccount->fresh()->status)->toBe('active')
-        ->and($loanAccount->fresh()->balance)->toBe('220000.00')
-        ->and($loan->schedules()->where('status', 'pending')->count())->toBe(2)
-        ->and((float) $loan->schedules()->sum('total_paid'))->toBe(0.0)
-        ->and((float) $loan->schedules()->sum('outstanding_amount'))->toBe(220000.0)
-        ->and($loan->repayments()->where('status', 'reversed')->count())->toBe(1);
+    expect($loan->fresh()->status)->toBe('closed')
+        ->and($loanAccount->fresh()->status)->toBe('closed')
+        ->and((float) $loan->schedules()->sum('total_paid'))->toBe(220000.0)
+        ->and($loan->repayments()->where('status', 'successful')->count())->toBe(1);
 });
 
 it('allows an admin to reactivate an inactive loan account for an in arrears loan', function () {

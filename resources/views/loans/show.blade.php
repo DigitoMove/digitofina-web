@@ -348,6 +348,9 @@
                             Confirm the admin reason. The loan account will be activated{{ $loan->status === 'disbursed' ? ' and the loan will move to Active' : '' }}.
                         @else
                             Confirm the admin reason before reopening the loan and clearing paid installment amounts.
+                            @if($loan->repayments()->where('status', 'successful')->exists())
+                                Reverse the posted repayments first so their cash drawer and journal entries are corrected.
+                            @endif
                         @endif
                     </p>
                 </div>

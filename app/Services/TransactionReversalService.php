@@ -64,10 +64,10 @@ class TransactionReversalService
                 ->lockForUpdate()
                 ->first();
 
-            if ($loanRepayment) {
+            if ($loanRepayment && $loanRepayment->status !== 'reversed') {
                 $this->reverseLoanRepayment($loanRepayment, $checker, $request->reason);
                 $account?->refresh();
-            } elseif ($account) {
+            } elseif ($account && $original->type?->code !== 'loan_repayment') {
                 $this->reverseAccountBalance($original, $account);
             }
 

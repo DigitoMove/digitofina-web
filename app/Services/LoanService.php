@@ -1217,6 +1217,19 @@ class LoanService
             $paymentDate = $paidAt ?: now();
             $this->ensureRepaymentBusinessDateOpen($user, (int) $loan->branch_id, $paymentDate);
 
+            $outstandingBalance = (float) $loan->principal_balance + (float) $loan->interest_balance
+                + (float) $loan->fees_balance + (float) $loan->penalty_balance;
+
+            if (round($amount, 2) > round($outstandingBalance, 2)) {
+                throw new InvalidArgumentException('Repayment exceeds the outstanding loan balance of '.number_format($outstandingBalance, 2).'.');
+            }
+
+            $preview = $this->allocateSchedulePayments($loan, $amount, false);
+
+            if (round($amount, 2) > round($preview['applied'], 2)) {
+                throw new InvalidArgumentException('Repayment exceeds the amount available on outstanding installments of '.number_format($preview['applied'], 2).'.');
+            }
+
             $scheduleAllocation = $this->allocateSchedulePayments($loan, $amount);
             $penaltyPaid = $scheduleAllocation['totals']['penalty'];
             $feesPaid = $scheduleAllocation['totals']['fees'];
@@ -1366,6 +1379,11 @@ class LoanService
             }
 
             $clearPaidInstallments = in_array($loan->status, ['closed', 'fully_paid'], true);
+
+            if ($clearPaidInstallments && $loan->repayments()->where('status', 'successful')->exists()) {
+                throw new InvalidArgumentException('Reverse the posted loan repayments before reopening this paid loan.');
+            }
+
             $principalBalance = $clearPaidInstallments ? (float) $loan->schedules->sum('principal_due') : (float) $loan->principal_balance;
             $interestBalance = $clearPaidInstallments ? (float) $loan->schedules->sum('interest_due') : (float) $loan->interest_balance;
             $feesBalance = $clearPaidInstallments ? (float) $loan->schedules->sum('fees_due') : (float) $loan->fees_balance;
@@ -1390,12 +1408,6 @@ class LoanService
                     ]);
                 }
 
-                $loan->repayments()
-                    ->where('status', 'successful')
-                    ->update([
-                        'status' => 'reversed',
-                        'updated_at' => now(),
-                    ]);
             }
 
             $loan->update([

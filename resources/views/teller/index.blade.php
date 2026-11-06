@@ -552,7 +552,10 @@
                 @endif
             </div>
             <label class="text-sm font-semibold text-slate-700">Amount <x-required-badge />
-                <input name="amount" type="number" min="100" step="100" class="mt-1" required data-confirm-summary-label="Amount">
+                <input name="amount" type="number" min="100" step="100" @if($selectedLoanRepayable !== null) max="{{ $selectedLoanRepayable }}" @endif class="mt-1" required data-confirm-summary-label="Amount">
+                @if($selectedLoanRepayable !== null)
+                    <span class="mt-1 block text-xs font-normal text-slate-500">Maximum loan repayment: UGX {{ number_format($selectedLoanRepayable, 2) }}</span>
+                @endif
             </label>
             @if(! $isLedgerPosting)
                 <label class="text-sm font-semibold text-slate-700">Client Money Direction <x-required-badge />

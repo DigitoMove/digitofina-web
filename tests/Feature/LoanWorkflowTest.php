@@ -222,6 +222,60 @@ function loanWorkflowSchedule(Loan $loan, mixed $dueDate, string $status, float 
     ]);
 }
 
+it('rejects a cash repayment above the outstanding loan amount without changing the drawer', function () {
+    $user = loanWorkflowUser();
+    loanWorkflowOrganizationWithModules($user, ['clients', 'loans', 'teller']);
+    $client = loanWorkflowClient($user);
+    $loan = loanWorkflowTrackedLoan($user, $client, loanWorkflowProduct(), '1001-LN-OVERPAY-001', 'active');
+    $account = Account::create([
+        'organization_id' => $user->organization_id,
+        'client_id' => $client->id,
+        'branch_id' => $user->branch_id,
+        'account_type_id' => AccountType::where('category', 'loan')->value('id'),
+        'account_number' => '1001-LON-OVERPAY-001',
+        'account_name' => 'Overpayment test loan',
+        'status' => 'active',
+        'balance' => 300000,
+        'opened_at' => today(),
+    ]);
+    $loan->update(['loan_account_id' => $account->id]);
+    $schedule = loanWorkflowSchedule($loan, today()->addMonth(), 'pending');
+    $drawer = TellerDrawer::create([
+        'organization_id' => $user->organization_id,
+        'branch_id' => $user->branch_id,
+        'assigned_user_id' => $user->id,
+        'name' => 'Overpayment test drawer',
+        'code' => 'OVERPAY-TDR',
+        'current_balance' => 26400,
+        'status' => 'open',
+    ]);
+    $session = DrawerSession::create([
+        'organization_id' => $user->organization_id,
+        'teller_drawer_id' => $drawer->id,
+        'user_id' => $user->id,
+        'opening_balance' => 26400,
+        'status' => 'open',
+        'opened_at' => now(),
+    ]);
+
+    $this->actingAs($user);
+
+    expect(fn () => app(TransactionPostingService::class)->postCash(
+        $account,
+        $session,
+        TransactionType::where('code', 'loan_repayment')->firstOrFail(),
+        1500000,
+        $user,
+    ))->toThrow(InvalidArgumentException::class, 'Repayment exceeds the outstanding loan balance');
+
+    expect((float) $drawer->fresh()->current_balance)->toBe(26400.0)
+        ->and((float) $account->fresh()->balance)->toBe(300000.0)
+        ->and((float) $schedule->fresh()->total_paid)->toBe(0.0)
+        ->and(Transaction::query()->count())->toBe(0)
+        ->and(LoanRepayment::query()->count())->toBe(0)
+        ->and(DrawerMovement::query()->count())->toBe(0);
+});
+
 it('approves and disburses a loan with guarantor checks and a repayment schedule', function () {
     $user = loanWorkflowUser();
     $organization = loanWorkflowOrganizationWithModules($user, ['clients', 'loans', 'savings']);

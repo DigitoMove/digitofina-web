@@ -26,8 +26,13 @@ class StoreLoanRepaymentRequest extends FormRequest
      */
     public function rules(): array
     {
+        $loan = $this->route('loan');
+        $outstandingBalance = $loan instanceof Loan
+            ? (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance
+            : null;
+
         return [
-            'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+            'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, ...($outstandingBalance !== null ? ['max:'.$outstandingBalance] : []), CurrencyDenomination::validationRule()],
             'payment_method' => ['required', Rule::in(['cash', 'mobile_money', 'bank', 'savings_deduction', 'investment_return', 'cheque', 'internal_transfer'])],
             'reference' => ['nullable', 'string', 'max:80'],
             'paid_at' => ['required', 'date'],
