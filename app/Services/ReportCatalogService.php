@@ -71,6 +71,7 @@ class ReportCatalogService
         private BusinessCashFlowReportService $businessCashFlow,
         private TenantContext $tenant,
         private CurrencyRateService $currencyRates,
+        private ReportSubtotalService $reportSubtotals,
     ) {}
 
     /**
@@ -354,7 +355,9 @@ class ReportCatalogService
             };
         }
 
-        return compact('definition', 'columns', 'rows', 'summary', 'from', 'to', 'detail', 'branchId', 'chartAccountIds', 'search', 'interestBasis', 'postedByUserId') + [
+        $subtotals = $this->reportSubtotals->calculate($definition['kind'], $columns, $rows, $this->reportCurrency);
+
+        return compact('definition', 'columns', 'rows', 'summary', 'subtotals', 'from', 'to', 'detail', 'branchId', 'chartAccountIds', 'search', 'interestBasis', 'postedByUserId') + [
             'currency' => $this->reportCurrency,
             'baseCurrency' => $this->reportBaseCurrency,
             'period' => $period,
@@ -574,10 +577,11 @@ class ReportCatalogService
             'portfolio-summary' => 'Loan portfolio totals by status with principal, interest, fees, and penalties.',
             'loan-book' => 'Full loan book for portfolio, product, balance, and maturity review.',
             'portfolio-at-risk' => 'Outstanding overdue exposure for credit-risk monitoring.',
+            'arrears-rate' => 'Overdue unpaid installments as a percentage of the current total outstanding loan balance, including principal, interest, fees, and penalties.',
             'loan-aging-report' => 'Aged overdue installments and collection pressure points.',
             'loan-accounts-in-arrears' => 'Loans currently past due and requiring follow-up.',
             'loan-disbursements' => 'Gross principal disbursed, fees charged, and net credited to clients.',
-            'loan-recovery' => 'Principal and interest collections over the selected period.',
+            'loan-recovery' => 'Principal, interest, fee, and penalty collections over the selected period.',
             'expected-loan-payments' => 'Scheduled repayments expected in the selected period.',
             'application-fees-income' => 'Application fees charged at disbursement.',
             'loan-interest-income' => 'Loan interest accumulated or collected for the selected basis.',
@@ -890,6 +894,7 @@ class ReportCatalogService
                 'Cash in' => $this->money((float) (clone $query)->sum('cash_in')),
                 'Cash out' => $this->money((float) (clone $query)->sum('cash_out')),
                 'Loan repayments' => $this->money((float) (clone $query)->sum('loan_repayments')),
+                'Loan disbursements' => $this->money((float) (clone $query)->sum('loan_disbursements')),
                 'Branches reported' => number_format((clone $query)->distinct('branch_id')->count('branch_id')),
             ],
         ];
@@ -1359,10 +1364,10 @@ class ReportCatalogService
                 $principal += (float) ($loan->approved_amount ?: $loan->requested_amount);
                 $arrears += (float) $loan->schedules->filter(fn ($schedule): bool => $schedule->due_date?->lte($to) && (float) $schedule->outstanding_amount > 0)->sum('outstanding_amount');
                 $paid += (float) $loan->schedules->sum('amount_paid');
-                $balance += (float) $loan->principal_balance + (float) $loan->interest_balance;
+                $balance += (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance;
             }
 
-            return ['Officer' => $officer, 'Total Loan Portfolio' => $this->money($portfolio), 'Principal Given Out' => $this->money($principal), 'Amount In Arrears' => $this->money($arrears), 'Total Paid' => $this->money($paid), 'Total Balance' => $this->money($balance), 'Arrears Rate' => number_format($portfolio > 0 ? ($arrears / $portfolio) * 100 : 0, 2).'%', '_metrics' => compact('portfolio', 'principal', 'arrears', 'paid', 'balance')];
+            return ['Officer' => $officer, 'Total Loan Portfolio' => $this->money($portfolio), 'Principal Given Out' => $this->money($principal), 'Amount In Arrears' => $this->money($arrears), 'Total Paid' => $this->money($paid), 'Total Balance' => $this->money($balance), 'Arrears Rate' => number_format($balance > 0 ? ($arrears / $balance) * 100 : 0, 2).'%', '_metrics' => compact('portfolio', 'principal', 'arrears', 'paid', 'balance')];
         })->values();
         $totals = $rows->reduce(function (array $carry, array $row): array {
             foreach ($row['_metrics'] as $key => $value) {
@@ -1372,7 +1377,7 @@ class ReportCatalogService
             return $carry;
         }, []);
 
-        return [['Officer', 'Total Loan Portfolio', 'Principal Given Out', 'Amount In Arrears', 'Total Paid', 'Total Balance', 'Arrears Rate'], $rows, ['Officer' => 'Company / Branch Total', 'Total Loan Portfolio' => $this->money($totals['portfolio'] ?? 0), 'Principal Given Out' => $this->money($totals['principal'] ?? 0), 'Amount In Arrears' => $this->money($totals['arrears'] ?? 0), 'Total Paid' => $this->money($totals['paid'] ?? 0), 'Total Balance' => $this->money($totals['balance'] ?? 0), 'Arrears Rate' => number_format(($totals['portfolio'] ?? 0) > 0 ? (($totals['arrears'] ?? 0) / $totals['portfolio']) * 100 : 0, 2).'%', '_is_total' => true]];
+        return [['Officer', 'Total Loan Portfolio', 'Principal Given Out', 'Amount In Arrears', 'Total Paid', 'Total Balance', 'Arrears Rate'], $rows, ['Officer' => 'Company / Branch Total', 'Total Loan Portfolio' => $this->money($totals['portfolio'] ?? 0), 'Principal Given Out' => $this->money($totals['principal'] ?? 0), 'Amount In Arrears' => $this->money($totals['arrears'] ?? 0), 'Total Paid' => $this->money($totals['paid'] ?? 0), 'Total Balance' => $this->money($totals['balance'] ?? 0), 'Arrears Rate' => number_format(($totals['balance'] ?? 0) > 0 ? (($totals['arrears'] ?? 0) / $totals['balance']) * 100 : 0, 2).'%', '_is_total' => true]];
     }
 
     private function generalIncomeStatement(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user, string $interestBasis): array
@@ -2640,6 +2645,10 @@ class ReportCatalogService
         return [['Status', 'Loans', 'Principal', 'Interest', 'Fees', 'Penalty', 'Total Balance'], $rows, [
             'Statuses' => number_format($rows->count()),
             'Loans' => number_format((int) $balances->sum('loans')),
+            'Principal' => $this->money((float) $balances->sum('principal')),
+            'Interest' => $this->money((float) $balances->sum('interest')),
+            'Fees' => $this->money((float) $balances->sum('fees')),
+            'Penalty' => $this->money((float) $balances->sum('penalty')),
             'Total balance' => $this->money((float) $balances->sum(fn (Loan $loan): float => (float) $loan->principal + (float) $loan->interest + (float) $loan->fees + (float) $loan->penalty)),
         ]];
     }
@@ -2666,10 +2675,18 @@ class ReportCatalogService
                 'Amount' => $this->money((float) $repayment->amount),
                 'Principal' => $this->money((float) $repayment->principal_paid),
                 'Interest' => $this->money((float) $repayment->interest_paid),
+                'Fees' => $this->money((float) $repayment->fees_paid),
+                'Penalty' => $this->money((float) $repayment->penalty_paid),
                 'Officer' => $repayment->receivedBy?->name ?? 'N/A',
             ]);
 
-        return [['Date', 'Loan', 'Client', 'Amount', 'Principal', 'Interest', 'Officer'], $rows, ['Recovered' => $this->money((float) $query->sum('amount'))]];
+        return [['Date', 'Loan', 'Client', 'Amount', 'Principal', 'Interest', 'Fees', 'Penalty', 'Officer'], $rows, [
+            'Recovered' => $this->money((float) (clone $query)->sum('amount')),
+            'Principal' => $this->money((float) (clone $query)->sum('principal_paid')),
+            'Interest' => $this->money((float) (clone $query)->sum('interest_paid')),
+            'Fees' => $this->money((float) (clone $query)->sum('fees_paid')),
+            'Penalty' => $this->money((float) (clone $query)->sum('penalty_paid')),
+        ]];
     }
 
     private function loanRepaymentsByOfficer(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
@@ -2700,6 +2717,10 @@ class ReportCatalogService
         return [['Relations Officer', 'Repayments', 'Principal', 'Interest', 'Fees', 'Penalty', 'Recovered'], $rows, [
             'Officers' => number_format($rows->count()),
             'Repayments' => number_format((int) $officers->sum('repayments')),
+            'Principal' => $this->money((float) $officers->sum('principal')),
+            'Interest' => $this->money((float) $officers->sum('interest')),
+            'Fees' => $this->money((float) $officers->sum('fees')),
+            'Penalty' => $this->money((float) $officers->sum('penalty')),
             'Recovered' => $this->money((float) $officers->sum('recovered')),
         ]];
     }

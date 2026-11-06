@@ -34,6 +34,117 @@ it('places the simplified income statement first and defaults it to a full month
         ->assertSee('data-report-to="'.now()->endOfMonth()->toDateString().'"', false);
 });
 
+it('calculates arrears rate against the full outstanding balance', function () {
+    $user = generalReportUser();
+    $this->actingAs($user);
+    $branch = Branch::create(['code' => 'ARR1', 'name' => 'Arrears Branch', 'is_active' => true, 'status' => 'active']);
+    $product = generalReportLoanProduct('Arrears Loan', 'ARREARS');
+    $loan = generalReportRepayment($branch, $product, 0, 0);
+    $loan->update([
+        'officer_id' => $user->id,
+        'principal_balance' => 500,
+        'interest_balance' => 100,
+        'fees_balance' => 20,
+        'penalty_balance' => 30,
+        'disbursed_at' => today(),
+    ]);
+    LoanSchedule::create([
+        'loan_id' => $loan->id,
+        'installment_number' => 1,
+        'due_date' => today()->subDay(),
+        'principal_due' => 300,
+        'total_due' => 300,
+        'outstanding_amount' => 300,
+        'status' => 'overdue',
+    ]);
+
+    $otherOfficer = User::factory()->create(['organization_id' => $user->organization_id, 'branch_id' => $branch->id, 'role_id' => $user->role_id]);
+    $otherLoan = generalReportRepayment($branch, $product, 0, 0);
+    $otherLoan->update([
+        'officer_id' => $otherOfficer->id,
+        'principal_balance' => 200,
+        'interest_balance' => 0,
+        'fees_balance' => 0,
+        'penalty_balance' => 0,
+        'disbursed_at' => today(),
+    ]);
+
+    $report = app(ReportCatalogService::class)->generate('arrears-rate', [
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+    ], $user);
+    $officerRow = $report['rows']->firstWhere('Officer', $user->name);
+
+    expect($officerRow['Amount In Arrears'])->toBe('UGX 300.00')
+        ->and($officerRow['Total Balance'])->toBe('UGX 650.00')
+        ->and($officerRow['Arrears Rate'])->toBe('46.15%')
+        ->and($report['summary']['Total Balance'])->toBe('UGX 850.00')
+        ->and($report['summary']['Arrears Rate'])->toBe('35.29%');
+});
+
+it('shows product subtotals from displayed report rows', function () {
+    $user = generalReportUser();
+    $this->actingAs($user);
+    $branch = Branch::create(['code' => 'SUB1', 'name' => 'Subtotal Branch', 'is_active' => true, 'status' => 'active']);
+    $firstProduct = generalReportLoanProduct('First Product', 'FIRST');
+    $secondProduct = generalReportLoanProduct('Second Product', 'SECOND');
+
+    generalReportRepayment($branch, $firstProduct, 0, 0);
+    generalReportRepayment($branch, $firstProduct, 0, 0);
+    generalReportRepayment($branch, $secondProduct, 0, 0);
+
+    $report = app(ReportCatalogService::class)->generate('loans-application-by-date', [
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+    ], $user);
+    $subtotals = collect($report['subtotals']['rows'])->keyBy('Product');
+
+    expect($report['subtotals']['displayed_count'])->toBe(3)
+        ->and($subtotals['First Product']['Rows'])->toBe('2')
+        ->and($subtotals['First Product']['Requested'])->toBe('UGX 2,000.00')
+        ->and($subtotals['Second Product']['Requested'])->toBe('UGX 1,000.00');
+
+    $this->get(route('reports.show', [
+        'report' => 'loans-application-by-date',
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+    ]))->assertSuccessful()->assertSee('Subtotals by Product');
+});
+
+it('reconciles loan recovery components and officer subtotals', function () {
+    $user = generalReportUser();
+    $this->actingAs($user);
+    $branch = Branch::create(['code' => 'REC1', 'name' => 'Recovery Branch', 'is_active' => true, 'status' => 'active']);
+    $product = generalReportLoanProduct('Recovery Loan', 'RECOVERY');
+
+    foreach ([
+        ['principal_paid' => 200, 'interest_paid' => 30, 'fees_paid' => 10, 'penalty_paid' => 5],
+        ['principal_paid' => 100, 'interest_paid' => 20, 'fees_paid' => 4, 'penalty_paid' => 1],
+    ] as $amounts) {
+        $loan = generalReportRepayment($branch, $product, 0, 0);
+        $repayment = $loan->repayments()->firstOrFail();
+        $repayment->update($amounts + [
+            'amount' => array_sum($amounts),
+            'received_by' => $user->id,
+        ]);
+    }
+
+    $report = app(ReportCatalogService::class)->generate('loan-recovery', [
+        'from' => today()->toDateString(),
+        'to' => today()->toDateString(),
+    ], $user);
+    $subtotal = $report['subtotals']['rows'][0];
+
+    expect($report['summary']['Recovered'])->toBe('UGX 370.00')
+        ->and($report['summary']['Principal'])->toBe('UGX 300.00')
+        ->and($report['summary']['Interest'])->toBe('UGX 50.00')
+        ->and($report['summary']['Fees'])->toBe('UGX 14.00')
+        ->and($report['summary']['Penalty'])->toBe('UGX 6.00')
+        ->and($subtotal['Amount'])->toBe('UGX 370.00')
+        ->and($subtotal['Fees'])->toBe('UGX 14.00')
+        ->and($subtotal['Penalty'])->toBe('UGX 6.00');
+});
+
 it('generates a branch and period filtered simplified income statement', function () {
     $user = generalReportUser();
     $this->actingAs($user);

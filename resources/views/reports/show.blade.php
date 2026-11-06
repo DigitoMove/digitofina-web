@@ -291,4 +291,33 @@
         </table>
     </div>
 </div>
+
+@if(! empty($subtotals))
+    <section class="mt-5 df-panel overflow-hidden">
+        <div class="border-b border-slate-200 px-5 py-4">
+            <h2 class="font-semibold text-slate-950">Subtotals by {{ $subtotals['group'] }}</h2>
+            <p class="mt-1 text-sm text-slate-500">Based on the {{ number_format($subtotals['displayed_count']) }} rows shown above. Summary figures at the top cover the full filtered report.</p>
+        </div>
+        <div class="overflow-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-50 text-slate-600">
+                    <tr>
+                        @foreach($subtotals['columns'] as $column)
+                            <th class="whitespace-nowrap px-4 py-3">{{ $column }}</th>
+                        @endforeach
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($subtotals['rows'] as $row)
+                        <tr class="border-t border-slate-200">
+                            @foreach($subtotals['columns'] as $column)
+                                <td class="whitespace-nowrap px-4 py-3">{{ $row[$column] }}</td>
+                            @endforeach
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </section>
+@endif
 @endsection
