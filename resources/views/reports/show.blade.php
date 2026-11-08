@@ -163,8 +163,9 @@
                 @endif
                 <button class="df-action-secondary">Apply Filters</button>
             </form>
-        @elseif($definition['kind'] === 'general_income_statement')
+        @elseif(in_array($definition['kind'], ['general_income_statement', 'monthly_business_performance'], true))
             <form method="GET" action="{{ route('reports.show', $definition['slug']) }}" class="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:grid-cols-4">
+                <input type="hidden" name="currency" value="{{ $currency ?? $baseCurrency ?? 'UGX' }}">
                 @if($definition['slug'] !== 'arrears-rate')
                 <input name="from" type="date" value="{{ $from->toDateString() }}" class="rounded border-slate-300 text-sm">
                 <input name="to" type="date" value="{{ $to->toDateString() }}" class="rounded border-slate-300 text-sm">
@@ -255,7 +256,7 @@
             <thead class="bg-slate-50 text-slate-600">
                 <tr>
                     @foreach($columns as $column)
-                        <th class="whitespace-nowrap px-4 py-3">{{ $column }}</th>
+                        <th class="px-4 py-3 {{ $definition['kind'] === 'monthly_business_performance' && $column === 'Basis' ? 'min-w-80 whitespace-normal' : 'whitespace-nowrap' }} {{ $definition['kind'] === 'monthly_business_performance' && $column === 'Amount' ? 'text-right' : '' }}">{{ $column }}</th>
                     @endforeach
                 </tr>
             </thead>
@@ -266,7 +267,7 @@
                             @php
                                 $cellLink = $row['_links'][$column] ?? null;
                             @endphp
-                            <td class="whitespace-nowrap px-4 py-3">
+                            <td class="px-4 py-3 {{ $definition['kind'] === 'monthly_business_performance' && $column === 'Basis' ? 'min-w-80 whitespace-normal' : 'whitespace-nowrap' }} {{ $definition['kind'] === 'monthly_business_performance' && $column === 'Amount' ? 'text-right font-semibold' : '' }}">
                                 @if($column === 'Action' && ! empty($row['_delete_reference']))
                                     <form method="POST" action="{{ route('transactions.delete-by-reference') }}" class="inline-flex" data-confirm-title="Delete transaction by reference" data-confirm-message="Delete this transaction, remove its journal entries, and reverse the responsible drawer cash movement?" data-confirm-label="Delete transaction" data-confirm-tone="danger">
                                         @csrf

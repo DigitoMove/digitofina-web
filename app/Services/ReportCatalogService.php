@@ -110,6 +110,7 @@ class ReportCatalogService
     {
         $definitions = [
             $this->report('business-cash-flow', 'Business Performance', 'Business Cash Flow & Performance', 'business_cash_flow', ['default_period' => 'lifetime'], true, false),
+            $this->report('monthly-business-performance', 'Business Performance', 'Monthly Business Cash Flow & Performance (OP)', 'monthly_business_performance', ['default_period' => 'full_month'], true, false),
             $this->report('general-income-statement', 'General Reports', 'Simplified Income Statement', 'general_income_statement', ['default_period' => 'full_month']),
             $this->report('projected-general-income-statement', 'General Reports', 'Simplified Income Statement - Projected', 'general_income_statement', ['default_period' => 'full_month', 'interest_basis' => 'projected']),
             $this->report('arrears-rate', 'General Reports', 'Arrears Rate', 'arrears_rate', [], true),
@@ -255,10 +256,10 @@ class ReportCatalogService
                 ? Carbon::parse($filters['from'])->startOfDay()
                 : ($definition['kind'] === 'business_cash_flow'
                     ? $this->businessCashFlow->earliestActivityDate($user, $requestedBranchId)
-                    : today()->startOfDay()))
+                    : ($definition['kind'] === 'monthly_business_performance' ? today()->startOfMonth() : today()->startOfDay())))
             : Carbon::parse('1900-01-01')->startOfDay();
         $to = $definition['usesDates']
-            ? (filled($filters['to'] ?? null) ? Carbon::parse($filters['to'])->endOfDay() : now()->endOfDay())
+            ? (filled($filters['to'] ?? null) ? Carbon::parse($filters['to'])->endOfDay() : ($definition['kind'] === 'monthly_business_performance' ? today()->endOfMonth() : now()->endOfDay()))
             : Carbon::parse('2999-12-31')->endOfDay();
         $detail = (string) ($filters['detail'] ?? 'detailed');
         $branchId = isset($filters['branch_id']) && $filters['branch_id'] !== '' ? (int) $filters['branch_id'] : null;
@@ -350,6 +351,7 @@ class ReportCatalogService
                 'investment_officer_performance' => $this->investmentOfficerPerformance($branchId, $user),
                 'settings' => $this->settings($payload),
                 'general_income_statement' => $this->generalIncomeStatement($from, $to, $branchId, $user, $interestBasis),
+                'monthly_business_performance' => $this->monthlyBusinessPerformance($from, $to, $branchId, $user),
                 'arrears_rate' => $this->arrearsRate($from, $to, $branchId, $user, (bool) ($filters['lifetime'] ?? false)),
                 default => $this->placeholderRows($definition),
             };
@@ -444,7 +446,7 @@ class ReportCatalogService
         $kind = (string) $definition['kind'];
 
         $group = match (true) {
-            $slug === 'business-cash-flow' => 'Business Cash Flow & Performance',
+            in_array($slug, ['business-cash-flow', 'monthly-business-performance'], true) => 'Business Cash Flow & Performance',
             in_array($slug, ['general-income-statement', 'projected-general-income-statement', 'income-statement', 'balance-sheet', 'trial-balance', 'profitability-summary', 'projected-profitability-summary', 'branch-profitability-standing'], true) => 'Executive Financial Pack',
             in_array($category, ['Accounting', 'Posted Transactions'], true) => 'General Ledger & Controls',
             in_array($category, ['Treasury'], true) => 'Treasury, Cash & Reconciliation',
@@ -469,6 +471,7 @@ class ReportCatalogService
 
         $sortOrder = [
             'business-cash-flow' => 1,
+            'monthly-business-performance' => 2,
             'general-income-statement' => 1,
             'income-statement' => 10,
             'balance-sheet' => 20,
@@ -531,6 +534,7 @@ class ReportCatalogService
             'description' => $this->reportDescription($slug, $category, $kind),
             'is_priority' => in_array($slug, [
                 'business-cash-flow',
+                'monthly-business-performance',
                 'general-income-statement',
                 'projected-general-income-statement',
                 'income-statement',
@@ -554,6 +558,7 @@ class ReportCatalogService
     {
         $descriptions = [
             'business-cash-flow' => 'Lifetime or selected-range money flow with capital funding, income, expenses, loan movements, cumulative cash flow, and current accounting position.',
+            'monthly-business-performance' => 'Nine-line monthly operations report showing disbursements, projected interest, fees, paid penalties, expenses, a current profit estimate, and opening and closing cash plus loan receivables.',
             'general-income-statement' => 'A simplified management income statement showing money in, money out, profit, and the main income sources.',
             'projected-general-income-statement' => 'A simplified management income statement using scheduled projected interest instead of collected interest.',
             'income-statement' => 'Revenue, expenses, and surplus for the selected period.',
@@ -1465,6 +1470,95 @@ class ReportCatalogService
                 $profit >= 0 ? 'Profit' : 'Loss' => $this->money($profit),
             ],
         ];
+    }
+
+    /**
+     * @return array{0: array<int, string>, 1: Collection<int, array<string, mixed>>, 2: array<string, string>}
+     */
+    private function monthlyBusinessPerformance(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
+    {
+        $disbursements = $this->loanDisbursementsQuery($from, $to, $branchId, $user)
+            ->where('status', 'successful')
+            ->get(['loan_id', 'disbursed_amount']);
+        $disbursedAmount = (float) $disbursements->sum('disbursed_amount');
+        $disbursedLoanIds = $disbursements->pluck('loan_id')->unique()->all();
+        $projectedInterest = $disbursedLoanIds === [] ? 0.0 : (float) LoanSchedule::query()
+            ->whereIn('loan_id', $disbursedLoanIds)
+            ->sum('interest_due');
+
+        $repayments = LoanRepayment::query()
+            ->tap(fn (Builder $query): Builder => $this->scopeBranch($query, $branchId, $user))
+            ->where('status', 'successful')
+            ->whereBetween('paid_at', [$from->toDateString(), $to->toDateString()]);
+        $collectedInterest = (float) (clone $repayments)->sum('interest_paid');
+        $penaltiesPaid = (float) (clone $repayments)->sum('penalty_paid');
+        $applicationFees = $this->applicationFeeOperationalTotal($from, $to, $branchId, $user);
+        $expenses = (float) $this->ledgerBalances(['expense'], $from, $to, $branchId, $user, false)->sum('balance');
+        $currentProfit = $collectedInterest + $applicationFees + $penaltiesPaid - $expenses;
+
+        $priorAsOf = Carbon::parse($from)->subDay()->endOfDay();
+        $opening = $this->cashAndLoanLedgerPosition($priorAsOf, $branchId, $user);
+        $closing = $this->cashAndLoanLedgerPosition($to, $branchId, $user);
+        $priorIncome = (float) $this->ledgerBalances(['income'], Carbon::parse('1900-01-01'), $priorAsOf, $branchId, $user, true)->sum('balance');
+        $priorExpenses = (float) $this->ledgerBalances(['expense'], Carbon::parse('1900-01-01'), $priorAsOf, $branchId, $user, true)->sum('balance');
+        $priorProfit = $priorIncome - $priorExpenses;
+        $scope = $branchId ? 'Selected branch' : 'All branches';
+        $periodLabel = $from->toDateString() === $from->copy()->startOfMonth()->toDateString()
+            && $to->toDateString() === $to->copy()->endOfMonth()->toDateString()
+                ? $from->format('F Y')
+                : $from->format('d M Y').' to '.$to->format('d M Y');
+
+        $rows = collect([
+            ['No.' => '1', 'Item' => 'Period information', 'Amount' => '', 'Basis' => $periodLabel.' · '.$scope],
+            ['No.' => '2', 'Item' => 'Loan disbursement', 'Amount' => $this->money($disbursedAmount), 'Basis' => 'Gross principal disbursed during the period; capital deployed, not an expense.'],
+            ['No.' => '3', 'Item' => 'Interest accumulated (current disbursements)', 'Amount' => $this->money($projectedInterest), 'Basis' => 'Scheduled interest over the full terms of loans disbursed during this period, using their current schedules; projected, not yet earned cash.'],
+            ['No.' => '4', 'Item' => 'Application fees', 'Amount' => $this->money($applicationFees), 'Basis' => 'Application fees charged, less refunds, during the period.'],
+            ['No.' => '5', 'Item' => 'Penalties paid', 'Amount' => $this->money($penaltiesPaid), 'Basis' => 'Penalties received in successful loan repayments during the period.'],
+            ['No.' => '6', 'Item' => 'Operating expenses (all)', 'Amount' => $this->money($expenses), 'Basis' => 'Net movement in all posted expense accounts during the period, including non-cash charges.'],
+            ['No.' => '7', 'Item' => 'Current profit', 'Amount' => $this->money($currentProfit), 'Basis' => 'Management estimate: collected interest '.$this->money($collectedInterest).' + application fees + penalties paid − posted expenses. Projected interest above is excluded.', '_is_total' => true],
+            ['No.' => '8', 'Item' => 'Previous cash / total loan balance', 'Amount' => $this->money($opening['total']), 'Basis' => 'Opening posted-ledger cash and bank '.$this->money($opening['cash']).' + loan receivables '.$this->money($opening['loans']).'. Prior ledger profit '.$this->money($priorProfit).' is shown for context, not added again.'],
+            ['No.' => '9', 'Item' => 'Current cash / total loan balance', 'Amount' => $this->money($closing['total']), 'Basis' => 'Closing posted-ledger cash and bank '.$this->money($closing['cash']).' + loan receivables '.$this->money($closing['loans']).'. '.$scope.' only.', '_is_total' => true],
+        ]);
+
+        return [
+            ['No.', 'Item', 'Amount', 'Basis'],
+            $rows,
+            [
+                'Period' => $periodLabel,
+                'Loan disbursement' => $this->money($disbursedAmount),
+                'Projected interest on new loans' => $this->money($projectedInterest),
+                'Current profit' => $this->money($currentProfit),
+                'Previous ledger profit (context)' => $this->money($priorProfit),
+                'Previous cash + loan balance' => $this->money($opening['total']),
+                'Current cash + loan balance' => $this->money($closing['total']),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{cash: float, loans: float, total: float}
+     */
+    private function cashAndLoanLedgerPosition(CarbonInterface $asOf, ?int $branchId, User $user): array
+    {
+        $cashAccountIds = ChartAccount::query()
+            ->tap(fn (Builder $query): Builder => $this->scopeOrganization($query, $user))
+            ->where('type', 'asset')
+            ->where(function (Builder $query): void {
+                $query->where('is_cash_account', true)
+                    ->orWhere('code', '1100')
+                    ->orWhere('code', 'like', '%-1100');
+            })
+            ->pluck('id')
+            ->all();
+        $assets = $this->ledgerBalances(['asset'], Carbon::parse('1900-01-01'), $asOf, $branchId, $user, true);
+        $cash = (float) $assets->whereIn('id', $cashAccountIds)->sum('balance');
+        $loans = (float) $assets
+            ->filter(fn (array $account): bool => (string) $account['code'] === '1200'
+                || Str::endsWith((string) $account['code'], '-1200')
+                || str_contains(Str::lower((string) $account['account']), 'loan receivable'))
+            ->sum('balance');
+
+        return ['cash' => $cash, 'loans' => $loans, 'total' => $cash + $loans];
     }
 
     private function balanceSheet(CarbonInterface $from, CarbonInterface $to, ?int $branchId, User $user): array
