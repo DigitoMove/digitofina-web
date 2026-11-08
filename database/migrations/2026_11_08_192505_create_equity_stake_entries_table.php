@@ -11,20 +11,31 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('equity_stake_entries', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('chart_account_id')->constrained()->restrictOnDelete();
-            $table->foreignId('equity_contributor_id')->constrained()->restrictOnDelete();
-            $table->foreignId('journal_entry_id')->constrained()->restrictOnDelete();
-            $table->foreignId('created_by')->constrained('users')->restrictOnDelete();
-            $table->string('entry_type', 6);
-            $table->decimal('amount', 18, 2);
-            $table->timestamps();
+        if (! Schema::hasTable('equity_stake_entries')) {
+            Schema::create('equity_stake_entries', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
+                $table->foreignId('chart_account_id')->constrained()->restrictOnDelete();
+                $table->foreignId('equity_contributor_id')->constrained()->restrictOnDelete();
+                $table->foreignId('journal_entry_id')->constrained()->restrictOnDelete();
+                $table->foreignId('created_by')->constrained('users')->restrictOnDelete();
+                $table->string('entry_type', 6);
+                $table->decimal('amount', 18, 2);
+                $table->timestamps();
+            });
+        }
 
-            $table->index(['journal_entry_id', 'equity_contributor_id']);
-            $table->index(['chart_account_id', 'entry_type']);
-        });
+        if (! Schema::hasIndex('equity_stake_entries', 'stake_journal_contributor_idx')) {
+            Schema::table('equity_stake_entries', function (Blueprint $table) {
+                $table->index(['journal_entry_id', 'equity_contributor_id'], 'stake_journal_contributor_idx');
+            });
+        }
+
+        if (! Schema::hasIndex('equity_stake_entries', 'stake_account_type_idx')) {
+            Schema::table('equity_stake_entries', function (Blueprint $table) {
+                $table->index(['chart_account_id', 'entry_type'], 'stake_account_type_idx');
+            });
+        }
     }
 
     /**
