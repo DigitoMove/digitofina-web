@@ -25,11 +25,13 @@
         ['Loan applications', $loanApplications, 'bg-sky-50 text-sky-700', 'from-sky-500 to-blue-600', [30, 45, 62, 58, 75], route('loans.index', ['status_group' => 'applications'])],
         ['Loan portfolio', number_format($totalLoans, 2).' UGX', 'bg-brand-50 text-brand-800', 'from-brand-600 to-sun-400', [35, 48, 65, 62, 80], route('loans.index')],
         ['Loans in arrears', $arrearsCount, 'bg-red-50 text-red-700', 'from-red-500 to-rose-600', [20, 34, 48, 42, 60], route('arrears.index')],
+        ['Total loan arrears', number_format((float) $arrearsAmount, 2).' UGX', 'bg-red-50 text-red-700', 'from-red-500 to-rose-600', [20, 34, 48, 42, 60], route('arrears.index')],
         ['Due today', $dueTodayCount, 'bg-violet-50 text-violet-700', 'from-violet-500 to-indigo-600', [24, 38, 50, 70, 64], route('due-repayments.index')],
         ['Savings balance', number_format($savingsLedgerBalance, 2).' UGX', 'bg-teal-50 text-teal-700', 'from-teal-500 to-cyan-500', [40, 50, 58, 70, 86], route('savings-accounts.index')],
         ['Investment balance', number_format($totalInvestmentBalance, 2).' UGX', 'bg-indigo-50 text-indigo-700', 'from-indigo-500 to-sky-500', [40, 46, 66, 72, 88], route('reports.show', 'investment-plan-performance')],
         ["Today's deposits", number_format($todayDeposits, 2).' UGX', 'bg-green-50 text-green-700', 'from-green-500 to-emerald-500', [28, 44, 50, 72, 88], $cashMovementRoute],
         ["Today's withdrawals", number_format($todayWithdrawals, 2).' UGX', 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [24, 40, 38, 52, 46], $cashMovementRoute],
+        ['Drawer balance', number_format((float) $drawerBalance, 2).' UGX', 'bg-amber-50 text-amber-700', 'from-amber-400 to-orange-500', [24, 40, 38, 52, 46], route('teller.index')],
     ];
     $cardModules = [
         'Total clients' => 'clients',
@@ -37,10 +39,12 @@
         'Loan applications' => 'loans',
         'Loan portfolio' => 'loans',
         'Loans in arrears' => 'loans',
+        'Total loan arrears' => 'loans',
         'Due today' => 'loans',
         'Savings balance' => 'savings',
         "Today's deposits" => 'teller',
         "Today's withdrawals" => 'teller',
+        'Drawer balance' => 'teller',
         'Investment balance' => 'investments',
     ];
     $cardIsVisible = function (array $card) use ($cardModules, $moduleEnabled): bool {
@@ -51,9 +55,9 @@
     };
     $cards = array_values(array_filter($cards, $cardIsVisible));
     $essentialCardLabels = match (true) {
-        $isCashierDashboard => ['Due today', "Today's deposits", "Today's withdrawals"],
-        $isLoanRecoveryDashboard => ['Total clients', 'Loans in arrears'],
-        $isLoanOfficerDashboard => ['Total clients', 'Loan applications', 'Loan portfolio', 'Loans in arrears', 'Due today'],
+        $isCashierDashboard => ['Drawer balance', 'Due today', "Today's deposits", "Today's withdrawals"],
+        $isLoanRecoveryDashboard => ['Total clients', 'Loans in arrears', 'Total loan arrears'],
+        $isLoanOfficerDashboard => ['Total clients', 'Loan applications', 'Loan portfolio', 'Loans in arrears', 'Total loan arrears', 'Due today'],
         default => null,
     };
     $cards = $essentialCardLabels

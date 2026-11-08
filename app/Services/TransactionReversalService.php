@@ -8,6 +8,7 @@ use App\Models\JournalEntry;
 use App\Models\Loan;
 use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
+use App\Models\LoanTopUp;
 use App\Models\MakerCheckerRequest;
 use App\Models\TellerDrawer;
 use App\Models\Transaction;
@@ -23,6 +24,8 @@ class TransactionReversalService
         private AuditLogger $auditLogger,
         private BusinessCalendarService $calendar,
         private LedgerReversalRepairService $ledgerReversalRepair,
+        private LoanTopUpService $loanTopUps,
+        private EquityStakeService $equityStakes,
     ) {}
 
     public function approve(MakerCheckerRequest $request, User $checker, bool $allowDrawerOverdraft = false): Transaction
@@ -54,6 +57,8 @@ class TransactionReversalService
                 throw new InvalidArgumentException('Reverse the application fee refunds before reversing the disbursement.');
             }
 
+            $this->equityStakes->assertReceiptCanBeReversed($original);
+
             $account = $original->account_id
                 ? Account::query()->with('accountType')->whereKey($original->account_id)->lockForUpdate()->first()
                 : null;
@@ -63,6 +68,11 @@ class TransactionReversalService
                 ->where('transaction_id', $original->id)
                 ->lockForUpdate()
                 ->first();
+
+            $loanTopUp = LoanTopUp::query()->where('transaction_id', $original->id)->first();
+            if ($loanTopUp) {
+                $this->loanTopUps->reverse($loanTopUp, $checker);
+            }
 
             if ($loanRepayment && $loanRepayment->status !== 'reversed') {
                 $this->reverseLoanRepayment($loanRepayment, $checker, $request->reason);

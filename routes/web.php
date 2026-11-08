@@ -231,6 +231,7 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::post('/loans/{loan}/draft-terms', [LoanController::class, 'updateDraftTerms'])->middleware('module:loans')->name('loans.update-draft-terms');
     Route::post('/loans/{loan}/repair-terms', [LoanController::class, 'repairTerms'])->middleware('module:loans')->name('loans.repair-terms');
     Route::post('/loans/{loan}/extend-period', [LoanController::class, 'extendPeriod'])->middleware('module:loans')->name('loans.extend-period');
+    Route::post('/loans/{loan}/top-up', [LoanController::class, 'topUp'])->middleware('module:loans')->name('loans.top-up');
     Route::post('/loans/{loan}/generate-savings-account', [LoanController::class, 'generateSavingsAccount'])->middleware('module:loans')->name('loans.generate-savings-account');
     Route::post('/loans/{loan}/generate-loan-account', [LoanController::class, 'generateLoanAccount'])->middleware('module:loans')->name('loans.generate-loan-account');
     Route::post('/loans/{loan}/submit-appraisal', [LoanController::class, 'submitForAppraisal'])->middleware('module:loans')->name('loans.submit-appraisal');
@@ -255,6 +256,8 @@ Route::middleware(['auth', 'tenant', 'demo.active', 'module:auto'])->group(funct
     Route::get('/ledger-accounts', [LedgerAccountController::class, 'index'])->middleware('module:accounting')->name('ledger-accounts.index');
     Route::post('/ledger-accounts', [LedgerAccountController::class, 'store'])->middleware('module:accounting')->name('ledger-accounts.store');
     Route::get('/ledger-accounts/{chartAccount}', [LedgerAccountController::class, 'show'])->middleware('module:accounting')->name('ledger-accounts.show');
+    Route::post('/ledger-accounts/{chartAccount}/contributors', [LedgerAccountController::class, 'storeContributor'])->middleware('module:accounting')->name('ledger-accounts.contributors.store');
+    Route::post('/ledger-accounts/{chartAccount}/stakes', [LedgerAccountController::class, 'allocateStake'])->middleware('module:accounting')->name('ledger-accounts.stakes.store');
     Route::post('/ledger-accounts/{chartAccount}/merge', [LedgerAccountController::class, 'merge'])->middleware('module:accounting')->name('ledger-accounts.merge');
     Route::post('/ledger-accounts/{chartAccount}/opening-balance', [LedgerAccountController::class, 'postOpeningBalance'])->middleware('module:accounting')->name('ledger-accounts.opening-balance');
     Route::post('/ledger-accounts/{chartAccount}/charges', [LedgerAccountController::class, 'postCharges'])->middleware('module:accounting')->name('ledger-accounts.charges');

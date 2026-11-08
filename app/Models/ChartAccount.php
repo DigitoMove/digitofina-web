@@ -68,6 +68,16 @@ class ChartAccount extends Model
         return $this->hasMany(JournalLine::class);
     }
 
+    public function equityContributors(): HasMany
+    {
+        return $this->hasMany(EquityContributor::class);
+    }
+
+    public function equityStakeEntries(): HasMany
+    {
+        return $this->hasMany(EquityStakeEntry::class);
+    }
+
     public function dailyAccountingSummaries(): HasMany
     {
         return $this->hasMany(DailyAccountingSummary::class);

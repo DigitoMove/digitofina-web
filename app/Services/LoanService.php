@@ -457,6 +457,10 @@ class LoanService
                 throw new InvalidArgumentException('Only approved, disbursed, active, or in-arrears loans can have terms repaired.');
             }
 
+            if ($loan->topUps()->where('status', 'posted')->exists()) {
+                throw new InvalidArgumentException('This loan has a posted top-up. Use period extension for further date changes; a full schedule repair would remove the top-up obligations.');
+            }
+
             $product = LoanProduct::query()->whereKey($data['loan_product_id'])->firstOrFail();
             $approvedAmount = (float) $data['approved_amount'];
             $termPeriods = (int) $data['term_periods'];
@@ -1092,6 +1096,7 @@ class LoanService
 
         Loan::withoutGlobalScopes()
             ->where('repayment_frequency', 'monthly')
+            ->whereDoesntHave('topUps', fn ($query) => $query->where('status', 'posted'))
             ->whereNotNull('application_date')
             ->whereIn('status', ['approved', 'disbursed', 'active', 'in_arrears', 'restructured'])
             ->chunkById(100, function ($loans) use (&$totals, $asOf): void {

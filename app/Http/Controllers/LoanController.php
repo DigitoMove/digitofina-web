@@ -13,6 +13,7 @@ use App\Services\LoanApprovalService;
 use App\Services\LoanDisbursementService;
 use App\Services\LoanScheduleService;
 use App\Services\LoanService;
+use App\Services\LoanTopUpService;
 use App\Services\LoanVisibilityService;
 use App\Support\CurrencyDenomination;
 use Carbon\CarbonImmutable;
@@ -168,6 +169,7 @@ class LoanController extends Controller
                 'collaterals',
                 'approvals.approver',
                 'disbursements.disbursedBy',
+                'topUps.transaction',
                 'disbursements.applicationFeeRefunds.user',
                 'repayments' => fn ($query) => $query
                     ->with('receivedBy')
@@ -260,6 +262,27 @@ class LoanController extends Controller
         }
 
         return back()->with('status', 'Loan period extended and repayment schedule recalculated.');
+    }
+
+    public function topUp(Request $request, Loan $loan, LoanTopUpService $service): RedirectResponse
+    {
+        Gate::authorize('view', $loan);
+        abort_unless($request->user()->canAdministerLoanRepairs() && $request->user()->canPerform('disburse-loans'), 403);
+
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+            'extension_days' => ['required', 'integer', 'min:1', 'max:3650'],
+            'reason' => ['required', 'string', 'max:1000'],
+            'submission_token' => ['required', 'uuid'],
+        ]);
+
+        try {
+            $service->post($loan, $request->user(), (float) $data['amount'], (int) $data['extension_days'], $data['reason'], $data['submission_token']);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['top_up' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Loan principal increased, savings credited, and maturity extended.');
     }
 
     public function generateSavingsAccount(Loan $loan, LoanService $service): RedirectResponse

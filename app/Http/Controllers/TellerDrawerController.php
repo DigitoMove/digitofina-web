@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\DrawerTransferService;
 use App\Services\DueRepaymentDemandService;
+use App\Services\EquityStakeService;
 use App\Services\FinancialControlService;
 use App\Services\LedgerAccountStatementService;
 use App\Services\LedgerChargeService;
@@ -34,6 +35,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -198,7 +200,7 @@ class TellerDrawerController extends Controller
                 ->where('is_active', true)
                 ->where('is_cash_account', false)
                 ->where(fn (Builder $query): Builder => $query->whereNull('drawer_direction')->orWhere('drawer_direction', '!=', 'none'))
-                ->whereIn('type', ['expense', 'income', 'asset', 'liability'])
+                ->whereIn('type', ['expense', 'income', 'asset', 'liability', 'equity'])
                 ->when($accountSearch, function (Builder $query, string $search): void {
                     $query->whereAny(['code', 'name', 'type'], 'like', "%{$search}%");
                 })
@@ -212,6 +214,9 @@ class TellerDrawerController extends Controller
             'account' => $account,
             'accountResults' => $accountResults,
             'selectedChartAccount' => $selectedChartAccount,
+            'equityContributors' => $selectedChartAccount?->type === 'equity'
+                ? $selectedChartAccount->equityContributors()->orderBy('name')->get()
+                : collect(),
             'lookupScope' => $lookupScope,
             'selectedAccountTypeId' => $selectedAccountTypeId,
             'isGeneralLedgerLookup' => $isGeneralLedgerLookup,
@@ -420,7 +425,7 @@ class TellerDrawerController extends Controller
         return back()->with('status', 'Drawer opened.');
     }
 
-    public function post(Request $request, TransactionPostingService $posting): RedirectResponse
+    public function post(Request $request, TransactionPostingService $posting, EquityStakeService $stakes): RedirectResponse
     {
         abort_if($request->user()->isLoanOfficer() || $request->user()->isLoanRecoveryOfficer(), 403);
 
@@ -428,6 +433,7 @@ class TellerDrawerController extends Controller
             'account_scope' => ['required', 'in:client_account,general_ledger'],
             'account_number' => ['nullable', 'required_if:account_scope,client_account', 'exists:accounts,account_number'],
             'chart_account_id' => ['nullable', 'required_if:account_scope,general_ledger', 'exists:chart_accounts,id'],
+            'equity_contributor_id' => ['nullable', 'integer', 'exists:equity_contributors,id'],
             'gl_entry_type' => ['nullable', 'in:debit,credit'],
             'transaction_type_id' => ['nullable', 'required_if:account_scope,client_account', 'exists:transaction_types,id'],
             'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
@@ -458,6 +464,7 @@ class TellerDrawerController extends Controller
             }
 
             if ($data['account_scope'] === 'general_ledger') {
+                abort_unless($request->user()->canPerform('post-transactions'), 403);
                 $chartAccount = ChartAccount::query()
                     ->whereKey($data['chart_account_id'])
                     ->where(function (Builder $query) use ($session): void {
@@ -475,10 +482,19 @@ class TellerDrawerController extends Controller
                     throw new InvalidArgumentException('Select whether the money is coming in or going out.');
                 }
 
+                $contributor = null;
+                if ($chartAccount->type === 'equity') {
+                    $contributor = $chartAccount->equityContributors()->find($data['equity_contributor_id'] ?? 0);
+                    if (! $contributor) {
+                        throw new InvalidArgumentException('Select the contributor whose stake this equity posting changes.');
+                    }
+                }
+
                 $submissionGuardKey = $this->acquireSubmissionGuard($request, 'post', [
                     'scope' => 'general_ledger',
                     'drawer_session_id' => $session->id,
                     'chart_account_id' => $chartAccount->id,
+                    'equity_contributor_id' => $contributor?->id,
                     'entry_type' => $entryType,
                     'amount' => (float) $data['amount'],
                     'charges' => (float) ($data['charges'] ?? 0),
@@ -487,7 +503,14 @@ class TellerDrawerController extends Controller
                     'description' => $data['description'] ?? null,
                 ]);
 
-                $journal = $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $postedAt, (float) ($data['charges'] ?? 0), LedgerChargeService::normalizeMode($data['charge_mode'] ?? null));
+                $journal = DB::transaction(function () use ($posting, $stakes, $chartAccount, $session, $entryType, $data, $postedAt, $contributor): JournalEntry {
+                    $journal = $posting->postGeneralLedgerCash($chartAccount, $session, $entryType, (float) $data['amount'], auth()->user(), $data['description'] ?? null, $postedAt, (float) ($data['charges'] ?? 0), LedgerChargeService::normalizeMode($data['charge_mode'] ?? null));
+                    if ($contributor) {
+                        $stakes->allocate($chartAccount, $journal, $contributor, (float) $journal->amount, auth()->user());
+                    }
+
+                    return $journal;
+                });
 
                 return redirect()
                     ->route('teller.index', [

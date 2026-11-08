@@ -567,6 +567,17 @@
                 </label>
             @endif
             @if($isLedgerPosting)
+                @if($selectedChartAccount->type === 'equity')
+                    <label class="text-sm font-semibold text-slate-700 md:col-span-2">Contributor <x-required-badge />
+                        <select name="equity_contributor_id" class="mt-1" required data-confirm-summary-label="Contributor">
+                            <option value="">Select contributor</option>
+                            @foreach($equityContributors as $contributor)
+                                <option value="{{ $contributor->id }}" @selected((int) old('equity_contributor_id') === $contributor->id)>{{ $contributor->name }}</option>
+                            @endforeach
+                        </select>
+                        <span class="mt-1 block text-xs font-normal text-slate-500">An administrator must register contributors on this equity ledger before cash can be posted.</span>
+                    </label>
+                @endif
                 @if($selectedLedgerEntryType)
                     <input type="hidden" name="gl_entry_type" value="{{ $selectedLedgerEntryType }}">
                     <input type="hidden" data-confirm-summary-label="Money direction" data-confirm-summary-value="{{ $selectedLedgerEntryType === 'credit' ? 'Money coming in / receipt' : 'Money going out / payment' }}">

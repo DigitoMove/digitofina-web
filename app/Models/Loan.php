@@ -130,6 +130,11 @@ class Loan extends Model
         return $this->hasMany(LoanDisbursement::class);
     }
 
+    public function topUps(): HasMany
+    {
+        return $this->hasMany(LoanTopUp::class);
+    }
+
     public function repayments(): HasMany
     {
         return $this->hasMany(LoanRepayment::class);

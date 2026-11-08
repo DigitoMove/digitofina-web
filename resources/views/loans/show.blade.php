@@ -7,8 +7,8 @@
     $profilePhotoDocument = $client->documents->firstWhere('type', 'profile_photo');
     $loanAccountNumber = $loan->loanAccount?->account_number ?? $loan->loan_number;
     $approvedOrRequestedAmount = (float) ($loan->approved_amount ?? $loan->requested_amount);
-    $disbursedAmount = (float) $loan->disbursements->sum('disbursed_amount');
-    $netDisbursedAmount = (float) $loan->disbursements->sum('net_amount');
+    $disbursedAmount = (float) $loan->disbursements->where('status', 'successful')->sum('disbursed_amount');
+    $netDisbursedAmount = (float) $loan->disbursements->where('status', 'successful')->sum('net_amount');
     $paidAmount = (float) $loan->repayments->sum('amount');
     $maturityDate = $loan->schedules->sortByDesc('due_date')->first()?->due_date;
     $totalInstallments = $loan->schedules->count();
@@ -35,6 +35,7 @@
     $canReopenClosedLoan = (in_array($loan->status, ['closed', 'fully_paid'], true) || $loanAccountNeedsReopen) && auth()->user()->canAdministerLoanRepairs();
     $canRepairLoanTerms = in_array($loan->status, ['approved', 'disbursed', 'active', 'in_arrears'], true) && auth()->user()->canAdministerLoanRepairs();
     $canExtendLoanPeriod = $canRepairLoanTerms && $loan->schedules->contains(fn ($schedule) => (float) $schedule->outstanding_amount > 0);
+    $canTopUpLoan = in_array($loan->status, ['active', 'in_arrears'], true) && $canExtendLoanPeriod && auth()->user()->canPerform('disburse-loans');
     $outstandingLoanBalance = (float) $loan->principal_balance + (float) $loan->interest_balance + (float) $loan->fees_balance + (float) $loan->penalty_balance;
     $canClosePaidLoan = $outstandingLoanBalance <= 0 && ! in_array($loan->status, ['closed', 'written_off', 'cancelled', 'rejected'], true) && auth()->user()->canAdministerLoanRepairs();
     $canWriteOffLoan = $outstandingLoanBalance > 0 && in_array($loan->status, ['disbursed', 'active', 'in_arrears', 'restructured'], true) && auth()->user()->canWriteOffLoans();
@@ -153,7 +154,7 @@
     </section>
 @endif
 
-@if($canRepairLoanTerms || $canExtendLoanPeriod || $canClosePaidLoan || $canWriteOffLoan || $canReopenClosedLoan)
+@if($canRepairLoanTerms || $canExtendLoanPeriod || $canTopUpLoan || $canClosePaidLoan || $canWriteOffLoan || $canReopenClosedLoan)
     <section class="df-loan-action-panel">
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div>
@@ -163,6 +164,30 @@
             <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold {{ $statusTone }}">{{ $statusLabel }}</span>
         </div>
         <div class="df-loan-action-grid">
+            @if($canTopUpLoan)
+                <section class="df-loan-action-card border-teal-200 bg-teal-50">
+                    <div>
+                        <div class="mb-3 inline-flex rounded-full bg-teal-100 px-2.5 py-1 text-xs font-semibold text-teal-800">Principal increase</div>
+                        <h3 class="text-base font-semibold text-slate-950">Top up and extend loan</h3>
+                        <p class="mt-1 text-sm text-teal-900">The added principal is credited to client savings. Only the added amount receives new interest, spread over unpaid installments. Their due dates move by the extension days.</p>
+                    </div>
+                    <form method="POST" action="{{ route('loans.top-up', $loan) }}" class="mt-auto grid gap-2" data-confirm-title="Confirm loan top-up" data-confirm-message="Increase this loan’s principal, credit the added amount to savings, and extend its maturity?" data-confirm-label="Post top-up" data-confirm-tone="warning">
+                        @csrf
+                        <input type="hidden" name="submission_token" value="{{ old('submission_token', (string) \Illuminate\Support\Str::uuid()) }}">
+                        @if($errors->has('top_up'))<p class="text-sm text-red-700">{{ $errors->first('top_up') }}</p>@endif
+                        <label class="text-sm font-medium text-slate-700">Additional principal (UGX)
+                            <input name="amount" value="{{ old('amount') }}" type="number" min="100" max="{{ max(0, (float) $loan->product->max_amount - (float) $loan->approved_amount) }}" step="100" required class="mt-1 w-full rounded-lg border-teal-200 bg-white text-sm" data-confirm-summary-label="Additional principal">
+                        </label>
+                        <label class="text-sm font-medium text-slate-700">Extend maturity by days
+                            <input name="extension_days" value="{{ old('extension_days') }}" type="number" min="1" max="3650" step="1" required class="mt-1 w-full rounded-lg border-teal-200 bg-white text-sm" data-confirm-summary-label="Extension days">
+                        </label>
+                        <label class="text-sm font-medium text-slate-700">Reason
+                            <textarea name="reason" rows="2" required class="mt-1 w-full rounded-lg border-teal-200 bg-white text-sm">{{ old('reason') }}</textarea>
+                        </label>
+                        <button class="rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-900">Post top-up</button>
+                    </form>
+                </section>
+            @endif
             @if($canExtendLoanPeriod)
                 <section class="df-loan-action-card border-indigo-200 bg-indigo-50">
                     <div class="min-w-0">
@@ -540,7 +565,7 @@
                                         <td class="px-4 py-3 text-right">UGX {{ number_format((float) $disbursement->disbursed_amount, 2) }}</td>
                                         <td class="px-4 py-3 text-right">UGX {{ number_format((float) $disbursement->fees_deducted, 2) }}</td>
                                         <td class="px-4 py-3 text-right">UGX {{ number_format((float) $disbursement->net_amount, 2) }}</td>
-                                        <td class="px-4 py-3"><span class="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">No</span></td>
+                                        <td class="px-4 py-3"><span class="rounded-full px-2 py-1 text-xs font-semibold {{ $disbursement->status === 'reversed' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700' }}">{{ $disbursement->status === 'reversed' ? 'Yes' : 'No' }}</span></td>
                                     </tr>
                                 @empty
                                     <tr>
@@ -550,6 +575,23 @@
                             </tbody>
                         </table>
                     </div>
+                    @if($loan->topUps->isNotEmpty())
+                        <div class="border-t border-slate-200 p-5">
+                            <h3 class="font-semibold text-slate-950">Principal top-ups</h3>
+                            <div class="mt-3 space-y-3">
+                                @foreach($loan->topUps->sortByDesc('id') as $topUp)
+                                    <div class="rounded border border-slate-200 p-3 text-sm">
+                                        <div class="flex flex-wrap items-center justify-between gap-2">
+                                            <a href="{{ route('receipts.show', $topUp->transaction) }}" class="font-semibold text-brand-700 hover:underline">{{ $topUp->transaction?->reference ?? 'Top-up receipt' }}</a>
+                                            <span class="font-semibold {{ $topUp->status === 'reversed' ? 'text-rose-700' : 'text-emerald-700' }}">{{ str($topUp->status)->headline() }}</span>
+                                        </div>
+                                        <p class="mt-1 text-slate-700">Principal +UGX {{ number_format((float) $topUp->principal_added, 2) }} · New interest UGX {{ number_format((float) $topUp->interest_added, 2) }} · Maturity {{ $topUp->previous_maturity_date?->format('d M Y') }} → {{ $topUp->new_maturity_date?->format('d M Y') }}</p>
+                                        <p class="mt-1 text-slate-500">{{ $topUp->reason }}</p>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
                 </div>
 
                 <div class="df-panel overflow-hidden">

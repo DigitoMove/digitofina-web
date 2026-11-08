@@ -23,6 +23,63 @@
     </div>
 @endif
 
+@if($chartAccount->type === 'equity')
+    <section class="df-panel mb-5 p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <h2 class="text-lg font-semibold text-slate-950">Contributors and stakes</h2>
+                <p class="text-sm text-slate-500">Stakes come from attributed, posted equity entries. Reversed receipts are excluded automatically.</p>
+            </div>
+            <span class="df-badge">UGX {{ number_format((float) $equityContributors->sum('stake_balance'), 2) }} attributed</span>
+        </div>
+        @if($errors->has('contributor') || $errors->has('stake'))
+            <p class="mt-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ $errors->first('contributor') ?: $errors->first('stake') }}</p>
+        @endif
+        <div class="mt-4 overflow-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-50 text-slate-600"><tr><th class="p-3">Contributor</th><th class="p-3">Linked user</th><th class="p-3 text-right">Current stake</th></tr></thead>
+                <tbody>
+                    @forelse($equityContributors as $contributor)
+                        <tr class="border-t border-slate-200"><td class="p-3 font-semibold text-slate-950">{{ $contributor->name }}</td><td class="p-3">{{ $contributor->user?->name ?? 'External contributor' }}</td><td class="p-3 text-right font-semibold">UGX {{ number_format((float) $contributor->stake_balance, 2) }}</td></tr>
+                    @empty
+                        <tr><td colspan="3" class="p-5 text-slate-500">No contributors recorded for this equity account.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+        @if($canManageContributors && ! $chartAccount->merged_into_id)
+            <form method="POST" action="{{ route('ledger-accounts.contributors.store', $chartAccount) }}" class="mt-5 grid gap-3 rounded border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_auto]">
+                @csrf
+                <label class="text-sm font-semibold text-slate-700">Existing user
+                    <select name="user_id" class="mt-1 w-full"><option value="">External contributor</option>@foreach($contributorUsers as $contributorUser)<option value="{{ $contributorUser->id }}">{{ $contributorUser->name }}</option>@endforeach</select>
+                </label>
+                <label class="text-sm font-semibold text-slate-700">External person or organization
+                    <input name="name" value="{{ old('name') }}" maxlength="191" class="mt-1 w-full" placeholder="Contributor name">
+                </label>
+                <button class="df-action-primary self-end">Add contributor</button>
+            </form>
+            <div class="mt-5">
+                <h3 class="font-semibold text-slate-950">Attribute existing ledger postings</h3>
+                <p class="text-sm text-slate-500">Showing up to 50 unattributed postings in the selected statement dates. Allocate their posted equity amounts to contributors; this does not move cash.</p>
+                <div class="mt-3 space-y-3">
+                    @forelse($unattributedEquityPostings as $posting)
+                        <form method="POST" action="{{ route('ledger-accounts.stakes.store', $chartAccount) }}" class="grid gap-2 rounded border border-slate-200 p-3 md:grid-cols-[1fr_1fr_10rem_auto]" data-confirm-title="Attribute equity stake" data-confirm-message="Assign this existing ledger posting to the selected contributor?" data-confirm-label="Assign stake">
+                            @csrf
+                            <input type="hidden" name="journal_entry_id" value="{{ $posting->id }}">
+                            <div class="text-sm"><div class="font-semibold text-slate-950">{{ $posting->reference ?: $posting->journal_number }}</div><div class="text-slate-500">{{ $posting->journal_date?->format('d M Y') }} · {{ str($posting->entry_type)->headline() }} · UGX {{ number_format((float) $posting->unattributed_amount, 2) }} available</div></div>
+                            <select name="equity_contributor_id" required aria-label="Contributor for {{ $posting->reference ?: $posting->journal_number }}"><option value="">Choose contributor</option>@foreach($equityContributors as $contributor)<option value="{{ $contributor->id }}">{{ $contributor->name }}</option>@endforeach</select>
+                            <input name="amount" type="number" min="100" max="{{ $posting->unattributed_amount }}" step="100" value="{{ $posting->unattributed_amount }}" required aria-label="Stake amount">
+                            <button class="df-action-secondary">Attribute</button>
+                        </form>
+                    @empty
+                        <p class="rounded bg-slate-50 p-4 text-sm text-slate-500">No unattributed equity postings in this date range.</p>
+                    @endforelse
+                </div>
+            </div>
+        @endif
+    </section>
+@endif
+
 <section class="df-panel mb-5 p-5">
     <form method="GET" action="{{ route('ledger-accounts.show', $chartAccount) }}" class="grid gap-3 md:grid-cols-5">
         <label class="text-sm font-semibold text-slate-700">From

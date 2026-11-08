@@ -41,4 +41,9 @@ class JournalEntry extends Model
     {
         return $this->hasMany(JournalLine::class);
     }
+
+    public function equityStakeEntries(): HasMany
+    {
+        return $this->hasMany(EquityStakeEntry::class);
+    }
 }

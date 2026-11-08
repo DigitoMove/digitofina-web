@@ -6,13 +6,18 @@ use App\Http\Requests\MergeLedgerAccountsRequest;
 use App\Http\Requests\StoreLedgerOpeningBalanceRequest;
 use App\Models\Branch;
 use App\Models\ChartAccount;
+use App\Models\EquityContributor;
+use App\Models\JournalEntry;
+use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\EquityStakeService;
 use App\Services\LedgerAccountMergeService;
 use App\Services\LedgerAccountStatementService;
 use App\Services\LedgerChargeService;
 use App\Services\LedgerOpeningBalanceService;
 use App\Services\TenantContext;
 use App\Support\ApiSecurity;
+use App\Support\CurrencyDenomination;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -230,7 +235,7 @@ class LedgerAccountController extends Controller
             return back()->withErrors(['ledger_account' => 'Delete or move child ledger accounts before deleting this account.']);
         }
 
-        if ($chartAccount->journal_entries_count > 0 || $chartAccount->journal_lines_count > 0) {
+        if ($chartAccount->journal_entries_count > 0 || $chartAccount->journal_lines_count > 0 || $chartAccount->equityContributors()->exists()) {
             return back()->withErrors(['ledger_account' => 'This ledger account has accounting activity and cannot be deleted. Deactivate it instead.']);
         }
 
@@ -299,7 +304,7 @@ class LedgerAccountController extends Controller
         return back()->with('status', 'Ledger charges posted as '.$journal->reference.'.');
     }
 
-    public function show(Request $request, ChartAccount $chartAccount, LedgerAccountStatementService $statements): View
+    public function show(Request $request, ChartAccount $chartAccount, LedgerAccountStatementService $statements, EquityStakeService $stakes): View
     {
         abort_unless($this->canManageLedgerAccounts($request), 403);
         $this->authorizeLedgerAccountAccess($request, $chartAccount);
@@ -347,7 +352,58 @@ class LedgerAccountController extends Controller
             'search' => trim((string) ($filters['search'] ?? '')),
             'mergeCandidates' => $mergeCandidates,
             'canMergeLedgerAccounts' => $this->canMergeLedgerAccounts($request),
+            'canManageContributors' => $this->canMergeLedgerAccounts($request),
+            'equityContributors' => $chartAccount->type === 'equity' ? $stakes->contributorsWithStakes($chartAccount) : collect(),
+            'unattributedEquityPostings' => $chartAccount->type === 'equity' && ! $chartAccount->merged_into_id
+                ? $stakes->unattributedPostings($chartAccount, $from, $to) : collect(),
+            'contributorUsers' => $chartAccount->type === 'equity' && $this->canMergeLedgerAccounts($request)
+                ? User::query()->where('organization_id', $chartAccount->organization_id)->where('status', 'active')->orderBy('name')->get(['id', 'name']) : collect(),
         ]);
+    }
+
+    public function storeContributor(Request $request, ChartAccount $chartAccount, EquityStakeService $stakes): RedirectResponse
+    {
+        abort_unless($this->canMergeLedgerAccounts($request), 403);
+        $this->authorizeLedgerAccountAccess($request, $chartAccount);
+
+        $data = $request->validate([
+            'user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'name' => ['nullable', 'required_without:user_id', 'string', 'max:191'],
+        ]);
+
+        try {
+            $stakes->register($chartAccount, $request->user(), $data['user_id'] ?? null, $data['name'] ?? null);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['contributor' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Equity contributor added.');
+    }
+
+    public function allocateStake(Request $request, ChartAccount $chartAccount, EquityStakeService $stakes): RedirectResponse
+    {
+        abort_unless($this->canMergeLedgerAccounts($request), 403);
+        $this->authorizeLedgerAccountAccess($request, $chartAccount);
+
+        $data = $request->validate([
+            'equity_contributor_id' => ['required', 'integer', 'exists:equity_contributors,id'],
+            'journal_entry_id' => ['required', 'integer', 'exists:journal_entries,id'],
+            'amount' => ['required', 'numeric', 'min:'.CurrencyDenomination::MINIMUM_UNIT, CurrencyDenomination::validationRule()],
+        ]);
+
+        try {
+            $stakes->allocate(
+                $chartAccount,
+                JournalEntry::query()->findOrFail($data['journal_entry_id']),
+                EquityContributor::query()->findOrFail($data['equity_contributor_id']),
+                (float) $data['amount'],
+                $request->user(),
+            );
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['stake' => $exception->getMessage()])->withInput();
+        }
+
+        return back()->with('status', 'Equity stake attributed to contributor.');
     }
 
     public function merge(MergeLedgerAccountsRequest $request, ChartAccount $chartAccount, LedgerAccountMergeService $merger): RedirectResponse

@@ -7,7 +7,9 @@ use App\Models\ChartAccount;
 use App\Models\Client;
 use App\Models\DrawerMovement;
 use App\Models\DrawerSession;
+use App\Models\JournalEntry;
 use App\Models\JournalLine;
+use App\Models\MakerCheckerRequest;
 use App\Models\Module;
 use App\Models\Organization;
 use App\Models\Permission;
@@ -17,10 +19,12 @@ use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
 use App\Services\DrawerTransferService;
+use App\Services\EquityStakeService;
 use App\Services\LedgerChargeService;
 use App\Services\LedgerOpeningBalanceService;
 use App\Services\ModuleService;
 use App\Services\TransactionPostingService;
+use App\Services\TransactionReversalService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -676,3 +680,66 @@ function drawerAccountingClient(Organization $organization, Branch $branch, User
         'status' => 'active',
     ]);
 }
+
+it('lets a cashier receive equity cash for a registered contributor and removes the stake on reversal', function () {
+    [$organization, $branch, $admin] = drawerAccountingContext();
+    drawerAccountingEnableTellerModule($organization);
+    $cashier = drawerAccountingCashier($organization, $branch, 'equity');
+    [$drawer] = openAccountingDrawer($organization, $branch, $cashier, 'EQUITY-01', 0);
+    $equity = ChartAccount::create([
+        'organization_id' => $organization->id,
+        'code' => '3000',
+        'name' => 'Member Shares / Equity',
+        'type' => 'equity',
+        'normal_balance' => 'credit',
+        'drawer_direction' => 'cash_in',
+        'is_active' => true,
+    ]);
+    $this->actingAs($admin)->post(route('ledger-accounts.contributors.store', $equity), [
+        'name' => 'Mary Contributor',
+    ])->assertSessionHasNoErrors();
+    $contributor = $equity->equityContributors()->firstOrFail();
+    $this->actingAs($cashier)
+        ->get(route('teller.index', ['lookup_scope' => 'general_ledger', 'account_search' => 'Member Shares']))
+        ->assertSuccessful()
+        ->assertSee('Member Shares / Equity');
+    $this->actingAs($cashier)
+        ->get(route('teller.index', ['lookup_scope' => 'general_ledger', 'chart_account_id' => $equity->id]))
+        ->assertSuccessful()
+        ->assertSee('Mary Contributor');
+
+    $this->actingAs($cashier)->post(route('teller.post'), [
+        'account_scope' => 'general_ledger',
+        'chart_account_id' => $equity->id,
+        'equity_contributor_id' => $contributor->id,
+        'gl_entry_type' => 'credit',
+        'amount' => 150000,
+        'transaction_date' => today()->toDateString(),
+        'description' => 'Member contribution',
+    ])->assertSessionHasNoErrors();
+
+    $journal = JournalEntry::where('chart_account_id', $equity->id)->firstOrFail();
+    expect((float) $drawer->fresh()->current_balance)->toBe(150000.0)
+        ->and((float) app(EquityStakeService::class)->contributorsWithStakes($equity)->first()->stake_balance)->toBe(150000.0)
+        ->and((float) $journal->lines()->sum('debit'))->toBe(150000.0)
+        ->and((float) $journal->lines()->sum('credit'))->toBe(150000.0);
+
+    $this->actingAs($cashier)->get(route('dashboard'))
+        ->assertSuccessful()
+        ->assertSee('Drawer balance')
+        ->assertSee('150,000.00');
+
+    $request = MakerCheckerRequest::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $branch->id,
+        'subject_type' => Transaction::class,
+        'subject_id' => $journal->transaction_id,
+        'requested_by' => $cashier->id,
+        'action' => 'transaction_reversal',
+        'reason' => 'Wrong receipt',
+    ]);
+    app(TransactionReversalService::class)->approve($request, $admin);
+
+    expect((float) $drawer->fresh()->current_balance)->toBe(0.0)
+        ->and((float) app(EquityStakeService::class)->contributorsWithStakes($equity)->first()->stake_balance)->toBe(0.0);
+});

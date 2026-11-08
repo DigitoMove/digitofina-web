@@ -92,6 +92,10 @@ class LedgerAccountMergeService
 
     private function validateSource(ChartAccount $source, ChartAccount $target): void
     {
+        if ($source->equityContributors()->exists()) {
+            throw new InvalidArgumentException("{$source->code} has contributor stakes and cannot be merged.");
+        }
+
         if ($source->is($target)) {
             throw new InvalidArgumentException('A ledger account cannot be merged into itself.');
         }

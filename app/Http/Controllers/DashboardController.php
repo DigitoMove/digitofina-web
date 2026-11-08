@@ -12,6 +12,7 @@ use App\Models\LoanSchedule;
 use App\Models\Organization;
 use App\Models\Package;
 use App\Models\SavingsAccount;
+use App\Models\TellerDrawer;
 use App\Models\Transaction;
 use App\Models\TransactionType;
 use App\Models\User;
@@ -63,6 +64,9 @@ class DashboardController extends Controller
         $isLoanRecoveryDashboard = $user->isLoanRecoveryOfficer();
         $isCompactDashboard = $isCashierDashboard || $isLoanOfficerDashboard || $isLoanRecoveryDashboard;
         $drawer = $user->drawerSessions()->with('drawer')->where('status', 'open')->latest()->first()?->drawer;
+        $assignedDrawer = $isCashierDashboard && ! $drawer
+            ? TellerDrawer::query()->where('assigned_user_id', $user->id)->orderBy('id')->first()
+            : null;
         $today = CarbonImmutable::today();
         $monthStart = $today->startOfMonth();
         $monthEnd = $today->endOfMonth();
@@ -200,7 +204,7 @@ class DashboardController extends Controller
                 ->where('transaction_type_id', $withdrawalType->id)
                 ->when($isCashierDashboard, fn (Builder $query): Builder => $query->where('user_id', $user->id))
                 ->sum('amount') : 0,
-            'drawerBalance' => $tellerEnabled ? ($drawer?->current_balance ?? 0) : 0,
+            'drawerBalance' => $tellerEnabled ? ($drawer?->current_balance ?? $assignedDrawer?->current_balance ?? 0) : 0,
             'hasOpenDrawer' => $drawer !== null,
             'branchCount' => $usersEnabled ? Branch::count() : 0,
             'staffCount' => $usersEnabled ? User::staff()->where('status', 'active')->count() : 0,

@@ -3329,3 +3329,113 @@ it('keeps an extension when monthly schedule dates are repaired later', function
     expect($schedule->fresh()->due_date?->toDateString())->toBe($originalDueDate->copy()->addDays(5)->toDateString())
         ->and($schedule->fresh()->extension_days)->toBe(5);
 });
+
+it('tops up an active loan into savings while preserving old installments and extending maturity', function () {
+    $user = loanWorkflowUser();
+    $organization = loanWorkflowOrganizationWithModules($user, ['clients', 'loans', 'savings']);
+    $user->role->update(['slug' => 'organization-admin', 'name' => 'Organization Admin']);
+    $client = loanWorkflowClient($user, '+256700990001');
+    $product = loanWorkflowProduct(['require_guarantors' => false, 'minimum_guarantors' => 0, 'application_fee' => 0]);
+    $product->update(['organization_id' => $organization->id]);
+    $savings = loanWorkflowSavingsAccount($user, $client);
+    $loan = Loan::create([
+        'organization_id' => $organization->id,
+        'client_id' => $client->id,
+        'branch_id' => $client->branch_id,
+        'loan_product_id' => $product->id,
+        'officer_id' => $user->id,
+        'savings_account_id' => $savings->id,
+        'loan_number' => '1001-LN-TOPUP-001',
+        'requested_amount' => 500000,
+        'approved_amount' => 500000,
+        'principal_balance' => 500000,
+        'interest_rate' => 24,
+        'term_periods' => 2,
+        'repayment_frequency' => 'monthly',
+        'status' => 'approved',
+        'approved_by' => $user->id,
+        'approved_at' => today(),
+    ]);
+    app(LoanService::class)->disburseToSavings($loan, $user);
+    $loan->refresh();
+    $before = $loan->schedules()->orderBy('installment_number')->get();
+    $oldMaturity = $before->max('due_date');
+    $oldInterest = (float) $loan->interest_balance;
+    $oldSavings = (float) $savings->fresh()->balance;
+    $this->actingAs($user);
+
+    $this->post(route('loans.top-up', $loan), [
+        'amount' => 5000000,
+        'extension_days' => 30,
+        'reason' => 'Exceeds product limit',
+        'submission_token' => '04bc7315-8f7e-41ee-8219-f49b2e4000c7',
+    ])->assertSessionHasErrors('top_up');
+    expect((float) $savings->fresh()->balance)->toBe($oldSavings)
+        ->and($loan->topUps()->count())->toBe(0);
+
+    $this->post(route('loans.top-up', $loan), [
+        'amount' => 200000,
+        'extension_days' => 30,
+        'reason' => 'Additional capital with more repayment time',
+        'submission_token' => 'cf5129b6-4dc0-4942-a700-1ba0b124e96f',
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $loan->refresh();
+    $topUp = $loan->topUps()->firstOrFail();
+    $this->post(route('loans.top-up', $loan), [
+        'amount' => 200000,
+        'extension_days' => 30,
+        'reason' => 'Additional capital with more repayment time',
+        'submission_token' => 'cf5129b6-4dc0-4942-a700-1ba0b124e96f',
+    ])->assertSessionHasNoErrors();
+    expect($loan->topUps()->count())->toBe(1);
+    $after = $loan->schedules()->orderBy('installment_number')->get();
+    expect((float) $loan->approved_amount)->toBe(700000.0)
+        ->and((float) $loan->principal_balance)->toBe(700000.0)
+        ->and((float) $loan->interest_balance)->toBe($oldInterest + (float) $topUp->interest_added)
+        ->and((float) $savings->fresh()->balance)->toBe($oldSavings + 200000)
+        ->and($after->pluck('id')->all())->toBe($before->pluck('id')->all())
+        ->and($after->max('due_date')->toDateString())->toBe($oldMaturity->addDays(30)->toDateString())
+        ->and((float) $after->sum('principal_due'))->toBe(700000.0)
+        ->and((float) $loan->loanAccount->fresh()->balance)->toBe((float) $loan->principal_balance + (float) $loan->interest_balance)
+        ->and($topUp->disbursement->payment_method)->toBe('top_up_to_savings');
+
+    $request = MakerCheckerRequest::create([
+        'organization_id' => $organization->id,
+        'branch_id' => $user->branch_id,
+        'subject_type' => Transaction::class,
+        'subject_id' => $topUp->transaction_id,
+        'requested_by' => $user->id,
+        'action' => 'transaction_reversal',
+        'reason' => 'Top-up entered in error',
+    ]);
+    app(TransactionReversalService::class)->approve($request, $user);
+
+    expect((float) $loan->fresh()->approved_amount)->toBe(500000.0)
+        ->and((float) $loan->fresh()->principal_balance)->toBe(500000.0)
+        ->and((float) $loan->fresh()->interest_balance)->toBe($oldInterest)
+        ->and((float) $savings->fresh()->balance)->toBe($oldSavings)
+        ->and($loan->schedules()->orderBy('installment_number')->get()->pluck('due_date')->map(fn ($date) => $date->toDateString())->all())->toBe($before->pluck('due_date')->map(fn ($date) => $date->toDateString())->all())
+        ->and($topUp->fresh()->status)->toBe('reversed');
+});
+
+it('shows the outstanding arrears amount on administrator and loan officer dashboards', function () {
+    $user = loanWorkflowUser();
+    loanWorkflowOrganizationWithModules($user, ['clients', 'loans']);
+    $user->role->update(['slug' => 'organization-admin', 'name' => 'Organization Admin']);
+    $client = loanWorkflowClient($user, '+256700990002');
+    $loan = loanWorkflowTrackedLoan($user, $client, loanWorkflowProduct(), '1001-LN-ARREARS-CARD', 'in_arrears');
+    loanWorkflowSchedule($loan, today()->subDays(10), 'overdue', 300000);
+
+    $this->actingAs($user)->get(route('dashboard'))
+        ->assertSuccessful()
+        ->assertSee('Total loan arrears')
+        ->assertSee('300,000.00');
+
+    $user->update(['role_id' => Role::where('slug', 'loan-officer')->value('id')]);
+    $user->unsetRelation('role');
+    $this->actingAs($user)->get(route('dashboard'))
+        ->assertSuccessful()
+        ->assertSee('Total loan arrears')
+        ->assertSee('300,000.00');
+});
